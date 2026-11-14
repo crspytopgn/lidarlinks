@@ -52,6 +52,8 @@ def facing(bones, m_rots, m_poss, f, stand):
     a = np.arctan2(d[0], d[2]) - np.arctan2(want[0], want[2])
     c, s = np.cos(a), np.sin(a)
     return np.array([[c, 0.0, -s], [0.0, 1.0, 0.0], [s, 0.0, c]])
+FINISH_SHAFT = np.array([0.8, -0.45, 0.4]) / np.linalg.norm([0.8, -0.45, 0.4])  # grip to head, rig frame
+CLEAR = 0.2  # metres from the spine the shaft keeps (the back and the hips)
 REFS = {"driver": "ref_address", "iron": "ref_address_iron", "putter": "ref_address_putt"}
 
 
@@ -224,6 +226,55 @@ def bake(glb, rig, turns, name, take_name, start, end, club="driver", loop=False
             start + top, start + impact, (impact - top) / FPS, 100 * miss,
             100 * np.linalg.norm(heads[impact] - ball),
             np.degrees(np.arccos(np.clip((np.trace(fix_w) - 1) / 2, -1, 1)))))
+    if holding and club != "putter":
+        # The shaft kept out of the body: Mixamo's actor had no club, and
+        # in the finish the shaft he would have dropped behind his back
+        # went through it. Where it comes within CLEAR of the spine (the
+        # pelvis to the neck), it is turned about the grip just far enough
+        # out, the turns smoothed over a few frames.
+        turns = []
+        for i, ((rots, root), d, fx) in enumerate(zip(frames, drives, fixes)):
+            w = fx @ d @ club_local
+            if impact is not None and i > impact:
+                # The finish: the shaft settles across his back, the head
+                # behind him and a little down, as tour players hold it.
+                k = np.clip((i - impact - 0.1 * FPS) / (0.35 * FPS), 0.0, 1.0)
+                k = k * k * (3 - 2 * k)
+                w = pose.slerp(np.eye(3), M.between(w @ club_dir, FINISH_SHAFT), k) @ w
+            r, p = hold(rots, root, w)
+            turn = np.eye(3)
+            for _ in range(4):
+                a, b = p[pel], p[rig.index["neck_01"]]
+                axis = pose.unit(b - a)
+                grip = p[cj]
+                shaft = turn @ w @ club_dir
+                worst, push = 0.0, None
+                for s_ in np.linspace(0.15, length, 12):
+                    q = grip + shaft * s_
+                    t = np.clip(np.dot(q - a, axis), 0.0, np.linalg.norm(b - a))
+                    out = q - (a + axis * t)
+                    if np.dot(out, r[rig.index["spine_02"]] @ np.array([0.0, 0.0, -1.0])) > 0.0:
+                        continue  # in front of him: the arms, the address
+                    gap = CLEAR - np.linalg.norm(out)
+                    if gap > worst:
+                        worst, push = gap, (q, pose.unit(out), s_)
+                if push is None:
+                    break
+                q, out, s_ = push
+                turn = M.between(q - grip, q + out * (worst + 0.01) - grip) @ turn
+            turns.append(turn)
+        smooth = []
+        for i in range(len(turns)):
+            k = [turns[j] for j in range(max(0, i - 2), min(len(turns), i + 3))]
+            # The largest nearby turn, so the shaft leaves the body early.
+            big = max(k, key=lambda m: np.trace(np.eye(3) - m))
+            smooth.append(pose.slerp(turns[i], big, 0.5) if not np.allclose(big, turns[i]) else turns[i])
+        moved = 0
+        for i, ((rots, root), d, fx) in enumerate(zip(frames, drives, fixes)):
+            hold(rots, root, smooth[i] @ fx @ d @ club_local)
+            moved += not np.allclose(smooth[i], np.eye(3))
+        if moved:
+            print("  shaft kept out of the body in %d frames" % moved)
     if pingpong:
         frames = frames + frames[-2:0:-1]
     times = [i / FPS for i in range(len(frames))]
