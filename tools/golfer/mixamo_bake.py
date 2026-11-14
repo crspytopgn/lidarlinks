@@ -79,12 +79,13 @@ def person_rig(rig, pack, name):
     return out
 
 
-def bake(glb, rig, turns, name, take_name, start, end, club="driver", loop=False, addr=None):
+def bake(glb, rig, turns, name, take_name, start, end, club="driver", loop=False, addr=None, pingpong=False):
     """`club` "stand": a take standing up (a reaction), turned to face the
     target and set where the address stands, the driver kept in hand.
     `addr`: the take's address frame, where the club is set in the hand
     and the take placed (default `start`), so that a backswing and the
-    swing from its top share them."""
+    swing from its top share them. `pingpong`: the frames played forward
+    then back, a loop with no jump (the waggle over the ball)."""
     addr = start if addr is None else addr
     bones, m_rots, m_poss = take(take_name)
     stand = club == "stand"
@@ -109,52 +110,87 @@ def bake(glb, rig, turns, name, take_name, start, end, club="driver", loop=False
         fixed[rig.index[ours]] = (index[b], basis.T @ T.T @ np.array(turns["rot"][ours]).T)
     ref_local, ref_root = rig.sample(glb, REFS[club])
     pel, cj = rig.index["pelvis"], rig.index["club"]
-    hl = rig.index[os.environ.get("CLUB_HAND", "hand_r")]
+    hl, hr = rig.index["hand_l"], rig.index["hand_r"]
     hips = index["mixamorig_Hips"]
+    fingers = {rig.index[n] for n in rig.names if n.split("_")[0] in rocketbox.FINGERS.values()}
+    # Holding the club (not a reaction): the hands take the rig's grip.
+    holding = not stand and name.split("_")[0] in ("address", "backswing", "swing", "putt")
+    # The grip, from the ref pose on the rig's own body (where it was
+    # made): the club in the lead hand, and the trail hand's place and
+    # turn on the club.
+    saved = rig.offsets
+    rig.offsets = rig.base_offsets
+    g_rots, g_poss = rig.world(ref_local, ref_root)
+    rig.offsets = saved
+    lead_grip = ref_local[cj]  # the club in the lead hand
+    trail_turn = g_rots[cj].T @ g_rots[hr]
+    trail_at = g_rots[cj].T @ (g_poss[hr] - g_poss[cj])
 
     def posed(f):
         rots = [None] * len(rig.names)
         rots[0] = np.eye(3)
         for j, (k, after) in fixed.items():
+            if holding and j in fingers:
+                continue  # the fingers round the grip, from the ref pose
             rots[j] = FACE @ m_rots[f, k] @ after
         rots = M.fill(rig, rots, ref_local)
         root = FACE @ m_poss[f, hips] - rig.offsets[pel]
         return rots, root
 
-    # The club in the lead hand at the first frame, as the ref pose holds
-    # it (its length), aimed from the grip down to the turf straight out
-    # in front; the take is slid so its head is on the ball.
+    def hold(rots, root, club_w):
+        """The club turned `club_w` in the world: the lead hand turned to
+        hold it as the ref pose does (the wrist only), the trail arm
+        reaching its place on the grip. Returns the world positions."""
+        rots[cj] = club_w
+        if holding:
+            rots[hl] = club_w @ lead_grip.T
+            _, p = rig.world(rig.locals(rots), root)
+            M.two_bone(rig, rots, p, "upperarm_r", "lowerarm_r", "hand_r", p[cj] + club_w @ trail_at)
+            rots[hr] = club_w @ trail_turn
+        r, p = rig.world(rig.locals(rots), root)
+        return r, p
+
+    # Mixamo's actor swung without a club. Its shaft turns with the trail
+    # hand (the lead hand's turns made no sense for a club), set at the
+    # address so the shaft runs from the grip down to the turf straight
+    # out in front; the take is slid so the head is on the ball.
     ref_rots, ref_poss = rig.world(ref_local, ref_root)
     ball = np.array(M.IMPACT_AT)
     club_dir = M.club_direction(glb, rig)
-    ref_head = ref_poss[cj] + ref_rots[cj] @ club_dir * 1.0
     length = float(np.linalg.norm(ball - ref_poss[cj]))
     rots0, root0 = posed(addr)
-    _, p0 = rig.world(rig.locals(rots0), root0)
-    grip = p0[cj]
-    drop = min(grip[1] - ball[1], length * 0.95)
-    head = np.array([grip[0], ball[1], grip[2] - np.sqrt(length * length - drop * drop)])
-    club_local = rots0[hl].T @ M.between(rots0[cj] @ club_dir, pose.unit(head - grip)) @ rots0[cj]
+    drive0 = rots0[hr].copy()
+    club_local = drive0.T @ rots0[cj]
+    for _ in range(3):
+        _, p0 = hold(list(rots0), root0, drive0 @ club_local)
+        grip = p0[cj]
+        drop = min(grip[1] - ball[1], length * 0.95)
+        head = np.array([grip[0], ball[1], grip[2] - np.sqrt(length * length - drop * drop)])
+        w = drive0 @ club_local
+        club_local = drive0.T @ M.between(w @ club_dir, pose.unit(head - grip)) @ w
     slide = np.array([ball[0] - head[0], 0.0, ball[2] - head[2]])
     if stand:
         slide = ref_poss[pel] - p0[pel]
         slide[1] = 0.0
-    del ref_head
-    frames = []
+    frames, drives = [], []
     for f in range(start, end + 1):
         rots, root = posed(f)
-        rots[cj] = rots[hl] @ club_local
+        drives.append(rots[hr].copy())
         frames.append((rots, root + slide))
-    # Impact: after the hands' highest point, the frame the head comes
-    # closest to the ball.
-    heads, hands = [], []
-    for rots, root in frames:
-        r, p = rig.world(rig.locals(rots), root)
-        heads.append(p[cj] + r[cj] @ club_dir * length)
-        hands.append(p[hl][1])
+    fixes = [np.eye(3)] * len(frames)
+
+    def heads_hands():
+        heads, hands = [], []
+        for (rots, root), d, fx in zip(frames, drives, fixes):
+            r, p = hold(rots, root, fx @ d @ club_local)
+            heads.append(p[cj] + r[cj] @ club_dir * length)
+            hands.append(p[hl][1])
+        return heads, hands
+    heads, hands = heads_hands()
     # Impact: the first frame the hands are back down at address height
     # within a second of being well above it (the top); the head's nearest
     # pass of the ball there.
+    _, p0 = hold(list(rots0), root0 + slide, drive0 @ club_local)
     hand0 = p0[hl][1]
     impact = top = None
     if club != "putter" and not stand:
@@ -166,21 +202,30 @@ def bake(glb, rig, turns, name, take_name, start, end, club="driver", loop=False
                 top = max(range(max(0, impact - int(FPS)), impact + 1), key=lambda k: hands[k])
                 break
     if impact is not None:
-        miss = [np.linalg.norm(heads[impact] - ball)]
-        rots, root = frames[impact]
-        r, p = rig.world(rig.locals(rots), root)
-        fix_w = M.between(heads[impact] - p[cj], ball - p[cj])
-        fix = r[hl].T @ fix_w @ r[hl]
-        print("  top %d, impact %d (%.2f s from the top), head %.0f cm off the ball, turned %.1f deg" % (
-            start + top, start + impact, (impact - top) / FPS, 100 * min(miss),
-            np.degrees(np.arccos(np.clip((np.trace(fix) - 1) / 2, -1, 1)))))
-        for i, (rots, root) in enumerate(frames):
-            if i <= impact:
-                w = 0.0 if i <= top else (i - top) / max(impact - top, 1)
-            else:
-                w = max(0.0, 1.0 - (i - impact) / (0.4 * FPS))
-            w = w * w * (3 - 2 * w)
-            rots[cj] = rots[hl] @ pose.slerp(np.eye(3), fix, w) @ club_local
+        miss = np.linalg.norm(heads[impact] - ball)
+        # Over the downswing the shaft turns (in the world, about the grip)
+        # by up to what brings the head onto the ball at impact, eased out
+        # after; twice, as the grip moves with the turn.
+        fix_w = np.eye(3)
+        for _ in range(2):
+            rots, root = frames[impact]
+            r, p = hold(rots, root, fix_w @ drives[impact] @ club_local)
+            head = p[cj] + r[cj] @ club_dir * length
+            fix_w = M.between(head - p[cj], ball - p[cj]) @ fix_w
+            for i in range(len(frames)):
+                if i <= impact:
+                    wt = 0.0 if i <= top else (i - top) / max(impact - top, 1)
+                else:
+                    wt = max(0.0, 1.0 - (i - impact) / (0.4 * FPS))
+                wt = wt * wt * (3 - 2 * wt)
+                fixes[i] = pose.slerp(np.eye(3), fix_w, wt)
+        heads, hands = heads_hands()
+        print("  top %d, impact %d (%.2f s from the top), head %.0f cm off the ball (now %.1f), turned %.1f deg" % (
+            start + top, start + impact, (impact - top) / FPS, 100 * miss,
+            100 * np.linalg.norm(heads[impact] - ball),
+            np.degrees(np.arccos(np.clip((np.trace(fix_w) - 1) / 2, -1, 1)))))
+    if pingpong:
+        frames = frames + frames[-2:0:-1]
     times = [i / FPS for i in range(len(frames))]
     out = [rig.locals(r) for r, _ in frames]
     roots = [root for _, root in frames]
@@ -200,17 +245,19 @@ def main():
     ap.add_argument("--out")
     ap.add_argument("--pack", default=os.path.join(ROOT, "game/assets/golfer/free_golfer_parts.olg"))
     ap.add_argument("--turns", default=os.path.join(ROOT, "tools/golfer/mixamo_turns.json"))
-    ap.add_argument("--clip", action="append", default=[], help="name=take:start:end[:club[:loop|-[:address frame]]]")
+    ap.add_argument("--clip", action="append", default=[], help="name=take:start:end[:club[:loop|pingpong|-[:address frame]]]")
     args = ap.parse_args()
     turns = json.load(open(args.turns))
     glb = glb_edit.Glb(args.glb)
     rig = M.Rig(glb)
+    rig.base_offsets = rig.offsets
     rig.offsets = person_rig(rig, args.pack, turns["person"])
     for c in args.clip:
         name, spec = c.split("=")
         p = spec.split(":")
         bake(glb, rig, turns, name, p[0], int(p[1]), int(p[2]), p[3] if len(p) > 3 else "driver",
-             len(p) > 4 and p[4] == "loop", int(p[5]) if len(p) > 5 else None)
+             len(p) > 4 and p[4] in ("loop", "pingpong"), int(p[5]) if len(p) > 5 else None,
+             len(p) > 4 and p[4] == "pingpong")
     glb.save(args.out or args.glb)
 
 
