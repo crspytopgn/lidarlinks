@@ -62,9 +62,10 @@ uniform sampler2D splat_tex : filter_nearest, repeat_disable;
 uniform vec2 splat_origin = vec2(0.0); // world x, z of the raster's corner
 uniform vec2 splat_size = vec2(1.0); // metres it covers
 // Where set, the codes fill only the top splat_codes texels, and below
-// them green_edge_size texels (green_edge_texel metres each) hold the
-// signed distance to the nearest green's outline: 0..1 is
-// -green_edge_range..+green_edge_range metres, positive on the green.
+// them three blocks of green_edge_size texels side by side
+// (green_edge_texel metres each) hold the signed distance to the nearest
+// green's, bunker's and tee's outline: 0..1 is
+// -green_edge_range..+green_edge_range metres, positive inside.
 uniform ivec2 splat_codes = ivec2(0);
 uniform ivec2 green_edge_size = ivec2(1);
 uniform vec2 green_edge_texel = vec2(1.0);
@@ -126,9 +127,9 @@ void vertex() {
 
 // The raster's colour and weights at ground point p, blended over a
 // fraction of a texel with a ragged, natural line.
-void splat_add(ivec2 t, ivec2 size, float a, inout vec3 col, inout vec2 w, inout float mown, inout float stripe_m, inout float cut, inout float green) {
+void splat_add(ivec2 t, ivec2 size, float a, inout vec3 col, inout vec2 w, inout float mown, inout float stripe_m, inout float cut, inout vec2 green) {
 	int s = clamp(int(texelFetch(splat_tex, clamp(t, ivec2(0), size - 1), 0).r * 255.0 + 0.5), 0, 10);
-	green += s == 3 ? a : 0.0; // Surface.Type.GREEN
+	green += vec2(s == 3 ? a : 0.0, s == 0 ? a : 0.0); // Surface.Type.GREEN, TEE
 	col += surface_colors[s] * a;
 	w += surface_weights[s] * a;
 	mown += surface_mown[s] * a;
@@ -136,13 +137,14 @@ void splat_add(ivec2 t, ivec2 size, float a, inout vec3 col, inout vec2 w, inout
 	cut += surface_cut[s] * a;
 }
 
-// Metres from p to the nearest green's edge, positive on the green
-// (bilinear between the baked texels, so the line is one smooth curve).
-float green_edge(vec2 p) {
+// Metres from p to the nearest edge of block k's surface (0 green,
+// 1 bunker, 2 tee), positive inside (bilinear between the baked texels,
+// so the line is one smooth curve).
+float baked_edge(vec2 p, int k) {
 	vec2 q = (p - splat_origin) / green_edge_texel - 0.5;
 	ivec2 i = ivec2(floor(q));
 	vec2 f = q - floor(q);
-	ivec2 top = ivec2(0, splat_codes.y);
+	ivec2 top = ivec2(green_edge_size.x * k, splat_codes.y);
 	ivec2 hi = green_edge_size - 1;
 	float a = texelFetch(splat_tex, clamp(i, ivec2(0), hi) + top, 0).r;
 	float b = texelFetch(splat_tex, clamp(i + ivec2(1, 0), ivec2(0), hi) + top, 0).r;
@@ -151,22 +153,24 @@ float green_edge(vec2 p) {
 	return (mix(mix(a, b, f.x), mix(c, d, f.x), f.y) * 2.0 - 1.0) * green_edge_range;
 }
 
-void splat_at(vec2 p, out vec3 col, out vec2 w, out float mown, out float stripe_m, out float cut, out float green) {
+// `green` is the share of green and of tee in the blend.
+void splat_at(vec2 p, out vec3 col, out vec2 w, out float mown, out float stripe_m, out float cut, out vec2 green) {
 	ivec2 size = splat_codes.x > 0 ? splat_codes : textureSize(splat_tex, 0);
 	// A slow wobble, so an edge wanders a little like a mower's line
 	// rather than following the raster.
 	vec2 wobble = vec2(value_noise(p * 1.3), value_noise(p * 1.3 + vec2(41.0, 17.0))) - 0.5;
 	vec2 q = (p - splat_origin) / splat_size * vec2(size) - 0.5;
-	// Not round a green and its collar, though: they are cut with a
-	// steady hand in one smooth curve, and the wobble scalloped the edge.
+	// Not round a green and its collar, a tee or a bunker, though: they
+	// are cut with a steady hand in one smooth curve, and the wobble
+	// scalloped the edge.
 	int here = int(texelFetch(splat_tex, clamp(ivec2(floor(q + 0.5)), ivec2(0), size - 1), 0).r * 255.0 + 0.5);
-	q += wobble * (here == 3 || here == 10 ? 0.15 : 1.2);
+	q += wobble * (here == 3 || here == 10 || here == 0 || here == 6 ? 0.15 : 1.2);
 	col = vec3(0.0);
 	w = vec2(0.0);
 	mown = 0.0;
 	stripe_m = 0.0;
 	cut = 0.0;
-	green = 0.0;
+	green = vec2(0.0);
 	// Away from edges the nearest texel is the answer. On an edge, a
 	// quadratic B-spline over the 3x3 texels round it: its contours are
 	// smooth curves, where a bilinear blend of a 0.5 m raster draws stair
@@ -195,6 +199,20 @@ void splat_at(vec2 p, out vec3 col, out vec2 w, out float mown, out float stripe
 	// every surface edge.
 	s0 = clamp(s0, 0, 10);
 	stripe_m = surface_stripe_metres[s0] > 0.0 ? surface_stripe_metres[s0] : splat_stripe_metres;
+}
+
+// Takes surface k's share out of the splat blend and puts surface k back
+// by its crisp line instead; with no other surface in the blend (where the
+// line and the 0.5 m codes disagree), surface lone_k's.
+void by_line(int k, float share, float line, int lone_k, inout vec3 crisp, inout float cut, inout float mown) {
+	float rest = 1.0 - share;
+	bool lone = rest < 0.02;
+	vec3 o_col = lone ? surface_colors[lone_k] : (crisp - surface_colors[k] * share) / rest;
+	float o_cut = lone ? surface_cut[lone_k] : (cut - surface_cut[k] * share) / rest;
+	float o_mown = lone ? surface_mown[lone_k] : (mown - surface_mown[k] * share) / rest;
+	crisp = mix(o_col, surface_colors[k], line);
+	cut = mix(o_cut, surface_cut[k], line);
+	mown = mix(o_mown, surface_mown[k], line);
 }
 
 // A texture sampled at two scales, so its repeat is hard to see.
@@ -243,36 +261,38 @@ void fragment() {
 		vec2 w;
 		float mown;
 		float stripe_m;
-		float green;
+		vec2 green;
 		splat_at(p, crisp, w, mown, stripe_m, cut, green);
+		bool baked = splat_codes.x > 0;
 		// The green's edge is a mown line too: crisp, like the bunker's,
 		// so the darker collar reads as a clean ring round it.
 		// (From the baked distance to the outline where there is one.)
-		float green_line = splat_codes.x > 0 ? smoothstep(-aa_edge, aa_edge, green_edge(p)) : smoothstep(0.5 - aa_edge, 0.5 + aa_edge, green);
-		if (green > 0.0 && green < 1.0 || (green >= 1.0 && green_line < 1.0)) {
-			// Take the green's share out of the blend, and put the green
-			// back by the line; with no other surface in the blend (where
-			// the line and the 0.5 m codes disagree), the collar's.
-			float rest = 1.0 - green;
-			vec3 g_col = surface_colors[3];
-			bool lone = rest < 0.02;
-			vec3 o_col = lone ? surface_colors[10] : (crisp - g_col * green) / rest;
-			float o_cut = lone ? surface_cut[10] : (cut - surface_cut[3] * green) / rest;
-			float o_mown = lone ? surface_mown[10] : (mown - surface_mown[3] * green) / rest;
-			crisp = mix(o_col, g_col, green_line);
-			cut = mix(o_cut, surface_cut[3], green_line);
-			mown = mix(o_mown, surface_mown[3], green_line);
+		float green_line = baked ? smoothstep(-aa_edge, aa_edge, baked_edge(p, 0)) : smoothstep(0.5 - aa_edge, 0.5 + aa_edge, green.x);
+		if (green.x > 0.0 && green.x < 1.0 || (green.x >= 1.0 && green_line < 1.0)) {
+			by_line(3, green.x, green_line, 10, crisp, cut, mown);
+		}
+		// So is a tee's: a straight or gently curved line round the box.
+		float tee_line = baked ? (green.y > 0.0 ? smoothstep(-aa_edge, aa_edge, baked_edge(p, 2)) : 0.0) : smoothstep(0.5 - aa_edge, 0.5 + aa_edge, green.y);
+		if (green.y > 0.0 && green.y < 1.0 || (green.y >= 1.0 && tee_line < 1.0)) {
+			by_line(0, green.y, tee_line, 4, crisp, cut, mown);
 		}
 		// A bunker's edge is a trimmed line, not a blur or a torn one:
 		// sharp up close, widening with distance so it doesn't shimmer.
-		sand = smoothstep(0.5 - aa_edge, 0.5 + aa_edge, w.y);
-		// The turf lip from the same raster, not the 2 m mesh, whose
-		// triangles drew it as a row of dark teeth.
-		lip_w = w.y;
+		// From the baked distance where there is one (the raster's 0.5 m
+		// cells drew it as a wavy, scalloped line), only where the raster
+		// has sand near (water painted over a bunker stays water).
+		float sand_d = baked ? baked_edge(p, 1) : 0.0;
+		sand = baked ? (w.y > 0.0 ? smoothstep(-aa_edge, aa_edge, sand_d) : 0.0) : smoothstep(0.5 - aa_edge, 0.5 + aa_edge, w.y);
+		// The turf lip: a band of shaded turf half a metre wide along the
+		// line, from the same distance (or the raster's blend), not the 2 m
+		// mesh, whose triangles drew it as a row of dark teeth.
+		lip_w = baked ? (w.y > 0.0 ? clamp(1.0 + sand_d / 0.5, 0.0, 1.0) : 0.0) : w.y;
 		// The blended colour carries a share of sand wherever the raster
 		// has any nearby, which drew a pale, torn fringe out into the
-		// turf: take that share out and put the sand back by the line.
+		// turf: take that share out and put the sand back by the line
+		// (rough where the blend is all sand but the line says turf).
 		vec3 turf = max(crisp - sand_vertex * w.y, vec3(0.0)) / max(1.0 - w.y, 0.05);
+		turf = mix(turf, surface_colors[4], smoothstep(0.85, 0.98, w.y));
 		crisp = mix(turf, sand_vertex, sand);
 		c = max(c + crisp - vertex_palette, vec3(0.0));
 		w_rough_in = w.x;

@@ -11,6 +11,7 @@ signal hole_selected(index: int)
 signal hole_action(action: String)  ## add, delete
 signal par_changed(par: int)
 signal name_changed(text: String)
+signal tournament_toggled(on: bool)
 signal photo_toggled(on: bool)
 
 enum Tool { SELECT, SHAPE, RAISE, LOWER, SMOOTH, FLATTEN, TREES, TEE, PIN, AIM, OBJECTS, PATH }
@@ -37,6 +38,7 @@ const PAINTABLE := [
 ]
 
 var course_name: LineEdit
+var tournament: CheckBox
 var credits: Label
 var photo: CheckBox
 var surface: OptionButton
@@ -82,6 +84,13 @@ func _ready() -> void:
 		if not _quiet:
 			name_changed.emit(t))
 	box.add_child(course_name)
+	tournament = CheckBox.new()
+	tournament.text = "Tournament (grandstands, ropes, crowds)"
+	tournament.tooltip_text = "Off: an everyday local club, with no stands or crowds."
+	tournament.toggled.connect(func(on: bool) -> void:
+		if not _quiet:
+			tournament_toggled.emit(on))
+	box.add_child(tournament)
 	credits = Label.new()
 	credits.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	credits.add_theme_font_size_override("font_size", 11)
@@ -240,9 +249,10 @@ func show_surface(s: int) -> void:
 	_quiet = false
 
 
-func show_course_name(text: String) -> void:
+func show_course_name(text: String, is_tournament := false) -> void:
 	_quiet = true
 	course_name.text = text
+	tournament.button_pressed = is_tournament
 	_quiet = false
 
 
