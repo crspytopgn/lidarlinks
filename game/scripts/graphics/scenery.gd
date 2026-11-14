@@ -205,7 +205,10 @@ func apply(settings: GraphicsSettings) -> void:
 	environment.volumetric_fog_anisotropy = 0.6
 	environment.volumetric_fog_length = 160.0
 	environment.volumetric_fog_sky_affect = 0.0
-	environment.ssr_enabled = fwd and photo and q >= GraphicsSettings.Quality.HIGH
+	# Screen-space reflections cost a full-screen ray march for the water
+	# alone; built-in graphics keep them for Ultra.
+	var ssr_from := GraphicsSettings.Quality.ULTRA if GraphicsSettings.integrated_gpu() else GraphicsSettings.Quality.HIGH
+	environment.ssr_enabled = fwd and photo and q >= ssr_from
 	# Real-time global illumination at the top end (Ultra, Forward+, a real
 	# graphics card): sunlight bouncing off the turf into the shade, green
 	# light under the trees and the sky shut out beneath them, as UE5's

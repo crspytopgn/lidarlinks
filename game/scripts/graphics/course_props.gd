@@ -40,7 +40,9 @@ const RAKE_LENGTH := 1.39  ## head to the end of the grip
 const PLATE_YARDS: Array[int] = [100, 150, 200]
 const POLE_YARDS := 150
 const YARD := 0.9144
-## Made-up hole sponsors (no real businesses), one per hole in turn.
+## Made-up hole sponsors (no real businesses), one per hole in turn, on a
+## course with no name; a named course's plaque carries its own name, so a
+## made-up firm's name isn't taken for the club's.
 const SPONSORS := [["THE NINETEENTH", "BAR & GRILL"], ["FAIRWAY & FIELD", "CLUBMAKERS SINCE 1921"],
 		["OLD COURSE MOTORS", "SALES | SERVICE"], ["HOLLOW OAK", "TIMBER & JOINERY"],
 		["LINKSIDE DAIRY", "FRESH EVERY MORNING"], ["BRAMBLE & FINCH", "ESTATE AGENTS"]]
@@ -49,11 +51,14 @@ const NOT_ON := [Surface.Type.WATER, Surface.Type.SAND, Surface.Type.GREEN, Surf
 
 static var _meshes := {}
 
+var _club := ""
+
 
 ## The props for `hole`: tee furniture, and rakes at up to `rakes` bunkers.
-static func build(hole: HoleData, toward: Vector3, rakes: int) -> CourseProps:
+static func build(hole: HoleData, toward: Vector3, rakes: int, club := "") -> CourseProps:
 	var props := CourseProps.new()
 	props.name = "CourseProps"
+	props._club = club.strip_edges().to_upper()
 	props._build_tee(hole, toward)
 	props._build_yardages(hole)
 	props._build_green_sign(hole)
@@ -133,7 +138,7 @@ func _build_tee(hole: HoleData, toward: Vector3) -> void:
 	if sponsor != null and sponsor_at != Vector3.INF:
 		sponsor.position = sponsor_at
 		sponsor.rotation.y = facing + PI + 0.45 * _side_of(hole.tee, dir, sponsor_at)
-		var words: Array = SPONSORS[(hole.number - 1) % SPONSORS.size()]
+		var words: Array = SPONSORS[(hole.number - 1) % SPONSORS.size()] if _club.is_empty() else [_club.substr(0, 22), "HOLE %d" % hole.number]
 		_add_text(sponsor, [[words[0], 56, 0.865], [words[1], 30, 0.77]], 0.0, 0.0135, true)
 		add_child(sponsor)
 

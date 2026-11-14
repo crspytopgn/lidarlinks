@@ -2,15 +2,18 @@
 
 The sounds the game plays when the original Links 2003 files are not
 loaded. None of them comes from Links 2003: they are cut and mixed from
-these field recordings on [freesound.org](https://freesound.org), by
+these field recordings on [freesound.org](https://freesound.org) and
+[xeno-canto](https://xeno-canto.org) (the newer regional birdcalls), by
 `tools/audio/build_free_sounds.py` from `tools/audio/free_sounds.json`.
 `amb_traffic`, `amb_mower` and `amb_murmur` are not recordings: they are
 synthesised from noise by `tools/audio/synth_ambience.py`.
 
 CC0 recordings need no credit, but every recording is credited anyway.
-Those under CC BY are used under that licence; the files here are
-edited versions of them (trimmed, layered, filtered, re-pitched, mixed
-and re-encoded).
+Those under CC BY and CC BY-SA are used under those licences; the files
+here are edited versions of them (trimmed, layered, filtered,
+re-pitched, mixed and re-encoded). A file made from a CC BY-SA
+recording (the `calls_*` sets that list one) is itself shared under
+CC BY-SA 4.0.
 
 | Recording | Author | Licence | Used in |
 | --- | --- | --- | --- |
@@ -43,6 +46,7 @@ and re-encoded).
 | [Single Skylark](https://freesound.org/people/Kinoton/sounds/387426/) | Kinoton | [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/) | calls_links |
 | [FieldBirdsDec252015WhiteCrowned.mp3](https://freesound.org/people/kvgarlic/sounds/332437/) | kvgarlic | [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/) | calls_pnw |
 | [SongSparrowSongMarch52012.wav](https://freesound.org/people/kvgarlic/sounds/171463/) | kvgarlic | [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/) | calls_pnw |
+| [Rook (Corvus frugilegus), call](https://xeno-canto.org/1193636) | Lionel Triboulin | [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/) | calls_uk |
 | [Forest birds - ambient seamless loop](https://freesound.org/people/Magnesus/sounds/723913/) | Magnesus | [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/) | amb_woodland |
 | [golfclap.aif](https://freesound.org/people/mattheos/sounds/116769/) | mattheos | [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/) | tee_2 |
 | [crowd `oh - - disappointed.mp3](https://freesound.org/people/mrrap4food/sounds/619007/) | mrrap4food | [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/) | groan_2, groan_3 |
@@ -51,6 +55,9 @@ and re-encoded).
 | [Landing on grass](https://freesound.org/people/onehugeeye/sounds/511318/) | onehugeeye | [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/) | land_grass_2 |
 | [Grassy Footstep 3](https://freesound.org/people/OwlStorm/sounds/151228/) | OwlStorm | [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/) | footsteps_1, footsteps_2 |
 | [Grassy Footstep 2](https://freesound.org/people/OwlStorm/sounds/151229/) | OwlStorm | [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/) | footsteps_1, footsteps_2 |
+| [Red-crested Cardinal (Paroaria coronata), song](https://xeno-canto.org/1090718) | Pedro Sanetti | [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/) | calls_hawaii |
+| [Rook (Corvus frugilegus), call](https://xeno-canto.org/1183149) | Philippe Grange | [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/) | calls_uk |
+| [European Serin (Serinus serinus), song](https://xeno-canto.org/1134292) | Philippe_Grange | [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/) | calls_med |
 | [aww.wav](https://freesound.org/people/phmiller42/sounds/124996/) | phmiller42 | [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/) | groan_1, groan_3 |
 | [Loopable Early Morning English Countryside Ambience - Birds, Distant Sheep, etc.mp3](https://freesound.org/people/Psykophobia/sounds/641561/) | Psykophobia | [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/) | amb_parkland |
 | [Kookaburra.wav](https://freesound.org/people/Rimmer/sounds/662080/) | Rimmer | [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/) | calls_aus |
@@ -68,5 +75,23 @@ and re-encoded).
 | [Golf 15.wav](https://freesound.org/people/zolopher/sounds/75209/) | zolopher | [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/) | hit_driver_1, hit_driver_3, hit_wood_2 |
 | [Golf 4.wav](https://freesound.org/people/zolopher/sounds/75213/) | zolopher | [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/) | hit_driver_1, hit_driver_2, hit_driver_3, hit_wood_1 |
 | [Drop ball in cup-1.wav](https://freesound.org/people/AGFX/sounds/20428/) | AGFX | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) | cup_1 |
+| [Eurasian Hoopoe (Upupa epops), song](https://xeno-canto.org/108366) | Alexander Kurthy | [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/) | calls_med |
 | [Placing wedge hitting golf ball.wav](https://freesound.org/people/bigal13/sounds/654498/) | bigal13 | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) | hit_wedge_1 |
 | [golf-ball-hit-3](https://freesound.org/people/CosmicEmbers/sounds/160761/) | CosmicEmbers | [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/) | hit_iron_1, hit_iron_3, hit_wedge_2, hit_wood_1 |
+| [Tui (Prosthemadera novaeseelandiae), song](https://xeno-canto.org/915121) | craig wilson | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) | calls_nz |
+| [New Zealand Bellbird (Anthornis melanura), song](https://xeno-canto.org/1059099) | craig wilson | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) | calls_nz |
+| [New Zealand Bellbird (Anthornis melanura), call](https://xeno-canto.org/602854) | craig wilson | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) | calls_nz |
+| [Zebra Dove (Geopelia striata), call](https://xeno-canto.org/347811) | Derek Paulo | [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/) | calls_hawaii |
+| [Zebra Dove (Geopelia striata), call](https://xeno-canto.org/347813) | Derek Paulo | [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/) | calls_hawaii |
+| [Black-capped Chickadee (Poecile atricapillus), call and song](https://xeno-canto.org/935615) | Doug Hynes | [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/) | calls_us_north |
+| [Common Myna (Acridotheres tristis), call and song](https://xeno-canto.org/509307) | James Ray | [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/) | calls_hawaii |
+| [American Robin (Turdus migratorius), call](https://xeno-canto.org/75498) | Jonathon Jongsma | [CC BY-SA 3.0](https://creativecommons.org/licenses/by-sa/3.0/) | calls_us_north |
+| [Red-winged Blackbird (Agelaius phoeniceus), call](https://xeno-canto.org/75495) | Jonathon Jongsma | [CC BY-SA 3.0](https://creativecommons.org/licenses/by-sa/3.0/) | calls_us_north |
+| [Mourning Dove (Zenaida macroura), call](https://xeno-canto.org/128006) | Jonathon Jongsma | [CC BY-SA 3.0](https://creativecommons.org/licenses/by-sa/3.0/) | calls_us_desert, calls_us_north |
+| [Blue Jay (Cyanocitta cristata), call](https://xeno-canto.org/86756) | Jonathon Jongsma | [CC BY-SA 3.0](https://creativecommons.org/licenses/by-sa/3.0/) | calls_us_north |
+| [California Quail (Callipepla californica), call](https://xeno-canto.org/109825) | Jonathon Jongsma | [CC BY-SA 3.0](https://creativecommons.org/licenses/by-sa/3.0/) | calls_us_desert |
+| [Eurasian Collared Dove (Streptopelia decaocto), song](https://xeno-canto.org/82758) | Jonathon Jongsma | [CC BY-SA 3.0](https://creativecommons.org/licenses/by-sa/3.0/) | calls_med |
+| [Pyrrhuloxia (Cardinalis sinuatus), song](https://xeno-canto.org/1005252) | Ryan Douglas | [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/) | calls_us_desert |
+| [Northern Cardinal (Cardinalis cardinalis), song](https://xeno-canto.org/797998) | steve | [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/) | calls_us_north |
+| [Japanese Bush Warbler (Horornis diphone), call](https://xeno-canto.org/1177906) | steve | [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/) | calls_hawaii |
+| [Sardinian Warbler (Curruca melanocephala), song](https://xeno-canto.org/1143436) | Tanguy Loïs | [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/) | calls_med |

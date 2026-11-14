@@ -13,6 +13,7 @@ the browser and on desktop today.
 | Up / Down | Change club (the game picks one for you each shot) |
 | Q / E | Shape the shot: draw or fade, one degree at a time (up to 6) |
 | W / S | Hit it higher or lower: the ball one step forward or back (up to 3) |
+| Spin ball (under the wind) | Click, tap or drag where the club meets the ball: low for more backspin (higher), high for less (lower), left to draw or hook, right to fade or slice. Right-click or double-click resets |
 | Space or left click | Swing meter: start, set power, set accuracy |
 | Space or left click | Skip the ball flight, continue after a shot |
 | Tab | Show or hide the scorecard |
@@ -106,7 +107,8 @@ take off speed and spin as they do for a swing. Each message is answered
 with code 200, and the app is told which club is up (code 201, `"Club":
 "DR"`, `"7I"`, `"PT"`). HLA and spin axis are taken as positive to the
 right. Shots are recorded as measured (`ShotRecord.monitor`), so replays
-play them back and online play can tell them apart.
+play them back and online play can tell them apart. Per-brand setup and the
+simulated test client: [launch-monitors.md](launch-monitors.md).
 
 ### Gimmes
 

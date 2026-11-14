@@ -155,7 +155,7 @@ func _set_course(c: DesignedCourse, p_path: String) -> void:
 	_rebuild_trees()
 	_overlay_dirty = true
 	_markers_dirty = true
-	panel.show_course_name(course.course_name)
+	panel.show_course_name(course.course_name, course.tournament)
 	panel.show_credits(course.credits)
 	panel.show_photo_option(_photo_material != null, _photo_on)
 	_show_holes()
@@ -1289,6 +1289,9 @@ func _build_ui() -> void:
 			(_chunks[c] as MeshInstance3D).material_overlay = _photo_material if on else null)
 	panel.name_changed.connect(func(t: String) -> void:
 		course.course_name = t
+		_changed())
+	panel.tournament_toggled.connect(func(on: bool) -> void:
+		course.tournament = on
 		_changed())
 	panel.set_anchors_and_offsets_preset(Control.PRESET_LEFT_WIDE)
 	panel.offset_right = 320

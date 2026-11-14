@@ -5,10 +5,11 @@ extends RefCounted
 ##
 ## - The published figures of a current two-seat electric fleet cart:
 ##   448 kg kerb weight (530 kg with the golfer), 1.635 m wheelbase, a
-##   3.3 kW 48 V AC motor and 24 km/h top speed. Yaw inertia 300 kg m^2, the
+##   48 V AC motor rated 3.3 kW that peaks at about twice that, and the
+##   speed most courses set, 18 mph. Yaw inertia 300 kg m^2, the
 ##   centre of gravity behind the middle (the batteries) and 0.55 m up.
 ## - The motor drives the rear axle: 1500 N at the wheels from a stand,
-##   then limited by its power, and a speed governor at 15 mph
+##   then limited by its peak power, and a speed governor at 18 mph
 ##   (5.5 mph in reverse) that also holds it back downhill by regenerating.
 ##   An accelerator and brake pedal that take a moment to press, and the
 ##   automatic park brake carts have when the pedals are let go.
@@ -33,11 +34,11 @@ const CG_HEIGHT := 0.55
 const TRACK := 0.935  ## between the left and right tyres, on average
 const MAX_STEER_DEG := 32.0
 const STEER_ASSIST := 0.55  ## the share of the lock left at top speed (keyboard driving)
-const STEER_RATE := 2.0  ## lock to centre, per second
-const PEDAL_RATE := 4.0
-const STALL_FORCE := 1500.0  ## N at the wheels
-const MOTOR_POWER := 3300.0  ## W, the rated output
-const GOVERNED := 6.67  ## m/s, 24 km/h (15 mph)
+const STEER_RATE := 2.5  ## lock to centre, per second
+const PEDAL_RATE := 6.0
+const STALL_FORCE := 2000.0  ## N at the wheels, about 0.38 g from a stand
+const MOTOR_POWER := 7000.0  ## W, the AC motor's peak (3.3 kW rated, continuous)
+const GOVERNED := 8.05  ## m/s, 29 km/h (18 mph), the usual course setting
 const GOVERNED_REVERSE := 2.5
 const GOVERNOR_BAND := 0.5  ## the motor fades out over the last 0.5 m/s
 const REGEN_FORCE := 1600.0  ## most the governor holds back downhill
@@ -92,10 +93,10 @@ static func rolling(terrain: CourseTerrain, p: Vector3) -> float:
 		return 0.015
 	match terrain.surface_at(p.x, p.z):
 		Surface.Type.ROUGH, Surface.Type.OUT_OF_BOUNDS:
-			return 0.14
+			return 0.10
 		Surface.Type.DEEP_ROUGH:
-			return 0.22
-	return 0.045
+			return 0.16
+	return 0.035
 
 
 func forward() -> Vector3:

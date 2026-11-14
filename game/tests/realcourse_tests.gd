@@ -83,6 +83,35 @@ func _test_simplify() -> void:
 	check(s.size() >= 8 and s.size() <= RealCourseBuilder.MAX_POINTS, "a 400-point circle simplifies to a few dozen points (%d)" % s.size())
 	var line := RealCourseBuilder.simplify_line(PackedVector2Array([Vector2(0, 0), Vector2(5, 0.01), Vector2(10, 0), Vector2(10, 10)]), 0.5)
 	check(line.size() == 3, "straight runs collapse (%d)" % line.size())
+	# A bunker traced click by click, each click up to half a metre off:
+	# smoothed, its edge no longer zigzags, and it keeps its size.
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 7
+	var traced := PackedVector2Array()
+	for i in 60:
+		var a := TAU * i / 60.0
+		traced.append(Vector2(cos(a) * 12.0, sin(a) * 7.0) + Vector2(rng.randf_range(-0.5, 0.5), rng.randf_range(-0.5, 0.5)))
+	var smooth := RealCourseBuilder.smooth_ring(traced)
+	var turns := 0.0
+	for i in smooth.size():
+		var d0 := smooth[(i + 1) % smooth.size()] - smooth[i]
+		var d1 := smooth[(i + 2) % smooth.size()] - smooth[(i + 1) % smooth.size()]
+		turns += absf(d0.angle_to(d1))
+	check(turns < TAU * 1.15, "a smoothed bunker turns about once round, no zigzags (%.2f turns)" % (turns / TAU))
+	var area_in := absf(RealCourseBuilder._ring_area(traced))
+	check(absf(absf(RealCourseBuilder._ring_area(smooth)) - area_in) < area_in * 0.01, "smoothing keeps the bunker's area")
+	# Roads through a course come in as tarmac at their real width.
+	check(is_equal_approx(RealCourseBuilder.road_width({"highway": "residential"}), 5.5), "a residential road is 5.5 m of tarmac")
+	check(is_equal_approx(RealCourseBuilder.road_width({"highway": "tertiary", "lanes": "2"}), 6.4), "two lanes are 6.4 m")
+	check(RealCourseBuilder.road_width({"highway": "footway"}) == 0.0 and RealCourseBuilder.road_width({"highway": "footway", "surface": "asphalt"}) > 0.0, "only paved footpaths are tarmac")
+	check(RealCourseBuilder.road_width({"highway": "service", "tunnel": "yes"}) == 0.0, "tunnels are left out")
+	# A four-corner tee keeps its straight sides.
+	var tee := RealCourseBuilder.smooth_ring(PackedVector2Array([Vector2(0, 0), Vector2(12, 0), Vector2(12, 20), Vector2(0, 20)]), 1.0, 1)
+	var straight := 0
+	for p in tee:
+		if absf(p.x - 6.0) < 4.0 and absf(p.y) < 0.1:
+			straight += 1
+	check(tee.size() >= 60 and straight >= 6, "a four-corner tee keeps a straight front (%d points, %d on it)" % [tee.size(), straight])
 
 
 ## A made-up par 4 running north: tee at the south, green at the north,

@@ -572,6 +572,11 @@ func _test_shot_shape() -> void:
 	shape.nudge_height(1)
 	_check(shape.to_setup("7i").ball_position == 3, "higher moves the ball one step forward")
 	_check(shape.describe() == "Fade 2, high 1", "shape text")
+	# The spin ball: low on the ball is more backspin (higher), right fades.
+	var c := Vector2(50, 50)
+	_check(SpinBall.steps_at(c, c, 40.0) == Vector2i.ZERO, "the middle of the spin ball is square")
+	_check(SpinBall.steps_at(c + Vector2(0, 40), c, 40.0) == Vector2i(0, ShotShape.MAX_HEIGHT), "low on the ball is the most backspin")
+	_check(SpinBall.steps_at(c + Vector2(-400, 0), c, 40.0) == Vector2i(-ShotShape.MAX_CURVE, 0), "far left on the ball is the biggest draw")
 	# A shaped shot's setup survives a result code.
 	var rec := ShotRecord.new()
 	rec.face = 32
@@ -644,6 +649,44 @@ func _test_swing_meter() -> void:
 	while chip.rising:
 		chip.advance(0.004)
 	_check(chip.power_pos == 16 and chip.pos == 22, "chip power waits for 16 and turns at 22 (%d, %d)" % [chip.power_pos, chip.pos])
+	# The marker glides between positions: never more than one ahead of the
+	# game's own, never behind it, and never jumping (60 fps frames).
+	var glide := LinksPowerStroke.Run.new(LinksPowerStroke.Mode.FULL)
+	var last := glide.smooth_pos()
+	var worst := 0.0
+	var behind := false
+	while not glide.done:
+		glide.advance(1.0 / 60.0)
+		if glide.pos == 40 and glide.rising and glide.power_pos == 0:
+			glide.click_power()
+		var at := glide.smooth_pos()
+		worst = maxf(worst, absf(at - last))
+		var step := 1.0 if glide.rising else -1.0
+		if (at - glide.pos) * step < -1e-6 or (at - glide.pos) * step > 1.0 + 1e-6:
+			behind = true
+		last = at
+	_check(worst <= 1.0 + 1e-6, "the meter marker never jumps more than a position a frame (%.2f)" % worst)
+	_check(not behind, "the drawn marker stays within a position ahead of the game's")
+	# Putts have their own meter: a finer stroke scale and pull/push.
+	meter.mode = LinksPowerStroke.Mode.PUTT
+	_check(meter.putting() and meter.marks().size() == 20 and meter.title() == "PUTT", "putts get the fine PUTT scale")
+	meter.accuracy = 0.2
+	_check(meter.miss_text() == "PUSH 20%", "a late putt is a push")
+	meter.mode = LinksPowerStroke.Mode.FULL
+	_check(meter.marks().size() == 4 and meter.miss_text() == "SLICE 20%", "full swings keep quarters and slices")
+	# The Broadcast putting meter's distance scale, by the round's physics.
+	var putter: Club = null
+	for c in Club.standard_set():
+		if c.is_putter:
+			putter = c
+	var roll := GolfRound.putt_roll_feet(StandardShotModel.new(), putter, Surface.Type.GREEN)
+	var rising_roll := roll.size() == 21 and roll[20] > 10.0
+	for i in range(1, roll.size()):
+		rising_roll = rising_roll and roll[i] >= roll[i - 1]
+	_check(rising_roll, "putts roll further the further back the stroke (%s)" % [roll])
+	meter.set_putt_scale(PackedFloat32Array([0.0, 10.0, 30.0]), 20.0)
+	_check_near(meter.value_for_feet(20.0), 0.75, 1e-6, "the putt scale finds the hole's place on the meter")
+	_check_near(meter.feet_for_value(0.25), 5.0, 1e-6, "the putt scale reads feet back")
 	meter.free()
 
 
@@ -1550,14 +1593,20 @@ func _test_buggy_drive() -> void:
 	for i in 300:
 		d.step(dt, 1.0, 0.0, fairway)
 	print("  fairway top speed %.2f m/s" % d.speed)
-	_check(d.speed > 6.0 and d.speed <= BuggyDrive.GOVERNED, "governed at about 15 mph on grass (%.2f)" % d.speed)
+	_check(d.speed > 6.0 and d.speed <= BuggyDrive.GOVERNED, "governed at about 18 mph on grass (%.2f)" % d.speed)
 	_check(d.position.z > 40.0 and absf(d.position.x) < 1e-3, "drives straight down +z (%s)" % d.position)
 	var rough := FlatTerrain.new(Surface.Type.ROUGH)
 	var r := BuggyDrive.new()
 	r.place(Vector3.ZERO, 0.0, rough)
-	for i in 300:
+	var brisk := BuggyDrive.new()
+	brisk.place(Vector3.ZERO, 0.0, fairway)
+	for i in 60:
+		brisk.step(dt, 1.0, 0.0, fairway)
+	for i in 90:
 		r.step(dt, 1.0, 0.0, rough)
-	_check(r.speed < d.speed - 1.0, "slower in the rough (%.2f)" % r.speed)
+	print("  after 2 s on grass %.2f m/s, after 3 s in the rough %.2f m/s" % [brisk.speed, r.speed])
+	_check(brisk.speed > 5.4, "brisk pickup: 12 mph in 2 s on grass (%.2f)" % brisk.speed)
+	_check(r.speed < 7.0, "slower to pick up in the rough (%.2f)" % r.speed)
 	for i in 60:
 		d.step(dt, 1.0, 1.0, fairway)
 	print("  full lock at speed: %.0f deg, sliding %.2f m/s, %.2f g" % [d.heading_deg, d.lateral, d.accel_lat / BuggyDrive.GRAVITY])
@@ -1574,7 +1623,7 @@ func _test_buggy_drive() -> void:
 	print("  stops from top speed in %.1f s, %.1f m" % [t * dt, d.position.z - from])
 	# Rear drum brakes only, as on real fleet carts: about 0.3 g on grass,
 	# held back by the grip of the rear tyres.
-	_check(t * dt < 2.6 and d.position.z - from < 9.0 and d.position.z - from > 4.0, "rear brakes stop it in a few metres")
+	_check(t * dt < 3.2 and d.position.z - from < 13.0 and d.position.z - from > 5.0, "rear brakes stop it in a few metres")
 	for i in 150:
 		d.step(dt, -1.0, 0.0, fairway)
 	_check(d.speed < 0.0 and d.speed >= -BuggyDrive.GOVERNED_REVERSE - 0.1, "backs up slowly (%.2f)" % d.speed)
@@ -1586,7 +1635,7 @@ func _test_buggy_drive() -> void:
 	up.place(Vector3.ZERO, 0.0, hill)
 	for i in 450:
 		up.step(dt, 1.0, 0.0, hill)
-	_check(up.speed < BuggyDrive.TOP_GRASS - 1.5, "slower up a 15%% hill (%.2f)" % up.speed)
+	_check(up.speed < BuggyDrive.TOP_GRASS - 0.5 and up.speed > 6.0, "climbs a 15%% hill at about 15 mph (%.2f)" % up.speed)
 	var down := BuggyDrive.new()
 	down.place(Vector3.ZERO, 180.0, hill)
 	for i in 450:
@@ -1814,6 +1863,11 @@ func _test_hd_pack() -> void:
 func _test_graphics_settings() -> void:
 	_check(SettingsPanel.scroll_height(1100.0, 120.0, 720.0) == 584.0, "settings: the rows scroll in a 720p window")
 	_check(SettingsPanel.scroll_height(400.0, 120.0, 720.0) == 400.0, "settings: no scrolling when they fit")
+	# Built-in graphics' pixel budget: a 1080p window fits High's, a Retina
+	# 3200x1800 window draws 1080p's worth of pixels and is upscaled.
+	_check(GraphicsSettings.budget_scale(1920.0 * 1080.0, GraphicsSettings.IGPU_PIXEL_BUDGET[2]) == 1.0, "pixel budget: 1080p fits High")
+	var retina := GraphicsSettings.budget_scale(3200.0 * 1800.0, GraphicsSettings.IGPU_PIXEL_BUDGET[2])
+	_check(retina > 0.55 and retina < 0.65 and absf(3200.0 * 1800.0 * retina * retina - 2.1e6) < 1.0e3, "pixel budget: Retina window scaled to High's pixels (%.3f)" % retina)
 	# Heat shimmer: a level camera has the horizon mid-screen, one tipped
 	# down sees it higher up, and the top edge is half the lens away.
 	_check(is_equal_approx(PostProcess.horizon_screen_y(0.0, 0.7), 0.5), "shimmer: level camera, horizon mid-screen")
@@ -2246,6 +2300,15 @@ func _test_gallery() -> void:
 	_check(sun_shadows != null and sun_shadows.multimesh.instance_count == g.card_count(), "every crowd card casts a sun shadow")
 	var person_shadows := g.get_node_or_null("ContactShadowsSun") as MultiMeshInstance3D
 	_check(g.crowd_count() == 0 or (person_shadows != null and person_shadows.multimesh.instance_count == g.crowd_count()), "every 3D spectator casts a sun shadow")
+	if not spot.is_empty():
+		# A ball come to rest in the stand gets free relief, clear of it and
+		# no nearer the hole; the stand is solid to the ball.
+		var in_stand: Vector3 = spot[0] - (spot[1] as Vector3) * 2.0
+		var drop := g.stand_relief(in_stand, hole.pin)
+		_check(drop != Vector3.INF and g.stand_relief(drop, hole.pin) == Vector3.INF, "a ball in the grandstand is dropped clear of it")
+		_check(drop == Vector3.INF or Vector2(drop.x - hole.pin.x, drop.z - hole.pin.z).length() >= Vector2(in_stand.x - hole.pin.x, in_stand.z - hole.pin.z).length() - 1e-3, "and no nearer the hole")
+		var through := g.camera_blockers.segment_hit(in_stand + Vector3(0, 3, 0) + (spot[1] as Vector3) * 8.0, in_stand + Vector3(0, 3, 0))
+		_check(not through.is_empty(), "the grandstand is solid")
 	var tee_stand := Gallery.tee_stand_spot(hole, hole.pin)
 	if not tee_stand.is_empty():
 		var tee_front: Vector3 = tee_stand[0]
@@ -2275,6 +2338,12 @@ func _test_gallery() -> void:
 	_check(facing.distance_to(Vector3(0.6, 0, 0.8)) < 1e-4, "spectators face what they watch")
 	g.watch_point(hole.tee + Vector3.UP)
 	_check(g.murmur_db() == Gallery.MURMUR_DB, "the gallery murmurs")
+	var murmur_at := Gallery.murmur_spots(hole, hole.pin)
+	var green_m := Vector2(murmur_at[1].x - hole.pin.x, murmur_at[1].z - hole.pin.z).length()
+	var tee_m := Vector2(murmur_at[0].x - hole.tee.x, murmur_at[0].z - hole.tee.z).length()
+	_check(green_m >= Gallery.GREEN_MARGIN + Gallery.CROWD_FAR and tee_m >= Gallery.TEE_SIDE,
+		"the murmur comes from the crowd, not the flag or the tee box")
+	_check(Gallery.MURMUR_DB <= -18.0 and Gallery.MURMUR_HUSH_DB < Gallery.MURMUR_DB, "the murmur sits low in the mix")
 	g.react(Commentary.Crowd.ROAR)
 	g.free()
 	_check_near(Gallery.stand_depth(), 6.8, 1e-4, "eight bleacher rows of 0.85 m")
@@ -3374,8 +3443,25 @@ func _test_free_sounds() -> void:
 	_check(FreeAmbience.calls_for(Vector2(47.6, -122.3), park) == "calls_pnw", "Seattle: American robins and sparrows")
 	_check(FreeAmbience.calls_for(Vector2(-37.97, 145.03), park) == "calls_aus", "Royal Melbourne: magpies and kookaburras")
 	_check(FreeAmbience.calls_for(nowhere, park) == "" and FreeAmbience.calls_for(Vector2(35.7, 139.7), park) == "", "unknown or other places: snatches of the bed")
-	_check(FreeAmbience.has_calls(sea, "calls_links") and not FreeAmbience.has_calls(sea, ""), "shore birds only on a links with its own set")
-	for stem: String in ["calls_uk", "calls_links", "calls_us_se", "calls_pnw", "calls_aus"]:
+	_check(FreeAmbience.has_calls(sea, "calls_links") and not FreeAmbience.has_calls(sea, ""), "birds by the sea only with a set of their own")
+	_check(FreeAmbience.calls_for(Vector2(51.63, 0.02), park) == "calls_uk", "West Essex: robins, blackbirds, wood pigeons and rooks")
+	_check(FreeAmbience.calls_for(Vector2(33.70, -116.40), FreeAmbience.Setting.DESERT) == "calls_us_desert", "Bighorn: cactus wrens and quail")
+	_check(FreeAmbience.calls_for(Vector2(21.0, -156.65), sea) == "calls_hawaii", "Kapalua: mynas and zebra doves")
+	_check(FreeAmbience.calls_for(Vector2(-34.99, 173.93), sea) == "calls_nz", "Kauri Cliffs: tui and bellbirds")
+	_check(FreeAmbience.calls_for(Vector2(36.29, -5.31), park) == "calls_med", "Valderrama: blackcaps and hoopoes")
+	_check(FreeAmbience.calls_for(Vector2(43.42, -88.30), park) == "calls_us_north", "Wisconsin: American robins and blue jays")
+	_check(FreeAmbience.calls_for(Vector2(33.09, -96.88), park) == "calls_us_se", "Texas: cardinals and mockingbirds")
+	_check(FreeAmbience.place_key("Pebble_B") == "pebbleb" and FreeAmbience.known_place("Pebble Beach Golf Links")[1] == 36.57, "classic file names and full names both find the place")
+	_check(FreeAmbience.known_place("Skeleton Bay").is_empty() and FreeAmbience.known_place("").is_empty(), "made-up courses have no place")
+	var disc := CourseData.new()
+	disc.course_name = "Torrey Pines"
+	var disc_amb := FreeAmbience.create(disc)
+	_check(disc_amb.setting == sea and disc_amb.calls == "calls_pnw", "Torrey Pines: a Pacific coast course, not the desert")
+	disc_amb.free()
+	_check(FreeAmbience.season_gap(5, 51.6) < FreeAmbience.season_gap(12, 51.6), "more song in spring than in winter")
+	_check(FreeAmbience.season_gap(12, -35.0) < FreeAmbience.season_gap(6, -35.0) and FreeAmbience.season_gap(1, 20.0) == 1.0, "southern seasons flipped, the tropics all year")
+	for stem: String in ["calls_uk", "calls_links", "calls_us_se", "calls_pnw", "calls_aus", "calls_us_north",
+			"calls_us_desert", "calls_hawaii", "calls_nz", "calls_med"]:
 		var calls_stream := load("res://assets/sounds/%s.ogg" % stem) as AudioStream
 		_check(calls_stream != null and calls_stream.get_length() >= 5.0 * FreeAmbience.CALL_SLOT - 0.1, "%s holds a run of whole calls" % stem)
 	_check(FreeAmbience.is_warm(Vector2(33.5, -82.0)) and not FreeAmbience.is_warm(Vector2(51.4, -0.6)) and not FreeAmbience.is_warm(nowhere), "cicadas in Georgia, not Surrey")
