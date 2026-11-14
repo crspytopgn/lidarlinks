@@ -98,6 +98,7 @@ void fragment() {
 
 static var _glass_shader: Shader
 static var _picture_shader: Shader
+static var _art_cache := {}
 
 ## Where the caller puts the status line, progress bar, extra buttons and
 ## community links.
@@ -459,9 +460,17 @@ func _fit_one(mat: ShaderMaterial) -> void:
 		mat.set_shader_parameter("blurred", _blurred)
 
 
+## A menu photo. They are plain JPEG files (.oljpg, so Godot doesn't import
+## them as lossless textures four times their size) read at runtime.
 static func _art(art: String) -> Texture2D:
-	var path := ART_DIR + art + ".jpg"
-	return load(path) as Texture2D if ResourceLoader.exists(path) else null
+	if _art_cache.has(art):
+		return _art_cache[art]
+	var bytes := FileAccess.get_file_as_bytes(ART_DIR + art + ".oljpg")
+	var img := Image.new()
+	if bytes.is_empty() or img.load_jpg_from_buffer(bytes) != OK:
+		return null
+	_art_cache[art] = ImageTexture.create_from_image(img)
+	return _art_cache[art]
 
 
 ## A dark wash from `from` fading out by `to` (UV in the screen).
