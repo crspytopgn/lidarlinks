@@ -37,6 +37,24 @@ const UNDER_MIN_RADIUS := 1.5
 const UNDER_HEIGHT := Vector2(1.1, 2.1)
 const UNDER_WIDTH := Vector2(1.8, 2.6)
 const UNDER_SHADE := 0.72
+## Native grass: golden drifts on the deep rough. The noise's feature size
+## (m), the noise level a drift starts at and the width of its soft edge,
+## how much denser than plain fescue a drift grows, its tufts' height range
+## and their colours (sRGB, picked per tuft).
+const NATIVE_SCALE := 70.0
+const NATIVE_FROM := -0.05
+const NATIVE_EDGE := 0.25
+const NATIVE_DENSITY := 3.0
+const NATIVE_HEIGHT := Vector2(0.6, 1.1)
+const NATIVE_STRAW := Color(0.64, 0.56, 0.4)
+const NATIVE_GOLD := Color(0.58, 0.51, 0.34)
+const NATIVE_RUSSET := Color(0.55, 0.44, 0.32)
+## Reeds round ponds: tufts on the bank within REED_REACH m of the water,
+## per square metre against the fescue's density, their heights and green.
+const REED_DENSITY := 2.5
+const REED_REACH := 2.5
+const REED_HEIGHT := Vector2(1.1, 1.9)
+const REED_COLOUR := Color(0.42, 0.5, 0.26)
 ## The ground normal's x and z, times this and the tuft's height, are the
 ## card's up axis x and z (see build_chunk and shaders/fescue.gdshader).
 const NORMAL_LEAN := 0.01
@@ -52,6 +70,8 @@ var _crowns := {}  ## Vector2i chunk -> PackedVector3Array of crowns centred in 
 
 static var _mesh: ArrayMesh
 static var _mat: ShaderMaterial
+static var _native_noise: FastNoiseLite
+static var _buf := PackedFloat32Array()  ## the chunk build_chunk is filling
 
 
 func _init() -> void:
@@ -137,50 +157,55 @@ static func crowns_by_chunk(field: ObstacleField) -> Dictionary:
 
 
 ## The tufts of one chunk, or null with no deep rough or understory in it:
-## fescue on its deep rough, then brush under the `crowns` (x, z, radius)
-## whose trunks stand in it. Deterministic.
+## fescue on its deep rough (in golden drifts of native grass where
+## native_at() says so), reeds round its ponds, then brush under the
+## `crowns` (x, z, radius) whose trunks stand in it. Deterministic.
 static func build_chunk(t: CourseTerrain, key: Vector2i, density: float, crowns := PackedVector3Array(), under_density := 0.0) -> MultiMesh:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = hash(key) + 77
-	var tries := roundi(CHUNK * CHUNK * density)
-	var buffer := PackedFloat32Array()
-	buffer.resize(tries * 16)
-	var n := 0
+	_buf = PackedFloat32Array()
 	var origin := Vector2(key) * CHUNK
+	# Fescue, thicker and taller in the native drifts (the extra tries only
+	# land where native_at is high).
+	var tries := roundi(CHUNK * CHUNK * density * NATIVE_DENSITY)
 	for i in tries:
 		var x := origin.x + rng.randf() * CHUNK
 		var z := origin.y + rng.randf() * CHUNK
 		var yaw := rng.randf() * TAU
-		var h := rng.randf_range(0.4, 0.75)
-		var w := h * rng.randf_range(1.0, 1.3)
+		var keep := rng.randf()
 		var pick := rng.randf()
+		var tone := rng.randf()
+		var grow := rng.randf()
 		if not SURFACES.has(t.surface_at(x, z)):
 			continue
+		var native := native_at(x, z)
+		if keep * NATIVE_DENSITY > 1.0 + (NATIVE_DENSITY - 1.0) * native:
+			continue
+		var h := lerpf(rng.randf_range(0.4, 0.75), lerpf(NATIVE_HEIGHT.x, NATIVE_HEIGHT.y, grow), native)
 		var c := t.ground_color_at(x, z)
-		# The ground's slope rides along in the card's up axis as a tiny
-		# lean (NORMAL_LEAN of the height, under a centimetre), so the
-		# shader can light the tuft as the ground under it is lit.
-		var up := t.normal_at(x, z)
-		var o := n * 16
-		var cs := cos(yaw)
-		var sn := sin(yaw)
-		buffer[o] = cs * w
-		buffer[o + 1] = 0.0
-		buffer[o + 2] = sn * w
-		buffer[o + 3] = x
-		buffer[o + 4] = up.x * NORMAL_LEAN * h
-		buffer[o + 5] = h
-		buffer[o + 6] = up.z * NORMAL_LEAN * h
-		buffer[o + 7] = t.height_at(x, z) - 0.03
-		buffer[o + 8] = -sn * w
-		buffer[o + 9] = 0.0
-		buffer[o + 10] = cs * w
-		buffer[o + 11] = z
-		buffer[o + 12] = c.r
-		buffer[o + 13] = c.g
-		buffer[o + 14] = c.b
-		buffer[o + 15] = pick
-		n += 1
+		if native > 0.0:
+			c = c.lerp(native_colour(tone), native)
+		_put(t, x, z, yaw, h * lerpf(rng.randf_range(1.0, 1.3), rng.randf_range(1.6, 2.2), native), h, c, pick, -0.03)
+	# Reeds: tall tufts on the bank, the ground just short of the water.
+	for i in roundi(CHUNK * CHUNK * density * REED_DENSITY):
+		var x := origin.x + rng.randf() * CHUNK
+		var z := origin.y + rng.randf() * CHUNK
+		var yaw := rng.randf() * TAU
+		var h := rng.randf_range(REED_HEIGHT.x, REED_HEIGHT.y)
+		var pick := rng.randf()
+		var tone := rng.randf()
+		var s := t.surface_at(x, z)
+		if s == Surface.Type.WATER or s == Surface.Type.GREEN or s == Surface.Type.TEE or s == Surface.Type.FAIRWAY or s == Surface.Type.SAND:
+			continue
+		var wet := false
+		for k in 6:
+			var a := k * TAU / 6.0
+			if t.surface_at(x + cos(a) * REED_REACH, z + sin(a) * REED_REACH) == Surface.Type.WATER:
+				wet = true
+				break
+		if not wet:
+			continue
+		_put(t, x, z, yaw, h * rng.randf_range(0.7, 1.0), h, REED_COLOUR.lerp(native_colour(tone), 0.35), pick, -0.05)
 	for crown in crowns:
 		var reach := crown.z * UNDER_REACH_DEEP
 		var count := roundi(PI * reach * reach * under_density)
@@ -197,33 +222,13 @@ static func build_chunk(t: CourseTerrain, key: Vector2i, density: float, crowns 
 			var s := t.surface_at(x, z)
 			if not (s == Surface.Type.DEEP_ROUGH or (s == Surface.Type.ROUGH and d < crown.z * UNDER_REACH_ROUGH)):
 				continue
-			var c := t.ground_color_at(x, z) * UNDER_SHADE
-			var up := t.normal_at(x, z)
-			if n * 16 >= buffer.size():
-				buffer.resize(buffer.size() + 16 * 256)
-			var o := n * 16
-			var cs := cos(yaw)
-			var sn := sin(yaw)
-			buffer[o] = cs * w
-			buffer[o + 1] = 0.0
-			buffer[o + 2] = sn * w
-			buffer[o + 3] = x
-			buffer[o + 4] = up.x * NORMAL_LEAN * h
-			buffer[o + 5] = h
-			buffer[o + 6] = up.z * NORMAL_LEAN * h
-			buffer[o + 7] = t.height_at(x, z) - 0.05
-			buffer[o + 8] = -sn * w
-			buffer[o + 9] = 0.0
-			buffer[o + 10] = cs * w
-			buffer[o + 11] = z
-			buffer[o + 12] = c.r
-			buffer[o + 13] = c.g
-			buffer[o + 14] = c.b
-			buffer[o + 15] = pick
-			n += 1
+			_put(t, x, z, yaw, w, h, t.ground_color_at(x, z) * UNDER_SHADE, pick, -0.05)
+	@warning_ignore("integer_division")
+	var n := _buf.size() / 16
 	if n == 0:
 		return null
-	buffer.resize(n * 16)
+	var buffer := _buf
+	_buf = PackedFloat32Array()
 	var mm := MultiMesh.new()
 	mm.transform_format = MultiMesh.TRANSFORM_3D
 	mm.use_custom_data = true
@@ -232,6 +237,44 @@ static func build_chunk(t: CourseTerrain, key: Vector2i, density: float, crowns 
 	mm.buffer = buffer
 	mm.set_meta("buffer", buffer)
 	return mm
+
+
+## How much the deep rough at (x, z) is a drift of golden native grass, 0
+## to 1: broad patches, as a course lets its out-of-play ground grow and go
+## to seed (the warm straw against green turf that makes GSPro's and real
+## heathland courses look so good), with soft edges.
+static func native_at(x: float, z: float) -> float:
+	if _native_noise == null:
+		_native_noise = FastNoiseLite.new()
+		_native_noise.seed = 2003
+		_native_noise.frequency = 1.0 / NATIVE_SCALE
+		_native_noise.fractal_octaves = 3
+	return smoothstep(NATIVE_FROM, NATIVE_FROM + NATIVE_EDGE, _native_noise.get_noise_2d(x, z))
+
+
+## A native tuft's colour (sRGB) for `tone` 0 to 1: straw, olive gold or
+## russet, as long grass in seed is.
+static func native_colour(tone: float) -> Color:
+	if tone < 0.55:
+		return NATIVE_STRAW.lerp(NATIVE_GOLD, tone / 0.55)
+	return NATIVE_GOLD.lerp(NATIVE_RUSSET, (tone - 0.55) / 0.45)
+
+
+## Adds one tuft (yaw, width `w`, height `h`, sRGB ground colour `c`,
+## atlas pick, sunk `sink` m) at (x, z) to the chunk being built.
+static func _put(t: CourseTerrain, x: float, z: float, yaw: float, w: float, h: float, c: Color, pick: float, sink: float) -> void:
+	# The ground's slope rides along in the card's up axis as a tiny lean
+	# (NORMAL_LEAN of the height, under a centimetre), so the shader can
+	# light the tuft as the ground under it is lit.
+	var up := t.normal_at(x, z)
+	var cs := cos(yaw)
+	var sn := sin(yaw)
+	_buf.append_array(PackedFloat32Array([
+		cs * w, 0.0, sn * w, x,
+		up.x * NORMAL_LEAN * h, h, up.z * NORMAL_LEAN * h, t.height_at(x, z) + sink,
+		-sn * w, 0.0, cs * w, z,
+		c.r, c.g, c.b, pick,
+	]))
 
 
 static func material() -> ShaderMaterial:
