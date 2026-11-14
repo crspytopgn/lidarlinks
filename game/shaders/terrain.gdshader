@@ -117,6 +117,19 @@ float fbm(vec2 p) {
 	return sum;
 }
 
+// FescueField.native_at: how much (x, z) is a golden native drift, 0 to 1.
+// Change both together.
+const float NATIVE_SCALE = 70.0;
+const float NATIVE_FROM = 0.5;
+const float NATIVE_EDGE = 0.12;
+float native_at(vec2 p) {
+	vec2 q = p / NATIVE_SCALE;
+	float v = 0.65 * value_noise(q) + 0.35 * value_noise(q * 2.03 + vec2(17.1, 9.7));
+	return smoothstep(NATIVE_FROM, NATIVE_FROM + NATIVE_EDGE, v);
+}
+uniform vec3 native_ground = vec3(0.24, 0.19, 0.09); // linear straw
+uniform float native_ground_strength = 0.65;
+
 void vertex() {
 	world_pos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
 	weights = UV2;
@@ -126,9 +139,10 @@ void vertex() {
 
 // The raster's colour and weights at ground point p, blended over a
 // fraction of a texel with a ragged, natural line.
-void splat_add(ivec2 t, ivec2 size, float a, inout vec3 col, inout vec2 w, inout float mown, inout float stripe_m, inout float cut, inout float green) {
+void splat_add(ivec2 t, ivec2 size, float a, inout vec3 col, inout vec2 w, inout float mown, inout float stripe_m, inout float cut, inout float green, inout float deep) {
 	int s = clamp(int(texelFetch(splat_tex, clamp(t, ivec2(0), size - 1), 0).r * 255.0 + 0.5), 0, 10);
 	green += s == 3 ? a : 0.0; // Surface.Type.GREEN
+	deep += s == 5 ? a : 0.0; // Surface.Type.DEEP_ROUGH
 	col += surface_colors[s] * a;
 	w += surface_weights[s] * a;
 	mown += surface_mown[s] * a;
@@ -151,7 +165,7 @@ float green_edge(vec2 p) {
 	return (mix(mix(a, b, f.x), mix(c, d, f.x), f.y) * 2.0 - 1.0) * green_edge_range;
 }
 
-void splat_at(vec2 p, out vec3 col, out vec2 w, out float mown, out float stripe_m, out float cut, out float green) {
+void splat_at(vec2 p, out vec3 col, out vec2 w, out float mown, out float stripe_m, out float cut, out float green, out float deep) {
 	ivec2 size = splat_codes.x > 0 ? splat_codes : textureSize(splat_tex, 0);
 	// A slow wobble, so an edge wanders a little like a mower's line
 	// rather than following the raster.
@@ -167,6 +181,7 @@ void splat_at(vec2 p, out vec3 col, out vec2 w, out float mown, out float stripe
 	stripe_m = 0.0;
 	cut = 0.0;
 	green = 0.0;
+	deep = 0.0;
 	// Away from edges the nearest texel is the answer. On an edge, a
 	// quadratic B-spline over the 3x3 texels round it: its contours are
 	// smooth curves, where a bilinear blend of a 0.5 m raster draws stair
@@ -179,14 +194,14 @@ void splat_at(vec2 p, out vec3 col, out vec2 w, out float mown, out float stripe
 		|| int(texelFetch(splat_tex, clamp(c + ivec2(0, d.y), ivec2(0), size - 1), 0).r * 255.0 + 0.5) != s0
 		|| int(texelFetch(splat_tex, clamp(c + d, ivec2(0), size - 1), 0).r * 255.0 + 0.5) != s0;
 	if (!edge) {
-		splat_add(c, size, 1.0, col, w, mown, stripe_m, cut, green);
+		splat_add(c, size, 1.0, col, w, mown, stripe_m, cut, green, deep);
 		return;
 	}
 	vec3 bx = vec3(0.5 * (0.5 - t.x) * (0.5 - t.x), 0.75 - t.x * t.x, 0.5 * (0.5 + t.x) * (0.5 + t.x));
 	vec3 by = vec3(0.5 * (0.5 - t.y) * (0.5 - t.y), 0.75 - t.y * t.y, 0.5 * (0.5 + t.y) * (0.5 + t.y));
 	for (int j = 0; j < 3; j++) {
 		for (int i = 0; i < 3; i++) {
-			splat_add(c + ivec2(i - 1, j - 1), size, bx[i] * by[j], col, w, mown, stripe_m, cut, green);
+			splat_add(c + ivec2(i - 1, j - 1), size, bx[i] * by[j], col, w, mown, stripe_m, cut, green, deep);
 		}
 	}
 	// The stripe width is the nearest texel's, never a blend: the stripe
@@ -233,6 +248,7 @@ void fragment() {
 	float w_rough_in = weights.x;
 	float cut = 0.0;
 	float lip_w = wy;
+	float deep_rough = 0.0; // the deep rough's share here (splat map only)
 	vec2 sq = (p - splat_origin) / splat_size;
 	bool on_splat = has_splat && all(greaterThanEqual(sq, vec2(0.0))) && all(lessThanEqual(sq, vec2(1.0)));
 	if (on_splat) {
@@ -244,7 +260,7 @@ void fragment() {
 		float mown;
 		float stripe_m;
 		float green;
-		splat_at(p, crisp, w, mown, stripe_m, cut, green);
+		splat_at(p, crisp, w, mown, stripe_m, cut, green, deep_rough);
 		// The green's edge is a mown line too: crisp, like the bunker's,
 		// so the darker collar reads as a clean ring round it.
 		// (From the baked distance to the outline where there is one.)
@@ -293,6 +309,10 @@ void fragment() {
 	// Close-cut turf is one even sward: a green has none of the fairway's
 	// wide light and dark patches (they read as blotches), a tee few.
 	vec3 col = base * (1.0 + patches * variation * 2.0 * (1.0 - 0.75 * cut));
+	// Golden native drifts on the deep rough (FescueField.native_at, same
+	// noise): the ground under the drift's long grass goes straw too, so a
+	// drift reads as one field of seed heads rather than tufts on lawn.
+	col = mix(col, native_ground * (0.85 + 0.3 * patches), deep_rough * native_at(p) * native_ground_strength);
 	// Close-cut turf: dense, fine blades, a touch cooler, and smoother.
 	col *= mix(vec3(1.0), vec3(0.97, 1.0, 0.98), cut);
 	ROUGHNESS = mix(0.95, 0.72, cut);

@@ -38,12 +38,13 @@ const UNDER_HEIGHT := Vector2(1.1, 2.1)
 const UNDER_WIDTH := Vector2(1.8, 2.6)
 const UNDER_SHADE := 0.72
 ## Native grass: golden drifts on the deep rough. The noise's feature size
-## (m), the noise level a drift starts at and the width of its soft edge,
+## (m), the noise level a drift starts at (shaders/terrain.gdshader
+## native_at mirrors these) and the width of its soft edge,
 ## how much denser than plain fescue a drift grows, its tufts' height range
 ## and their colours (sRGB, picked per tuft).
 const NATIVE_SCALE := 70.0
-const NATIVE_FROM := -0.05
-const NATIVE_EDGE := 0.25
+const NATIVE_FROM := 0.5
+const NATIVE_EDGE := 0.12
 const NATIVE_DENSITY := 3.0
 const NATIVE_HEIGHT := Vector2(0.6, 1.1)
 const NATIVE_STRAW := Color(0.64, 0.56, 0.4)
@@ -70,7 +71,6 @@ var _crowns := {}  ## Vector2i chunk -> PackedVector3Array of crowns centred in 
 
 static var _mesh: ArrayMesh
 static var _mat: ShaderMaterial
-static var _native_noise: FastNoiseLite
 static var _buf := PackedFloat32Array()  ## the chunk build_chunk is filling
 
 
@@ -244,12 +244,31 @@ static func build_chunk(t: CourseTerrain, key: Vector2i, density: float, crowns 
 ## to seed (the warm straw against green turf that makes GSPro's and real
 ## heathland courses look so good), with soft edges.
 static func native_at(x: float, z: float) -> float:
-	if _native_noise == null:
-		_native_noise = FastNoiseLite.new()
-		_native_noise.seed = 2003
-		_native_noise.frequency = 1.0 / NATIVE_SCALE
-		_native_noise.fractal_octaves = 3
-	return smoothstep(NATIVE_FROM, NATIVE_FROM + NATIVE_EDGE, _native_noise.get_noise_2d(x, z))
+	var q := Vector2(x, z) / NATIVE_SCALE
+	var v := 0.65 * _value_noise(q) + 0.35 * _value_noise(q * 2.03 + Vector2(17.1, 9.7))
+	return smoothstep(NATIVE_FROM, NATIVE_FROM + NATIVE_EDGE, v)
+
+
+## shaders/terrain.gdshader's hash and value_noise, so the ground under a
+## drift and the drift's tufts agree.
+static func _hash(p: Vector2) -> float:
+	p = Vector2(p.x * 123.34, p.y * 456.21)
+	p = p - p.floor()
+	var d := p.dot(p + Vector2(45.32, 45.32))
+	p += Vector2(d, d)
+	var r := p.x * p.y
+	return r - floorf(r)
+
+
+static func _value_noise(p: Vector2) -> float:
+	var i := p.floor()
+	var f := p - i
+	var u := f * f * (Vector2(3, 3) - 2.0 * f)
+	var a := _hash(i)
+	var b := _hash(i + Vector2(1, 0))
+	var c := _hash(i + Vector2(0, 1))
+	var d := _hash(i + Vector2(1, 1))
+	return lerpf(lerpf(a, b, u.x), lerpf(c, d, u.x), u.y)
 
 
 ## A native tuft's colour (sRGB) for `tone` 0 to 1: straw, olive gold or
