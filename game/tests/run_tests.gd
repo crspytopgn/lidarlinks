@@ -572,6 +572,11 @@ func _test_shot_shape() -> void:
 	shape.nudge_height(1)
 	_check(shape.to_setup("7i").ball_position == 3, "higher moves the ball one step forward")
 	_check(shape.describe() == "Fade 2, high 1", "shape text")
+	# The spin ball: low on the ball is more backspin (higher), right fades.
+	var c := Vector2(50, 50)
+	_check(SpinBall.steps_at(c, c, 40.0) == Vector2i.ZERO, "the middle of the spin ball is square")
+	_check(SpinBall.steps_at(c + Vector2(0, 40), c, 40.0) == Vector2i(0, ShotShape.MAX_HEIGHT), "low on the ball is the most backspin")
+	_check(SpinBall.steps_at(c + Vector2(-400, 0), c, 40.0) == Vector2i(-ShotShape.MAX_CURVE, 0), "far left on the ball is the biggest draw")
 	# A shaped shot's setup survives a result code.
 	var rec := ShotRecord.new()
 	rec.face = 32
