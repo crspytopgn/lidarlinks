@@ -150,7 +150,23 @@ static func person(mat: StandardMaterial3D, look: PlayerLook, regions: Texture2D
 	m.set_shader_parameter("top", real_albedo(look.top))
 	m.set_shader_parameter("bottom", real_albedo(look.bottom))
 	m.set_shader_parameter("shoes", real_albedo(look.shoes))
+	_set_fabrics(m, regions != null)
 	return m
+
+
+## The photographed weave of the shirt, trousers and shoes
+## (FreeAssets.fabric_normal), tiled over a person's dyed garments, so a
+## close-up shows knit, twill and leather grain instead of a smooth smear.
+static func _set_fabrics(m: ShaderMaterial, has_regions: bool) -> void:
+	var shirt := FreeAssets.fabric_normal("shirt")
+	var trousers := FreeAssets.fabric_normal("trousers")
+	var shoes := FreeAssets.fabric_normal("shoes")
+	var on := has_regions and shirt != null and trousers != null and shoes != null
+	m.set_shader_parameter("use_fabric", on)
+	if on:
+		m.set_shader_parameter("fabric_shirt", shirt)
+		m.set_shader_parameter("fabric_trousers", trousers)
+		m.set_shader_parameter("fabric_shoes", shoes)
 
 
 static func cloth(mat: StandardMaterial3D) -> StandardMaterial3D:

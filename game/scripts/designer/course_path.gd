@@ -6,7 +6,7 @@ extends RefCounted
 ## their deck is solid for the ball.
 
 const MIN_WIDTH := 1.0
-const MAX_WIDTH := 8.0
+const MAX_WIDTH := 12.0  ## a two-lane road with its kerbs
 const STEP := 1.0  ## metres between ribbon samples
 const DECK_RAISE := 0.4  ## bridge ends above the ground
 const DECK_CLEARANCE := 0.6  ## bridge deck above the ground or water under it

@@ -20,7 +20,7 @@ and the next import picks them up.
 | Step | Source | Licence |
 | --- | --- | --- |
 | Name to place | [Nominatim](https://nominatim.openstreetmap.org) (OpenStreetMap's search) | ODbL; [usage policy](https://operations.osmfoundation.org/policies/nominatim/): at most one search a second, which a person typing never reaches |
-| Holes, fairways, greens, tees, bunkers, water, woods, trees, cart paths | [Overpass API](https://wiki.openstreetmap.org/wiki/Overpass_API) (public servers, tried in turn) | OpenStreetMap, ODbL 1.0 |
+| Holes, fairways, greens, tees, bunkers, water, woods, trees, cart paths, roads | [Overpass API](https://wiki.openstreetmap.org/wiki/Overpass_API) (public servers, tried in turn) | OpenStreetMap, ODbL 1.0 |
 | Ground heights | National lidar where a service covers the course (below), else the [Terrain Tiles on AWS Open Data](https://registry.opendata.aws/terrain-tiles/) (Mapzen "Terrarium" PNG tiles, zoom 15) | Per source, below |
 | Trees | Lidar canopy height (surface model minus ground) where offered, else the aerial photo, plus OpenStreetMap's trees and woods | As the source |
 | Aerial photo | National orthophoto tile services (below) | Per source, below |
@@ -269,6 +269,7 @@ OpenStreetMap from the club's own published scorecard.
   redrawn. Moving one or its points makes it the designer's own (no
   longer marked).
 - **Cart paths:** `golf=cartpath` and `golf_cart=designated` ways.
+- **Roads:** `highway=*` ways crossing the course (not tunnels or unpaved tracks; footpaths only when paved) as tarmac paths, at their `width`, `lanes` x 3.2 m or a typical width for the road class. The ball bounces and runs on them as on the Links path surface, and they give free relief.
 - **Ground:** the lidar or tile heights at every 2 m sample, bilinear. Heights below
   -12 m (the sea floor) are raised to -12 m, then the grid is stored round
   the midpoint of its range; the sea-level height of that midpoint is kept

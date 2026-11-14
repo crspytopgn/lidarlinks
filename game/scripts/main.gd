@@ -28,7 +28,7 @@ const METER_LINGER_S := 1.5
 ## A putt missed from inside this many metres (8 ft) gets a slump.
 const SLUMP_PUTT := 2.5
 const COMPUTER_HOLE_PAUSE := 4.0  ## between holes when nobody is at the keyboard
-const HINT_AIM := "Left/Right or right-click: aim (Shift: fine)    Up/Down: club    Q/E/W/S: shape    %s    D: drop    Tab: scorecard%s    Esc: menu"
+const HINT_AIM := "Left/Right or right-click: aim (Shift: fine)    Up/Down: club    Q/E/W/S or click the ball: spin    %s    D: drop    Tab: scorecard%s    Esc: menu"
 ## The object viewer needs the game folder, which browsers can't read.
 const HINT_OBJECTS := "    O: objects"
 const HINT_AIM_METER := "3-click swing: Space or click    K: use the mouse swing"
@@ -363,6 +363,8 @@ func _ready() -> void:
 	GlassTheme.install()
 	_build_world()
 	_apply_graphics()
+	if FrameBenchmark.wanted():
+		add_child(FrameBenchmark.new(self))
 	sounds = AssetProviders.create_sound_bank()
 	add_child(sounds)
 	var assets := AssetProviders.golfer_assets
@@ -380,6 +382,7 @@ func _ready() -> void:
 	hud.mouse_swing.stroke_cancelled.connect(_on_mouse_stroke_cancelled)
 	hud.touch_pad.club_pressed.connect(_change_club)
 	hud.touch_pad.menu_pressed.connect(_escape)
+	hud.spin.spin_picked.connect(_pick_spin)
 	if online == null:
 		online = next_online
 	next_online = null
@@ -677,8 +680,8 @@ func start_hole(index: int) -> void:
 	var dressed := practice == null and not round_setup.facility
 	if broadcast and dressed and graphics != null and graphics.quality > GraphicsSettings.Quality.LOW:
 		# The course's furniture: tee sign, ball washer, bench, bunker rakes.
-		hole_root.add_child(CourseProps.build(hole, _first_leg(), CourseProps.RAKES_BY_QUALITY[graphics.quality]))
-	if broadcast and dressed:
+		hole_root.add_child(CourseProps.build(hole, _first_leg(), CourseProps.RAKES_BY_QUALITY[graphics.quality], course.course_name))
+	if broadcast and dressed and course.tournament:
 		# Tournament dressing: gallery ropes, and a crowd at the tee and green.
 		var crowd := Gallery.CROWD_BY_QUALITY[graphics.quality] if graphics != null else 0
 		# Grandstands go up where tournaments build them: at par 3s and the last green.
@@ -688,6 +691,8 @@ func start_hole(index: int) -> void:
 	else:
 		gallery = null
 	camera.blockers = gallery.camera_blockers if gallery != null else null
+	# The stands are solid: the ball bounces off them.
+	hole.terrain.hole_obstacles = gallery.camera_blockers if gallery != null else null
 	marks = CourseMarks.new()
 	hole_root.add_child(marks)
 	if on_range:
@@ -1007,6 +1012,9 @@ func _process(delta: float) -> void:
 	hud.swing_button.visible = hud.touch_pad.visible and state == State.AIM and not _replaying \
 		and not hud.hand_over.visible and not paused and shooter < opponents.size() and opponents[shooter] == null and not _is_remote()
 	hud.swing_button.armed = Time.get_ticks_msec() >= _aim_ready_ms and not camera.flying()
+	hud.spin.visible = state == State.AIM and not _replaying and not paused and not hud.hand_over.visible \
+		and shooter < opponents.size() and opponents[shooter] == null and not _is_remote() \
+		and not clubs[club_index].is_putter
 	if state != State.AIM and hud.overlay != null:
 		hud.overlay.end_hole_card()  # the hole card must not sit over the shot
 	if online != null:
@@ -1362,7 +1370,7 @@ func _caption_voice(event_name: String) -> void:
 
 ## Settings > Captions: the crowd after a broadcast shot.
 func _caption_crowd(crowd: int) -> void:
-	if not graphics.captions:
+	if not graphics.captions or not _crowd_on():
 		return
 	var sound: StringName = {Commentary.Crowd.POLITE: &"applause", Commentary.Crowd.CHEER: &"crowd_cheer",
 		Commentary.Crowd.ROAR: &"crowd_roar", Commentary.Crowd.GROAN: &"crowd_groan",
@@ -1370,6 +1378,12 @@ func _caption_crowd(crowd: int) -> void:
 	var text := SoundCaptions.crowd(sound)
 	if not text.is_empty():
 		hud.show_sound_caption(text)
+
+
+## Whether there is a crowd to clap: only on a course dressed for a
+## tournament, not at an everyday local club.
+func _crowd_on() -> bool:
+	return course != null and course.tournament
 
 
 ## Whether the player may start a swing now.
@@ -1701,6 +1715,16 @@ func _shape_key(keycode: Key) -> void:
 	if changed:
 		sounds.play(&"club")
 		_update_hud()
+
+
+## A spot picked on the spin ball (SpinBall): the same shape as Q/E/W/S.
+func _pick_spin(curve: int, height: int) -> void:
+	if state != State.AIM or opponents[shooter] != null or clubs[club_index].is_putter:
+		return
+	shape.curve = clampi(curve, -ShotShape.MAX_CURVE, ShotShape.MAX_CURVE)
+	shape.height = clampi(height, -ShotShape.MAX_HEIGHT, ShotShape.MAX_HEIGHT)
+	sounds.play(&"club")
+	_update_hud()
 
 
 ## A driver from the tee that stays in play counts for the longest drive.
@@ -2222,6 +2246,10 @@ func _complete_flight() -> void:
 				golfer.play(&"upset")
 		_:
 			ball_at = shot.rest
+			# On, under or against a grandstand: free relief, dropped clear.
+			var relief := gallery.stand_relief(ball_at, hole.pin) if gallery != null and is_instance_valid(gallery) else Vector3.INF
+			if relief != Vector3.INF:
+				ball_at = relief
 			var s := hole.terrain.surface_at(ball_at.x, ball_at.z)
 			# Broadcast has its shot card for this; a second line under it
 			# said the same again.
@@ -2233,6 +2261,8 @@ func _complete_flight() -> void:
 				msg = "%s    Carry %d yd    Total %d yd" % [Surface.name_of(s), roundi(shot.carry_m * YARDS_PER_METRE), roundi(shot.total_m * YARDS_PER_METRE)]
 			if golfer and clubs[club_index].is_putter and _shot_from_pin < SLUMP_PUTT:
 				golfer.play(&"slump")
+			if relief != Vector3.INF:
+				msg = "Grandstand: free relief, dropped clear of it."
 	if _gimme_now():
 		_concede_putt()
 		return
@@ -2511,7 +2541,8 @@ func _hole_out(picked_up: bool) -> void:
 	p.picked_up = picked_up
 	var title := "Picked up" if picked_up else Scorecard.score_name(strokes, hole.par)
 	if not picked_up and strokes < hole.par:
-		sounds.play(&"applause")
+		if _crowd_on():
+			sounds.play(&"applause")
 		_caption_crowd(Commentary.Crowd.POLITE)
 		if golfer:
 			# A fist pump for a birdie; both arms up for an eagle or better.
@@ -3857,6 +3888,7 @@ func _update_hud() -> void:
 		text += "\n" + status
 	hud.info.text = text
 	hud.show_wind(wind, aim_deg)
+	hud.spin.show_shape(shape)
 	# The aim marker sits on the ground where the shot is aimed.
 	var aim_at := aim_marker.position
 	var rise := hole.terrain.height_at(aim_at.x, aim_at.z) - 0.05 - ball_at.y if aim_marker.visible else 0.0
@@ -4027,7 +4059,7 @@ func _report_shot() -> void:
 	_caption_crowd(line[1])
 	if gallery != null and is_instance_valid(gallery):
 		gallery.react(line[1])
-	match line[1]:
+	match line[1] if _crowd_on() else -1:
 		Commentary.Crowd.POLITE:
 			sounds.play(&"applause")
 		Commentary.Crowd.CHEER:
@@ -4040,7 +4072,7 @@ func _report_shot() -> void:
 			sounds.play(&"crowd_ooh")
 		_:
 			# Spectators round the tee applaud a tee shot that finds the short grass.
-			if strokes == 1 and not putting and (surface == Surface.Type.FAIRWAY or surface == Surface.Type.GREEN):
+			if _crowd_on() and strokes == 1 and not putting and (surface == Surface.Type.FAIRWAY or surface == Surface.Type.GREEN):
 				sounds.play(&"crowd_tee")
 	if not str(line[0]).is_empty():
 		hud.show_message(line[0], 4.0)

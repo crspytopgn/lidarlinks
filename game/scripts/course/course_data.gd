@@ -3,6 +3,9 @@ extends RefCounted
 ## A loaded course.
 
 var course_name := ""
+## Dressed for a tournament (grandstands, gallery ropes and crowds, when
+## the broadcast look is on), or false for an everyday local club.
+var tournament := true
 var holes: Array[HoleData] = []
 ## Trees, plants, 3D objects and spectators read from the course file (null
 ## for courses that have none; their holes may list objects instead).

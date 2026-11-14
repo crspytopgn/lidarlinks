@@ -28,7 +28,8 @@ const vec3 TRANSMIT_TINT = vec3(0.7, 1.1, 0.6);
 
 global uniform vec2 wind_vector;
 global uniform float foliage_sway;
-global uniform float tree_impostor_distance;
+#include "res://shaders/tree_lod.gdshaderinc"
+varying vec2 lod_span; // this instance's LOD span (tree_lod.gdshaderinc)
 
 varying float frame;
 varying vec3 tint;
@@ -47,7 +48,12 @@ void vertex() {
 	float azimuth = atan(to_camera.x, to_camera.z);
 	frame = mod(round(azimuth / (6.2831853 / frames)), frames);
 	atlas_row = instanced ? floor(INSTANCE_CUSTOM.r * rows) : row;
-	if (instanced && INSTANCE_CUSTOM.g < 0.5 && distance(root, MAIN_CAM_INV_VIEW_MATRIX[3].xyz) < tree_impostor_distance) {
+	// The impostor fades in where the full (or lite) tree fades out.
+	lod_span = vec2(1.0, 0.0);
+	if (instanced && INSTANCE_CUSTOM.g < 0.5) {
+		lod_span.x = tree_lod_ramp(distance(root, MAIN_CAM_INV_VIEW_MATRIX[3].xyz), tree_impostor_distance);
+	}
+	if (tree_lod_hidden(lod_span)) {
 		VERTEX = vec3(0.0);
 	}
 	if (foliage_sway > 0.0) {
@@ -76,6 +82,9 @@ void vertex() {
 
 void fragment() {
 	vec2 uv = vec2((frame + clamp(UV.x, 0.002, 0.998)) / frames, (atlas_row + clamp(UV.y, 0.002, 0.998)) / rows);
+	if (tree_lod_discard(lod_span, FRAGCOORD.xy)) {
+		discard;
+	}
 	vec4 c = texture(atlas, uv);
 	// discard rather than ALPHA, which makes the Compatibility glow flare
 	// (see tree_leaves.gdshader).
