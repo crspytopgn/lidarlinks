@@ -34,6 +34,12 @@ static func has_grounds() -> bool:
 	return true
 
 
+## The normal map of a garment's weave for the realistic golfers:
+## `garment` is "shirt", "trousers" or "shoes" (ambientCG scans), or null.
+static func fabric_normal(garment: String) -> Texture2D:
+	return _load("fabric_%s_normal.jpg" % garment)
+
+
 ## A tree texture: "bark_albedo.jpg", "bark_normal.jpg" (Poly Haven) or
 ## "leaf_albedo.png", "leaf_opacity.png" (ambientCG), or null.
 static func tree_texture(file: String) -> Texture2D:
