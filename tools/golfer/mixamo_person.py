@@ -77,6 +77,38 @@ def dump(fbx, godot, out):
     return d
 
 
+def compact(info, blob):
+    """The pack's blob without the arrays nothing refers to any more (the
+    person's old meshes): every [offset, length] span in the info, copied
+    once each, in order."""
+    spans = set()
+
+    def walk(o, fix=None):
+        if isinstance(o, dict):
+            for v in o.values():
+                walk(v, fix)
+        elif isinstance(o, list):
+            if (len(o) == 2 and all(type(x) is int for x in o) and o[1] > 0 and o[0] % 4 == 0
+                    and o[0] + o[1] <= len(blob)):
+                if fix is None:
+                    spans.add((o[0], o[1]))
+                else:
+                    o[0] = fix[(o[0], o[1])]
+            else:
+                for x in o:
+                    walk(x, fix)
+    walk(info)
+    out = bytearray()
+    moved = {}
+    for off, n in sorted(spans):
+        while len(out) % 4:
+            out.append(0)
+        moved[(off, n)] = len(out)
+        out.extend(blob[off:off + n])
+    walk(info, moved)
+    return out
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--fbx", required=True)
@@ -133,7 +165,7 @@ def main():
     who["joints"] = offsets
     who["height"] = height
     who["binds"] = binds
-    save(args.pack, info, blob)
+    save(args.pack, info, compact(info, blob))
     # Each rig bone's turn from Mixamo's rest (in the rig's frame) to the
     # rig's rest pose, for mixamo_direct.py.
     turns = {b: np.asarray(r).tolist() for b, r in out["rot"].items()}
