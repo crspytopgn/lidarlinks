@@ -118,6 +118,7 @@ var _hole_tees: Array[PackedVector2Array] = []  ## and its tees
 ## Fairway this close to a pin is that hole's approach, striped with it.
 const APPROACH_REACH := 45.0
 var _owner := PackedByteArray()
+var _path_surface: LinksGround.Params
 var _owner_cols := 0
 
 
@@ -238,6 +239,18 @@ func free_drop_at(x: float, z: float) -> bool:
 		if not p.bridge and p.distance_to(Vector2(x, z)) <= p.width * 0.5:
 			return true
 	return false
+
+
+## On a cart path or road the ball bounces and runs as on tarmac (the Links
+## path class), not as on the fairway its raster code plays as otherwise.
+func links_surface_at(x: float, z: float) -> LinksGround.Params:
+	var p := Vector2(x, z)
+	for path in course.paths:
+		if not path.bridge and path.bounds().has_point(p) and path.distance_to(p) <= path.width * 0.5:
+			if _path_surface == null:
+				_path_surface = LinksGround.surface_for_class(LinksGround.PATH)
+			return _path_surface
+	return null
 
 
 ## The colour the ground is drawn with at the nearest grid vertex.

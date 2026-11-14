@@ -342,6 +342,7 @@ static func overpass_query(s: float, w: float, n: float, e: float) -> String:
 		"node[\"natural\"=\"tree\"]%s;" % bb +
 		"way[\"waterway\"~\"^(river|stream|canal|ditch|drain)$\"]%s;" % bb +
 		"way[\"building\"]%s;" % bb +
+		"way[\"highway\"~\"^(motorway|trunk|primary|secondary|tertiary|unclassified|residential|living_street|service|track|footway|path|cycleway|bridleway)$\"]%s;" % bb +
 		");out geom;")
 
 
