@@ -564,3 +564,19 @@ defaults).
 - Occlusion from the terrain itself (hollows, cliffs).
 - Texture compression tiers per device (Basis/ASTC), and the HD pack in
   the browser.
+
+### Measuring on a real machine
+
+`OpenLinks2003 res://scenes/main.tscn -- --benchmark` (or
+`godot --path game res://scenes/main.tscn -- --benchmark`) opens the
+placeholder round, holds the first tee and draws it with one feature
+changed at a time (`FrameBenchmark.CASES`), v-sync off. GPU and CPU
+milliseconds per frame for each case go to the log and
+`user://benchmark.txt`, then the game quits.
+
+On Forward+ (desktop) the free textures, imported as lossy WebP for a
+small download, are block-compressed (BC1/BC3) as they load
+(`FreeAssets.gpu_compress`), since WebP is stored uncompressed in video
+memory. At the Ultra tee view this cut Forward+ video memory from 1027 to
+881 MB. Compatibility keeps them as they are, so its CI budget still
+stands for the browser.

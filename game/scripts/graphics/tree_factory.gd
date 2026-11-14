@@ -62,6 +62,10 @@ const IMPOSTOR_DISTANCE: Array[float] = [0.0, 35.0, 70.0, 120.0]
 ## turns into its impostor: the full scans cost 10 to 35 thousand triangles
 ## each, too many for every tree up to 120 m at Ultra.
 const LITE_DISTANCE := 35.0
+## Each switch between a tree's levels (full, lite, impostor) is a
+## dithered cross-fade over this fraction of its distance either side; keep
+## it equal to LOD_FADE in tree_lod.gdshaderinc.
+const LOD_FADE := 0.08
 ## Cell size (m) of the scanned trees' full meshes in batches().
 ## Added to a tree's species in batches() for a tree that is only ever an
 ## impostor: the back rows of a wood, hidden behind the front rows, which
@@ -267,8 +271,9 @@ static func batch_node(batch: Dictionary, shadows := true) -> GeometryInstance3D
 	node.multimesh = batch.multimesh
 	node.position = batch.position
 	if batch.full:
-		# A little past the farthest tree, measured from the cell's middle.
-		node.visibility_range_end = impostor_distance() + float(batch.reach) + 5.0
+		# A little past the farthest tree, measured from the cell's middle,
+		# and past the band where it fades into its impostor (LOD_FADE).
+		node.visibility_range_end = impostor_distance() * (1.0 + LOD_FADE) + float(batch.reach) + 5.0
 	if not shadows or not batch.full or batch.get("lite", false):
 		node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	return node

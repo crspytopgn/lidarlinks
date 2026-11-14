@@ -145,8 +145,41 @@ static func mean_color(tex: Texture2D) -> Color:
 	return Color(sum.r / n, sum.g / n, sum.b / n)
 
 
+static var _vram := {}  ## path -> the block-compressed copy (desktop)
+
+
 static func _load(file: String) -> Texture2D:
 	var path := DIR + file
 	if not ResourceLoader.exists(path):
 		return null
-	return load(path) as Texture2D
+	if _vram.has(path):
+		return _vram[path]
+	var tex := load(path) as Texture2D
+	if tex != null and gpu_compress():
+		tex = compressed(tex)
+		_vram[path] = tex
+	return tex
+
+
+## Whether textures are block-compressed for the graphics card as they
+## load. They're imported as lossy WebP, small to download but stored
+## uncompressed in video memory (a 2K map with mipmaps is 22 MB). On the
+## desktop, BC (S3TC) compression packs them 4 to 8 times smaller and is
+## sampled faster, with no visible change at game distances. The browser
+## keeps the WebP, as phones there can't read S3TC, and so does
+## Compatibility, whose video memory budget in CI stands for the browser.
+static func gpu_compress() -> bool:
+	return GraphicsSettings.is_forward_plus() and not OS.has_feature("web") \
+		and RenderingServer.has_os_feature("s3tc")
+
+
+## A block-compressed copy of `tex` (BC1, or BC3 with alpha), with mipmaps.
+static func compressed(tex: Texture2D) -> Texture2D:
+	var img := tex.get_image()
+	if img == null or img.is_empty() or img.is_compressed():
+		return tex
+	if not img.has_mipmaps():
+		img.generate_mipmaps()
+	if img.compress(Image.COMPRESS_S3TC) != OK:
+		return tex
+	return ImageTexture.create_from_image(img)
