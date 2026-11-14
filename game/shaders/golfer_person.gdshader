@@ -22,6 +22,10 @@ uniform vec3 region_means = vec3(0.2);
 uniform float recolour = 1.0;
 uniform float roughness : hint_range(0.0, 1.0) = 0.85;
 uniform float rim = 0.12;
+// Soft terminator: light wraps a little past the edge where a surface
+// turns from the sun, as it does through cloth fibres and skin, so the lit
+// and shaded halves of a shirt meet in a soft band, not a ruled line.
+uniform float wrap : hint_range(0.0, 1.0) = 0.3;
 
 vec3 dye(vec3 tex, vec3 target, float mean) {
 	float lum = dot(tex, vec3(0.2126, 0.7152, 0.0722));
@@ -48,6 +52,8 @@ void vertex() {
 	occ_normal = mat3(MODEL_MATRIX) * NORMAL;
 }
 
+varying float rim_amount;
+
 void fragment() {
 	vec3 tex = texture(texture_albedo, UV).rgb;
 	vec3 m = texture(regions, UV).rgb * recolour;
@@ -73,6 +79,28 @@ void fragment() {
 	SPECULAR = 0.3;
 	// The fibres' rim light shows on dark cloth, but on light cloth only
 	// adds a glowing halo round the outline (GolferSurface.cloth_rim).
-	RIM = rim * (1.0 - 0.75 * clamp(dot(c, vec3(0.2126, 0.7152, 0.0722)) / 0.8, 0.0, 1.0));
-	RIM_TINT = 0.7;
+	rim_amount = rim * (1.0 - 0.75 * clamp(dot(c, vec3(0.2126, 0.7152, 0.0722)) / 0.8, 0.0, 1.0));
+}
+
+void light() {
+	float ndl = dot(NORMAL, LIGHT);
+	float d = clamp((ndl + wrap) / (1.0 + wrap), 0.0, 1.0);
+	DIFFUSE_LIGHT += d * ATTENUATION * LIGHT_COLOR / PI;
+	// A faint cloth sheen (GGX, Schlick Fresnel at SPECULAR 0.3).
+	float nl = max(ndl, 0.0);
+	float nv = max(dot(NORMAL, VIEW), 1e-3);
+	vec3 h = normalize(VIEW + LIGHT);
+	float nh = max(dot(NORMAL, h), 0.0);
+	float a = ROUGHNESS * ROUGHNESS;
+	float a2 = a * a;
+	float den = nh * nh * (a2 - 1.0) + 1.0;
+	float dist = a2 / (PI * den * den);
+	float k = a * 0.5;
+	float vis = 0.25 / ((nl * (1.0 - k) + k) * (nv * (1.0 - k) + k));
+	float f0 = 0.024;
+	float fres = f0 + (1.0 - f0) * pow(1.0 - max(dot(LIGHT, h), 0.0), 5.0);
+	SPECULAR_LIGHT += nl * dist * vis * fres * ATTENUATION * LIGHT_COLOR;
+	// The fibres' rim, as Godot's RIM with RIM_TINT 0.7.
+	float r = pow(1.0 - nv, 4.0) * rim_amount * clamp(ndl + 0.3, 0.0, 1.0);
+	DIFFUSE_LIGHT += r * mix(vec3(1.0), ALBEDO, 0.7) / max(ALBEDO, vec3(0.05)) * ATTENUATION * LIGHT_COLOR / PI;
 }
