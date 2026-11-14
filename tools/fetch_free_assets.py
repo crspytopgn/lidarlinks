@@ -230,10 +230,10 @@ def fetch_fabrics(out_dir):
                 member = next(m for m in z.namelist() if m.endswith("_NormalGL.jpg"))
                 with open(path, "wb") as f:
                     f.write(z.read(member))
-        # 512 pixels: the weave is only seen in close-ups, and the browser's
+        # 256 pixels: the weave is only seen in close-ups, and the browser's
         # video memory is tight.
         with open(path + ".import", "w") as f:
-            f.write(TEXTURE_IMPORT.format(mode=1, limit=512, mipmaps="true"))
+            f.write(TEXTURE_IMPORT.format(mode=1, limit=256, mipmaps="true"))
         credits.append(f"- **{name}**: [{asset_id}]({AMBIENTCG}/view?id={asset_id}) by ambientCG, CC0")
     return credits
 
@@ -295,7 +295,7 @@ def make_fescue(out_dir):
     # Lossy is fine (the gaps are filled with the blades' colours), at 512:
     # a tuft is 256 px, more than it ever covers on screen.
     with open(out + ".import", "w") as f:
-        f.write(TEXTURE_IMPORT.format(mode=1, limit=512, mipmaps="true"))
+        f.write(TEXTURE_IMPORT.format(mode=1, limit=256, mipmaps="true"))
 
 
 def fetch_twigs(out_dir):
