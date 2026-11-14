@@ -34,6 +34,8 @@ uniform float lut_mix = 0.0; // 0 = off
 // Contrast after the grade, on luminance round a mid grey so colours keep
 // their hue (PostProcess: Photoreal in Compatibility). 1 = none.
 uniform float finish_contrast = 1.0;
+// The least of the drawn colour the grade keeps in the darks.
+const float DARK_FLOOR = 0.5;
 
 float hash(vec2 p) {
 	vec3 p3 = fract(vec3(p.xyx) * 0.1031);
@@ -78,6 +80,7 @@ void fragment() {
 		}
 	}
 	vec3 c = texture(screen_tex, uv).rgb;
+	vec3 c0 = c;
 	if (sharpen > 0.0) {
 		vec2 px = SCREEN_PIXEL_SIZE;
 		vec3 n = texture(screen_tex, uv + vec2(0.0, -px.y)).rgb;
@@ -112,6 +115,11 @@ void fragment() {
 		float lt = clamp((l - 0.48) * finish_contrast + 0.48, 0.0, 1.0);
 		c *= lt / l;
 	}
+	// The grade deepens the darks, but no further than DARK_FLOOR of what
+	// the renderer drew: the S-curve, the learned grade and the finish
+	// contrast together took the shaded side of the golfer's trousers from
+	// about 0.1 to pure black, a hard black streak down the leg.
+	c = max(c, c0 * DARK_FLOOR);
 	vec2 d = uv - 0.5;
 	c *= 1.0 - vignette * smoothstep(0.15, 0.75, dot(d, d) * 2.0);
 	c += (hash(FRAGCOORD.xy + fract(TIME) * 913.0) - 0.5) * grain;
