@@ -50,7 +50,7 @@ var _holes: Array[Dictionary] = []  ## {"ref", "par", "line"}
 var _trees: Array[Dictionary] = []  ## {"p", "leaf", "height"}
 var _rows: Array[Dictionary] = []  ## tree rows: {"line", "leaf"}
 var _streams: Array[Dictionary] = []  ## {"line", "width"}
-var _paths: Array[PackedVector2Array] = []
+var _paths: Array[Dictionary] = []  ## {"line", "width", "bridge"}: cart paths and roads
 var _pins: PackedVector2Array = []
 var _buildings: Array[Dictionary] = []  ## {"ring", "box"}, grown 2 m
 
@@ -251,7 +251,13 @@ func _read(elements: Array) -> void:
 					"course": str(t.get("golf:course:name", "")), "line": line})
 		elif golf == "cartpath" or str(t.get("golf_cart", "")) == "designated":
 			if not closed:
-				_paths.append(_local_line(_geo_points(e)))
+				_paths.append({"line": _local_line(_geo_points(e)), "width": maxf(_metres(t.get("width", "")), 2.5), "bridge": _is_bridge(t)})
+		elif t.has("highway") and type == "way" and not closed:
+			# Roads and paved paths through the course: tarmac, played as a
+			# cart path (hard bounce and roll, free relief).
+			var w := road_width(t)
+			if w > 0.0:
+				_paths.append({"line": _local_line(_geo_points(e)), "width": w, "bridge": _is_bridge(t)})
 		elif GOLF_SURFACES.has(golf) and closed:
 			_add_poly(e, {"surface": GOLF_SURFACES[golf]})
 		elif natural == "water" or t.has("water") or str(t.get("landuse", "")) in ["reservoir", "basin"]:
@@ -475,7 +481,18 @@ func _add_shapes(c: DesignedCourse) -> void:
 		if d.has("wood"):
 			continue
 		var surface: int = d["surface"]
-		var pts := simplify_ring(d["ring"], TOLERANCE.get(surface, 0.5))
+		var pts: PackedVector2Array
+		if surface == Surface.Type.SAND:
+			# Mappers trace a bunker click by click, half a metre off either
+			# way, and the spline through those clicks drew a wavy edge.
+			pts = smooth_ring(d["ring"])
+		elif surface == Surface.Type.TEE:
+			# A tee is mostly mapped as four corners, and the spline through
+			# four points bulged it into a lumpy oval: points every metre
+			# keep its sides straight, with mown, rounded corners.
+			pts = smooth_ring(d["ring"], 1.0, 1)
+		else:
+			pts = simplify_ring(d["ring"], TOLERANCE.get(surface, 0.5))
 		if pts.size() >= 3:
 			c.shapes.append(CourseShape.new(surface, pts))
 	for s in _streams:
@@ -552,19 +569,56 @@ func _tees_for(line: PackedVector2Array, pin: Vector2, tees: Array[PackedVector2
 
 
 func _add_paths(c: DesignedCourse) -> void:
-	for line in _paths:
-		var pts := simplify_line(line, 0.5)
+	for d in _paths:
+		var pts := simplify_line(d["line"], 0.5)
 		var inside := PackedVector2Array()
 		for p in pts:
 			if area.has_point(p):
 				inside.append(p)
 			elif inside.size() >= 2:
-				c.paths.append(CoursePath.new(inside, 2.5))
+				c.paths.append(CoursePath.new(inside, d["width"], d["bridge"]))
 				inside = PackedVector2Array()
 			else:
 				inside.clear()
 		if inside.size() >= 2:
-			c.paths.append(CoursePath.new(inside, 2.5))
+			c.paths.append(CoursePath.new(inside, d["width"], d["bridge"]))
+
+
+## The width in metres of a mapped road or path that is drawn as tarmac,
+## or 0 to leave it out: tunnels, and unpaved tracks and footpaths (most
+## footpaths across a course are just mown grass). From its width or lanes
+## tags where mapped, else a typical width for its class (UK and US road
+## standards: about 3.2 m a lane).
+static func road_width(t: Dictionary) -> float:
+	if str(t.get("tunnel", "no")) != "no" or str(t.get("covered", "no")) == "yes" or str(t.get("area", "no")) == "yes":
+		return 0.0
+	var hw := str(t.get("highway", ""))
+	var surface := str(t.get("surface", ""))
+	var paved := surface in ["asphalt", "paved", "concrete", "concrete:plates", "concrete:lanes", "paving_stones", "sett", "chipseal", "metal"]
+	var typical := {"motorway": 11.0, "trunk": 9.0, "primary": 7.5, "secondary": 7.0, "tertiary": 6.5,
+		"unclassified": 5.5, "residential": 5.5, "living_street": 5.0, "service": 3.5}
+	var base := 0.0
+	if typical.has(hw):
+		# A road mapped as unpaved is a farm or maintenance track.
+		if surface in ["unpaved", "gravel", "dirt", "grass", "ground", "earth", "compacted", "fine_gravel", "sand", "mud"]:
+			return 0.0
+		base = typical[hw]
+		if hw == "service" and str(t.get("service", "")) == "parking_aisle":
+			base = 5.0
+	elif hw == "track":
+		base = 3.0 if paved else 0.0
+	elif hw in ["footway", "path", "cycleway", "bridleway"]:
+		base = 1.8 if paved else 0.0
+	if base <= 0.0:
+		return 0.0
+	var w := _metres(t.get("width", ""))
+	if w <= 0.0 and str(t.get("lanes", "")).is_valid_int():
+		w = int(str(t.get("lanes", ""))) * 3.2
+	return clampf(w if w > 0.0 else base, CoursePath.MIN_WIDTH, CoursePath.MAX_WIDTH)
+
+
+static func _is_bridge(t: Dictionary) -> bool:
+	return str(t.get("bridge", "no")) not in ["no", ""]
 
 
 func _add_trees(c: DesignedCourse) -> void:
@@ -868,6 +922,60 @@ static func simplify_line(line: PackedVector2Array, tolerance: float) -> PackedV
 		if keep[i] == 1:
 			out.append(line[i])
 	return out
+
+
+## A closed ring as a clean, flowing outline, the way a bunker's edge is
+## really cut: control points every `spacing` metres along it (fewer on a
+## big one, at most MAX_POINTS), smoothed with `passes` rounds of Taubin
+## smoothing (which, unlike plain averaging, doesn't shrink it), then
+## scaled back to the ring's own area. Even spacing also keeps the designer's
+## spline from overshooting where a short side meets a long one. Wiggles
+## shorter than a few spacings go; the bays and fingers of the shape stay.
+static func smooth_ring(ring: PackedVector2Array, spacing := 1.5, passes := 4) -> PackedVector2Array:
+	var n := ring.size()
+	if n >= 2 and ring[0].is_equal_approx(ring[n - 1]):
+		ring = ring.slice(0, n - 1)
+		n -= 1
+	if n < 3:
+		return ring
+	var perimeter := 0.0
+	for i in n:
+		perimeter += ring[i].distance_to(ring[(i + 1) % n])
+	var count := clampi(roundi(perimeter / spacing), 8, MAX_POINTS)
+	var step := perimeter / count
+	# Even resample along the ring.
+	var pts := PackedVector2Array()
+	var seg := 0
+	var seg_start := 0.0
+	for k in count:
+		var want := k * step
+		while seg < n - 1 and seg_start + ring[seg].distance_to(ring[(seg + 1) % n]) < want:
+			seg_start += ring[seg].distance_to(ring[(seg + 1) % n])
+			seg += 1
+		var a := ring[seg]
+		var b := ring[(seg + 1) % n]
+		var seg_len := a.distance_to(b)
+		pts.append(a.lerp(b, clampf((want - seg_start) / seg_len, 0.0, 1.0) if seg_len > 0.0 else 0.0))
+	var at := absf(_ring_area(ring))
+	for _pass in passes:
+		for f: float in [0.5, -0.53]:
+			var next := PackedVector2Array()
+			next.resize(count)
+			for i in count:
+				var mid := (pts[(i - 1 + count) % count] + pts[(i + 1) % count]) * 0.5
+				next[i] = pts[i] + (mid - pts[i]) * f
+			pts = next
+	# Back to the mapped area, about the centre.
+	var now := absf(_ring_area(pts))
+	if now > 0.0 and at > 0.0:
+		var centre := Vector2.ZERO
+		for p in pts:
+			centre += p
+		centre /= count
+		var k := sqrt(at / now)
+		for i in count:
+			pts[i] = centre + (pts[i] - centre) * k
+	return pts
 
 
 ## A closed ring simplified to the tolerance, loosened until it has at most

@@ -20,6 +20,7 @@ var mouse_swing: MouseSwingControl
 var touch_pad: TouchPad
 var swing_button: TouchPad.SwingButton
 var wind: WindIndicator
+var spin: SpinBall
 var scorecard: ScorecardPanel
 var hand_over: HandOverPanel
 ## With the player's own interface art: one chrome bar per line of `info`.
@@ -69,6 +70,11 @@ func _ready() -> void:
 	wind = WindIndicator.new()
 	_place(wind, Control.PRESET_TOP_RIGHT, Rect2(-106, 12, 90, 112))
 	add_child(wind)
+
+	spin = SpinBall.new()
+	spin.visible = false
+	add_child(spin)
+	_place_spin()
 
 	meter = SwingMeter.new()
 	_place(meter, Control.PRESET_BOTTOM_RIGHT, Rect2(-240, -240, 220, 220))
@@ -130,6 +136,7 @@ func use_art(hud_art: HudArt) -> void:
 	add_child(windows)
 	move_child(windows, 0)
 	_show_classic()
+	_place_spin()
 
 
 ## The club, its reach, the aim point's height above the ball and the lie,
@@ -189,7 +196,23 @@ func set_broadcast(on: bool, tour_on := false) -> void:
 	fold_hints(hints_folded)
 	meter.modern = on
 	wind.modern = on
+	spin.modern = on
 	_place_meter()
+	_place_spin()
+
+
+## The spin ball: top right, under the wind (or the original's windows);
+## in Tour, left of the hole map.
+func _place_spin() -> void:
+	var w := 140.0
+	var h := 112.0
+	if tour != null and tour.visible:
+		var map_w := HoleMap.WIDTH * TourGraphics.MAP_SCALE
+		_place(spin, Control.PRESET_TOP_RIGHT, Rect2(-map_w - 24.0 - w - 12.0, 58, w, h))
+	elif windows != null and windows.visible:
+		_place(spin, Control.PRESET_TOP_RIGHT, Rect2(-w - 32.0, 24.0 + ShotWindows.wanted_size().y, w, h))
+	else:
+		_place(spin, Control.PRESET_TOP_RIGHT, Rect2(-w - 6.0, (50.0 if broadcast else 12.0) + 124.0, w, h))
 
 
 ## The meter: the modern bar bottom right, above the ticker (or above

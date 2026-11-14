@@ -31,12 +31,20 @@ const FIRST_CUT_COLOR := Color(0.25, 0.43, 0.16)
 const COLLAR_WIDTH := 1.2
 const COLLAR_CODE := 10
 const COLLAR_COLOR := Color(0.255, 0.465, 0.165)
-## The green's edge is drawn from the exact distance to its outline, baked
-## at GREEN_EDGE_RES metres into the rows below the surface codes in the
-## splat texture (GREEN_EDGE_RANGE metres each side, 0..255, 128 on the
-## line): the 0.5 m codes alone draw it as a row of scallops.
+## The edges of greens, bunkers and tees are drawn from the exact distance
+## to their outlines, baked at GREEN_EDGE_RES metres into the rows below
+## the surface codes in the splat texture (GREEN_EDGE_RANGE metres each
+## side, 0..255, 128 on the line), one block per surface side by side in
+## EDGE_BLOCKS order: the 0.5 m codes alone draw them as a row of
+## scallops, and real ones are cut in one clean line.
 const GREEN_EDGE_RES := 1.0
 const GREEN_EDGE_RANGE := 2.0
+## Greens and tees share a block (they are never within a few metres of
+## each other, and the shader tells them apart by the surface codes round
+## the line), so the splat stays as small as it was with greens alone: two
+## blocks of 1 m texels fit under the 0.5 m codes. Bunkers, which hug
+## greens and tees, get their own.
+const EDGE_BLOCKS := [[Surface.Type.GREEN, Surface.Type.TEE], [Surface.Type.SAND]]
 const BUNKER_DEPTH := 0.7
 const BUNKER_LIP := 2.5  ## metres inside the outline the bunker reaches full depth
 const BUNKER_LIP_OUT := 1.5  ## metres outside it where the bank starts down
@@ -102,7 +110,8 @@ var _vw := PackedVector2Array()  ## rough and sand weights per grid vertex
 var _vp := PackedFloat32Array()  ## surface colour per grid vertex before tint and stripes (RGB)
 var _material: ShaderMaterial
 var _splat: ImageTexture
-var _edge_img: Image  ## green edge distance (R8), GREEN_EDGE_RES per texel
+var _edge_img: Image  ## edge distances (R8), GREEN_EDGE_RES per texel, a block per EDGE_BLOCKS
+var _edge_w := 0  ## texels across one block of _edge_img
 var _water_levels := {}  ## CourseShape -> water line
 var _meshes := {}  ## Vector2i chunk -> ArrayMesh
 var _tint := PackedByteArray()  ## softened photo colour per grid vertex (RGB8); empty without a photo
@@ -114,6 +123,7 @@ var _hole_tees: Array[PackedVector2Array] = []  ## and its tees
 ## Fairway this close to a pin is that hole's approach, striped with it.
 const APPROACH_REACH := 45.0
 var _owner := PackedByteArray()
+var _path_surface: LinksGround.Params
 var _owner_cols := 0
 
 
@@ -127,7 +137,8 @@ func rebuild() -> void:
 	_sw = int(ceil(course.area.size.x / RES))
 	_sh = int(ceil(course.area.size.y / RES))
 	_img = Image.create_empty(_sw, _sh, false, Image.FORMAT_R8)
-	_edge_img = Image.create_empty(maxi(1, ceili(course.area.size.x / GREEN_EDGE_RES)), maxi(1, ceili(course.area.size.y / GREEN_EDGE_RES)), false, Image.FORMAT_R8)
+	_edge_w = maxi(1, ceili(course.area.size.x / GREEN_EDGE_RES))
+	_edge_img = Image.create_empty(_edge_w * EDGE_BLOCKS.size(), maxi(1, ceili(course.area.size.y / GREEN_EDGE_RES)), false, Image.FORMAT_R8)
 	_h = course.heights.duplicate()
 	_g = _h.duplicate()
 	_vc = PackedColorArray()
@@ -233,6 +244,18 @@ func free_drop_at(x: float, z: float) -> bool:
 		if not p.bridge and p.distance_to(Vector2(x, z)) <= p.width * 0.5:
 			return true
 	return false
+
+
+## On a cart path or road the ball bounces and runs as on tarmac (the Links
+## path class), not as on the fairway its raster code plays as otherwise.
+func links_surface_at(x: float, z: float) -> LinksGround.Params:
+	var p := Vector2(x, z)
+	for path in course.paths:
+		if not path.bridge and path.bounds().has_point(p) and path.distance_to(p) <= path.width * 0.5:
+			if _path_surface == null:
+				_path_surface = LinksGround.surface_for_class(LinksGround.PATH)
+			return _path_surface
+	return null
 
 
 ## The colour the ground is drawn with at the nearest grid vertex.
@@ -356,7 +379,7 @@ func material() -> ShaderMaterial:
 func _update_splat() -> void:
 	if _material == null or _img == null:
 		return
-	# The surface codes, and below them the green edge distances, coarser
+	# The surface codes, and below them the edge distances, coarser
 	# where the codes leave too few rows (the codes keep their detail).
 	var codes := _img
 	if _sw > SPLAT_MAX or _sh > SPLAT_MAX:
@@ -364,19 +387,22 @@ func _update_splat() -> void:
 		codes = _img.duplicate() as Image
 		codes.resize(maxi(1, floori(_sw * k)), maxi(1, floori(_sh * k)), Image.INTERPOLATE_NEAREST)
 	var edges := _edge_img
+	var blocks := EDGE_BLOCKS.size()
 	var e := minf(float(SPLAT_MAX - codes.get_height()) / edges.get_height(), float(SPLAT_MAX) / edges.get_width())
 	var img := codes
+	var block_w := _edge_w
 	if e * edges.get_height() < 64.0:
 		_material.set_shader_parameter("splat_codes", Vector2i.ZERO)
 	else:
 		if e < 1.0:
+			block_w = maxi(1, floori(_edge_w * e))
 			edges = _edge_img.duplicate() as Image
-			edges.resize(maxi(1, floori(edges.get_width() * e)), maxi(1, floori(edges.get_height() * e)), Image.INTERPOLATE_BILINEAR)
+			edges.resize(block_w * blocks, maxi(1, floori(edges.get_height() * e)), Image.INTERPOLATE_BILINEAR)
 		img = Image.create_empty(maxi(codes.get_width(), edges.get_width()), codes.get_height() + edges.get_height(), false, Image.FORMAT_R8)
 		img.blit_rect(codes, Rect2i(Vector2i.ZERO, codes.get_size()), Vector2i.ZERO)
 		img.blit_rect(edges, Rect2i(Vector2i.ZERO, edges.get_size()), Vector2i(0, codes.get_height()))
 		_material.set_shader_parameter("splat_codes", codes.get_size())
-		_material.set_shader_parameter("green_edge_size", edges.get_size())
+		_material.set_shader_parameter("green_edge_size", Vector2i(block_w, edges.get_height()))
 		_material.set_shader_parameter("green_edge_texel", GREEN_EDGE_RES * Vector2(_edge_img.get_size()) / Vector2(edges.get_size()))
 		_material.set_shader_parameter("green_edge_range", GREEN_EDGE_RANGE)
 	if _splat == null or _splat.get_size() != Vector2(img.get_size()):
@@ -793,7 +819,8 @@ func _raster(px: Rect2i) -> void:
 	_first_cut(px)
 	_collar(px)
 	_img.set_data(_sw, _sh, false, Image.FORMAT_R8, _surf)
-	_green_edges(world)
+	for k in EDGE_BLOCKS.size():
+		_bake_edges(world, EDGE_BLOCKS[k], k * _edge_w)
 
 
 ## Marks the rough within FIRST_CUT_WIDTH of each fairway (not of cart
@@ -830,22 +857,23 @@ func _collar(px: Rect2i) -> void:
 						_surf[row + c] = COLLAR_CODE
 
 
-## Bakes the signed distance to each green's outline (positive inside) into
-## `_edge_img` over the world rect `world`.
-func _green_edges(world: Rect2) -> void:
+## Bakes the signed distance to the outline of each shape of the
+## `surfaces` (positive inside) into the block of `_edge_img` that starts
+## `x0` texels across, over the world rect `world`.
+func _bake_edges(world: Rect2, surfaces: Array, x0: int) -> void:
 	if _edge_img == null:
 		return
 	var o := course.area.position
-	var size := _edge_img.get_size()
+	var size := Vector2i(_edge_w, _edge_img.get_height())
 	var lo := Vector2i(clampi(floori((world.position.x - o.x) / GREEN_EDGE_RES), 0, size.x), clampi(floori((world.position.y - o.y) / GREEN_EDGE_RES), 0, size.y))
 	var hi := Vector2i(clampi(ceili((world.end.x - o.x) / GREEN_EDGE_RES), 0, size.x), clampi(ceili((world.end.y - o.y) / GREEN_EDGE_RES), 0, size.y))
 	var region := Rect2i(lo, hi - lo)
 	if region.size.x <= 0 or region.size.y <= 0:
 		return
-	_edge_img.fill_rect(region, Color(0.0, 0.0, 0.0))
+	_edge_img.fill_rect(Rect2i(region.position + Vector2i(x0, 0), region.size), Color(0.0, 0.0, 0.0))
 	var scale := 127.5 / GREEN_EDGE_RANGE
 	for s in course.shapes:
-		if s.surface != Surface.Type.GREEN or not s.is_valid():
+		if not s.surface in surfaces or not s.is_valid():
 			continue
 		var grown := s.bounds().grow(GREEN_EDGE_RANGE + GREEN_EDGE_RES)
 		if not grown.intersects(world):
@@ -879,9 +907,9 @@ func _green_edges(world: Rect2) -> void:
 				var p := o + (Vector2(i, j) + Vector2(0.5, 0.5)) * GREEN_EDGE_RES
 				var inside := Geometry2D.is_point_in_polygon(p, poly) if d < GREEN_EDGE_RANGE else s.contains(p)
 				var v := clampf(127.5 + (d if inside else -d) * scale, 0.0, 255.0)
-				# Greens can touch: keep the largest (the most inside).
-				if v / 255.0 > _edge_img.get_pixel(i, j).r:
-					_edge_img.set_pixel(i, j, Color(v / 255.0, 0.0, 0.0))
+				# Shapes can touch: keep the largest (the most inside).
+				if v / 255.0 > _edge_img.get_pixel(x0 + i, j).r:
+					_edge_img.set_pixel(x0 + i, j, Color(v / 255.0, 0.0, 0.0))
 
 
 static func _code(surface: int) -> Color:

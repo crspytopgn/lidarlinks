@@ -43,6 +43,10 @@ var object_info := {}
 ## Data credits a course made from real-world data must keep (the
 ## OpenStreetMap licence asks for its attribution), shown in the designer.
 var credits := ""
+## Dressed for a tournament (grandstands, ropes, crowds) rather than an
+## everyday local club, which a course made in the designer or from a
+## real club is unless its maker says so. Saved as "venue".
+var tournament := false
 ## Where a real course came from: {"kind": "openstreetmap", "lat", "lon",
 ## "base_height"} (see docs/real-courses.md). Empty for hand-made courses.
 var source := {}
@@ -200,6 +204,7 @@ func to_course_data() -> CourseData:
 	var terrain := DesignedTerrain.new(self)
 	var data := CourseData.new()
 	data.course_name = course_name
+	data.tournament = tournament
 	if source.has("lat") and source.has("lon"):
 		data.location = Vector2(float(source.lat), float(source.lon))
 	for n in holes.size():
@@ -300,6 +305,7 @@ func to_dict(with_heights := true) -> Dictionary:
 		"paths": path_list,
 		"object_info": object_info.duplicate(true),
 		"credits": credits,
+		"venue": "tournament" if tournament else "club",
 		"source": source.duplicate(true),
 	}
 
@@ -319,6 +325,7 @@ static func from_dict(d: Dictionary) -> DesignedCourse:
 	c.course_name = str(d.get("name", "Untitled"))
 	c.author = str(d.get("author", ""))
 	c.credits = str(d.get("credits", ""))
+	c.tournament = str(d.get("venue", "club")) == "tournament"
 	if d.get("source", {}) is Dictionary:
 		c.source = d.get("source", {})
 	c.area = Rect2(float(a[0]), float(a[1]), float(a[2]), float(a[3]))

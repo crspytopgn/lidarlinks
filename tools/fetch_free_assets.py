@@ -209,6 +209,35 @@ def fetch_ambient_ground(out_dir, slot):
     return None
 
 
+# Photoscanned cloth for the realistic golfers' close-ups (ambientCG, CC0):
+# the normal map of each garment's weave, tiled over the painted body
+# texture by golfer_person.gdshader. {out name: asset}.
+FABRICS = {
+    "fabric_shirt_normal.jpg": "Fabric070",  # sportswear knit, as a polo's pique
+    "fabric_trousers_normal.jpg": "Fabric077",  # twill
+    "fabric_shoes_normal.jpg": "Leather025",  # smooth white leather grain
+}
+
+
+def fetch_fabrics(out_dir):
+    credits = []
+    for name, asset_id in FABRICS.items():
+        path = os.path.join(out_dir, name)
+        if not os.path.exists(path):
+            print(f"  fabric: {asset_id} 1K-JPG")
+            data = get(f"{AMBIENTCG}/get?file={asset_id}_1K-JPG.zip")
+            with zipfile.ZipFile(io.BytesIO(data)) as z:
+                member = next(m for m in z.namelist() if m.endswith("_NormalGL.jpg"))
+                with open(path, "wb") as f:
+                    f.write(z.read(member))
+        # 256 pixels: the weave is only seen in close-ups, and the browser's
+        # video memory is tight.
+        with open(path + ".import", "w") as f:
+            f.write(TEXTURE_IMPORT.format(mode=1, limit=256, mipmaps="true"))
+        credits.append(f"- **{name}**: [{asset_id}]({AMBIENTCG}/view?id={asset_id}) by ambientCG, CC0")
+    return credits
+
+
 def fetch_leaves(out_dir):
     for asset_id in LEAF_SETS:
         try:
@@ -266,7 +295,7 @@ def make_fescue(out_dir):
     # Lossy is fine (the gaps are filled with the blades' colours), at 512:
     # a tuft is 256 px, more than it ever covers on screen.
     with open(out + ".import", "w") as f:
-        f.write(TEXTURE_IMPORT.format(mode=1, limit=512, mipmaps="true"))
+        f.write(TEXTURE_IMPORT.format(mode=1, limit=256, mipmaps="true"))
 
 
 def fetch_twigs(out_dir):
@@ -350,6 +379,11 @@ def main():
     except Exception as e:  # noqa: BLE001 - the procedural trees stay
         print(f"WARNING: couldn't fetch the scanned trees: {e}")
         failed.append("scan trees")
+    try:
+        credits += fetch_fabrics(args.out)
+    except Exception as e:  # noqa: BLE001 - the golfers' cloth stays plain
+        print(f"WARNING: couldn't fetch the fabrics: {e}")
+        failed.append("fabrics")
     with open(os.path.join(args.out, "CREDITS.md"), "w") as f:
         f.write("# Free assets\n\nDownloaded by tools/fetch_free_assets.py from Poly Haven and ambientCG (CC0).\n\n")
         f.write("\n".join(credits) + "\n")

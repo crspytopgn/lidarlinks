@@ -23,7 +23,7 @@ product lead builds it.
 
 1. [x] **Shot shaping**: draw, fade, high and low shots from Links 2003's shot
    setup (ball position, club face, stance). The launch already reads the
-   setup bytes but nothing set them. Done: Q/E and W/S in the round
+   setup bytes but nothing set them. Done: Q/E and W/S in the round, or click/tap the spin ball under the wind (SpinBall)
    ([game-shell.md](docs/game-shell.md#playing)); the setup screen's own
    limits are still to read from the game.
 2. [x] **Touch and controller swings**: a swipe swing on phones and tablets
@@ -45,8 +45,10 @@ product lead builds it.
 6. [x] **Launch monitor input** (desktop): take real swings from home
    simulators through the open GSPro-style connect API, the golf version of
    a sim-racing wheel. Done: Settings > Launch monitor
-   ([game-shell.md](docs/game-shell.md#launch-monitors)). Still to do: try
-   it with a real launch monitor app.
+   ([game-shell.md](docs/game-shell.md#launch-monitors)); per-brand setup
+   and a simulated test client in
+   [launch-monitors.md](docs/launch-monitors.md). Still to do: try it with
+   a real launch monitor app.
 7. [x] **Career**: a season of events against the computer golfers, with a
    money list and the handicap and stats already kept. Done: main menu >
    Career ([game-shell.md](docs/game-shell.md#career)): three tours, cuts,

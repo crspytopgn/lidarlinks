@@ -114,7 +114,7 @@ static func fill(c: DesignedCourse, seed_value := 1, photo: Image = null, detail
 					if (green == null or not Geometry2D.is_point_in_polygon(mid, green.outline())) and not _on_path(c, mid):
 						found.append(ring)
 			for ring in found:
-				_add(c, added, CourseShape.new(Surface.Type.SAND, ring), true)
+				_add(c, added, CourseShape.new(Surface.Type.SAND, RealCourseBuilder.smooth_ring(ring)), true)
 			mapped_sand = not found.is_empty()
 		# Greenside bunkers: one either side, sometimes one behind.
 		if not mapped_sand:

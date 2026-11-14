@@ -572,6 +572,11 @@ func _test_shot_shape() -> void:
 	shape.nudge_height(1)
 	_check(shape.to_setup("7i").ball_position == 3, "higher moves the ball one step forward")
 	_check(shape.describe() == "Fade 2, high 1", "shape text")
+	# The spin ball: low on the ball is more backspin (higher), right fades.
+	var c := Vector2(50, 50)
+	_check(SpinBall.steps_at(c, c, 40.0) == Vector2i.ZERO, "the middle of the spin ball is square")
+	_check(SpinBall.steps_at(c + Vector2(0, 40), c, 40.0) == Vector2i(0, ShotShape.MAX_HEIGHT), "low on the ball is the most backspin")
+	_check(SpinBall.steps_at(c + Vector2(-400, 0), c, 40.0) == Vector2i(-ShotShape.MAX_CURVE, 0), "far left on the ball is the biggest draw")
 	# A shaped shot's setup survives a result code.
 	var rec := ShotRecord.new()
 	rec.face = 32
@@ -1858,6 +1863,11 @@ func _test_hd_pack() -> void:
 func _test_graphics_settings() -> void:
 	_check(SettingsPanel.scroll_height(1100.0, 120.0, 720.0) == 584.0, "settings: the rows scroll in a 720p window")
 	_check(SettingsPanel.scroll_height(400.0, 120.0, 720.0) == 400.0, "settings: no scrolling when they fit")
+	# Built-in graphics' pixel budget: a 1080p window fits High's, a Retina
+	# 3200x1800 window draws 1080p's worth of pixels and is upscaled.
+	_check(GraphicsSettings.budget_scale(1920.0 * 1080.0, GraphicsSettings.IGPU_PIXEL_BUDGET[2]) == 1.0, "pixel budget: 1080p fits High")
+	var retina := GraphicsSettings.budget_scale(3200.0 * 1800.0, GraphicsSettings.IGPU_PIXEL_BUDGET[2])
+	_check(retina > 0.55 and retina < 0.65 and absf(3200.0 * 1800.0 * retina * retina - 2.1e6) < 1.0e3, "pixel budget: Retina window scaled to High's pixels (%.3f)" % retina)
 	# Heat shimmer: a level camera has the horizon mid-screen, one tipped
 	# down sees it higher up, and the top edge is half the lens away.
 	_check(is_equal_approx(PostProcess.horizon_screen_y(0.0, 0.7), 0.5), "shimmer: level camera, horizon mid-screen")
@@ -2290,6 +2300,15 @@ func _test_gallery() -> void:
 	_check(sun_shadows != null and sun_shadows.multimesh.instance_count == g.card_count(), "every crowd card casts a sun shadow")
 	var person_shadows := g.get_node_or_null("ContactShadowsSun") as MultiMeshInstance3D
 	_check(g.crowd_count() == 0 or (person_shadows != null and person_shadows.multimesh.instance_count == g.crowd_count()), "every 3D spectator casts a sun shadow")
+	if not spot.is_empty():
+		# A ball come to rest in the stand gets free relief, clear of it and
+		# no nearer the hole; the stand is solid to the ball.
+		var in_stand: Vector3 = spot[0] - (spot[1] as Vector3) * 2.0
+		var drop := g.stand_relief(in_stand, hole.pin)
+		_check(drop != Vector3.INF and g.stand_relief(drop, hole.pin) == Vector3.INF, "a ball in the grandstand is dropped clear of it")
+		_check(drop == Vector3.INF or Vector2(drop.x - hole.pin.x, drop.z - hole.pin.z).length() >= Vector2(in_stand.x - hole.pin.x, in_stand.z - hole.pin.z).length() - 1e-3, "and no nearer the hole")
+		var through := g.camera_blockers.segment_hit(in_stand + Vector3(0, 3, 0) + (spot[1] as Vector3) * 8.0, in_stand + Vector3(0, 3, 0))
+		_check(not through.is_empty(), "the grandstand is solid")
 	var tee_stand := Gallery.tee_stand_spot(hole, hole.pin)
 	if not tee_stand.is_empty():
 		var tee_front: Vector3 = tee_stand[0]
@@ -3424,8 +3443,25 @@ func _test_free_sounds() -> void:
 	_check(FreeAmbience.calls_for(Vector2(47.6, -122.3), park) == "calls_pnw", "Seattle: American robins and sparrows")
 	_check(FreeAmbience.calls_for(Vector2(-37.97, 145.03), park) == "calls_aus", "Royal Melbourne: magpies and kookaburras")
 	_check(FreeAmbience.calls_for(nowhere, park) == "" and FreeAmbience.calls_for(Vector2(35.7, 139.7), park) == "", "unknown or other places: snatches of the bed")
-	_check(FreeAmbience.has_calls(sea, "calls_links") and not FreeAmbience.has_calls(sea, ""), "shore birds only on a links with its own set")
-	for stem: String in ["calls_uk", "calls_links", "calls_us_se", "calls_pnw", "calls_aus"]:
+	_check(FreeAmbience.has_calls(sea, "calls_links") and not FreeAmbience.has_calls(sea, ""), "birds by the sea only with a set of their own")
+	_check(FreeAmbience.calls_for(Vector2(51.63, 0.02), park) == "calls_uk", "West Essex: robins, blackbirds, wood pigeons and rooks")
+	_check(FreeAmbience.calls_for(Vector2(33.70, -116.40), FreeAmbience.Setting.DESERT) == "calls_us_desert", "Bighorn: cactus wrens and quail")
+	_check(FreeAmbience.calls_for(Vector2(21.0, -156.65), sea) == "calls_hawaii", "Kapalua: mynas and zebra doves")
+	_check(FreeAmbience.calls_for(Vector2(-34.99, 173.93), sea) == "calls_nz", "Kauri Cliffs: tui and bellbirds")
+	_check(FreeAmbience.calls_for(Vector2(36.29, -5.31), park) == "calls_med", "Valderrama: blackcaps and hoopoes")
+	_check(FreeAmbience.calls_for(Vector2(43.42, -88.30), park) == "calls_us_north", "Wisconsin: American robins and blue jays")
+	_check(FreeAmbience.calls_for(Vector2(33.09, -96.88), park) == "calls_us_se", "Texas: cardinals and mockingbirds")
+	_check(FreeAmbience.place_key("Pebble_B") == "pebbleb" and FreeAmbience.known_place("Pebble Beach Golf Links")[1] == 36.57, "classic file names and full names both find the place")
+	_check(FreeAmbience.known_place("Skeleton Bay").is_empty() and FreeAmbience.known_place("").is_empty(), "made-up courses have no place")
+	var disc := CourseData.new()
+	disc.course_name = "Torrey Pines"
+	var disc_amb := FreeAmbience.create(disc)
+	_check(disc_amb.setting == sea and disc_amb.calls == "calls_pnw", "Torrey Pines: a Pacific coast course, not the desert")
+	disc_amb.free()
+	_check(FreeAmbience.season_gap(5, 51.6) < FreeAmbience.season_gap(12, 51.6), "more song in spring than in winter")
+	_check(FreeAmbience.season_gap(12, -35.0) < FreeAmbience.season_gap(6, -35.0) and FreeAmbience.season_gap(1, 20.0) == 1.0, "southern seasons flipped, the tropics all year")
+	for stem: String in ["calls_uk", "calls_links", "calls_us_se", "calls_pnw", "calls_aus", "calls_us_north",
+			"calls_us_desert", "calls_hawaii", "calls_nz", "calls_med"]:
 		var calls_stream := load("res://assets/sounds/%s.ogg" % stem) as AudioStream
 		_check(calls_stream != null and calls_stream.get_length() >= 5.0 * FreeAmbience.CALL_SLOT - 0.1, "%s holds a run of whole calls" % stem)
 	_check(FreeAmbience.is_warm(Vector2(33.5, -82.0)) and not FreeAmbience.is_warm(Vector2(51.4, -0.6)) and not FreeAmbience.is_warm(nowhere), "cicadas in Georgia, not Surrey")
