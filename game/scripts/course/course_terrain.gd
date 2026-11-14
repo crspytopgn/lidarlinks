@@ -13,6 +13,9 @@ var obstacles: ObstacleField
 ## (none at present) is used.
 var links_objects: LinksObjects
 var model_obstacles: ObstacleField
+## What is put up for the hole being played, such as tournament
+## grandstands; set by the round, null for none.
+var hole_obstacles: ObstacleField
 ## The hole being played (1 to 18), for courses that limit each hole to its
 ## own ground (in_bounds()). Set when a hole starts; 0 means none.
 var hole_number := 0
@@ -82,7 +85,7 @@ func ground_color_at(x: float, z: float) -> Color:
 ## ObstacleField.segment_hit() returns it ({} for none). Mirrors
 ## olcore::Terrain::obstacle_hit.
 func obstacle_hit(from: Vector3, to: Vector3) -> Dictionary:
-	return obstacles.segment_hit(from, to) if obstacles != null else {}
+	return _with_hole(obstacles.segment_hit(from, to) if obstacles != null else {}, from, to)
 
 
 ## Like obstacle_hit(), for the Links 2003 model: without the billboards
@@ -90,7 +93,17 @@ func obstacle_hit(from: Vector3, to: Vector3) -> Dictionary:
 func links_obstacle_hit(from: Vector3, to: Vector3) -> Dictionary:
 	if links_objects == null:
 		return obstacle_hit(from, to)
-	return model_obstacles.segment_hit(from, to) if model_obstacles != null else {}
+	return _with_hole(model_obstacles.segment_hit(from, to) if model_obstacles != null else {}, from, to)
+
+
+## `hit`, or the hole's own obstacles' hit if that comes first.
+func _with_hole(hit: Dictionary, from: Vector3, to: Vector3) -> Dictionary:
+	if hole_obstacles == null:
+		return hit
+	var other := hole_obstacles.segment_hit(from, to)
+	if other.is_empty() or (not hit.is_empty() and float(hit.fraction) <= float(other.fraction)):
+		return hit
+	return other
 
 
 ## Builds the visible ground (and water) for this terrain. Called once each

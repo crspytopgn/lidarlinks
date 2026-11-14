@@ -685,6 +685,8 @@ func start_hole(index: int) -> void:
 	else:
 		gallery = null
 	camera.blockers = gallery.camera_blockers if gallery != null else null
+	# The stands are solid: the ball bounces off them.
+	hole.terrain.hole_obstacles = gallery.camera_blockers if gallery != null else null
 	marks = CourseMarks.new()
 	hole_root.add_child(marks)
 	if on_range:
@@ -2221,6 +2223,10 @@ func _complete_flight() -> void:
 				golfer.play(&"upset")
 		_:
 			ball_at = shot.rest
+			# On, under or against a grandstand: free relief, dropped clear.
+			var relief := gallery.stand_relief(ball_at, hole.pin) if gallery != null and is_instance_valid(gallery) else Vector3.INF
+			if relief != Vector3.INF:
+				ball_at = relief
 			var s := hole.terrain.surface_at(ball_at.x, ball_at.z)
 			# Broadcast has its shot card for this; a second line under it
 			# said the same again.
@@ -2232,6 +2238,8 @@ func _complete_flight() -> void:
 				msg = "%s    Carry %d yd    Total %d yd" % [Surface.name_of(s), roundi(shot.carry_m * YARDS_PER_METRE), roundi(shot.total_m * YARDS_PER_METRE)]
 			if golfer and clubs[club_index].is_putter and _shot_from_pin < SLUMP_PUTT:
 				golfer.play(&"slump")
+			if relief != Vector3.INF:
+				msg = "Grandstand: free relief, dropped clear of it."
 	if _gimme_now():
 		_concede_putt()
 		return

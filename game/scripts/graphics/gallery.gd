@@ -778,9 +778,16 @@ static func _stand(player: AnimationPlayer) -> void:
 
 # --- Grandstand ------------------------------------------------------------
 
-## The grandstands as boxes, for the TV cameras to keep out of (the ball
-## doesn't hit them: they aren't in the course's obstacles).
+## The grandstands as solid boxes, for the TV cameras to keep out of and
+## for the ball to hit (the round hands them to the terrain as its
+## hole_obstacles).
 var camera_blockers: ObstacleField
+## Each grandstand's footprint: [front centre, facing, half width, depth].
+var _stands: Array = []
+## A ball at rest this close to a stand gets free relief.
+const STAND_RELIEF_REACH := 1.0
+## Dropped this far clear of the stand.
+const STAND_RELIEF_CLEAR := 1.5
 
 ## A temporary tournament grandstand, the kind built behind the 18th green
 ## and round par 3s: aluminium bleacher rows on a scaffold, a dark green
@@ -861,7 +868,9 @@ static func _stand_clear(hole: HoleData, front: Vector3, facing: Vector3, width 
 		for j in 3:
 			var p := front + side * ((i / 4.0 - 0.5) * width) - facing * (j / 2.0 * depth)
 			var s := hole.terrain.surface_at(p.x, p.z)
-			if s == Surface.Type.WATER or s == Surface.Type.SAND or s == Surface.Type.GREEN:
+			# Never on the ground in play: hazards, greens, tees, fairways.
+			if s == Surface.Type.WATER or s == Surface.Type.SAND or s == Surface.Type.GREEN \
+					or s == Surface.Type.TEE or s == Surface.Type.FAIRWAY or s == Surface.Type.FRINGE:
 				return false
 	var centre := front - facing * (depth * 0.5)
 	var reach := Vector2(width * 0.5, depth * 0.5).length() + 3.0
@@ -869,6 +878,46 @@ static func _stand_clear(hole: HoleData, front: Vector3, facing: Vector3, width 
 		if Vector2(o.position.x - centre.x, o.position.z - centre.z).length() < reach:
 			return false
 	return true
+
+
+## Free relief from a grandstand (a temporary immovable obstruction): where
+## a ball at rest on, under or against one is dropped, clear of it on the
+## side nearest the ball and no nearer the hole where that can be, or
+## Vector3.INF when the ball is clear of every stand.
+func stand_relief(ball: Vector3, pin: Vector3) -> Vector3:
+	for st: Array in _stands:
+		var front: Vector3 = st[0]
+		var facing: Vector3 = st[1]
+		var half: float = st[2]
+		var depth: float = st[3]
+		var side := Vector3.UP.cross(facing)
+		var rel := Vector3(ball.x - front.x, 0.0, ball.z - front.z)
+		var u := rel.dot(side)  # across
+		var v := -rel.dot(facing)  # back from the front, 0..depth
+		var reach := STAND_RELIEF_REACH
+		if absf(u) > half + reach or v < -reach or v > depth + reach:
+			continue
+		var out := [
+			front + side * u + facing * STAND_RELIEF_CLEAR,
+			front + side * u - facing * (depth + STAND_RELIEF_CLEAR),
+			front + side * (half + STAND_RELIEF_CLEAR) - facing * clampf(v, 0.0, depth),
+			front - side * (half + STAND_RELIEF_CLEAR) - facing * clampf(v, 0.0, depth),
+		]
+		var to_pin := Vector2(ball.x - pin.x, ball.z - pin.z).length()
+		var best := Vector3.INF
+		var best_d := INF
+		for no_nearer in [true, false]:
+			for p: Vector3 in out:
+				if no_nearer and Vector2(p.x - pin.x, p.z - pin.z).length() < to_pin:
+					continue
+				var d := Vector2(p.x - ball.x, p.z - ball.z).length()
+				if d < best_d:
+					best_d = d
+					best = p
+			if best != Vector3.INF:
+				break
+		return Vector3(best.x, _terrain.height_at(best.x, best.z) if _terrain != null else ball.y, best.z)
+	return Vector3.INF
 
 
 func _build_grandstand(terrain: CourseTerrain, front: Vector3, facing: Vector3, seed_value: int, width := STAND_WIDTH, node_name := "Grandstand") -> void:
@@ -887,6 +936,7 @@ func _build_grandstand(terrain: CourseTerrain, front: Vector3, facing: Vector3, 
 	stand.name = node_name
 	add_child(stand)
 	stand.transform = Transform3D(Basis(side, Vector3.UP, -facing), Vector3(front.x, base, front.z))
+	_stands.append([front, facing, width * 0.5, depth])
 	if camera_blockers != null:
 		var height := STAND_FIRST + STAND_ROWS * STAND_RISE + STAND_RAIL
 		var centre := Vector3(front.x, base + height * 0.5, front.z) - facing * depth * 0.5
