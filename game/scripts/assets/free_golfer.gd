@@ -66,10 +66,10 @@ const PULL_BAG_FOOT := Vector3(0.40, 0.0, 0.06)
 const PULL_GRAB := 0.62
 const PULL_MAX := 6.0
 ## Where the club meets the ball, seconds into the clip at normal speed:
-## swing and swing_iron start at the top (mocap_swing.py downswing), the
-## putt at address (back + downswing).
-const SWING_IMPACT := 0.30
-const PUTT_IMPACT := 0.75
+## swing and swing_iron start at the top, the putt at address (Michael's
+## Mixamo takes, tools/golfer/mixamo_bake.py prints them).
+const SWING_IMPACT := 0.27
+const PUTT_IMPACT := 1.0
 ## Each golfer's own tempo (speed of the backswing, swing and putt),
 ## picked from the look: tour downswings run ~0.25 s (quick players) to
 ## ~0.33 s (smooth ones).
@@ -219,9 +219,15 @@ func apply_look(p_look: PlayerLook) -> void:
 	for i in names.size():
 		if names[i] == "hand_l" or (names[i].ends_with("_l") and names[i].split("_")[0] in GLOVE_FINGERS):
 			glove_bones.append(i)
+	# A person rigged by Mixamo (tools/golfer/mixamo_person.py) keeps the
+	# mesh in Mixamo's rest pose, with each bone's bind there: their skin
+	# bends as Mixamo's does. Their arms carry no twist bones.
+	var binds: Dictionary = who.get("binds", {}) if not who.is_empty() else {}
 	for bone_name in names:
 		var bone := _skeleton.find_bone(bone_name)
 		var rest := _skeleton.get_bone_global_rest(bone) if bone >= 0 else Transform3D.IDENTITY
+		if binds.has(bone_name):
+			rest = bind_of(binds[bone_name])
 		skin.add_named_bind(bone_name, rest.affine_inverse())
 	var part_names := parts_for(look, parts.info) if who.is_empty() else person_parts(look, who, parts.info)
 	# A person in their cap: whatever the cap presses down (a bun, modelled
@@ -238,7 +244,8 @@ func apply_look(p_look: PlayerLook) -> void:
 		var is_skin := str(parts.info.materials[mat_name].get("tint", "")) == "skin"
 		var gloved := (is_skin or str(parts.info.materials[mat_name].get("tint", "")) == "person") and look.glove
 		mi.mesh = parts.bake(part_name, part_weights, glove_bones if gloved else PackedInt32Array())
-		mi.mesh = GolferTwist.reweight(mi.mesh, parts.bone_names(), _skeleton)
+		if binds.is_empty():
+			mi.mesh = GolferTwist.reweight(mi.mesh, parts.bone_names(), _skeleton)
 		if part_name.begins_with("Hair_") and look.wears_cap():
 			mi.mesh = under_cap(mi.mesh, parts, weights)
 		mi.skin = skin
@@ -250,7 +257,7 @@ func apply_look(p_look: PlayerLook) -> void:
 				parts.info.materials[mat_name].get("region_means", []))
 			_cloth.add_occluded(pm)
 			if _flex != null:
-				mi.mesh = GolferFlex.with_mask(mi.mesh, names, _skeleton)
+				mi.mesh = GolferFlex.with_mask(mi.mesh, names, _skeleton, _rest_verts(mi.mesh, skin, names))
 				_flex.add_material(pm)
 			mat = pm
 		elif tint == "person_hair":
@@ -262,7 +269,7 @@ func apply_look(p_look: PlayerLook) -> void:
 			else:
 				_cloth.add_occluded(mat)
 				if _flex != null:
-					mi.mesh = GolferFlex.with_mask(mi.mesh, names, _skeleton)
+					mi.mesh = GolferFlex.with_mask(mi.mesh, names, _skeleton, _rest_verts(mi.mesh, skin, names))
 					_flex.add_material(mat)
 		elif str(parts.info.materials[mat_name].get("tint", "")) == "hair" and std.albedo_texture != null:
 			mat = GolferSurface.hair(std)
@@ -289,7 +296,8 @@ func apply_look(p_look: PlayerLook) -> void:
 			mi.set_surface_override_material(1, GolferSurface.glove())
 		else:
 			mi.material_override = mat
-		mi.mesh = GolferTwist.correct(mi.mesh, names, _skeleton)
+		if binds.is_empty():
+			mi.mesh = GolferTwist.correct(mi.mesh, names, _skeleton)
 		_skeleton.add_child(mi)
 		mi.skeleton = NodePath("..")
 		_twist.add_fix_mesh(mi)
@@ -301,6 +309,45 @@ func apply_look(p_look: PlayerLook) -> void:
 	if _walk == null:
 		_model.position = _rest
 	_dress_clubs()
+
+
+## A bone's bind from the pack: its basis columns and origin.
+static func bind_of(v: Array) -> Transform3D:
+	return Transform3D(Basis(Vector3(v[0], v[1], v[2]), Vector3(v[3], v[4], v[5]), Vector3(v[6], v[7], v[8])),
+		Vector3(v[9], v[10], v[11]))
+
+
+## The mesh's vertices carried from their binds to the skeleton's rest
+## (where GolferFlex measures the arms); empty when the binds are the rest.
+func _rest_verts(mesh: ArrayMesh, skin: Skin, names: PackedStringArray) -> Array[PackedVector3Array]:
+	var out: Array[PackedVector3Array] = []
+	var moves: Array[Transform3D] = []
+	var any := false
+	for i in skin.get_bind_count():
+		var bone := _skeleton.find_bone(skin.get_bind_name(i))
+		var rest := _skeleton.get_bone_global_rest(bone) if bone >= 0 else Transform3D.IDENTITY
+		var m := rest * skin.get_bind_pose(i)
+		any = any or not m.is_equal_approx(Transform3D.IDENTITY)
+		moves.append(m)
+	if not any:
+		return out
+	for si in mesh.get_surface_count():
+		var arrays := mesh.surface_get_arrays(si)
+		var verts: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+		var bones: PackedInt32Array = arrays[Mesh.ARRAY_BONES]
+		var weights: PackedFloat32Array = arrays[Mesh.ARRAY_WEIGHTS]
+		var per := bones.size() / maxi(1, verts.size())
+		var moved := PackedVector3Array()
+		moved.resize(verts.size())
+		for v in verts.size():
+			var p := Vector3.ZERO
+			for k in per:
+				var w := weights[v * per + k]
+				if w > 0.0 and bones[v * per + k] < moves.size():
+					p += (moves[bones[v * per + k]] * verts[v]) * w
+			moved[v] = p
+		out.append(moved)
+	return out
 
 
 ## The look pack's realistic person `look` asks for (info["people"]), or
