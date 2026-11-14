@@ -27,7 +27,7 @@ const SURFACES := [Surface.Type.DEEP_ROUGH]
 ## Understory, per Grass level: tufts per square metre of a crown's
 ## footprint. It grows on the deep rough out to UNDER_REACH_DEEP crown radii
 ## from the trunk, and on the plain rough only under the crown itself.
-const UNDER_DENSITY := [0.0, 0.8, 1.3, 1.8]
+const UNDER_DENSITY := [0.0, 0.5, 0.8, 1.1]
 const UNDER_REACH_DEEP := 1.3
 const UNDER_REACH_ROUGH := 0.9
 ## Crowns smaller than this (bushes) get none: a bush is its own brush.
@@ -48,7 +48,7 @@ const NATIVE_EDGE := 0.12
 ## Banks and mound sides grow long and go to seed first (a course mows the
 ## flat): how much the slope (1 - normal y) adds to the drift noise.
 const NATIVE_SLOPE := 1.6
-const NATIVE_DENSITY := 3.0
+const NATIVE_DENSITY := 2.4
 const NATIVE_HEIGHT := Vector2(0.6, 1.1)
 const NATIVE_STRAW := Color(0.64, 0.56, 0.4)
 const NATIVE_GOLD := Color(0.58, 0.51, 0.34)
