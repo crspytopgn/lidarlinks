@@ -142,7 +142,59 @@ static func mean_color(tex: Texture2D) -> Color:
 static var _vram := {}  ## path -> the block-compressed copy (desktop)
 
 
+## The private Megascans pack's ground textures (docs/megascans-pack.md):
+## a folder of baked JPEGs named like the free ground slots, which replace
+## them where present. Never in the repository or the web build: the scans'
+## licence lets them be used, not passed on. OL_MEGASCANS overrides the
+## folder (the pack's root, holding ground/).
+const MEGASCANS_DIR := "user://megascans/"
+
+
+static func megascans_dir() -> String:
+	if OS.has_feature("web"):
+		return ""
+	var env := OS.get_environment("OL_MEGASCANS")
+	return env.path_join("") if not env.is_empty() else MEGASCANS_DIR
+
+
+## Whether the private Megascans pack has ground textures.
+static func has_megascans() -> bool:
+	var dir := megascans_dir()
+	return not dir.is_empty() and FileAccess.file_exists(dir + "ground/grass_albedo.jpg")
+
+
+## A ground texture from the Megascans pack, or null. Mipmapped, and
+## block-compressed like the free ones on the desktop; halved to 1K in
+## Compatibility, which keeps them uncompressed.
+static func _load_megascans(file: String) -> Texture2D:
+	var slot := file.get_slice("_", 0)
+	if slot not in ["grass", "rough", "sand", "path", "dirt"]:
+		return null
+	var dir := megascans_dir()
+	if dir.is_empty():
+		return null
+	var path := dir + "ground/" + file
+	if _vram.has(path):
+		return _vram[path]
+	if not FileAccess.file_exists(path):
+		return null
+	var img := Image.load_from_file(path)
+	if img == null or img.is_empty():
+		return null
+	if not gpu_compress() and img.get_width() > 1024:
+		img.resize(1024, 1024 * img.get_height() / img.get_width(), Image.INTERPOLATE_LANCZOS)
+	img.generate_mipmaps()
+	if gpu_compress():
+		img.compress(Image.COMPRESS_S3TC)
+	var tex := ImageTexture.create_from_image(img)
+	_vram[path] = tex
+	return tex
+
+
 static func _load(file: String) -> Texture2D:
+	var scan := _load_megascans(file)
+	if scan != null:
+		return scan
 	var path := DIR + file
 	if not ResourceLoader.exists(path):
 		return null
