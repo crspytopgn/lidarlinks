@@ -28,7 +28,7 @@ const METER_LINGER_S := 1.5
 ## A putt missed from inside this many metres (8 ft) gets a slump.
 const SLUMP_PUTT := 2.5
 const COMPUTER_HOLE_PAUSE := 4.0  ## between holes when nobody is at the keyboard
-const HINT_AIM := "Left/Right or right-click: aim (Shift: fine)    Up/Down: club    Q/E/W/S: shape    %s    D: drop    Tab: scorecard%s    Esc: menu"
+const HINT_AIM := "Left/Right or right-click: aim (Shift: fine)    Up/Down: club    Q/E/W/S or click the ball: spin    %s    D: drop    Tab: scorecard%s    Esc: menu"
 ## The object viewer needs the game folder, which browsers can't read.
 const HINT_OBJECTS := "    O: objects"
 const HINT_AIM_METER := "3-click swing: Space or click    K: use the mouse swing"
@@ -377,6 +377,7 @@ func _ready() -> void:
 	hud.mouse_swing.stroke_cancelled.connect(_on_mouse_stroke_cancelled)
 	hud.touch_pad.club_pressed.connect(_change_club)
 	hud.touch_pad.menu_pressed.connect(_escape)
+	hud.spin.spin_picked.connect(_pick_spin)
 	if online == null:
 		online = next_online
 	next_online = null
@@ -1000,6 +1001,9 @@ func _process(delta: float) -> void:
 	hud.swing_button.visible = hud.touch_pad.visible and state == State.AIM and not _replaying \
 		and not hud.hand_over.visible and not paused and shooter < opponents.size() and opponents[shooter] == null and not _is_remote()
 	hud.swing_button.armed = Time.get_ticks_msec() >= _aim_ready_ms and not camera.flying()
+	hud.spin.visible = state == State.AIM and not _replaying and not paused and not hud.hand_over.visible \
+		and shooter < opponents.size() and opponents[shooter] == null and not _is_remote() \
+		and not clubs[club_index].is_putter
 	if state != State.AIM and hud.overlay != null:
 		hud.overlay.end_hole_card()  # the hole card must not sit over the shot
 	if online != null:
@@ -1694,6 +1698,16 @@ func _shape_key(keycode: Key) -> void:
 	if changed:
 		sounds.play(&"club")
 		_update_hud()
+
+
+## A spot picked on the spin ball (SpinBall): the same shape as Q/E/W/S.
+func _pick_spin(curve: int, height: int) -> void:
+	if state != State.AIM or opponents[shooter] != null or clubs[club_index].is_putter:
+		return
+	shape.curve = clampi(curve, -ShotShape.MAX_CURVE, ShotShape.MAX_CURVE)
+	shape.height = clampi(height, -ShotShape.MAX_HEIGHT, ShotShape.MAX_HEIGHT)
+	sounds.play(&"club")
+	_update_hud()
 
 
 ## A driver from the tee that stays in play counts for the longest drive.
@@ -3850,6 +3864,7 @@ func _update_hud() -> void:
 		text += "\n" + status
 	hud.info.text = text
 	hud.show_wind(wind, aim_deg)
+	hud.spin.show_shape(shape)
 	# The aim marker sits on the ground where the shot is aimed.
 	var aim_at := aim_marker.position
 	var rise := hole.terrain.height_at(aim_at.x, aim_at.z) - 0.05 - ball_at.y if aim_marker.visible else 0.0

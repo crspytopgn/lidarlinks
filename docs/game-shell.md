@@ -13,6 +13,7 @@ the browser and on desktop today.
 | Up / Down | Change club (the game picks one for you each shot) |
 | Q / E | Shape the shot: draw or fade, one degree at a time (up to 6) |
 | W / S | Hit it higher or lower: the ball one step forward or back (up to 3) |
+| Spin ball (under the wind) | Click, tap or drag where the club meets the ball: low for more backspin (higher), high for less (lower), left to draw or hook, right to fade or slice. Right-click or double-click resets |
 | Space or left click | Swing meter: start, set power, set accuracy |
 | Space or left click | Skip the ball flight, continue after a shot |
 | Tab | Show or hide the scorecard |

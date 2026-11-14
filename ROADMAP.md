@@ -23,7 +23,7 @@ product lead builds it.
 
 1. [x] **Shot shaping**: draw, fade, high and low shots from Links 2003's shot
    setup (ball position, club face, stance). The launch already reads the
-   setup bytes but nothing set them. Done: Q/E and W/S in the round
+   setup bytes but nothing set them. Done: Q/E and W/S in the round, or click/tap the spin ball under the wind (SpinBall)
    ([game-shell.md](docs/game-shell.md#playing)); the setup screen's own
    limits are still to read from the game.
 2. [x] **Touch and controller swings**: a swipe swing on phones and tablets
