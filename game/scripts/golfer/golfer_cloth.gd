@@ -76,6 +76,9 @@ var _turn := [0.0, 0.0, 0.0, 0.0, 0]  ## lag, lag rate, last yaw, last yaw rate,
 func _ready() -> void:
 	_skeleton = get_parent() as Skeleton3D
 	if _skeleton != null:
+		# The modifiers (arms, hands, feet, head look) pose the bones after
+		# every _process, so only here is the pose the one that is drawn.
+		_skeleton.skeleton_updated.connect(_on_skeleton_updated)
 		for b in ["pelvis", "spine_03", "neck_01", "clavicle_l", "clavicle_r", "upperarm_l", "lowerarm_l", "hand_l",
 				"upperarm_r", "lowerarm_r", "hand_r", "thigh_l", "calf_l", "foot_l", "thigh_r", "calf_r", "foot_r", "head"]:
 			_bones[b] = _skeleton.find_bone(b)
@@ -123,19 +126,37 @@ func add_occluded(m: ShaderMaterial) -> void:
 
 ## The capsules of OCCLUDERS in world space: [ends a (w radius), ends b].
 func occluders() -> Array:
+	return _to_world(_local_occluders())
+
+
+## The capsules in the skeleton's own space, from the current bone poses.
+func _local_occluders() -> Array:
+	var a := PackedVector4Array()
+	var b := PackedVector4Array()
+	for c: Array in OCCLUDERS:
+		var from := _pose(c[0]).origin
+		var to: Vector3
+		if str(c[1]) == "":
+			to = from + _pose(c[0]).basis * Vector3(0, 0.1, 0)
+		else:
+			to = _pose(c[1]).origin
+		a.append(Vector4(from.x, from.y, from.z, float(c[2])))
+		b.append(Vector4(to.x, to.y, to.z, 0.0))
+	return [a, b]
+
+
+func _to_world(local: Array) -> Array:
 	var world := _skeleton.global_transform
 	var scale := world.basis.get_scale().x
 	var a := PackedVector4Array()
 	var b := PackedVector4Array()
-	for c: Array in OCCLUDERS:
-		var from := world * _pose(c[0]).origin
-		var to: Vector3
-		if str(c[1]) == "":
-			to = from + world.basis * (_pose(c[0]).basis * Vector3(0, 0.1, 0))
-		else:
-			to = world * _pose(c[1]).origin
-		a.append(Vector4(from.x, from.y, from.z, float(c[2]) * scale))
-		b.append(Vector4(to.x, to.y, to.z, 0.0))
+	for i in (local[0] as PackedVector4Array).size():
+		var la: Vector4 = local[0][i]
+		var lb: Vector4 = local[1][i]
+		var pa := world * Vector3(la.x, la.y, la.z)
+		var pb := world * Vector3(lb.x, lb.y, lb.z)
+		a.append(Vector4(pa.x, pa.y, pa.z, la.w * scale))
+		b.append(Vector4(pb.x, pb.y, pb.z, 0.0))
 	return [a, b]
 
 
@@ -155,14 +176,41 @@ func _pose(bone: String) -> Transform3D:
 	return _skeleton.get_bone_global_pose(i) if i >= 0 else Transform3D.IDENTITY
 
 
-func _process(delta: float) -> void:
-	if _skeleton != null and not occluded.is_empty():
-		var caps := occluders()
-		var strength := 1.0 if detail >= 1 else 0.0
-		for m in occluded:
-			m.set_shader_parameter("occ_a", caps[0])
-			m.set_shader_parameter("occ_b", caps[1])
-			m.set_shader_parameter("occ_strength", strength)
+## The body's capsules as last drawn, in the skeleton's space.
+var _caps_local: Array = []
+## Review tools step the springs themselves (_update_cloth) at a fixed rate.
+var manual := false
+
+
+## The golfer can move without the bones changing (no skeleton update), so
+## the capsules follow the skeleton's place in the world every frame.
+func _process(_delta: float) -> void:
+	if _skeleton != null and not _caps_local.is_empty():
+		_push_occluders(_to_world(_caps_local))
+
+
+func _push_occluders(caps: Array) -> void:
+	var strength := 1.0 if detail >= 1 else 0.0
+	for m in occluded:
+		m.set_shader_parameter("occ_a", caps[0])
+		m.set_shader_parameter("occ_b", caps[1])
+		m.set_shader_parameter("occ_strength", strength)
+
+
+## Runs once the skeleton's final pose for this frame is known (after the
+## animation and every modifier). Reading the bones in _process instead gave
+## the pose before GolferArms, GolferHands and the foot IK, up to 10 cm off
+## at rest and over 20 cm mid-swing: the body's shading slid off the limbs
+## and jumped as the IK took hold.
+func _on_skeleton_updated() -> void:
+	if not occluded.is_empty():
+		_caps_local = _local_occluders()
+		_push_occluders(_to_world(_caps_local))
+	if not manual:
+		_update_cloth(get_process_delta_time())
+
+
+func _update_cloth(delta: float) -> void:
 	if materials.is_empty() or _skeleton == null or delta <= 0.0:
 		return
 	delta = minf(delta, 0.05)

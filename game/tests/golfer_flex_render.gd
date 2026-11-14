@@ -71,8 +71,8 @@ func _initialize() -> void:
 	scene.add_child(_golfer)
 	_player = _golfer.find_child("AnimationPlayer", true, false) as AnimationPlayer
 	_flex = _golfer._flex
-	_flex.set_process(false)
-	_golfer._cloth.set_process(false)
+	_flex.manual = true
+	_golfer._cloth.manual = true
 	if args.size() > 2 and args[2] == "mask":
 		for m in _flex.materials:
 			m.set_shader_parameter("flex_debug", 1.0)
@@ -132,7 +132,7 @@ func _run(job: Array) -> void:
 		var t := 0.0
 		while t < float(st[1]) - 0.001:
 			_player.advance(DT)
-			_flex._process(DT)
+			_flex._update(DT)
 			t += DT
 	var target: Vector3
 	var from: Vector3
