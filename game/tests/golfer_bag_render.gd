@@ -79,7 +79,7 @@ func _initialize() -> void:
 	_golfer.set_shot(_club(args.size() > 2 and args[2] == "iron"), 150.0)
 	_golfer.play(&"address")
 	_player = _golfer.find_child("AnimationPlayer", true, false) as AnimationPlayer
-	_golfer._cloth.set_process(false)
+	_golfer._cloth.manual = true
 	# The bag where the game stands the golfer to it (FreeGolfer.pull_spot).
 	var bag := StandBag.new()
 	scene.add_child(bag)
