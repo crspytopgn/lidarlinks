@@ -2030,6 +2030,19 @@ func _test_graphics_settings() -> void:
 	_check(half.elevation < noon.elevation and half.elevation > Scenery.TIMES["afternoon"].elevation, "through the round blends the light (%.1f)" % half.elevation)
 	_check((dusk.sun as Color).b < (noon.sun as Color).b, "golden hour sun is warm")
 	_check(Scenery.time_light(GraphicsSettings.TimeOfDay.AFTERNOON, 0.7).elevation == Scenery.TIMES["afternoon"].elevation, "afternoon is the afternoon sun at any point of the round")
+	var sunset := Scenery.time_light(GraphicsSettings.TimeOfDay.SUNSET, 0.0)
+	var early := Scenery.time_light(GraphicsSettings.TimeOfDay.DAWN, 0.0)
+	_check(sunset.elevation < dusk.elevation and early.elevation < dawn.elevation, "dawn and sunset sit lowest")
+	_check(absf(float(early.bearing) - float(sunset.bearing)) > 120.0, "dawn and sunset light from opposite sides")
+	_check((sunset.sun as Color).b < (dusk.sun as Color).b, "sunset is the warmest sun")
+	for t in GraphicsSettings.TimeOfDay.values():
+		_check(PostProcess.lut_for(t, false) != null, "time %d has a grade" % t)
+	_check(PhotoMode.step_time(GraphicsSettings.TimeOfDay.SUNSET, 1) == GraphicsSettings.TimeOfDay.DAWN, "photo mode time wraps sunset to dawn")
+	_check(PhotoMode.step_time(GraphicsSettings.TimeOfDay.DAWN, -1) == GraphicsSettings.TimeOfDay.SUNSET, "and back")
+	_check(PhotoMode.step_time(GraphicsSettings.TimeOfDay.ROUND, 1) == GraphicsSettings.TimeOfDay.AFTERNOON, "through the round steps to afternoon")
+	var flat := func(_x: float, _z: float) -> float: return 0.0
+	_check_near(PhotoMode.focus_distance(Vector3(0, 10, 0), Vector3(0, -1, 1).normalized(), flat), 14.14, 0.6, "focus finds the ground")
+	_check(PhotoMode.focus_distance(Vector3(0, 10, 0), Vector3(0, 0.2, 1).normalized(), flat) == PhotoMode.FOCUS_RAY, "focus on the sky is far")
 
 
 func _test_trees() -> void:

@@ -56,6 +56,10 @@ float ground_shading(vec2 p, float dist) {
 	}
 	// The map holds sRGB-encoded values.
 	vec2 s = pow(texture(ground_shade, uv).rg, vec2(2.2));
-	float sun = mix(1.0, s.r, edge * smoothstep(ground_shade_near * 0.8, ground_shade_near, dist));
+	// A crown's shadow is not solid: sun comes through its gaps in flecks
+	// a metre or two across, the dappled shade of TV golf and GSPro.
+	float fleck = smoothstep(0.58, 0.78, cloud_noise(p * 0.75) * 0.6 + cloud_noise(p * 2.1 + vec2(5.3, 2.9)) * 0.4);
+	float baked = mix(s.r, 1.0, fleck * 0.65);
+	float sun = mix(1.0, baked, edge * smoothstep(ground_shade_near * 0.8, ground_shade_near, dist));
 	return clouds * sun * mix(1.0, s.g, edge);
 }

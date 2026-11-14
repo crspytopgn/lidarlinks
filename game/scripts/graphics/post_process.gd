@@ -135,11 +135,11 @@ static func horizon_screen_y(pitch: float, fov: float) -> float:
 static func lut_for(time_of_day: int, forward_plus: bool) -> Texture2D:
 	var light := "afternoon"  # also "Through the round"
 	match time_of_day:
-		GraphicsSettings.TimeOfDay.MORNING:
+		GraphicsSettings.TimeOfDay.MORNING, GraphicsSettings.TimeOfDay.DAWN:
 			light = "morning"
 		GraphicsSettings.TimeOfDay.MIDDAY:
 			light = "midday"
-		GraphicsSettings.TimeOfDay.GOLDEN:
+		GraphicsSettings.TimeOfDay.GOLDEN, GraphicsSettings.TimeOfDay.SUNSET:
 			light = "golden"
 	var path := LUT_DIR + "%s_%s.png" % [light, "forward" if forward_plus else "compat"]
 	return load(path) as Texture2D if ResourceLoader.exists(path) else null

@@ -6,6 +6,7 @@ extends PanelContainer
 signal resume_pressed
 signal scorecard_pressed
 signal settings_pressed
+signal photo_pressed
 signal restart_pressed
 signal menu_pressed
 
@@ -23,6 +24,7 @@ func _ready() -> void:
 	_first = _button(box, "Resume", resume_pressed)
 	_button(box, "Scorecard", scorecard_pressed)
 	_button(box, "Settings", settings_pressed)
+	_button(box, "Photo mode", photo_pressed)
 	_button(box, "Restart round", restart_pressed)
 	_button(box, "Quit to main menu", menu_pressed)
 	visible = false

@@ -262,6 +262,9 @@ var graphics: GraphicsSettings
 var scenery: Scenery
 var settings_panel: SettingsPanel
 var pause_menu: PauseMenu
+var photo_mode: PhotoMode
+## The time of day the settings had before photo mode changed it.
+var _time_before_photo := -1
 var ambience: CourseAmbience
 var free_ambience: FreeAmbience  ## for courses with no sounds of their own
 var voice: GolferVoice
@@ -993,7 +996,7 @@ func _process(delta: float) -> void:
 	_update_post_view()
 	# The pause menu and settings stop the round: the swing meter, the ball
 	# in the air and the countdowns all wait.
-	var paused := pause_menu.visible or settings_panel.visible
+	var paused := pause_menu.visible or settings_panel.visible or (photo_mode != null and photo_mode.active)
 	hud.meter.set_process(not paused)
 	# Show the putting meter as soon as the putter is in hand, not only once
 	# the stroke starts.
@@ -1062,6 +1065,8 @@ func _process(delta: float) -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
+	if photo_mode != null and photo_mode.active:
+		return
 	if event is InputEventJoypadButton:
 		var jb := event as InputEventJoypadButton
 		if jb.pressed and jb.button_index == JOY_BUTTON_START:
@@ -1419,6 +1424,8 @@ func _made_from_touch(e: InputEventMouse) -> bool:
 ## Touches reach the swing before the HUD does, so a tap anywhere but on a
 ## button counts at once: over the info panels or the meter as well.
 func _input(event: InputEvent) -> void:
+	if photo_mode != null and photo_mode.active:
+		return
 	if _meter_input(event):
 		get_viewport().set_input_as_handled()
 		return
@@ -3297,6 +3304,11 @@ func _build_world() -> void:
 	pause_menu.settings_pressed.connect(_on_pause_settings)
 	pause_menu.restart_pressed.connect(_on_pause_restart)
 	pause_menu.menu_pressed.connect(_quit_to_menu)
+	pause_menu.photo_pressed.connect(_open_photo_mode)
+	photo_mode = PhotoMode.new()
+	add_child(photo_mode)
+	photo_mode.time_changed.connect(_photo_time)
+	photo_mode.closed.connect(_photo_closed)
 
 
 const BALL_SHADER := preload("res://shaders/golf_ball.gdshader")
@@ -3331,6 +3343,45 @@ func _on_pause_settings() -> void:
 func _on_settings_back() -> void:
 	settings_panel.close()
 	pause_menu.open()
+
+
+## Photo mode from the pause menu: the round waits under a free camera.
+func _open_photo_mode() -> void:
+	if hole == null:
+		return
+	pause_menu.close()
+	var hide_nodes: Array = [aim_marker]
+	for c in get_children():
+		if c is CanvasLayer and c != post:
+			hide_nodes.append(c)
+	var terrain := hole.terrain
+	photo_mode.height_at = func(x: float, z: float) -> float: return terrain.height_at(x, z)
+	photo_mode.time_of_day = graphics.time_of_day
+	_time_before_photo = graphics.time_of_day
+	photo_mode.open(camera, hide_nodes)
+
+
+## Relights the course for the time photo mode stepped to; only for the
+## picture, the setting is put back on leaving.
+func _photo_time(time: int) -> void:
+	graphics.time_of_day = time
+	_relight()
+
+
+func _photo_closed() -> void:
+	if _time_before_photo >= 0 and graphics.time_of_day != _time_before_photo:
+		graphics.time_of_day = _time_before_photo
+		_relight()
+	_time_before_photo = -1
+	pause_menu.open()
+
+
+func _relight() -> void:
+	scenery.apply(graphics)
+	post.apply(graphics)
+	if scenery.sun != null and hole != null:
+		scenery.set_round_progress(float(hole_index) / maxf(holes.size() - 1, 1))
+		GroundShade.bake(hole, course.objects, -scenery.sun.global_transform.basis.z)
 
 
 func _on_pause_restart() -> void:
