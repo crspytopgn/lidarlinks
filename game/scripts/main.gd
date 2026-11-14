@@ -363,6 +363,8 @@ func _ready() -> void:
 	GlassTheme.install()
 	_build_world()
 	_apply_graphics()
+	if FrameBenchmark.wanted():
+		add_child(FrameBenchmark.new(self))
 	sounds = AssetProviders.create_sound_bank()
 	add_child(sounds)
 	var assets := AssetProviders.golfer_assets

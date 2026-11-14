@@ -564,3 +564,12 @@ defaults).
 - Occlusion from the terrain itself (hollows, cliffs).
 - Texture compression tiers per device (Basis/ASTC), and the HD pack in
   the browser.
+
+### Measuring on a real machine
+
+`OpenLinks2003 res://scenes/main.tscn -- --benchmark` (or
+`godot --path game res://scenes/main.tscn -- --benchmark`) opens the
+placeholder round, holds the first tee and draws it with one feature
+changed at a time (`FrameBenchmark.CASES`), v-sync off. GPU and CPU
+milliseconds per frame for each case go to the log and
+`user://benchmark.txt`, then the game quits.
