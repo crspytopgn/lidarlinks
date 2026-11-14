@@ -45,6 +45,9 @@ const UNDER_SHADE := 0.72
 const NATIVE_SCALE := 70.0
 const NATIVE_FROM := 0.5
 const NATIVE_EDGE := 0.12
+## Banks and mound sides grow long and go to seed first (a course mows the
+## flat): how much the slope (1 - normal y) adds to the drift noise.
+const NATIVE_SLOPE := 1.6
 const NATIVE_DENSITY := 3.0
 const NATIVE_HEIGHT := Vector2(0.6, 1.1)
 const NATIVE_STRAW := Color(0.64, 0.56, 0.4)
@@ -178,7 +181,7 @@ static func build_chunk(t: CourseTerrain, key: Vector2i, density: float, crowns 
 		var grow := rng.randf()
 		if not SURFACES.has(t.surface_at(x, z)):
 			continue
-		var native := native_at(x, z)
+		var native := native_at(x, z, t.normal_at(x, z).y)
 		if keep * NATIVE_DENSITY > 1.0 + (NATIVE_DENSITY - 1.0) * native:
 			continue
 		var h := lerpf(rng.randf_range(0.4, 0.75), lerpf(NATIVE_HEIGHT.x, NATIVE_HEIGHT.y, grow), native)
@@ -239,13 +242,13 @@ static func build_chunk(t: CourseTerrain, key: Vector2i, density: float, crowns 
 	return mm
 
 
-## How much the deep rough at (x, z) is a drift of golden native grass, 0
-## to 1: broad patches, as a course lets its out-of-play ground grow and go
+## How much the deep rough at (x, z), where the ground's normal has y `up`,
+## is a drift of golden native grass, 0 to 1: broad patches, more on banks, as a course lets its out-of-play ground grow and go
 ## to seed (the warm straw against green turf that makes GSPro's and real
 ## heathland courses look so good), with soft edges.
-static func native_at(x: float, z: float) -> float:
+static func native_at(x: float, z: float, up := 1.0) -> float:
 	var q := Vector2(x, z) / NATIVE_SCALE
-	var v := 0.65 * _value_noise(q) + 0.35 * _value_noise(q * 2.03 + Vector2(17.1, 9.7))
+	var v := 0.65 * _value_noise(q) + 0.35 * _value_noise(q * 2.03 + Vector2(17.1, 9.7)) + NATIVE_SLOPE * (1.0 - up)
 	return smoothstep(NATIVE_FROM, NATIVE_FROM + NATIVE_EDGE, v)
 
 

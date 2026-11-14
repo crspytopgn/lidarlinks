@@ -88,6 +88,7 @@ varying vec3 world_pos;
 varying vec2 weights; // rough, sand
 varying vec2 stripes; // across the hole (m), stripe strength
 varying vec3 vertex_palette; // the surface colour blended into COLOR (splat map only)
+varying float ground_up; // the world normal's y: 1 flat, less on a bank
 
 float hash(vec2 p) {
 	p = fract(p * vec2(123.34, 456.21));
@@ -122,9 +123,10 @@ float fbm(vec2 p) {
 const float NATIVE_SCALE = 70.0;
 const float NATIVE_FROM = 0.5;
 const float NATIVE_EDGE = 0.12;
-float native_at(vec2 p) {
+const float NATIVE_SLOPE = 1.6;
+float native_at(vec2 p, float up) {
 	vec2 q = p / NATIVE_SCALE;
-	float v = 0.65 * value_noise(q) + 0.35 * value_noise(q * 2.03 + vec2(17.1, 9.7));
+	float v = 0.65 * value_noise(q) + 0.35 * value_noise(q * 2.03 + vec2(17.1, 9.7)) + NATIVE_SLOPE * (1.0 - up);
 	return smoothstep(NATIVE_FROM, NATIVE_FROM + NATIVE_EDGE, v);
 }
 uniform vec3 native_ground = vec3(0.24, 0.19, 0.09); // linear straw
@@ -132,6 +134,7 @@ uniform float native_ground_strength = 0.65;
 
 void vertex() {
 	world_pos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
+	ground_up = normalize((MODEL_MATRIX * vec4(NORMAL, 0.0)).xyz).y;
 	weights = UV2;
 	stripes = vec2(UV.x, clamp(-UV.y, 0.0, 1.0));
 	vertex_palette = has_splat ? CUSTOM0.rgb : vec3(0.0);
@@ -312,7 +315,7 @@ void fragment() {
 	// Golden native drifts on the deep rough (FescueField.native_at, same
 	// noise): the ground under the drift's long grass goes straw too, so a
 	// drift reads as one field of seed heads rather than tufts on lawn.
-	col = mix(col, native_ground * (0.85 + 0.3 * patches), deep_rough * native_at(p) * native_ground_strength);
+	col = mix(col, native_ground * (0.85 + 0.3 * patches), deep_rough * native_at(p, ground_up) * native_ground_strength);
 	// Close-cut turf: dense, fine blades, a touch cooler, and smoother.
 	col *= mix(vec3(1.0), vec3(0.97, 1.0, 0.98), cut);
 	ROUGHNESS = mix(0.95, 0.72, cut);
