@@ -91,6 +91,39 @@ var target := -1.0:
 		target = v
 		queue_redraw()
 const TARGET := Color(0.95, 0.12, 0.1)
+## The putting meter's distance scale: feet a putt rolls on a level green
+## at meter values 0, 1/20 ... 1 (GolfRound.putt_roll_feet), empty for none,
+## and the hole's distance in feet (below 0 for none).
+var putt_feet := PackedFloat32Array()
+var hole_feet := -1.0
+
+
+func set_putt_scale(feet: PackedFloat32Array, hole_ft: float) -> void:
+	if feet == putt_feet and is_equal_approx(hole_ft, hole_feet):
+		return
+	putt_feet = feet
+	hole_feet = hole_ft
+	queue_redraw()
+
+
+## The meter value that rolls `feet` on the level (by the scale), or -1
+## past its ends.
+func value_for_feet(feet: float) -> float:
+	for i in range(1, putt_feet.size()):
+		if putt_feet[i] >= feet:
+			var a := putt_feet[i - 1]
+			var t := 0.0 if putt_feet[i] <= a else (feet - a) / (putt_feet[i] - a)
+			return (i - 1 + clampf(t, 0.0, 1.0)) / float(putt_feet.size() - 1)
+	return -1.0
+
+
+## Feet on the level for meter value `v`, by the scale.
+func feet_for_value(v: float) -> float:
+	if putt_feet.size() < 2:
+		return 0.0
+	var x := clampf(v, 0.0, 1.0) * (putt_feet.size() - 1)
+	var i := mini(int(x), putt_feet.size() - 2)
+	return lerpf(putt_feet[i], putt_feet[i + 1], x - i)
 
 ## The blurred picture behind the modern bar (FrostedGlass), and its panel
 ## style, rebuilt when the blur is turned on or off.
@@ -380,7 +413,9 @@ func _draw_modern() -> void:
 			_capsule(Rect2(snap, mid - h * 0.5, maxf(_modern_x(shown) - snap, h), h), PUTT_FILL if putting() else SWING)
 		Phase.DOWNSWING, Phase.DONE:
 			_capsule(Rect2(snap, mid - h * 0.5, maxf(_modern_x(power) - snap, h), h), GOLD)
-	if putting():
+	if putting() and putt_feet.size() > 1:
+		_draw_feet_scale(mid, h)
+	elif putting():
 		# The stroke scale: a fine tick every 5 percent, 25/50/75 labelled.
 		var small := GlassTheme.font(500)
 		for m in marks():
@@ -403,7 +438,11 @@ func _draw_modern() -> void:
 	var font := GlassTheme.font(600)
 	var top := 24.0
 	draw_string(font, Vector2(MODERN_INSET, top), title(), HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color(1, 1, 1, 0.55))
-	if phase == Phase.BACKSWING:
+	if putting() and putt_feet.size() > 1 and phase != Phase.IDLE:
+		# A putt reads in feet on the level, as the scale does.
+		var at := shown if phase == Phase.BACKSWING else power
+		draw_string(font, Vector2(MODERN_INSET + 44.0, top), "%d FT" % roundi(feet_for_value(at)), HORIZONTAL_ALIGNMENT_LEFT, -1, 15, GOLD if phase != Phase.BACKSWING else Color(1, 1, 1, 0.9))
+	elif phase == Phase.BACKSWING:
 		draw_string(font, Vector2(MODERN_INSET + 52.0, top), "%d%%" % roundi(shown * 100.0), HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color(1, 1, 1, 0.9))
 	elif phase == Phase.DOWNSWING or phase == Phase.DONE:
 		draw_string(font, Vector2(MODERN_INSET + 52.0, top), "%d%%" % roundi(power * 100.0), HORIZONTAL_ALIGNMENT_LEFT, -1, 15, GOLD)
@@ -411,5 +450,36 @@ func _draw_modern() -> void:
 		var label := miss_text()
 		var colour := good() if accuracy == 0.0 else GOLD
 		draw_string(font, Vector2(0, top), label, HORIZONTAL_ALIGNMENT_RIGHT, size.x - MODERN_INSET, 15, colour)
+	elif phase == Phase.IDLE and putting() and hole_feet >= 0.0:
+		draw_string(font, Vector2(0, top), "HOLE %d FT" % roundi(hole_feet), HORIZONTAL_ALIGNMENT_RIGHT, size.x - MODERN_INSET, 12, Color(1, 1, 1, 0.6))
 	elif phase == Phase.IDLE:
 		draw_string(font, Vector2(0, top), "CLICK TO PUTT" if putting() else "CLICK TO SWING", HORIZONTAL_ALIGNMENT_RIGHT, size.x - MODERN_INSET, 12, Color(1, 1, 1, 0.45))
+
+
+## The putting meter's scale in feet on the level: ticks at round
+## distances, labelled sparsely, and the hole's distance as a small flag.
+func _draw_feet_scale(mid: float, h: float) -> void:
+	var small := GlassTheme.font(500)
+	var top_ft := putt_feet[putt_feet.size() - 1]
+	var step := 5.0 if top_ft <= 60.0 else 10.0
+	var label_every := 10.0 if top_ft <= 60.0 else 20.0
+	var last_label := -100.0
+	var ft := step
+	while ft <= top_ft:
+		var v := value_for_feet(ft)
+		if v >= 0.0:
+			var x := _modern_x(v)
+			var big := is_zero_approx(fmod(ft, label_every))
+			draw_line(Vector2(x, mid + h * 0.5 + 3.0), Vector2(x, mid + h * 0.5 + (9.0 if big else 6.0)), Color(1, 1, 1, 0.55 if big else 0.3), 1.0, true)
+			if big and x - last_label > 26.0:
+				draw_string(small, Vector2(x - 14.0, mid + h * 0.5 + 19.0), "%d'" % roundi(ft), HORIZONTAL_ALIGNMENT_CENTER, 28.0, 9, Color(1, 1, 1, 0.5))
+				last_label = x
+		ft += step
+	if hole_feet >= 0.0:
+		var hv := value_for_feet(hole_feet)
+		if hv < 0.0:
+			hv = 1.0
+		var hx := _modern_x(hv)
+		# A thin pin with a small flag, above the track.
+		draw_line(Vector2(hx, mid - h * 0.5 - 2.0), Vector2(hx, mid - h - 10.0), Color(1, 1, 1, 0.85), 1.5, true)
+		draw_colored_polygon(PackedVector2Array([Vector2(hx, mid - h - 10.0), Vector2(hx + 8.0, mid - h - 7.0), Vector2(hx, mid - h - 4.0)]), GOLD)

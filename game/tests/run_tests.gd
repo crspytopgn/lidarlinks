@@ -669,6 +669,19 @@ func _test_swing_meter() -> void:
 	_check(meter.miss_text() == "PUSH 20%", "a late putt is a push")
 	meter.mode = LinksPowerStroke.Mode.FULL
 	_check(meter.marks().size() == 4 and meter.miss_text() == "SLICE 20%", "full swings keep quarters and slices")
+	# The Broadcast putting meter's distance scale, by the round's physics.
+	var putter: Club = null
+	for c in Club.standard_set():
+		if c.is_putter:
+			putter = c
+	var roll := GolfRound.putt_roll_feet(StandardShotModel.new(), putter, Surface.Type.GREEN)
+	var rising_roll := roll.size() == 21 and roll[20] > 10.0
+	for i in range(1, roll.size()):
+		rising_roll = rising_roll and roll[i] >= roll[i - 1]
+	_check(rising_roll, "putts roll further the further back the stroke (%s)" % [roll])
+	meter.set_putt_scale(PackedFloat32Array([0.0, 10.0, 30.0]), 20.0)
+	_check_near(meter.value_for_feet(20.0), 0.75, 1e-6, "the putt scale finds the hole's place on the meter")
+	_check_near(meter.feet_for_value(0.25), 5.0, 1e-6, "the putt scale reads feet back")
 	meter.free()
 
 

@@ -303,6 +303,9 @@ var breakline: BreaklineIndicator
 var assistant: PuttRead  ## Links 2003's Putting Assistant
 var _assist := {}
 var _assist_from := Vector3.INF
+## The putting meter's distance scale (SwingMeter.putt_feet), and where it
+## was worked out from.
+var _putt_scale_from := Vector3.INF
 var read_view := 0  ## GreenRead.View
 ## The Green Analyzer's free camera (GreenRead.orbit_*): which read view
 ## it was moved in (-1 none), its yaw, pitch and distance, the point it
@@ -4314,6 +4317,47 @@ func _update_green_aids() -> void:
 	_update_breakline()
 	_update_assistant()
 	_update_putting_panel()
+	_update_putt_scale()
+
+
+## The Broadcast and Tour putting meter's distance scale: how far a putt at
+## each point of the meter rolls on a level green of this course's speed,
+## by the round's own physics, plus the hole's distance as a mark. The
+## player still reads the slope and makes the stroke; Classic Links keeps
+## the original's bare meter.
+func _update_putt_scale() -> void:
+	if not hud.meter.modern or not _putting_on_green() or shot_model == null:
+		hud.meter.set_putt_scale(PackedFloat32Array(), -1.0)
+		_putt_scale_from = Vector3.INF
+		return
+	var hole_ft := Vector2(hole.pin.x - ball_at.x, hole.pin.z - ball_at.z).length() * LinksLaunch.FEET_PER_METRE
+	if _putt_scale_from.is_equal_approx(ball_at):
+		hud.meter.set_putt_scale(hud.meter.putt_feet, hole_ft)
+		return
+	_putt_scale_from = ball_at
+	hud.meter.set_putt_scale(putt_roll_feet(shot_model, clubs[club_index], lie), hole_ft)
+
+
+## Feet a putt rolls on a level green for meter values 0, 1/20 ... 1, by
+## `model`'s own physics. The model's random numbers and mouse swing are
+## left as they were, so the round plays out the same.
+static func putt_roll_feet(model: ShotModel, putter: Club, from_lie: int) -> PackedFloat32Array:
+	var out := PackedFloat32Array()
+	var flat := FlatTerrain.new(Surface.Type.GREEN)
+	var links := model as LinksShotModel
+	var rng_state := links.rng.state if links != null else 0
+	var mouse: LinksMouse.Outcome = links.mouse_swing if links != null else null
+	if links != null:
+		links.mouse_swing = null
+	for i in 21:
+		var v := maxf(float(i) / 20.0, 0.02)
+		var start := model.launch(putter, v, 0.0, 0.0, from_lie, Vector3.ZERO)
+		var r := model.simulate(start, flat, Vector3(0, 0, 1.0e5))
+		out.append(Vector2(r.rest.x, r.rest.z).length() * LinksLaunch.FEET_PER_METRE)
+	if links != null:
+		links.rng.state = rng_state
+		links.mouse_swing = mouse
+	return out
 
 
 func _hide_green_aids() -> void:
