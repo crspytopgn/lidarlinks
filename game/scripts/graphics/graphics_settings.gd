@@ -64,6 +64,8 @@ const GRAIN_LEVELS := [0.0, 0.025, 0.05, 0.1]
 
 ## Tests and the CI render check set this to fix the look (-1: as saved).
 static var force_look := -1
+## FrameBenchmark turns the pixel budget off to measure what it saves.
+static var ignore_pixel_budget := false
 ## The launcher's window size has been applied this run.
 static var _sized := false
 
@@ -504,7 +506,7 @@ static func budget_scale(pixels: float, budget: float) -> float:
 ## inside the built-in graphics' pixel budget. A scale above 1 (chosen
 ## supersampling) is taken as asked.
 func effective_render_scale(viewport: Viewport) -> float:
-	if render_scale > 1.0 or not integrated_gpu() or not viewport is Window:
+	if render_scale > 1.0 or ignore_pixel_budget or not integrated_gpu() or not viewport is Window:
 		return render_scale
 	var size := Vector2((viewport as Window).size)
 	return minf(render_scale, budget_scale(size.x * size.y, IGPU_PIXEL_BUDGET[quality]))

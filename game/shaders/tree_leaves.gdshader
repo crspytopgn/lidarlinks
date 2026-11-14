@@ -63,12 +63,13 @@ uniform vec3 needle_light : source_color = vec3(0.16, 0.29, 0.12);
 
 global uniform vec2 wind_vector;
 global uniform float foliage_sway;
-global uniform float tree_impostor_distance;
 // Scanned trees in a MultiMesh draw in bands (TreeFactory.LITE_DISTANCE):
 // 0 every distance up to the impostors, 1 the full mesh up to
 // tree_lite_distance, 2 the lite mesh from there to the impostors.
-global uniform float tree_lite_distance;
 uniform int band = 0;
+#include "res://shaders/tree_lod.gdshaderinc"
+// This instance's LOD span (tree_lod.gdshaderinc).
+varying vec2 lod_span;
 
 varying vec4 info;
 varying vec3 tint;
@@ -96,7 +97,8 @@ void vertex() {
 	crown_up = normalize((MODEL_MATRIX * vec4(NORMAL, 0.0)).xyz).y;
 	tint = bake ? vec3(1.0) : crown_tint(MODEL_MATRIX[3].xyz);
 	float cam_d = distance(MODEL_MATRIX[3].xyz, MAIN_CAM_INV_VIEW_MATRIX[3].xyz);
-	if (instanced && (cam_d > tree_impostor_distance || (band == 1 && cam_d > tree_lite_distance) || (band == 2 && cam_d < tree_lite_distance))) {
+	lod_span = instanced ? tree_lod_band(cam_d, band) : vec2(1.0, 0.0);
+	if (tree_lod_hidden(lod_span)) {
 		VERTEX = vec3(0.0);
 	}
 	if (!bake && foliage_sway > 0.0) {
@@ -112,6 +114,9 @@ void vertex() {
 }
 
 void fragment() {
+	if (tree_lod_discard(lod_span, FRAGCOORD.xy)) {
+		discard;
+	}
 	float cells = needles ? 1.0 : (info.a < 0.5 ? leaf_cells * 3.0 : leaf_cells);
 	vec2 g = UV * cells;
 	vec2 cell = floor(g);

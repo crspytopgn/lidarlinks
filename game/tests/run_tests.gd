@@ -3456,8 +3456,25 @@ func _test_free_sounds() -> void:
 	_check(FreeAmbience.calls_for(Vector2(47.6, -122.3), park) == "calls_pnw", "Seattle: American robins and sparrows")
 	_check(FreeAmbience.calls_for(Vector2(-37.97, 145.03), park) == "calls_aus", "Royal Melbourne: magpies and kookaburras")
 	_check(FreeAmbience.calls_for(nowhere, park) == "" and FreeAmbience.calls_for(Vector2(35.7, 139.7), park) == "", "unknown or other places: snatches of the bed")
-	_check(FreeAmbience.has_calls(sea, "calls_links") and not FreeAmbience.has_calls(sea, ""), "shore birds only on a links with its own set")
-	for stem: String in ["calls_uk", "calls_links", "calls_us_se", "calls_pnw", "calls_aus"]:
+	_check(FreeAmbience.has_calls(sea, "calls_links") and not FreeAmbience.has_calls(sea, ""), "birds by the sea only with a set of their own")
+	_check(FreeAmbience.calls_for(Vector2(51.63, 0.02), park) == "calls_uk", "West Essex: robins, blackbirds, wood pigeons and rooks")
+	_check(FreeAmbience.calls_for(Vector2(33.70, -116.40), FreeAmbience.Setting.DESERT) == "calls_us_desert", "Bighorn: cactus wrens and quail")
+	_check(FreeAmbience.calls_for(Vector2(21.0, -156.65), sea) == "calls_hawaii", "Kapalua: mynas and zebra doves")
+	_check(FreeAmbience.calls_for(Vector2(-34.99, 173.93), sea) == "calls_nz", "Kauri Cliffs: tui and bellbirds")
+	_check(FreeAmbience.calls_for(Vector2(36.29, -5.31), park) == "calls_med", "Valderrama: blackcaps and hoopoes")
+	_check(FreeAmbience.calls_for(Vector2(43.42, -88.30), park) == "calls_us_north", "Wisconsin: American robins and blue jays")
+	_check(FreeAmbience.calls_for(Vector2(33.09, -96.88), park) == "calls_us_se", "Texas: cardinals and mockingbirds")
+	_check(FreeAmbience.place_key("Pebble_B") == "pebbleb" and FreeAmbience.known_place("Pebble Beach Golf Links")[1] == 36.57, "classic file names and full names both find the place")
+	_check(FreeAmbience.known_place("Skeleton Bay").is_empty() and FreeAmbience.known_place("").is_empty(), "made-up courses have no place")
+	var disc := CourseData.new()
+	disc.course_name = "Torrey Pines"
+	var disc_amb := FreeAmbience.create(disc)
+	_check(disc_amb.setting == sea and disc_amb.calls == "calls_pnw", "Torrey Pines: a Pacific coast course, not the desert")
+	disc_amb.free()
+	_check(FreeAmbience.season_gap(5, 51.6) < FreeAmbience.season_gap(12, 51.6), "more song in spring than in winter")
+	_check(FreeAmbience.season_gap(12, -35.0) < FreeAmbience.season_gap(6, -35.0) and FreeAmbience.season_gap(1, 20.0) == 1.0, "southern seasons flipped, the tropics all year")
+	for stem: String in ["calls_uk", "calls_links", "calls_us_se", "calls_pnw", "calls_aus", "calls_us_north",
+			"calls_us_desert", "calls_hawaii", "calls_nz", "calls_med"]:
 		var calls_stream := load("res://assets/sounds/%s.ogg" % stem) as AudioStream
 		_check(calls_stream != null and calls_stream.get_length() >= 5.0 * FreeAmbience.CALL_SLOT - 0.1, "%s holds a run of whole calls" % stem)
 	_check(FreeAmbience.is_warm(Vector2(33.5, -82.0)) and not FreeAmbience.is_warm(Vector2(51.4, -0.6)) and not FreeAmbience.is_warm(nowhere), "cicadas in Georgia, not Surrey")

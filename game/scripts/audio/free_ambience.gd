@@ -60,14 +60,53 @@ const CALL_UNIT := 12.0
 const CALL_SLOT := 3.0
 ## Where each region's birds sing, (lat from, lat to, lon from, lon to), and
 ## the file of their calls: Britain and Ireland (robin, blackbird, wren, wood
-## pigeon); the US South-east (cardinal, mockingbird, Carolina wren); the
-## Pacific North-west (American robin, song and white-crowned sparrows);
-## Australia (magpie, kookaburra). The first box holding a course wins.
+## pigeon, rook); Hawaii (myna, zebra dove, Japanese bush warbler, white-eye);
+## New Zealand (tui, bellbird, fantail, kingfisher); the Mediterranean
+## (blackcap, serin, Sardinian warbler, hoopoe, collared dove); the US
+## South-east and Texas (cardinal, mockingbird, Carolina wren); the US
+## North-east and Midwest (American robin, cardinal, blue jay, red-winged
+## blackbird, mourning dove); the Pacific coast and the Rockies (American
+## robin, song and white-crowned sparrows); Australia (magpie, kookaburra).
+## The first box holding a course wins. A desert course in the American
+## South-west gets DESERT_CALLS instead (desert_calls_for).
 const REGION_CALLS := [
 	[49.5, 61.0, -11.0, 2.0, "calls_uk"],
-	[24.0, 37.0, -95.0, -75.0, "calls_us_se"],
-	[42.0, 50.0, -125.0, -116.0, "calls_pnw"],
+	[18.0, 23.0, -161.0, -154.0, "calls_hawaii"],
+	[-48.0, -34.0, 165.0, 179.0, "calls_nz"],
+	[35.0, 45.5, -10.0, 28.0, "calls_med"],
+	[24.0, 37.0, -100.0, -75.0, "calls_us_se"],
+	[37.0, 50.0, -105.0, -60.0, "calls_us_north"],
+	[32.0, 57.0, -125.0, -114.0, "calls_pnw"],
 	[-44.0, -10.0, 112.0, 154.0, "calls_aus"],
+]
+## The Sonoran and Mojave deserts and Baja: cactus wren, Gambel's quail,
+## curve-billed thrasher, white-winged dove, verdin.
+const DESERT_CALLS := "calls_us_desert"
+const DESERT_CALLS_BOX := [22.0, 38.0, -118.0, -104.0]
+## Where the courses on the discs are, (latitude, longitude), found by a
+## piece of their name (place_key: lower case, letters only, so both the
+## full name and the classic courses' 8-letter file names match), and,
+## where the name doesn't say it, the kind of place (-1 to go by the name).
+## Courses that aren't real places (Skeleton Bay, Devil's Island) aren't
+## here.
+const KNOWN_PLACES := [
+	["gleneagle", 56.28, -3.75, -1], ["geagles", 56.28, -3.75, -1],
+	["cambrian", 31.93, -86.53, -1], ["cabo", 22.93, -109.83, Setting.DESERT],
+	["kauri", -34.99, 173.93, Setting.SEASIDE], ["tribute", 33.09, -96.88, -1],
+	["maunakea", 20.00, -155.82, Setting.SEASIDE], ["hapuna", 19.99, -155.82, Setting.SEASIDE],
+	["kapa", 21.00, -156.65, Setting.SEASIDE], ["belfr", 52.56, -1.73, -1],
+	["valhalla", 38.25, -85.48, -1], ["coghill", 41.67, -87.95, -1],
+	["pebbleb", 36.57, -121.95, Setting.SEASIDE], ["dorado", 18.47, -66.32, Setting.SEASIDE],
+	["pinehur", 35.19, -79.47, -1], ["seaisla", 31.15, -81.39, Setting.SEASIDE],
+	["troon", 55.53, -4.65, Setting.SEASIDE], ["congress", 38.99, -77.18, -1],
+	["harbourt", 32.14, -80.81, Setting.SEASIDE], ["barton", 30.28, -97.85, -1],
+	["bighorn", 33.70, -116.40, Setting.DESERT], ["oaklandh", 42.55, -83.25, -1],
+	["valderra", 36.29, -5.31, -1], ["innisbro", 28.11, -82.75, -1],
+	["castlepi", 39.45, -104.90, -1], ["pelicanh", 33.59, -117.83, Setting.SEASIDE],
+	["banff", 51.16, -115.56, Setting.WOODLAND], ["riviera", 34.05, -118.50, -1],
+	["torreypi", 32.90, -117.25, Setting.SEASIDE], ["fireston", 41.04, -81.47, -1],
+	["coveredb", 38.40, -85.75, -1], ["latrobe", 40.30, -79.38, -1],
+	["bayhill", 28.46, -81.51, -1], ["entrada", 37.15, -113.65, Setting.DESERT],
 ]
 ## A seaside links in Britain and Ireland: skylark, oystercatcher, herring gull.
 const LINKS_CALLS := "calls_links"
@@ -103,6 +142,8 @@ var warm := false
 var round_progress := 0.0
 ## The region's birdcalls (calls_for), or "" for snatches of the bed.
 var calls := ""
+## The course's latitude (NAN when not known), for the season.
+var latitude := NAN
 var _bed: AudioStreamPlayer
 var _breeze: AudioStreamPlayer
 var _water: AudioStreamPlayer
@@ -128,7 +169,11 @@ static func create(course: CourseData) -> FreeAmbience:
 	a.name = "FreeAmbience"
 	var at := location_of(course)
 	a.setting = setting_for_place(course.course_name, at)
+	var place := known_place(course.course_name)
+	if is_nan(course.location.x) and not place.is_empty() and place[3] >= 0:
+		a.setting = place[3] as Setting
 	a.warm = is_warm(at)
+	a.latitude = at.x
 	a.calls = calls_for(at, a.setting)
 	return a
 
@@ -138,6 +183,8 @@ static func create(course: CourseData) -> FreeAmbience:
 static func calls_for(at: Vector2, p_setting: Setting) -> String:
 	if is_nan(at.x):
 		return ""
+	if p_setting == Setting.DESERT and _in_box(at, DESERT_CALLS_BOX):
+		return DESERT_CALLS
 	for box: Array in REGION_CALLS:
 		if at.x >= box[0] and at.x <= box[1] and at.y >= box[2] and at.y <= box[3]:
 			if box[4] == "calls_uk" and p_setting == Setting.SEASIDE:
@@ -146,10 +193,40 @@ static func calls_for(at: Vector2, p_setting: Setting) -> String:
 	return ""
 
 
-## Where in the world a course is, (latitude, longitude) in degrees, when it
-## was built from a real place (the course from a map); NAN otherwise.
+static func _in_box(at: Vector2, box: Array) -> bool:
+	return at.x >= box[0] and at.x <= box[1] and at.y >= box[2] and at.y <= box[3]
+
+
+## Where in the world a course is, (latitude, longitude) in degrees: where
+## it was built from (the course from a map), or a known course's place by
+## its name (KNOWN_PLACES); NAN otherwise.
 static func location_of(course: CourseData) -> Vector2:
-	return course.location if course != null else Vector2(NAN, NAN)
+	if course == null:
+		return Vector2(NAN, NAN)
+	if not is_nan(course.location.x):
+		return course.location
+	var place := known_place(course.course_name)
+	return Vector2(place[1], place[2]) if not place.is_empty() else Vector2(NAN, NAN)
+
+
+## A course's name as KNOWN_PLACES matches it: lower case, letters only.
+static func place_key(course_name: String) -> String:
+	var key := ""
+	for c in course_name.to_lower():
+		if c >= "a" and c <= "z":
+			key += c
+	return key
+
+
+## The KNOWN_PLACES entry for a course name, or [] when it isn't one.
+static func known_place(course_name: String) -> Array:
+	var key := place_key(course_name)
+	if key.is_empty():
+		return []
+	for place: Array in KNOWN_PLACES:
+		if key.contains(place[0]):
+			return place
+	return []
 
 
 ## Hot dry places, (lat from, lat to, lon from, lon to): the deserts round
@@ -234,10 +311,11 @@ static func bed_db(p_setting: Setting, time: String) -> float:
 	return BIRDS_DB[time]
 
 
-## Whether the course gets birdcalls: not in the desert (the bed there is
-## cicadas), nor over the waves, except on a links with its own shore birds.
+## Whether the course gets birdcalls: in the desert and by the sea only
+## where the region has its own set (the desert's own birds, a links' shore
+## birds, the land birds of a coast); there the bed is cicadas or waves.
 static func has_calls(p_setting: Setting, p_calls := "") -> bool:
-	return p_setting == Setting.PARKLAND or p_setting == Setting.WOODLAND or p_calls == LINKS_CALLS
+	return p_setting == Setting.PARKLAND or p_setting == Setting.WOODLAND or p_calls != ""
 
 
 ## The time of day changed (or the round moved on, for "Through the round").
@@ -351,7 +429,7 @@ func _process(delta: float) -> void:
 	var time := Scenery.time_name(time_of_day, round_progress)
 	_next_call -= delta
 	if _next_call <= 0.0:
-		var gap: Vector2 = CALL_GAP[time]
+		var gap: Vector2 = CALL_GAP[time] * season_gap(Time.get_date_dict_from_system().month, latitude)
 		_next_call = randf_range(gap.x, gap.y)
 		# Fewer calls out in the open, where there are few trees to sing in.
 		if has_calls(setting, calls) and randf() < 0.25 + 0.75 * woods:
@@ -364,6 +442,23 @@ func _process(delta: float) -> void:
 		if time != "golden" and setting != Setting.SEASIDE and not _mower.playing and _mower.stream != null:
 			_mower.volume_db = MOWER_DB + randf_range(-4.0, 0.0)
 			_mower.play()
+
+
+## How much longer the gaps between birdcalls are in month `month` (1 to 12,
+## the player's own date) at latitude `lat`: birds sing most in spring,
+## when they hold territories and nest, less in high summer and autumn, and
+## little in winter. The southern hemisphere's seasons are the other way
+## round; the tropics sing all year. An unknown place counts as northern.
+const SEASON_GAP := [1.8, 1.7, 1.1, 0.85, 0.8, 0.9, 1.1, 1.25, 1.35, 1.45, 1.65, 1.8]
+
+
+static func season_gap(month: int, lat: float) -> float:
+	if not is_nan(lat) and absf(lat) < 23.5:
+		return 1.0
+	var m := clampi(month, 1, 12) - 1
+	if not is_nan(lat) and lat < 0.0:
+		m = (m + 6) % 12
+	return SEASON_GAP[m]
 
 
 ## A snatch of the birdsong from a tree some way off.
