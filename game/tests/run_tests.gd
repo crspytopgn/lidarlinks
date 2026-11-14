@@ -644,6 +644,44 @@ func _test_swing_meter() -> void:
 	while chip.rising:
 		chip.advance(0.004)
 	_check(chip.power_pos == 16 and chip.pos == 22, "chip power waits for 16 and turns at 22 (%d, %d)" % [chip.power_pos, chip.pos])
+	# The marker glides between positions: never more than one ahead of the
+	# game's own, never behind it, and never jumping (60 fps frames).
+	var glide := LinksPowerStroke.Run.new(LinksPowerStroke.Mode.FULL)
+	var last := glide.smooth_pos()
+	var worst := 0.0
+	var behind := false
+	while not glide.done:
+		glide.advance(1.0 / 60.0)
+		if glide.pos == 40 and glide.rising and glide.power_pos == 0:
+			glide.click_power()
+		var at := glide.smooth_pos()
+		worst = maxf(worst, absf(at - last))
+		var step := 1.0 if glide.rising else -1.0
+		if (at - glide.pos) * step < -1e-6 or (at - glide.pos) * step > 1.0 + 1e-6:
+			behind = true
+		last = at
+	_check(worst <= 1.0 + 1e-6, "the meter marker never jumps more than a position a frame (%.2f)" % worst)
+	_check(not behind, "the drawn marker stays within a position ahead of the game's")
+	# Putts have their own meter: a finer stroke scale and pull/push.
+	meter.mode = LinksPowerStroke.Mode.PUTT
+	_check(meter.putting() and meter.marks().size() == 20 and meter.title() == "PUTT", "putts get the fine PUTT scale")
+	meter.accuracy = 0.2
+	_check(meter.miss_text() == "PUSH 20%", "a late putt is a push")
+	meter.mode = LinksPowerStroke.Mode.FULL
+	_check(meter.marks().size() == 4 and meter.miss_text() == "SLICE 20%", "full swings keep quarters and slices")
+	# The Broadcast putting meter's distance scale, by the round's physics.
+	var putter: Club = null
+	for c in Club.standard_set():
+		if c.is_putter:
+			putter = c
+	var roll := GolfRound.putt_roll_feet(StandardShotModel.new(), putter, Surface.Type.GREEN)
+	var rising_roll := roll.size() == 21 and roll[20] > 10.0
+	for i in range(1, roll.size()):
+		rising_roll = rising_roll and roll[i] >= roll[i - 1]
+	_check(rising_roll, "putts roll further the further back the stroke (%s)" % [roll])
+	meter.set_putt_scale(PackedFloat32Array([0.0, 10.0, 30.0]), 20.0)
+	_check_near(meter.value_for_feet(20.0), 0.75, 1e-6, "the putt scale finds the hole's place on the meter")
+	_check_near(meter.feet_for_value(0.25), 5.0, 1e-6, "the putt scale reads feet back")
 	meter.free()
 
 
