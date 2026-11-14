@@ -30,6 +30,8 @@ LICENCES = {
     "cc0": ("CC0 1.0", "https://creativecommons.org/publicdomain/zero/1.0/"),
     "by3": ("CC BY 3.0", "https://creativecommons.org/licenses/by/3.0/"),
     "by4": ("CC BY 4.0", "https://creativecommons.org/licenses/by/4.0/"),
+    "bysa3": ("CC BY-SA 3.0", "https://creativecommons.org/licenses/by-sa/3.0/"),
+    "bysa4": ("CC BY-SA 4.0", "https://creativecommons.org/licenses/by-sa/4.0/"),
 }
 
 
@@ -42,7 +44,8 @@ def fetch(sid, src, cache):
     path = os.path.join(cache, f"{sid}.ogg")
     if not os.path.exists(path) or os.path.getsize(path) == 0:
         tmp = path + ".part"
-        subprocess.run(["curl", "-sSfL", "--retry", "3", "-m", "300", "-r", f"0-{FETCH_BYTES - 1}",
+        subprocess.run(["curl", "-sSfL", "--retry", "5", "--retry-delay", "20", "-m", "300",
+                        "-A", "openlinks-sound-builder/1.0", "-r", f"0-{FETCH_BYTES - 1}",
                         "-o", tmp, src["preview"]], check=True)
         os.replace(tmp, path)
     return path
@@ -133,15 +136,18 @@ def credits(data):
         "",
         "The sounds the game plays when the original Links 2003 files are not",
         "loaded. None of them comes from Links 2003: they are cut and mixed from",
-        "these field recordings on [freesound.org](https://freesound.org), by",
+        "these field recordings on [freesound.org](https://freesound.org) and",
+        "[xeno-canto](https://xeno-canto.org) (the newer regional birdcalls), by",
         "`tools/audio/build_free_sounds.py` from `tools/audio/free_sounds.json`.",
         "`amb_traffic`, `amb_mower` and `amb_murmur` are not recordings: they are",
         "synthesised from noise by `tools/audio/synth_ambience.py`.",
         "",
         "CC0 recordings need no credit, but every recording is credited anyway.",
-        "Those under CC BY are used under that licence; the files here are",
-        "edited versions of them (trimmed, layered, filtered, re-pitched, mixed",
-        "and re-encoded).",
+        "Those under CC BY and CC BY-SA are used under those licences; the files",
+        "here are edited versions of them (trimmed, layered, filtered,",
+        "re-pitched, mixed and re-encoded). A file made from a CC BY-SA",
+        "recording (the `calls_*` sets that list one) is itself shared under",
+        "CC BY-SA 4.0.",
         "",
         "| Recording | Author | Licence | Used in |",
         "| --- | --- | --- | --- |",
