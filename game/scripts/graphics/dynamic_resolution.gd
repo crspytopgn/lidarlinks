@@ -17,20 +17,31 @@ var target_fps := 0
 var max_scale := 1.0
 var min_scale := MIN_SCALE
 var _viewport: Viewport
+var _settings: GraphicsSettings
 var _time := 0.0
 var _frames := 0
 var _calm := 0  ## windows in a row with time to spare
 
 
 func setup(viewport: Viewport, s: GraphicsSettings) -> void:
+	if _viewport != null and _viewport.size_changed.is_connected(_on_resized):
+		_viewport.size_changed.disconnect(_on_resized)
 	_viewport = viewport
+	_settings = s
 	target_fps = s.target_fps()
-	max_scale = s.render_scale
-	min_scale = minf(WEB_MIN_SCALE if OS.has_feature("web") else MIN_SCALE, max_scale)
-	_viewport.scaling_3d_scale = max_scale
+	_on_resized()
+	_viewport.size_changed.connect(_on_resized)
 	_time = 0.0
 	_frames = 0
 	_calm = 0
+
+
+## The top scale follows the window: a bigger window on built-in graphics
+## gets a lower one (GraphicsSettings.effective_render_scale).
+func _on_resized() -> void:
+	max_scale = _settings.effective_render_scale(_viewport)
+	min_scale = minf(WEB_MIN_SCALE if OS.has_feature("web") else MIN_SCALE, max_scale)
+	_viewport.scaling_3d_scale = max_scale
 
 
 func _process(delta: float) -> void:
