@@ -2275,6 +2275,12 @@ func _test_gallery() -> void:
 	_check(facing.distance_to(Vector3(0.6, 0, 0.8)) < 1e-4, "spectators face what they watch")
 	g.watch_point(hole.tee + Vector3.UP)
 	_check(g.murmur_db() == Gallery.MURMUR_DB, "the gallery murmurs")
+	var murmur_at := Gallery.murmur_spots(hole, hole.pin)
+	var green_m := Vector2(murmur_at[1].x - hole.pin.x, murmur_at[1].z - hole.pin.z).length()
+	var tee_m := Vector2(murmur_at[0].x - hole.tee.x, murmur_at[0].z - hole.tee.z).length()
+	_check(green_m >= Gallery.GREEN_MARGIN + Gallery.CROWD_FAR and tee_m >= Gallery.TEE_SIDE,
+		"the murmur comes from the crowd, not the flag or the tee box")
+	_check(Gallery.MURMUR_DB <= -18.0 and Gallery.MURMUR_HUSH_DB < Gallery.MURMUR_DB, "the murmur sits low in the mix")
 	g.react(Commentary.Crowd.ROAR)
 	g.free()
 	_check_near(Gallery.stand_depth(), 6.8, 1e-4, "eight bleacher rows of 0.85 m")
