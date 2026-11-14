@@ -69,37 +69,60 @@ static func build(hole: HoleData, toward: Vector3, crowd: int, seed_value: int, 
 			if not tee_at.is_empty():
 				g._build_grandstand(hole.terrain, tee_at[0], tee_at[1], seed_value + 11, TEE_STAND_WIDTH, "TeeGrandstand")
 	g.camera_blockers.finalize()
-	g._add_murmur(hole)
+	g._add_murmur(hole, toward)
 	return g
 
 
 # --- Crowd murmur ----------------------------------------------------------
 
-## The gallery talking among itself (amb_murmur, see tools/audio), from the
-## crowds at the tee and round the green, fainter the further off. It hushes
-## while the player stands over the ball, as a tour crowd does, and picks up
-## again a few seconds after the shot.
-const MURMUR_DB := -6.0
-const MURMUR_HUSH_DB := -22.0
-const MURMUR_UNIT := 9.0  ## metres at which it plays at MURMUR_DB
+## The gallery talking among itself (amb_murmur, see tools/audio), from where
+## the crowds stand: along the tee ropes and behind the green's rope, never
+## at the tee box or the pin themselves. A real gallery heard from the
+## middle of a green is a soft background, well under the birds and breeze
+## of a quiet course, so it plays low and falls off with distance. It hushes
+## while the player stands over the ball, as a tour crowd does, and picks
+## up again a few seconds after the shot.
+const MURMUR_DB := -18.0
+const MURMUR_HUSH_DB := -32.0
+const MURMUR_UNIT := 12.0  ## metres at which it plays at MURMUR_DB
+const MURMUR_MAX_M := 220.0  ## and past this it is not heard at all
 const MURMUR_BACK := 3.0  ## seconds after the strike
+## The green's gallery is heard from this far behind its rope (the middle of
+## the crowd), on the far side of the green from the tee.
+const MURMUR_GREEN_BACK := CROWD_FAR
 
 
-func _add_murmur(hole: HoleData) -> void:
+## Where the murmurs play from: the middle of the tee gallery (to one side,
+## halfway down the ropes) and the back of the green's gallery.
+static func murmur_spots(hole: HoleData, toward: Vector3) -> Array[Vector3]:
+	var dir := Vector3(toward.x - hole.tee.x, 0.0, toward.z - hole.tee.z)
+	dir = Vector3(0, 0, 1) if dir.length() < 0.01 else dir.normalized()
+	var side := Vector3.UP.cross(dir)
+	var tee := hole.tee + dir * ((TEE_FROM + TEE_TO) * 0.25) + side * (TEE_SIDE + CROWD_FAR)
+	var back := Vector3(hole.pin.x - hole.tee.x, 0.0, hole.pin.z - hole.tee.z)
+	back = Vector3(0, 0, 1) if back.length() < 0.01 else back.normalized()
+	var r := _green_edge(hole.terrain, hole.pin, back) + GREEN_MARGIN + MURMUR_GREEN_BACK
+	var green := hole.pin + back * r
+	tee.y = hole.terrain.height_at(tee.x, tee.z)
+	green.y = hole.terrain.height_at(green.x, green.z)
+	return [tee, green]
+
+
+func _add_murmur(hole: HoleData, toward: Vector3) -> void:
 	var stream := load("res://assets/sounds/amb_murmur.ogg") as AudioStreamOggVorbis
 	if stream == null:
 		return
 	stream.loop = true
-	var spots: Array[Vector3] = [hole.tee, hole.pin]
+	var spots := murmur_spots(hole, toward)
 	for i in spots.size():
-		var at := spots[i]
 		var p := AudioStreamPlayer3D.new()
 		p.name = "Murmur%d" % i
 		p.stream = stream
 		p.unit_size = MURMUR_UNIT
+		p.max_distance = MURMUR_MAX_M
 		p.volume_db = MURMUR_DB
 		p.attenuation_filter_cutoff_hz = 4000.0
-		p.position = at + Vector3.UP * 1.6
+		p.position = spots[i] + Vector3.UP * 1.6
 		p.autoplay = true
 		add_child(p)
 
