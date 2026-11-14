@@ -10,7 +10,9 @@ extends MultiMeshInstance3D
 ## variant, in place of thousands of small cells.
 
 const MOVE := 4.0  ## metres the camera moves before the set is refilled
-const MARGIN := 20.0  ## metres past the lite distance a tree's base may be
+## metres past the lite distance a tree's base may be (more than its
+## fade band, TreeFactory.LOD_FADE)
+const MARGIN := 20.0
 
 var transforms: Array[Transform3D] = []  ## every tree, in this node's space
 var _last := Vector3(INF, INF, INF)
@@ -18,6 +20,9 @@ var _last := Vector3(INF, INF, INF)
 
 func _init(mm: MultiMesh = null, all: Array[Transform3D] = []) -> void:
 	name = "NearTrees"
+	# After the cameras have moved this frame: refilled before them, a
+	# camera cut drew one frame with no full trees near its new spot.
+	process_priority = 1000
 	multimesh = mm
 	transforms = all
 	if mm != null:
