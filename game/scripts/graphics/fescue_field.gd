@@ -10,6 +10,11 @@ extends Node3D
 ## near tufts, which it takes over from past about 20 m so a ball in the
 ## rough near the camera is never hidden. Visual only. Off without the atlas
 ## or with the Grass setting off; reach and density follow that setting.
+##
+## Under and around each tree crown it also grows an understory: taller,
+## denser and darker brush on the rough there, so a wood's edge reads as a
+## wall of undergrowth (as on GSPro's community courses and real parkland)
+## rather than a picket line of bare trunks on a mown lawn.
 
 const SHADER := preload("res://shaders/fescue.gdshader")
 const CHUNK := 32.0
@@ -19,6 +24,41 @@ const BUILDS_PER_FRAME := 2
 const DENSITY := [0.0, 0.4, 0.6, 0.8]
 const RADIUS := [0.0, 90.0, 140.0, 180.0]
 const SURFACES := [Surface.Type.DEEP_ROUGH]
+## Understory, per Grass level: tufts per square metre of a crown's
+## footprint. It grows on the deep rough out to UNDER_REACH_DEEP crown radii
+## from the trunk, and on the plain rough only under the crown itself.
+const UNDER_DENSITY := [0.0, 0.5, 0.8, 1.1]
+const UNDER_REACH_DEEP := 1.3
+const UNDER_REACH_ROUGH := 0.9
+## Crowns smaller than this (bushes) get none: a bush is its own brush.
+const UNDER_MIN_RADIUS := 1.5
+## Understory tufts: height range (m), width against height, and how much
+## darker than the open rough (shade under the crown).
+const UNDER_HEIGHT := Vector2(1.1, 2.1)
+const UNDER_WIDTH := Vector2(1.8, 2.6)
+const UNDER_SHADE := 0.72
+## Native grass: golden drifts on the deep rough. The noise's feature size
+## (m), the noise level a drift starts at (shaders/terrain.gdshader
+## native_at mirrors these) and the width of its soft edge,
+## how much denser than plain fescue a drift grows, its tufts' height range
+## and their colours (sRGB, picked per tuft).
+const NATIVE_SCALE := 70.0
+const NATIVE_FROM := 0.5
+const NATIVE_EDGE := 0.12
+## Banks and mound sides grow long and go to seed first (a course mows the
+## flat): how much the slope (1 - normal y) adds to the drift noise.
+const NATIVE_SLOPE := 1.6
+const NATIVE_DENSITY := 2.4
+const NATIVE_HEIGHT := Vector2(0.6, 1.1)
+const NATIVE_STRAW := Color(0.64, 0.56, 0.4)
+const NATIVE_GOLD := Color(0.58, 0.51, 0.34)
+const NATIVE_RUSSET := Color(0.55, 0.44, 0.32)
+## Reeds round ponds: tufts on the bank within REED_REACH m of the water,
+## per square metre against the fescue's density, their heights and green.
+const REED_DENSITY := 2.5
+const REED_REACH := 2.5
+const REED_HEIGHT := Vector2(1.1, 1.9)
+const REED_COLOUR := Color(0.42, 0.5, 0.26)
 ## The ground normal's x and z, times this and the tuft's height, are the
 ## card's up axis x and z (see build_chunk and shaders/fescue.gdshader).
 const NORMAL_LEAN := 0.01
@@ -30,9 +70,11 @@ const FAR_GAIN_FORWARD_PLUS := 0.7
 var terrain: CourseTerrain
 var level := 0
 var _chunks := {}  ## Vector2i -> MultiMeshInstance3D (null for an empty chunk)
+var _crowns := {}  ## Vector2i chunk -> PackedVector3Array of crowns centred in it
 
 static var _mesh: ArrayMesh
 static var _mat: ShaderMaterial
+static var _buf := PackedFloat32Array()  ## the chunk build_chunk is filling
 
 
 func _init() -> void:
@@ -51,6 +93,7 @@ func setup(t: CourseTerrain, grass_level: int) -> void:
 		if node != null:
 			node.queue_free()
 	_chunks.clear()
+	_crowns = crowns_by_chunk(t.obstacles if t != null else null)
 	var r: float = RADIUS[level]
 	material().set_shader_parameter("far_start", r * 0.7)
 	material().set_shader_parameter("far_end", r)
@@ -80,7 +123,7 @@ func update_around(eye: Vector3) -> void:
 		return _centre(a).distance_squared_to(here) < _centre(b).distance_squared_to(here))
 	for i in mini(BUILDS_PER_FRAME, wanted.size()):
 		var key := wanted[i]
-		var mm := build_chunk(terrain, key, DENSITY[level])
+		var mm := build_chunk(terrain, key, DENSITY[level], _crowns.get(key, PackedVector3Array()), UNDER_DENSITY[level])
 		var node: MultiMeshInstance3D = null
 		if mm != null:
 			node = MultiMeshInstance3D.new()
@@ -98,52 +141,97 @@ static func _centre(key: Vector2i) -> Vector2:
 	return (Vector2(key) + Vector2(0.5, 0.5)) * CHUNK
 
 
-## The tufts of one chunk, or null with no deep rough in it. Deterministic.
-static func build_chunk(t: CourseTerrain, key: Vector2i, density: float) -> MultiMesh:
+## The tree crowns of `field` big enough for an understory, bucketed by the
+## chunk their trunk stands in.
+static func crowns_by_chunk(field: ObstacleField) -> Dictionary:
+	var out := {}
+	if field == null:
+		return out
+	for c: Vector3 in field.canopies():
+		if c.z < UNDER_MIN_RADIUS:
+			continue
+		var key := Vector2i(floori(c.x / CHUNK), floori(c.y / CHUNK))
+		if not out.has(key):
+			out[key] = PackedVector3Array()
+		var list: PackedVector3Array = out[key]
+		list.append(c)
+		out[key] = list
+	return out
+
+
+## The tufts of one chunk, or null with no deep rough or understory in it:
+## fescue on its deep rough (in golden drifts of native grass where
+## native_at() says so), reeds round its ponds, then brush under the
+## `crowns` (x, z, radius) whose trunks stand in it. Deterministic.
+static func build_chunk(t: CourseTerrain, key: Vector2i, density: float, crowns := PackedVector3Array(), under_density := 0.0) -> MultiMesh:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = hash(key) + 77
-	var tries := roundi(CHUNK * CHUNK * density)
-	var buffer := PackedFloat32Array()
-	buffer.resize(tries * 16)
-	var n := 0
+	_buf = PackedFloat32Array()
 	var origin := Vector2(key) * CHUNK
+	# Fescue, thicker and taller in the native drifts (the extra tries only
+	# land where native_at is high).
+	var tries := roundi(CHUNK * CHUNK * density * NATIVE_DENSITY)
 	for i in tries:
 		var x := origin.x + rng.randf() * CHUNK
 		var z := origin.y + rng.randf() * CHUNK
 		var yaw := rng.randf() * TAU
-		var h := rng.randf_range(0.4, 0.75)
-		var w := h * rng.randf_range(1.0, 1.3)
+		var keep := rng.randf()
 		var pick := rng.randf()
+		var tone := rng.randf()
+		var grow := rng.randf()
 		if not SURFACES.has(t.surface_at(x, z)):
 			continue
+		var native := native_at(x, z, t.normal_at(x, z).y)
+		if keep * NATIVE_DENSITY > 1.0 + (NATIVE_DENSITY - 1.0) * native:
+			continue
+		var h := lerpf(rng.randf_range(0.4, 0.75), lerpf(NATIVE_HEIGHT.x, NATIVE_HEIGHT.y, grow), native)
 		var c := t.ground_color_at(x, z)
-		# The ground's slope rides along in the card's up axis as a tiny
-		# lean (NORMAL_LEAN of the height, under a centimetre), so the
-		# shader can light the tuft as the ground under it is lit.
-		var up := t.normal_at(x, z)
-		var o := n * 16
-		var cs := cos(yaw)
-		var sn := sin(yaw)
-		buffer[o] = cs * w
-		buffer[o + 1] = 0.0
-		buffer[o + 2] = sn * w
-		buffer[o + 3] = x
-		buffer[o + 4] = up.x * NORMAL_LEAN * h
-		buffer[o + 5] = h
-		buffer[o + 6] = up.z * NORMAL_LEAN * h
-		buffer[o + 7] = t.height_at(x, z) - 0.03
-		buffer[o + 8] = -sn * w
-		buffer[o + 9] = 0.0
-		buffer[o + 10] = cs * w
-		buffer[o + 11] = z
-		buffer[o + 12] = c.r
-		buffer[o + 13] = c.g
-		buffer[o + 14] = c.b
-		buffer[o + 15] = pick
-		n += 1
+		if native > 0.0:
+			c = c.lerp(native_colour(tone), native)
+		_put(t, x, z, yaw, h * lerpf(rng.randf_range(1.0, 1.3), rng.randf_range(1.6, 2.2), native), h, c, pick, -0.03)
+	# Reeds: tall tufts on the bank, the ground just short of the water.
+	for i in roundi(CHUNK * CHUNK * density * REED_DENSITY):
+		var x := origin.x + rng.randf() * CHUNK
+		var z := origin.y + rng.randf() * CHUNK
+		var yaw := rng.randf() * TAU
+		var h := rng.randf_range(REED_HEIGHT.x, REED_HEIGHT.y)
+		var pick := rng.randf()
+		var tone := rng.randf()
+		var s := t.surface_at(x, z)
+		if s == Surface.Type.WATER or s == Surface.Type.GREEN or s == Surface.Type.TEE or s == Surface.Type.FAIRWAY or s == Surface.Type.SAND:
+			continue
+		var wet := false
+		for k in 6:
+			var a := k * TAU / 6.0
+			if t.surface_at(x + cos(a) * REED_REACH, z + sin(a) * REED_REACH) == Surface.Type.WATER:
+				wet = true
+				break
+		if not wet:
+			continue
+		_put(t, x, z, yaw, h * rng.randf_range(0.7, 1.0), h, REED_COLOUR.lerp(native_colour(tone), 0.35), pick, -0.05)
+	for crown in crowns:
+		var reach := crown.z * UNDER_REACH_DEEP
+		var count := roundi(PI * reach * reach * under_density)
+		for i in count:
+			# Uniform over the disc out to `reach`.
+			var d := sqrt(rng.randf()) * reach
+			var ang := rng.randf() * TAU
+			var x := crown.x + cos(ang) * d
+			var z := crown.y + sin(ang) * d
+			var yaw := rng.randf() * TAU
+			var h := rng.randf_range(UNDER_HEIGHT.x, UNDER_HEIGHT.y)
+			var w := h * rng.randf_range(UNDER_WIDTH.x, UNDER_WIDTH.y)
+			var pick := rng.randf()
+			var s := t.surface_at(x, z)
+			if not (s == Surface.Type.DEEP_ROUGH or (s == Surface.Type.ROUGH and d < crown.z * UNDER_REACH_ROUGH)):
+				continue
+			_put(t, x, z, yaw, w, h, t.ground_color_at(x, z) * UNDER_SHADE, pick, -0.05)
+	@warning_ignore("integer_division")
+	var n := _buf.size() / 16
 	if n == 0:
 		return null
-	buffer.resize(n * 16)
+	var buffer := _buf
+	_buf = PackedFloat32Array()
 	var mm := MultiMesh.new()
 	mm.transform_format = MultiMesh.TRANSFORM_3D
 	mm.use_custom_data = true
@@ -152,6 +240,63 @@ static func build_chunk(t: CourseTerrain, key: Vector2i, density: float) -> Mult
 	mm.buffer = buffer
 	mm.set_meta("buffer", buffer)
 	return mm
+
+
+## How much the deep rough at (x, z), where the ground's normal has y `up`,
+## is a drift of golden native grass, 0 to 1: broad patches, more on banks, as a course lets its out-of-play ground grow and go
+## to seed (the warm straw against green turf that makes GSPro's and real
+## heathland courses look so good), with soft edges.
+static func native_at(x: float, z: float, up := 1.0) -> float:
+	var q := Vector2(x, z) / NATIVE_SCALE
+	var v := 0.65 * _value_noise(q) + 0.35 * _value_noise(q * 2.03 + Vector2(17.1, 9.7)) + NATIVE_SLOPE * (1.0 - up)
+	return smoothstep(NATIVE_FROM, NATIVE_FROM + NATIVE_EDGE, v)
+
+
+## shaders/terrain.gdshader's hash and value_noise, so the ground under a
+## drift and the drift's tufts agree.
+static func _hash(p: Vector2) -> float:
+	p = Vector2(p.x * 123.34, p.y * 456.21)
+	p = p - p.floor()
+	var d := p.dot(p + Vector2(45.32, 45.32))
+	p += Vector2(d, d)
+	var r := p.x * p.y
+	return r - floorf(r)
+
+
+static func _value_noise(p: Vector2) -> float:
+	var i := p.floor()
+	var f := p - i
+	var u := f * f * (Vector2(3, 3) - 2.0 * f)
+	var a := _hash(i)
+	var b := _hash(i + Vector2(1, 0))
+	var c := _hash(i + Vector2(0, 1))
+	var d := _hash(i + Vector2(1, 1))
+	return lerpf(lerpf(a, b, u.x), lerpf(c, d, u.x), u.y)
+
+
+## A native tuft's colour (sRGB) for `tone` 0 to 1: straw, olive gold or
+## russet, as long grass in seed is.
+static func native_colour(tone: float) -> Color:
+	if tone < 0.55:
+		return NATIVE_STRAW.lerp(NATIVE_GOLD, tone / 0.55)
+	return NATIVE_GOLD.lerp(NATIVE_RUSSET, (tone - 0.55) / 0.45)
+
+
+## Adds one tuft (yaw, width `w`, height `h`, sRGB ground colour `c`,
+## atlas pick, sunk `sink` m) at (x, z) to the chunk being built.
+static func _put(t: CourseTerrain, x: float, z: float, yaw: float, w: float, h: float, c: Color, pick: float, sink: float) -> void:
+	# The ground's slope rides along in the card's up axis as a tiny lean
+	# (NORMAL_LEAN of the height, under a centimetre), so the shader can
+	# light the tuft as the ground under it is lit.
+	var up := t.normal_at(x, z)
+	var cs := cos(yaw)
+	var sn := sin(yaw)
+	_buf.append_array(PackedFloat32Array([
+		cs * w, 0.0, sn * w, x,
+		up.x * NORMAL_LEAN * h, h, up.z * NORMAL_LEAN * h, t.height_at(x, z) + sink,
+		-sn * w, 0.0, cs * w, z,
+		c.r, c.g, c.b, pick,
+	]))
 
 
 static func material() -> ShaderMaterial:

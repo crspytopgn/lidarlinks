@@ -5383,6 +5383,44 @@ func _test_broadcast_pieces() -> void:
 	_check(not first[2], "the first camera carries on from the aim view, no cut as the swing starts")
 	var late: Array = d.step(5.5, shot.position_at(5.5), behind, 0.016)
 	_check(late[2], "the pin camera starts with a cut")
+	# The follow-the-ball camera: one camera from the address to the rest,
+	# trailing the ball smoothly (no jumps, no sudden starts) and coming
+	# down low behind it for the roll.
+	var roll_shot := ShotResult.new()
+	for i in 121:
+		var t := i * 0.05
+		var u := t / 6.0
+		roll_shot.add_sample(t, Vector3(0.0, 30.0 * 4.0 * u * (1.0 - u), 200.0 * u))
+	for i in range(1, 61):
+		var t := 6.0 + i * 0.05
+		var r := 1.0 - pow(1.0 - i / 60.0, 2.0)
+		roll_shot.add_sample(t, Vector3(0.0, 0.4 * absf(sin(r * 9.0)) * (1.0 - r), 200.0 + 15.0 * r))
+	roll_shot.first_landing = Vector3(0, 0, 200)
+	roll_shot.rest = Vector3(0, 0, 215)
+	roll_shot.carry_m = 200.0
+	roll_shot.total_m = 215.0
+	roll_shot.time_s = 9.0
+	roll_shot.bounces = 3
+	var fd := ShotDirector.plan(roll_shot, Vector3(0, 0, 240), terrain, behind, false, 0, null, true)
+	_check(fd.cut_cams.size() == 1 and fd.cut_cams[0] == ShotDirector.Cam.FOLLOW, "follow the ball: one camera")
+	var cam := behind
+	var last_move := 0.0
+	var worst_jerk := 0.0
+	var far_air := 0.0
+	for f in 9 * 60 + 120:
+		var ft := f / 60.0
+		var cam_was := cam
+		cam = fd.step(ft, roll_shot.position_at(ft), cam, 1.0 / 60.0)[0]
+		var move := cam.distance_to(cam_was)
+		worst_jerk = maxf(worst_jerk, absf(move - last_move))
+		last_move = move
+		if ft < 6.0:
+			far_air = maxf(far_air, cam.distance_to(roll_shot.position_at(ft)))
+	var rest_gap := Vector2(cam.x - 0.0, cam.z - 215.0).length()
+	print("  follow cam: farthest in the air %.1f m, rest gap %.1f m, height %.1f m, worst change per frame %.3f m" % [far_air, rest_gap, cam.y, worst_jerk])
+	_check(worst_jerk < 0.08, "the follow camera never jerks (worst %.3f m per frame)" % worst_jerk)
+	_check(far_air < 70.0, "the follow camera keeps the ball in sight in the air (%.1f m)" % far_air)
+	_check(rest_gap > 4.0 and rest_gap < 11.0 and cam.y < 3.0 and cam.z < 215.0, "the follow camera settles low behind the ball at rest (%s)" % cam)
 	_check((late[0] as Vector3).z > 240.0, "pin camera stands beyond the pin")
 	var side := ShotDirector.plan(shot, Vector3(0, 0, 400), terrain, behind, false, 2)
 	_check(side.cut_cams[1] == ShotDirector.Cam.SIDE, "variant 2 cuts side-on")

@@ -45,6 +45,9 @@ var _landing_time := -1.0
 var _cut_to_landing := false
 ## TV-style cameras (ShotDirector) instead of the Links framing.
 var broadcast := false
+## Broadcast: one camera that trails the ball through the flight and the
+## roll (ShotDirector follow_ball) rather than the TV cuts.
+var follow_ball := false
 var director: ShotDirector
 ## Things only the camera keeps out of: the gallery's grandstands.
 var blockers: ObstacleField
@@ -179,7 +182,7 @@ func follow(shot: ShotResult, pin := Vector3.ZERO, putting := false, variant := 
 		if variant < 0:
 			_variant += 1
 			variant = _variant
-		director = ShotDirector.plan(shot, pin, terrain, position, putting, variant, blockers)
+		director = ShotDirector.plan(shot, pin, terrain, position, putting, variant, blockers, follow_ball)
 		director.golfer = golfer
 		return
 	if shot.carry_m >= LANDING_VIEW_MIN_CARRY:
