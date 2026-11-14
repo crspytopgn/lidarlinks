@@ -142,11 +142,13 @@ static func mean_color(tex: Texture2D) -> Color:
 static var _vram := {}  ## path -> the block-compressed copy (desktop)
 
 
-## The private Megascans pack's ground textures (docs/megascans-pack.md):
-## a folder of baked JPEGs named like the free ground slots, which replace
-## them where present. Never in the repository or the web build: the scans'
-## licence lets them be used, not passed on. OL_MEGASCANS overrides the
-## folder (the pack's root, holding ground/).
+## The private Megascans pack (docs/megascans-pack.md): baked plant
+## textures named like the free ones (foliage/fescue.png), which replace
+## them where present. Its turf scans were tried and looked no better than
+## the free ground set, so the ground isn't read from it. Never in the
+## repository or the web build: the scans' licence lets them be used, not
+## passed on. OL_MEGASCANS overrides the folder (the pack's root, holding
+## foliage/).
 const MEGASCANS_DIR := "user://megascans/"
 
 
@@ -157,23 +159,14 @@ static func megascans_dir() -> String:
 	return env.path_join("") if not env.is_empty() else MEGASCANS_DIR
 
 
-## Whether the private Megascans pack has ground textures.
-static func has_megascans() -> bool:
-	var dir := megascans_dir()
-	return not dir.is_empty() and FileAccess.file_exists(dir + "ground/grass_albedo.jpg")
-
-
-## A ground texture from the Megascans pack, or null. Mipmapped, and
+## A texture from the Megascans pack's foliage/, or null. Mipmapped, and
 ## block-compressed like the free ones on the desktop; halved to 1K in
 ## Compatibility, which keeps them uncompressed.
 static func _load_megascans(file: String) -> Texture2D:
-	var slot := file.get_slice("_", 0)
-	if slot not in ["grass", "rough", "sand", "path", "dirt"]:
-		return null
 	var dir := megascans_dir()
 	if dir.is_empty():
 		return null
-	var path := dir + "ground/" + file
+	var path := dir + "foliage/" + file
 	if _vram.has(path):
 		return _vram[path]
 	if not FileAccess.file_exists(path):
