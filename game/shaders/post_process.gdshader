@@ -34,6 +34,14 @@ uniform float lut_mix = 0.0; // 0 = off
 // Contrast after the grade, on luminance round a mid grey so colours keep
 // their hue (PostProcess: Photoreal in Compatibility). 1 = none.
 uniform float finish_contrast = 1.0;
+// The time of day's look, after the grade (Scenery TIMES warm, cool, pop):
+// sunlit tones tinted `grade_warm.rgb` and shade `grade_cool`, as a
+// photographer's split tone (golden sunlit turf against cooler shade, the
+// warm glow of GSPro's and TV golf's late light), and colour lifted by
+// `grade_warm.a`. The blue sky keeps its blue. (1, 1, 1, 1) and (1, 1, 1)
+// leave the picture as it is.
+global uniform vec4 grade_warm;
+global uniform vec3 grade_cool;
 // The least of the drawn colour the grade keeps in the darks.
 const float DARK_FLOOR = 0.5;
 
@@ -114,6 +122,18 @@ void fragment() {
 		float l = max(dot(c, vec3(0.2126, 0.7152, 0.0722)), 1e-4);
 		float lt = clamp((l - 0.48) * finish_contrast + 0.48, 0.0, 1.0);
 		c *= lt / l;
+	}
+	if (grade_warm != vec4(1.0) || grade_cool != vec3(1.0)) {
+		const vec3 W = vec3(0.2126, 0.7152, 0.0722);
+		float l = max(dot(c, W), 1e-4);
+		float t = smoothstep(0.25, 0.75, l);
+		// Sky: blue well above red and green.
+		float sky = smoothstep(0.04, 0.16, c.b - max(c.r, c.g));
+		vec3 tone = mix(vec3(1.0), mix(grade_cool, grade_warm.rgb, t), 1.0 - sky);
+		vec3 g = c * tone;
+		float lg = max(dot(g, W), 1e-4);
+		g = mix(vec3(lg), g, mix(grade_warm.a, 1.0, sky));
+		c = max(g * (l / max(dot(g, W), 1e-4)), vec3(0.0));
 	}
 	// The grade deepens the darks, but no further than DARK_FLOOR of what
 	// the renderer drew: the S-curve, the learned grade and the finish

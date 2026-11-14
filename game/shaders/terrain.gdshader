@@ -338,8 +338,11 @@ void fragment() {
 	col = mix(col, native_ground * (0.85 + 0.3 * patches), deep_rough * native_at(p, ground_up) * native_ground_strength);
 	// Close-cut turf: dense, fine blades, a touch cooler, and smoother.
 	col *= mix(vec3(1.0), vec3(0.97, 1.0, 0.98), cut);
-	ROUGHNESS = mix(0.95, 0.72, cut);
-	SPECULAR = 0.1;
+	// Grass is matt: a mown blade has a faint sheen, but a sward of them
+	// scatters it, so even cut turf must not glint like a wet floor when
+	// looking into a low sun (it did at 0.72 with dawn and sunset).
+	ROUGHNESS = mix(0.95, 0.88, cut);
+	SPECULAR = 0.06;
 
 	if (textured) {
 		vec2 uv = p / texture_metres;

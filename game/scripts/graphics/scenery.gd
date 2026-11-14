@@ -44,23 +44,36 @@ const SKY_SHADER := preload("res://shaders/photo_sky.gdshader")
 ## the photographed sky's tint (overall and at the horizon), the glow round
 ## a low sun, the haze colour and thickness and an exposure that makes up
 ## for a low sun. Afternoon sits lower and warmer than Classic's sun
-## (CLASSIC_SUN_ELEVATION), for long shadows as in TV golf. Golden hour
+## (CLASSIC_SUN_ELEVATION), for long shadows as in TV golf, and warmer: a
+## late-afternoon sun as in GSPro's and 2K25's default light, which lays
+## long, dappled tree shadows across tees and fairways. `scatter` is the
+## haze's glow towards the sun (Environment.fog_sun_scatter). Golden hour
 ## was fitted to 37 real low-sun golf photos: a near-neutral sky, green
 ## turf, and only the sunlit patches warm, so its shade needs a strong,
 ## cool fill (Forward+ shade is darker, hence its own fill).
 const TIMES := {
 	"morning": {elevation = 17.0, bearing = 100.0, sun = Color(1.0, 0.86, 0.7), energy = 0.85, fill = 0.95, fill_fwd = 0.95,
 		ambient = Color(0.62, 0.69, 0.8), sky = Color(0.92, 0.96, 1.04), horizon = Color(1.05, 1.0, 0.95), glow = 0.25,
-		haze = Color(0.76, 0.8, 0.86), fog = 2.2, exposure = 1.15},
+		haze = Color(0.76, 0.8, 0.86), fog = 2.2, exposure = 1.15, scatter = 0.3, warm = Color(1.03, 1.0, 0.94), cool = Color(0.95, 0.99, 1.06), pop = 1.05},
 	"midday": {elevation = 62.0, bearing = 160.0, sun = Color(1.0, 0.97, 0.93), energy = 1.0, fill = 1.0, fill_fwd = 1.0,
 		ambient = Color(0.66, 0.70, 0.76), sky = Color(1.0, 1.0, 1.02), horizon = Color(1.0, 1.0, 1.0), glow = 0.0,
-		haze = Color(0.70, 0.78, 0.88), fog = 0.9, exposure = 0.95},
-	"afternoon": {elevation = 30.0, bearing = 145.0, sun = Color(1.0, 0.92, 0.8), energy = 1.0, fill = 1.0, fill_fwd = 1.0,
-		ambient = Color(0.66, 0.70, 0.76), sky = Color(1.0, 1.0, 1.0), horizon = Color(1.0, 1.0, 1.0), glow = 0.0,
-		haze = HORIZON, fog = 1.2, exposure = 1.0},
+		haze = Color(0.70, 0.78, 0.88), fog = 0.9, exposure = 0.95, scatter = 0.05, warm = Color(1.02, 1.0, 0.96), cool = Color(0.98, 1.0, 1.03), pop = 1.04},
+	"afternoon": {elevation = 24.0, bearing = 145.0, sun = Color(1.0, 0.82, 0.6), energy = 1.35, fill = 1.0, fill_fwd = 1.0,
+		ambient = Color(0.66, 0.70, 0.76), sky = Color(1.0, 1.0, 1.0), horizon = Color(1.06, 1.0, 0.93), glow = 0.2,
+		haze = Color(0.74, 0.78, 0.82), fog = 2.0, exposure = 1.0, scatter = 0.35, warm = Color(1.04, 1.0, 0.92), cool = Color(0.95, 0.99, 1.06), pop = 1.08},
 	"golden": {elevation = 9.0, bearing = 205.0, sun = Color(1.0, 0.74, 0.5), energy = 1.3, fill = 0.55, fill_fwd = 4.2,
 		ambient = Color(0.68, 0.7, 0.74), sky = Color(1.0, 0.96, 0.92), horizon = Color(1.08, 0.98, 0.88), glow = 0.5,
-		haze = Color(0.82, 0.78, 0.72), fog = 1.6, exposure = 1.6},
+		haze = Color(0.82, 0.78, 0.72), fog = 1.6, exposure = 1.6, scatter = 0.45, warm = Color(1.08, 0.99, 0.84), cool = Color(0.94, 0.98, 1.08), pop = 1.1},
+	# Dawn: the sun just up in the east through a cool morning mist, its
+	# light peach on the dew. Sunset: the sun low in the west, orange light
+	# raking across the course under a warm sky. Both shown for the look
+	# (photos, promo), so pushed a little past the photos.
+	"dawn": {elevation = 6.0, bearing = 85.0, sun = Color(1.0, 0.74, 0.52), energy = 1.0, fill = 0.6, fill_fwd = 4.0,
+		ambient = Color(0.6, 0.66, 0.8), sky = Color(0.95, 0.95, 1.05), horizon = Color(1.12, 0.96, 0.86), glow = 0.6,
+		haze = Color(0.8, 0.8, 0.86), fog = 3.5, exposure = 1.45, scatter = 0.5, warm = Color(1.07, 0.99, 0.88), cool = Color(0.92, 0.97, 1.1), pop = 1.06},
+	"sunset": {elevation = 5.0, bearing = 245.0, sun = Color(1.0, 0.6, 0.36), energy = 1.3, fill = 0.5, fill_fwd = 4.2,
+		ambient = Color(0.7, 0.66, 0.72), sky = Color(1.02, 0.92, 0.86), horizon = Color(1.18, 0.9, 0.72), glow = 0.9,
+		haze = Color(0.88, 0.74, 0.62), fog = 2.0, exposure = 1.75, scatter = 0.6, warm = Color(1.12, 0.96, 0.78), cool = Color(0.92, 0.95, 1.1), pop = 1.12},
 }
 ## "Through the round": the light at these points of the round, blended.
 const ROUND_TIMES := [[0.0, "morning"], [0.35, "midday"], [0.7, "afternoon"], [1.0, "golden"]]
@@ -306,6 +319,11 @@ func _pick_sky() -> void:
 		environment.sky.sky_material = _free_sky if _free_sky != null else environment.sky.sky_material
 		environment.fog_light_color = _time.haze if real else HORIZON
 		environment.fog_density = 0.0006 if not real else 0.00035 * float(_time.fog)
+		# The haze lights up warm towards a low sun (light through the air
+		# between the tree rows), as on TV and in GSPro, cheap on every
+		# renderer.
+		# Forward+ fog reads thicker than Compat's, so its glow is kept lower.
+		environment.fog_sun_scatter = float(_time.get("scatter", 0.0)) * (0.75 if GraphicsSettings.is_forward_plus() else 1.0) if real else 0.0
 		# A little haze over the sky too, so the far land melts into it;
 		# less in Forward+, where it turned the whole sky milky (most of all
 		# from the flyover's height).
@@ -327,6 +345,7 @@ func _pick_sky() -> void:
 			_align_sky_sun(sky_mat)
 		return
 	environment.sky.sky_material = _backdrop_sky
+	environment.fog_sun_scatter = 0.0
 	environment.fog_sky_affect = 0.0
 	environment.fog_light_color = backdrop.sky_haze.lerp(backdrop.ground, 0.35)
 	environment.fog_density = 0.00035
@@ -378,8 +397,10 @@ func set_round_progress(f: float) -> void:
 ## the stretch of ROUND_TIMES the round has reached.
 static func time_name(setting: int, progress: float) -> String:
 	match setting:
-		GraphicsSettings.TimeOfDay.MORNING:
+		GraphicsSettings.TimeOfDay.MORNING, GraphicsSettings.TimeOfDay.DAWN:
 			return "morning"
+		GraphicsSettings.TimeOfDay.SUNSET:
+			return "golden"
 		GraphicsSettings.TimeOfDay.MIDDAY:
 			return "midday"
 		GraphicsSettings.TimeOfDay.GOLDEN:
@@ -403,6 +424,10 @@ static func time_light(setting: int, progress: float) -> Dictionary:
 			return TIMES["midday"]
 		GraphicsSettings.TimeOfDay.GOLDEN:
 			return TIMES["golden"]
+		GraphicsSettings.TimeOfDay.DAWN:
+			return TIMES["dawn"]
+		GraphicsSettings.TimeOfDay.SUNSET:
+			return TIMES["sunset"]
 		GraphicsSettings.TimeOfDay.ROUND:
 			for i in ROUND_TIMES.size() - 1:
 				var a: Array = ROUND_TIMES[i]
@@ -435,6 +460,7 @@ func _apply_time() -> void:
 	RenderingServer.global_shader_parameter_set("sky_tint", Vector3(1, 1, 1))
 	RenderingServer.global_shader_parameter_set("turf_tone", (1.0 if GraphicsSettings.is_forward_plus() else 1.35) if _photo else 0.0)
 	RenderingServer.global_shader_parameter_set("people_light", people_light(_photo, GraphicsSettings.is_forward_plus()))
+	_set_grade_look()
 	if not _photo:
 		environment.ambient_light_color = AMBIENT
 		return
@@ -459,15 +485,35 @@ func _apply_time() -> void:
 	RenderingServer.global_shader_parameter_set("sky_tint", Vector3(sky.r, sky.g, sky.b))
 
 
+## The time of day's split tone and colour lift (post_process.gdshader
+## grade_warm, grade_cool), Photoreal only.
+func _set_grade_look() -> void:
+	var warm := Vector4(1, 1, 1, 1)
+	var cool := Vector3(1, 1, 1)
+	if _photo and _time.has("warm"):
+		var w: Color = _time.warm
+		var c: Color = _time.cool
+		warm = Vector4(w.r, w.g, w.b, float(_time.pop))
+		cool = Vector3(c.r, c.g, c.b)
+	RenderingServer.global_shader_parameter_set("grade_warm", warm)
+	RenderingServer.global_shader_parameter_set("grade_cool", cool)
+
+
 ## How the golfer shaders light people (shaders/golfer_occlusion.gdshaderinc
 ## people_light): the lifts above are for the turf, and on a person they
 ## read as pale, flat skin and light cloth that blooms, so in Compatibility
 ## at Photoreal people take them back and get their fill light more from
 ## above than below, as from a sky. Forward+ and Classic leave people be.
+## The fill is not cut all the way back: a person's shade side still gets
+## the sky and the bounce off sunlit turf, and at 1/COMPAT_FILL_LIFT the
+## shaded half of a shirt went near black once the sun got low.
+const PEOPLE_COMPAT_FILL := 0.85
+
+
 static func people_light(photo: bool, forward_plus: bool) -> Vector3:
 	if not photo or forward_plus:
 		return Vector3(1.0, 1.0, 0.0)
-	return Vector3(1.0 / COMPAT_EXPOSURE_LIFT, 1.0 / COMPAT_FILL_LIFT, 1.0)
+	return Vector3(1.0 / COMPAT_EXPOSURE_LIFT, PEOPLE_COMPAT_FILL, 1.0)
 
 
 ## Photoreal light follows a sky the player picked: under cloud the sun
