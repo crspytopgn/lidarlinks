@@ -32,6 +32,17 @@ func add_box(centre: Vector3, axes: Basis, half: Vector3, kind: int) -> void:
 	_boxes.append_array(PackedFloat32Array([centre.x, centre.y, centre.z, axes.x.x, axes.x.y, axes.x.z, axes.y.x, axes.y.y, axes.y.z, axes.z.x, axes.z.y, axes.z.z, half.x, half.y, half.z, kind]))
 
 
+## The tree crowns (CANOPY cylinders) as (x, z, radius), for scenery that
+## grows under trees (FescueField's understory). Read only; GDScript only,
+## as nothing in the physics needs it.
+func canopies() -> PackedVector3Array:
+	var out := PackedVector3Array()
+	for o in range(0, _cylinders.size(), CYLINDER_FLOATS):
+		if int(_cylinders[o + 5]) == Kind.CANOPY:
+			out.append(Vector3(_cylinders[o], _cylinders[o + 1], _cylinders[o + 2]))
+	return out
+
+
 @warning_ignore("integer_division")
 func size() -> int:
 	return _cylinders.size() / CYLINDER_FLOATS + _boxes.size() / BOX_FLOATS

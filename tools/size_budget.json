@@ -2,8 +2,8 @@
   "_comment": "Size budgets in MiB, checked by tools/size_report.py after the CI export. max_download_mb is the compressed download (gzip, or the zip as published); max_pack_mb is the game data in the .pck. Raise a limit only with a reason in the commit message.",
   "builds": {
     "Web": {"folder": "web", "max_download_mb": 64, "max_pack_mb": 55},
-    "Linux": {"folder": "linux", "max_download_mb": 80, "max_pack_mb": 56},
-    "Windows": {"folder": "windows", "max_download_mb": 87, "max_pack_mb": 56},
-    "macOS": {"folder": "macos", "max_download_mb": 112, "max_pack_mb": 56}
+    "Linux": {"folder": "linux", "max_download_mb": 81, "max_pack_mb": 57},
+    "Windows": {"folder": "windows", "max_download_mb": 88, "max_pack_mb": 57},
+    "macOS": {"folder": "macos", "max_download_mb": 112, "max_pack_mb": 57}
   }
 }

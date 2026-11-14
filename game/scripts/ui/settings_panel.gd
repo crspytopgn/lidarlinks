@@ -31,6 +31,7 @@ var _scale: OptionButton
 var _fov: OptionButton
 var _wind: OptionButton
 var _presentation: OptionButton
+var _shot_camera: OptionButton
 var _sky: OptionButton
 var _sky_values := PackedStringArray()  ## CourseBackdrop sky settings, per _sky item
 var _disc_sounds: OptionButton  ## web only
@@ -115,6 +116,8 @@ func _ready() -> void:
 	_sky = _row(grid, "Sky (next course)", [], false)
 	_sky.item_selected.connect(_on_sky_selected)
 	_presentation = _row(grid, "Presentation", GraphicsSettings.PRESENTATION_NAMES)
+	_shot_camera = _row(grid, "Shot camera", ["TV cuts", "Follow the ball"])
+	_shot_camera.tooltip_text = "Broadcast and Tour: one camera that trails the ball through the flight, bounces and roll, or a TV director's cuts."
 	_photo_golfer = _row(grid, "Golfer", ["3D (motion capture)", "Photo (filmed, prototype)"])
 	_photo_golfer.tooltip_text = "A real golfer filmed swinging, frame by frame, like the early Links games. The 3D golfer stands in for putts, reactions and side views. From the next hole."
 	if OS.has_feature("web"):
@@ -175,6 +178,7 @@ func open(s: GraphicsSettings) -> void:
 	_fov.select(_closest(FOV_CHOICES, s.fov))
 	_wind.select(s.wind)
 	_presentation.select(s.presentation)
+	_shot_camera.select(1 if s.follow_ball else 0)
 	_fill_skies()
 	if _disc_sounds != null:
 		_disc_sounds.select(1 if s.web_disc_sounds else 0)
@@ -418,6 +422,7 @@ func _on_selected() -> void:
 	settings.fov = FOV_CHOICES[_fov.selected]
 	settings.wind = _wind.selected
 	settings.presentation = _presentation.selected
+	settings.follow_ball = _shot_camera.selected == 1
 	if _disc_sounds != null:
 		settings.web_disc_sounds = _disc_sounds.selected == 1
 	settings.skill = _skill.selected

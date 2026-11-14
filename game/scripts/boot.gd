@@ -15,9 +15,9 @@ var _web: WebGameFiles
 var _title: Label
 var _status: Label
 var _bar: ProgressBar
-var _buttons: HFlowContainer
+var _home: MenuHome
 var _play: Button
-var _main_box: VBoxContainer
+var _main_box: Control
 var _setup: RoundSetupPanel
 var _online: OnlinePanel
 var _settings: SettingsPanel
@@ -69,7 +69,8 @@ func _ready() -> void:
 
 func _build_ui() -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	add_child(_backdrop())
+	_home = MenuHome.new()
+	add_child(_home.backdrop())
 	# The menus scroll when they are taller than the window: a 720p screen
 	# at a bigger Settings > Interface size, or a phone held sideways.
 	var scroll := ScrollContainer.new()
@@ -81,11 +82,8 @@ func _build_ui() -> void:
 	center.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	center.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	scroll.add_child(center)
-	var box := VBoxContainer.new()
-	box.custom_minimum_size = Vector2(720, 0)
-	box.add_theme_constant_override("separation", 16)
-	center.add_child(box)
-	_main_box = box
+	var box := _home.info
+	_main_box = _home
 	_setup = RoundSetupPanel.new()
 	_setup.start_pressed.connect(_on_setup_start)
 	_setup.back_pressed.connect(_close_setup)
@@ -102,6 +100,7 @@ func _build_ui() -> void:
 	_online.start_pressed.connect(_on_online_start)
 	_online.back_pressed.connect(_close_online)
 	center.add_child(_online)
+	add_child(_home)
 	_creator = PlayerCreator.new()
 	_creator.closed.connect(_close_creator)
 	add_child(_creator)
@@ -114,77 +113,28 @@ func _build_ui() -> void:
 	_tournament.play_pressed.connect(_on_tournament_play)
 	center.add_child(_tournament)
 
-	_title = Label.new()
-	_title.text = "OpenLinks2003"
-	_title.add_theme_font_size_override("font_size", 48)
-	_title.add_theme_font_override("font", GlassTheme.font(700))
-	_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	box.add_child(_title)
+	_title = _home.title
 	_status = Label.new()
 	_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	_status.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_status.add_theme_font_size_override("font_size", 18)
+	_status.add_theme_font_size_override("font_size", 19)
+	_status.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.5))
+	_status.add_theme_constant_override("shadow_offset_y", 1)
 	box.add_child(_status)
 	_bar = ProgressBar.new()
 	_bar.custom_minimum_size = Vector2(0, 22)
 	_bar.visible = false
 	box.add_child(_bar)
-	# The buttons wrap onto a second row rather than run off the screen's
-	# edges (an iPad, a phone, or a big Interface size).
-	_buttons = HFlowContainer.new()
-	_buttons.alignment = FlowContainer.ALIGNMENT_CENTER
-	_buttons.add_theme_constant_override("h_separation", 12)
-	_buttons.add_theme_constant_override("v_separation", 12)
-	box.add_child(_buttons)
 	_build_community(box)
 	var note := Label.new()
 	note.text = "OpenLinks2003 contains nothing from the original game. Your files are read on your own computer.\n" + BuildInfo.label()
 	note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	note.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	note.add_theme_font_size_override("font_size", 14)
-	note.modulate = Color(1, 1, 1, 0.6)
-	box.add_child(note)
+	note.add_theme_font_size_override("font_size", 12)
+	note.modulate = Color(1, 1, 1, 0.5)
+	_home.add_footer(note)
 
 
 ## Links to free fan-made courses on Links Corner (CommunityCourses), shown
 ## with the course picker.
-## The menus' backdrop: evening sky into deep fairway green, with a soft
-## glow up to the left, for the glass panels to show.
-static func _backdrop() -> Control:
-	var bg := TextureRect.new()
-	bg.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	bg.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	bg.stretch_mode = TextureRect.STRETCH_SCALE
-	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	var sky := Gradient.new()
-	sky.offsets = PackedFloat32Array([0.0, 0.55, 1.0])
-	sky.colors = PackedColorArray([Color(0.17, 0.32, 0.45), Color(0.08, 0.22, 0.17), Color(0.03, 0.09, 0.06)])
-	var tex := GradientTexture2D.new()
-	tex.gradient = sky
-	tex.fill_from = Vector2(0.5, 0.0)
-	tex.fill_to = Vector2(0.5, 1.0)
-	tex.width = 16
-	tex.height = 256
-	bg.texture = tex
-	var glow := TextureRect.new()
-	glow.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	glow.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	glow.stretch_mode = TextureRect.STRETCH_SCALE
-	glow.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	var g := Gradient.new()
-	g.colors = PackedColorArray([Color(0.95, 0.85, 0.6, 0.22), Color(0.95, 0.85, 0.6, 0.0)])
-	var gt := GradientTexture2D.new()
-	gt.gradient = g
-	gt.fill = GradientTexture2D.FILL_RADIAL
-	gt.fill_from = Vector2(0.22, 0.12)
-	gt.fill_to = Vector2(0.75, 0.6)
-	gt.width = 256
-	gt.height = 256
-	glow.texture = gt
-	bg.add_child(glow)
-	return bg
-
-
 func _build_community(box: VBoxContainer) -> void:
 	_community = VBoxContainer.new()
 	_community.visible = false
@@ -212,20 +162,8 @@ func _build_community(box: VBoxContainer) -> void:
 
 
 func _set_buttons(items: Array) -> void:
-	for child in _buttons.get_children():
-		child.queue_free()
-	_play = null
 	var labels: Array = items.map(func(item: Array) -> String: return item[0])
-	var primary := primary_button(labels)
-	for i in items.size():
-		var item: Array = items[i]
-		var b := Button.new()
-		b.text = item[0]
-		b.custom_minimum_size = Vector2(0, 40)
-		b.pressed.connect(item[1])
-		_buttons.add_child(b)
-		if i == primary:
-			_play = b
+	_play = _home.set_items(items, primary_button(labels))
 	if _play:
 		_play.grab_focus.call_deferred()
 
@@ -262,9 +200,8 @@ func _check_stored() -> void:
 
 
 func _ask_for_files(problem := "") -> void:
-	var text := ("To play the real Links 2003 courses, load your own copy of the game from any drive, including "
-		+ "an external one: pick your three disc images (BlindWrite .b6i, .iso, .bin, .nrg or .mdf), or the "
-		+ "folder that holds them or an installed game. Nothing is copied or uploaded.")
+	var text := ("Kettle Hollow is ready. For the real Links 2003 courses, load your own discs (.b6i, .iso, "
+		+ ".bin, .nrg or .mdf) or game folder from any drive. Nothing is copied or uploaded.")
 	if not _web.remembers():
 		text += " This browser can't remember them, so you'll pick them again next time (it only takes a moment)."
 	_status.text = text if problem.is_empty() else problem + "\n\n" + text
@@ -705,8 +642,8 @@ func _on_progress(file_name: String, done: int, total: int) -> void:
 # --- Desktop ----------------------------------------------------------------
 
 func _show_desktop_choice() -> void:
-	_status.text = ("To play the real Links 2003 courses, choose the folder of your installed game "
-		+ "(or a folder you extracted with tools/cdimage/cdimage.py install).")
+	_status.text = ("Kettle Hollow is ready. For the real Links 2003 courses, choose the folder of your "
+		+ "installed game (or one extracted with tools/cdimage/cdimage.py install).")
 	_set_buttons([
 		["Play now", _play_placeholders],
 		["Choose game folder...", _choose_folder],

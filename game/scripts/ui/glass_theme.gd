@@ -38,6 +38,27 @@ static func font(weight := 400) -> Font:
 	return f
 
 
+## Barlow Condensed at 600 or 700: the broadcast numbers and labels (big
+## titles, tiles, the HUD). Inter if the file is missing.
+static func display_font(weight := 700) -> Font:
+	var key := "display %d" % weight
+	if _fonts.has(key):
+		return _fonts[key]
+	var path := "res://assets/fonts/BarlowCondensed-%s.woff2" % ("Bold" if weight >= 700 else "SemiBold")
+	var f: Font = font(weight)
+	if ResourceLoader.exists(path):
+		var base := load(path) as FontFile
+		if base != null:
+			var v := FontVariation.new()
+			v.base_font = base
+			v.fallbacks = [font(weight)]
+			# A little tracking, as broadcast graphics set their capitals.
+			v.spacing_glyph = 1
+			f = v
+	_fonts[key] = f
+	return f
+
+
 ## Makes the glass theme the default for every control, including those
 ## under a CanvasLayer (the HUD), which a window's theme doesn't reach.
 static func install() -> void:

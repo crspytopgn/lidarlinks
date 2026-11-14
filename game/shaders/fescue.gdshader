@@ -79,7 +79,8 @@ void fragment() {
 	// on; further off (higher mips) more of the ground's, as the thin
 	// blades and the grass between them blur into one.
 	float far = clamp(lod / 4.0, 0.0, 1.0);
-	vec3 c = mix(t.rgb * 0.85, base_color * 1.05, mix(0.4, 0.65, far)) * vec3(1.04, 1.0, 0.9);
+	float warm = smoothstep(0.0, 0.06, base_color.r - base_color.g);
+	vec3 c = mix(t.rgb * 0.85, base_color * 1.05, mix(0.4, 0.65, far) + warm * 0.3) * vec3(1.04, 1.0, 0.9);
 	// Each tuft a little lighter or darker, greener or drier, so a slope is
 	// patchy as real long grass is.
 	float v = fract(cell * 0.37 + root_xz.x * 0.173 + root_xz.y * 0.291);
@@ -89,7 +90,10 @@ void fragment() {
 	// texture rather than separate bright blobs: from the tee a hillside
 	// of fescue read as yellow polka dots on darker ground.
 	float luma_c = dot(c, vec3(0.2126, 0.7152, 0.0722));
-	vec3 bank = mix(base_color, far_bank, 0.85);
+	// Golden native drifts (FescueField.native_at: a warm base, red over
+	// green) keep their own straw far off rather than going olive.
+	float gold = smoothstep(0.0, 0.06, base_color.r - base_color.g);
+	vec3 bank = mix(base_color, far_bank, 0.85 * (1.0 - gold));
 	vec3 hue = bank / max(dot(bank, vec3(0.2126, 0.7152, 0.0722)), 0.001);
 	c = mix(c, hue * luma_c * far_gain * mix(0.9, 1.1, v), distant);
 	// A bank of long grass is dark inside: the blades shade each other, so

@@ -42,6 +42,15 @@ swing={
 
 [shader_globals]
 
+grade_warm={
+"type": "vec4",
+"value": Vector4(1, 1, 1, 1)
+}
+grade_cool={
+"type": "vec3",
+"value": Vector3(1, 1, 1)
+}
+
 people_light={
 "type": "vec3",
 "value": Vector3(1, 1, 0)
