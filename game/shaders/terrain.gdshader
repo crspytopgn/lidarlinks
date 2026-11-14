@@ -62,9 +62,9 @@ uniform sampler2D splat_tex : filter_nearest, repeat_disable;
 uniform vec2 splat_origin = vec2(0.0); // world x, z of the raster's corner
 uniform vec2 splat_size = vec2(1.0); // metres it covers
 // Where set, the codes fill only the top splat_codes texels, and below
-// them three blocks of green_edge_size texels side by side
+// them two blocks of green_edge_size texels side by side
 // (green_edge_texel metres each) hold the signed distance to the nearest
-// green's, bunker's and tee's outline: 0..1 is
+// green's or tee's, and the nearest bunker's, outline: 0..1 is
 // -green_edge_range..+green_edge_range metres, positive inside.
 uniform ivec2 splat_codes = ivec2(0);
 uniform ivec2 green_edge_size = ivec2(1);
@@ -137,8 +137,8 @@ void splat_add(ivec2 t, ivec2 size, float a, inout vec3 col, inout vec2 w, inout
 	cut += surface_cut[s] * a;
 }
 
-// Metres from p to the nearest edge of block k's surface (0 green,
-// 1 bunker, 2 tee), positive inside (bilinear between the baked texels,
+// Metres from p to the nearest edge of block k's surfaces (0 green or
+// tee, 1 bunker), positive inside (bilinear between the baked texels,
 // so the line is one smooth curve).
 float baked_edge(vec2 p, int k) {
 	vec2 q = (p - splat_origin) / green_edge_texel - 0.5;
@@ -272,7 +272,7 @@ void fragment() {
 			by_line(3, green.x, green_line, 10, crisp, cut, mown);
 		}
 		// So is a tee's: a straight or gently curved line round the box.
-		float tee_line = baked ? (green.y > 0.0 ? smoothstep(-aa_edge, aa_edge, baked_edge(p, 2)) : 0.0) : smoothstep(0.5 - aa_edge, 0.5 + aa_edge, green.y);
+		float tee_line = baked ? (green.y > 0.0 ? smoothstep(-aa_edge, aa_edge, baked_edge(p, 0)) : 0.0) : smoothstep(0.5 - aa_edge, 0.5 + aa_edge, green.y);
 		if (green.y > 0.0 && green.y < 1.0 || (green.y >= 1.0 && tee_line < 1.0)) {
 			by_line(0, green.y, tee_line, 4, crisp, cut, mown);
 		}
