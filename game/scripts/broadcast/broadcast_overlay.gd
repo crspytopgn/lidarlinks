@@ -10,22 +10,22 @@ extends Control
 ##
 ## GolfRound feeds it plain dictionaries; it keeps no game state of its own.
 
-const PANEL := Color(0.04, 0.13, 0.10, 0.86)
-const PANEL_DARK := Color(0.02, 0.06, 0.05, 0.9)
+const PANEL := Color(0.03, 0.05, 0.05, 0.8)
+const PANEL_DARK := Color(0.02, 0.03, 0.03, 0.9)
 ## Panels are rounded glass (Glass, FrostedGlass): over the live blur the
 ## tint is this see-through; where glass doesn't blur (the web, Low
 ## quality) it is plain tinted glass, darker, with a light rim.
 const GLASS_TINT := 0.55
 const FLAT_TINT := 0.92
-const R := 14.0  ## corner radius
+const R := 18.0  ## corner radius
 const ALL := Vector4(R, R, R, R)
 const TOP := Vector4(R, R, 0, 0)
 const BOTTOM := Vector4(0, 0, R, R)
 const LEFT := Vector4(R, 0, 0, R)
 const RIGHT := Vector4(0, R, R, 0)
-const ACCENT := Color(0.98, 0.78, 0.25)
+const ACCENT := Color(0.914, 0.78, 0.4)
 const TEXT := Color(1, 1, 1)
-const DIM := Color(0.78, 0.86, 0.82)
+const DIM := Color(1, 1, 1, 0.64)
 const RED := Color(0.86, 0.12, 0.12)
 const UNDER := Color(1.0, 0.45, 0.4)  ## scores under par, as on TV
 const TICKER_H := 28.0
@@ -39,7 +39,9 @@ const SPRING_IN_S := 0.55
 const TICKER_SPEED := 70.0  ## pixels per second
 
 var status := {}
+## Barlow Condensed for the broadcast type; Inter for sentences (captions).
 var _font: Font
+var _body: Font
 var _time := 0.0
 var _lower := {}
 var _lower_t := -1.0
@@ -47,7 +49,7 @@ var _card := {}
 var _card_t := -1.0
 var _hole := {}
 var _hole_t := -1.0
-var _hole_map: Texture2D
+var _hole_map: HoleMap
 var _caption := ""
 ## The top of the key hints (Hud), for the lower third to keep above.
 var hints_top := INF
@@ -75,7 +77,8 @@ func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	glass = FrostedGlass.new()
 	add_child(glass)
-	_font = GlassTheme.font(600)
+	_font = GlassTheme.display_font(600)
+	_body = GlassTheme.font(500)
 	pip = SubViewportContainer.new()
 	pip.stretch = true
 	pip.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -134,7 +137,7 @@ func hide_lower_third() -> void:
 
 
 ## Before the tee shot: number, par, yards, name, and a map of the hole.
-func hole_card(info: Dictionary, map: Texture2D) -> void:
+func hole_card(info: Dictionary, map: HoleMap) -> void:
 	_hole = info
 	_hole_map = map
 	_hole_t = 0.0
@@ -235,16 +238,19 @@ func _draw_pieces() -> void:
 func _draw_score_bug() -> void:
 	var x := 16.0
 	var y := 14.0
-	# Hole block: big number on the accent colour.
-	_fill(Rect2(x, y, 64, 64), ACCENT, LEFT)
-	_text(Vector2(x + 32, y + 30), str(status.get("hole", "")), 30, PANEL_DARK, true)
-	_text(Vector2(x + 32, y + 54), "PAR %s" % status.get("par", ""), 13, PANEL_DARK, true)
-	var w := 300.0
-	_panel(Rect2(x + 64, y, w, 64), PANEL, 1.0, RIGHT)
-	_text(Vector2(x + 76, y + 24), str(status.get("player", "")).to_upper(), 19, TEXT)
+	var w := 330.0
+	var h := 60.0
+	# A glass pill with the hole number in a gold disc, as TV golf shows it.
+	_panel(Rect2(x, y, w, h), PANEL, 1.0, Vector4.ONE * h * 0.5)
+	var disc := Vector2(x + 31, y + h * 0.5)
+	draw_circle(disc, 23.0, ACCENT, true, -1.0, true)
+	_text(disc + Vector2(0, 4), str(status.get("hole", "")), 21, PANEL_DARK, true)
+	_text(disc + Vector2(0, 17), "PAR %s" % status.get("par", ""), 8, PANEL_DARK, true)
+	_text(Vector2(x + 66, y + 27), str(status.get("player", "")).to_upper(), 18, TEXT)
+	_text(Vector2(x + 66, y + 47), "%s YDS  ·  THRU %s  ·  SHOT %s" % [status.get("yards", ""), status.get("thru", 0), status.get("stroke", 1)], 11, DIM)
 	var to_par := str(status.get("to_par", "E"))
-	_text_right(Vector2(x + 64 + w - 12, y + 24), to_par, 22, UNDER if to_par.begins_with("-") else TEXT)
-	_text(Vector2(x + 76, y + 50), "%s YDS    THRU %s    SHOT %s" % [status.get("yards", ""), status.get("thru", 0), status.get("stroke", 1)], 13, DIM)
+	draw_line(Vector2(x + w - 62, y + 15), Vector2(x + w - 62, y + h - 15), Color(1, 1, 1, 0.16), 1.0)
+	_text(Vector2(x + w - 32, y + 40), to_par, 24, UNDER if to_par.begins_with("-") else TEXT, true)
 
 
 func _draw_live_bug() -> void:
@@ -256,7 +262,9 @@ func _draw_live_bug() -> void:
 
 
 func _draw_shot_panel() -> void:
-	var rows := [
+	# One strip of cells, as broadcast shot data runs: a small label over a
+	# big number, the club first and widest.
+	var cells := [
 		["CLUB", status.get("club", "")],
 		["TO PIN", status.get("to_pin", "")],
 		["LIE", status.get("lie", "")],
@@ -264,16 +272,24 @@ func _draw_shot_panel() -> void:
 		["ELEV", status.get("elevation", "")],
 	]
 	var x := 16.0
-	var y := 92.0
-	var h := 24.0
-	_panel(Rect2(x, y, 364, h * rows.size() + 10), PANEL)
-	_fill(Rect2(x + 6, y + 10, 4, h * rows.size() - 10), ACCENT, Vector4.ONE * 2.0)
-	for i in rows.size():
-		var ry := y + 22 + i * h
-		_text(Vector2(x + 16, ry), rows[i][0], 13, ACCENT)
-		_text(Vector2(x + 96, ry), str(rows[i][1]), 16, TEXT)
+	var y := 86.0
+	var h := 62.0
+	var widths: Array[float] = []
+	var total := 0.0
+	for c: Array in cells:
+		var cw := maxf(_font.get_string_size(str(c[1]).to_upper(), HORIZONTAL_ALIGNMENT_LEFT, -1, _size(19)).x, 40.0) + 28.0
+		widths.append(cw)
+		total += cw
+	_panel(Rect2(x, y, total + 8.0, h), PANEL)
+	var cx := x + 4.0
+	for i in cells.size():
+		if i > 0:
+			draw_line(Vector2(cx, y + 14), Vector2(cx, y + h - 14), Color(1, 1, 1, 0.14), 1.0)
+		_text(Vector2(cx + 14, y + 23), cells[i][0], 10, ACCENT if i == 0 else DIM)
+		_text(Vector2(cx + 14, y + 48), str(cells[i][1]).to_upper(), 19, TEXT)
+		cx += widths[i]
 	if status.has("lie_type"):
-		_draw_lie_tile(Rect2(x + 364 + 8, y, 104, h * rows.size() + 10), int(status.lie_type), float(status.get("lie_power", 1.0)))
+		_draw_lie_tile(Rect2(x + total + 16.0, y, 96, 96), int(status.lie_type), float(status.get("lie_power", 1.0)))
 
 
 ## The lie at a glance, as TV golf shows it: a close-up of the ball as it
@@ -415,11 +431,10 @@ func _draw_lower_third() -> void:
 	# Clear of the key hints that run just above the ticker, however many
 	# lines they wrap onto (Hud sets hints_top).
 	var y := minf(size.y - TICKER_H - 100.0, hints_top - 60.0)
-	_panel(Rect2(x, y, w, 34), PANEL_DARK, 1.0, TOP)
-	_fill(Rect2(x + 7, y + 8, 4, 18), ACCENT, Vector4.ONE * 2.0)
-	_text(Vector2(x + 18, y + 25), str(_lower.get("name", "")).to_upper(), 22, TEXT)
-	_fill(Rect2(x, y + 34, w, 20), Color(ACCENT, 0.92), BOTTOM)
-	_text(Vector2(x + 18, y + 49), str(_lower.get("line", "")), 13, PANEL_DARK)
+	_panel(Rect2(x, y, w, 56), PANEL_DARK, 1.0)
+	_fill(Rect2(x + 10, y + 12, 4, 32), ACCENT, Vector4.ONE * 2.0)
+	_text(Vector2(x + 24, y + 28), str(_lower.get("name", "")).to_upper(), 20, TEXT)
+	_text(Vector2(x + 24, y + 47), str(_lower.get("line", "")).to_upper(), 11, ACCENT)
 
 
 func _draw_shot_card() -> void:
@@ -446,20 +461,69 @@ func _draw_shot_card() -> void:
 
 func _draw_hole_card() -> void:
 	var a := _slide(_hole_t, HOLE_CARD_S)
-	var w := 300.0
+	var w := 220.0
 	var x := lerpf(-w - 20.0, 16.0, a)
-	var y := 92.0
-	var map_h := 280.0
+	var y := 86.0
+	var map_h := 360.0
 	_panel(Rect2(x, y, w, 64), PANEL_DARK, 1.0, TOP)
 	_text(Vector2(x + 14, y + 28), "HOLE %s" % _hole.get("number", ""), 24, ACCENT)
 	_text_right(Vector2(x + w - 14, y + 28), "PAR %s" % _hole.get("par", ""), 20, TEXT)
 	_text(Vector2(x + 14, y + 52), "%s YARDS    %s" % [_hole.get("yards", ""), str(_hole.get("name", "")).to_upper()], 13, DIM)
 	_panel(Rect2(x, y + 64, w, map_h + 16), PANEL, 1.0, BOTTOM)
 	if _hole_map != null:
-		var ms := _hole_map.get_size()
+		var ms := Vector2(HoleMap.WIDTH, HoleMap.HEIGHT)
 		var scale := minf((w - 16) / ms.x, map_h / ms.y)
-		var draw_size := ms * scale
-		draw_texture_rect(_hole_map, Rect2(Vector2(x + (w - draw_size.x) * 0.5, y + 72), draw_size), false)
+		var origin := Vector2(x + (w - ms.x * scale) * 0.5, y + 72)
+		draw_texture_rect(_hole_map.texture, Rect2(origin, ms * scale), false)
+		_draw_route(_hole_map, origin, scale)
+
+
+## The line of the hole over a map drawn at `origin`, `scale` pixels a map
+## unit: a white line from the tee, distance arcs every 50 yards from it, the
+## tee and a flag on the pin.
+func _draw_route(map: HoleMap, origin: Vector2, scale: float) -> void:
+	var pts := map.route_px
+	if pts.size() < 2:
+		return
+	var tee := origin + pts[0] * scale
+	var yard_px := 0.9144 / map.metres_per_unit() * scale
+	var area := Rect2(origin, Vector2(HoleMap.WIDTH, HoleMap.HEIGHT) * scale)
+	for yd in [100, 150, 200, 250, 300]:
+		var r: float = yd * yard_px
+		if r > area.size.y * 0.95:
+			break
+		_dashed_arc(tee, r, area, Color(1, 1, 1, 0.32))
+		var label_at := tee + Vector2(0.42, -1.0).normalized() * r + Vector2(4, 4)
+		if area.has_point(label_at):
+			_text(label_at, str(yd), 11, Color(1, 1, 1, 0.75))
+	var line := PackedVector2Array()
+	for p in pts:
+		line.append(origin + p * scale)
+	draw_polyline(line, Color(1, 1, 1, 0.9), 2.0, true)
+	draw_circle(tee, 4.5, Color(0, 0, 0, 0.35))
+	draw_circle(tee, 3.5, Color.WHITE)
+	var pin := line[line.size() - 1]
+	draw_line(pin, pin + Vector2(0, -16), Color.WHITE, 1.5, true)
+	draw_colored_polygon(PackedVector2Array([pin + Vector2(0, -16), pin + Vector2(10, -13), pin + Vector2(0, -10)]), Color(0.9, 0.28, 0.23))
+	draw_circle(pin, 2.0, Color.WHITE)
+
+
+## A dashed circle, only the parts inside `clip`.
+func _dashed_arc(c: Vector2, r: float, clip: Rect2, col: Color) -> void:
+	# All the dashes in one draw: one draw_line each would be hundreds of
+	# canvas commands a frame (they count against the render budget).
+	var steps := maxi(24, int(r * TAU / 6.0))
+	var dashes := PackedVector2Array()
+	for i in range(0, steps, 2):
+		var a0 := TAU * i / steps
+		var a1 := TAU * (i + 1) / steps
+		var p0 := c + Vector2(cos(a0), sin(a0)) * r
+		var p1 := c + Vector2(cos(a1), sin(a1)) * r
+		if clip.has_point(p0) and clip.has_point(p1):
+			dashes.append(p0)
+			dashes.append(p1)
+	if not dashes.is_empty():
+		draw_multiline(dashes, col, -1.0)
 
 
 ## One line is centred in its box; several (drop options) are stacked
@@ -468,6 +532,13 @@ const CAPTION_BOTTOM := 190.0
 
 
 func _draw_caption() -> void:
+	var display := _font
+	_font = _body
+	_draw_caption_lines()
+	_font = display
+
+
+func _draw_caption_lines() -> void:
 	var fs := 18
 	var lines := _caption.split("\n")
 	var tw := 0.0
@@ -578,6 +649,7 @@ func _tag(at: Vector2, text: String, right_align: bool) -> void:
 
 
 func _text(at: Vector2, text: String, fs: int, col: Color, centred := false) -> void:
+	fs = _size(fs)
 	var p := at
 	if centred:
 		p.x -= _font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x * 0.5
@@ -585,8 +657,15 @@ func _text(at: Vector2, text: String, fs: int, col: Color, centred := false) -> 
 
 
 func _text_right(at: Vector2, text: String, fs: int, col: Color) -> void:
+	fs = _size(fs)
 	var w := _font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x
 	draw_string(_font, Vector2(at.x - w, at.y), text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, col)
+
+
+## Barlow Condensed is narrow: it is set a fifth bigger than Inter was, so
+## the layout's sizes still read the same.
+func _size(fs: int) -> int:
+	return roundi(fs * 1.2) if _font != _body else fs
 
 
 ## A panel sliding in and out over `length` seconds: in on a spring (a

@@ -750,9 +750,10 @@ func start_hole(index: int) -> void:
 		hud.overlay.hide_shot_card()  # the last hole's holing putt
 		_tour_dots.clear()
 		_putt_from = Vector3.INF
-		_tour_map = HoleMap.build(hole) if tour else null
+		var hole_map := HoleMap.build(hole)
+		_tour_map = hole_map if tour else null
 		hud.overlay.hole_card({"number": hole.number, "par": hole.par,
-			"yards": roundi(hole.length_m() * YARDS_PER_METRE), "name": course.course_name}, HoleMap.make(hole))
+			"yards": roundi(hole.length_m() * YARDS_PER_METRE), "name": course.course_name}, hole_map)
 		camera.start_flyover(hole)
 	if players.size() > 1:
 		text += ("\n" if not text.is_empty() else "") + "%s has the honour" % _side_name(current)

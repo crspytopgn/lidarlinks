@@ -5467,7 +5467,7 @@ func _test_broadcast_pieces() -> void:
 
 	var course := PlaceholderCourseLoader.new().load_course("")
 	var map := HoleMap.make(course.holes[0])
-	_check(map.get_width() == HoleMap.WIDTH and map.get_height() == HoleMap.HEIGHT, "hole map size")
+	_check(map.get_width() == HoleMap.WIDTH * HoleMap.RES and map.get_height() == HoleMap.HEIGHT * HoleMap.RES, "hole map size")
 	var h0 := course.holes[0]
 	var built := HoleMap.build(h0)
 	var tee_px := built.to_px(h0.tee)
