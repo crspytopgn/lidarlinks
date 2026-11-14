@@ -22,6 +22,23 @@ uniform vec3 region_means = vec3(0.2);
 uniform float recolour = 1.0;
 uniform float roughness : hint_range(0.0, 1.0) = 0.85;
 uniform float rim = 0.12;
+// The garments' photographed weave (GolferSurface._set_fabrics), tiled
+// over the body texture: repeats a body-texture unit, so a knit cell is a
+// millimetre or two and the twill's ribs about 2 mm apart.
+uniform bool use_fabric = false;
+uniform sampler2D fabric_shirt : hint_normal, filter_linear_mipmap_anisotropic, repeat_enable;
+uniform sampler2D fabric_trousers : hint_normal, filter_linear_mipmap_anisotropic, repeat_enable;
+uniform sampler2D fabric_shoes : hint_normal, filter_linear_mipmap_anisotropic, repeat_enable;
+uniform vec3 fabric_tiles = vec3(34.0, 12.0, 14.0);
+uniform float fabric_strength = 0.7;
+
+// Tangent-space normals packed 0 to 1, combined so the detail rides on
+// the base (reoriented normal mapping).
+vec3 blend_normals(vec3 base, vec3 detail) {
+	vec3 t = base * vec3(2.0, 2.0, 2.0) + vec3(-1.0, -1.0, 0.0);
+	vec3 u = detail * vec3(-2.0, -2.0, 2.0) + vec3(1.0, 1.0, -1.0);
+	return normalize(t * dot(t, u) - u * t.z) * 0.5 + 0.5;
+}
 
 vec3 dye(vec3 tex, vec3 target, float mean) {
 	float lum = dot(tex, vec3(0.2126, 0.7152, 0.0722));
@@ -66,8 +83,25 @@ void fragment() {
 	if (flex_debug > 0.0) {
 		ALBEDO = flex_debug_colour(flex_v, flex_cs);
 	}
-	if (use_normal) {
-		NORMAL_MAP = texture(texture_normal, UV).rgb;
+	vec3 nm = use_normal ? texture(texture_normal, UV).rgb : vec3(0.5, 0.5, 1.0);
+	if (use_fabric) {
+		float worn = max(m.r, max(m.g, m.b));
+		if (worn > 0.01) {
+			vec3 d = vec3(0.0);
+			d += (texture(fabric_shirt, UV * fabric_tiles.x).rgb * 2.0 - 1.0) * m.r;
+			d += (texture(fabric_trousers, UV * fabric_tiles.y).rgb * 2.0 - 1.0) * m.g;
+			d += (texture(fabric_shoes, UV * fabric_tiles.z).rgb * 2.0 - 1.0) * m.b;
+			d.xy *= fabric_strength / worn;
+			d.z = max(d.z / worn, 0.2);
+			vec3 dn = normalize(d);
+			// The weave's hollows a touch darker too, as real cloth's
+			// shadowed fibres are.
+			ALBEDO *= mix(1.0, 0.82 + 0.18 * dn.z * dn.z, worn);
+			nm = blend_normals(nm, mix(vec3(0.5, 0.5, 1.0), dn * 0.5 + 0.5, worn));
+		}
+	}
+	if (use_normal || use_fabric) {
+		NORMAL_MAP = nm;
 	}
 	ROUGHNESS = roughness;
 	SPECULAR = 0.3;
