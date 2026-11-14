@@ -21,6 +21,7 @@ SKIP = ('log', 'stump', 'trunk', 'dead leaves', 'ivy', 'burnt')
 HEIGHT = {'grass': 0.7, 'fern': 0.8, 'flower': 0.6, 'rush': 0.9, 'reed': 1.8, 'shrub': 1.3}
 # Title words -> (kind, height_m, golf roles); first match wins.
 RULES = [
+    ('daffodil', 'flower', 0.4, ['meadow', 'woodland_edge']),
     ('giant reed', 'reed', 3.0, ['water_edge']),
     ('reed', 'reed', 1.8, ['water_edge']),
     ('bulrush', 'reed', 1.8, ['water_edge']),
@@ -46,7 +47,6 @@ RULES = [
     ('buttercup', 'flower', 0.3, ['meadow']),
     ('clover', 'flower', 0.15, ['meadow']),
     ('nettle', 'flower', 0.6, ['woodland_edge', 'meadow']),
-    ('daffodil', 'flower', 0.4, ['meadow', 'woodland_edge']),
     ('birch', 'shrub', 1.0, ['heath', 'scrub']),
     ('willow', 'shrub', 1.2, ['scrub', 'water_edge']),
     ('shrub', 'shrub', 1.3, ['scrub']),
