@@ -24,6 +24,16 @@ Natural on integrated graphics and desktop browsers, and Performance on
 phones, tablets and software renderers. The browser build also caps quality
 at Medium and grass at Low.
 
+On built-in graphics (Apple M chips, Intel and AMD laptop graphics) the 3D
+view keeps to a pixel budget per quality
+(`GraphicsSettings.IGPU_PIXEL_BUDGET`; High is 1080p's worth). A window
+with more pixels than that, such as a Mac on a Retina or 4K screen, renders
+3D at the budget and FSR 1 upscales it, while the HUD and menus stay sharp
+at full resolution. A Mac with a 4K screen set to "looks like 1080p" was
+drawing four times the pixels of a 1080p screen. A render scale above 1 is
+taken as asked. Built-in graphics also keep screen-space reflections for
+Ultra and use a notch lighter soft-shadow filter.
+
 ## Device tiers
 
 - The browser build picks Natural on capable devices

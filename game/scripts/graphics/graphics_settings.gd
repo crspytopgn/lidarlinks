@@ -472,12 +472,53 @@ func shadow_distance() -> float:
 	return minf(d, 200.0) if OS.has_feature("web") else d
 
 
+## Built-in graphics: Apple's M chips, Intel and AMD laptop graphics. They
+## share memory bandwidth with the CPU, so pixels are what they run out of
+## first: a Mac on a Retina or 4K screen asks for four times the pixels of
+## the same window on a 1080p screen.
+static func integrated_gpu() -> bool:
+	if OS.has_feature("web") or OS.has_feature("mobile"):
+		return false
+	if RenderingServer.get_video_adapter_type() == RenderingDevice.DEVICE_TYPE_DISCRETE_GPU:
+		return false
+	return RenderingServer.get_video_adapter_type() == RenderingDevice.DEVICE_TYPE_INTEGRATED_GPU \
+		or RenderingServer.get_video_adapter_name().to_lower().contains("apple")
+
+
+## Most 3D pixels a frame draws on built-in graphics, per quality (Low to
+## Ultra): High is 1080p's worth. A bigger window (a Retina or 4K screen)
+## renders at this many pixels and is upscaled with FSR, which on a
+## high-density screen looks the same and costs a half to a quarter.
+const IGPU_PIXEL_BUDGET := [1.0e6, 1.5e6, 2.1e6, 3.7e6]
+
+
+## The share of `pixels` (the window's size in pixels) that fits in
+## `budget` pixels, as a 3D scale: 1.0 when it all fits.
+static func budget_scale(pixels: float, budget: float) -> float:
+	if pixels <= 0.0 or pixels <= budget:
+		return 1.0
+	return sqrt(budget / pixels)
+
+
+## The 3D resolution to draw `viewport` at: the chosen render scale, kept
+## inside the built-in graphics' pixel budget. A scale above 1 (chosen
+## supersampling) is taken as asked.
+func effective_render_scale(viewport: Viewport) -> float:
+	if render_scale > 1.0 or not integrated_gpu() or not viewport is Window:
+		return render_scale
+	var size := Vector2((viewport as Window).size)
+	return minf(render_scale, budget_scale(size.x * size.y, IGPU_PIXEL_BUDGET[quality]))
+
+
 func shadow_atlas_size() -> int:
 	return [2048, 4096, 4096, 8192][quality]
 
 
 func soft_shadow_quality() -> RenderingServer.ShadowQuality:
-	match quality:
+	# Built-in graphics take a notch softer filter: the sun's soft edge
+	# stays, with fewer taps per pixel.
+	var q := quality - (1 if integrated_gpu() and quality > Quality.MEDIUM else 0)
+	match q:
 		Quality.LOW:
 			return RenderingServer.SHADOW_QUALITY_HARD
 		Quality.MEDIUM:
@@ -528,14 +569,18 @@ func apply_display(viewport: Viewport) -> void:
 		viewport.msaa_3d = Viewport.MSAA_DISABLED
 	# The FSR upscalers need Forward+; the browser's renderer stretches.
 	viewport.scaling_3d_mode = Viewport.SCALING_3D_MODE_BILINEAR
+	var scale := effective_render_scale(viewport)
 	if is_forward_plus():
 		match upscaler:
-			Upscaler.FSR1:
+			Upscaler.OFF, Upscaler.FSR1:
+				# FSR 1 only runs below full size (the pixel budget or
+				# dynamic resolution) and keeps the edges crisp there,
+				# where a plain stretch would blur them.
 				viewport.scaling_3d_mode = Viewport.SCALING_3D_MODE_FSR
 			Upscaler.FSR2:
 				viewport.scaling_3d_mode = Viewport.SCALING_3D_MODE_FSR2
 		viewport.fsr_sharpness = 0.3
-	viewport.scaling_3d_scale = render_scale
+	viewport.scaling_3d_scale = scale
 	RenderingServer.directional_shadow_atlas_set_size(shadow_atlas_size(), true)
 	RenderingServer.directional_soft_shadow_filter_set_quality(soft_shadow_quality())
 

@@ -1863,6 +1863,11 @@ func _test_hd_pack() -> void:
 func _test_graphics_settings() -> void:
 	_check(SettingsPanel.scroll_height(1100.0, 120.0, 720.0) == 584.0, "settings: the rows scroll in a 720p window")
 	_check(SettingsPanel.scroll_height(400.0, 120.0, 720.0) == 400.0, "settings: no scrolling when they fit")
+	# Built-in graphics' pixel budget: a 1080p window fits High's, a Retina
+	# 3200x1800 window draws 1080p's worth of pixels and is upscaled.
+	_check(GraphicsSettings.budget_scale(1920.0 * 1080.0, GraphicsSettings.IGPU_PIXEL_BUDGET[2]) == 1.0, "pixel budget: 1080p fits High")
+	var retina := GraphicsSettings.budget_scale(3200.0 * 1800.0, GraphicsSettings.IGPU_PIXEL_BUDGET[2])
+	_check(retina > 0.55 and retina < 0.65 and absf(3200.0 * 1800.0 * retina * retina - 2.1e6) < 1.0e3, "pixel budget: Retina window scaled to High's pixels (%.3f)" % retina)
 	# Heat shimmer: a level camera has the horizon mid-screen, one tipped
 	# down sees it higher up, and the top edge is half the lens away.
 	_check(is_equal_approx(PostProcess.horizon_screen_y(0.0, 0.7), 0.5), "shimmer: level camera, horizon mid-screen")
