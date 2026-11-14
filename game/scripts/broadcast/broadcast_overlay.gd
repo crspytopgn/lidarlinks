@@ -510,14 +510,20 @@ func _draw_route(map: HoleMap, origin: Vector2, scale: float) -> void:
 
 ## A dashed circle, only the parts inside `clip`.
 func _dashed_arc(c: Vector2, r: float, clip: Rect2, col: Color) -> void:
+	# All the dashes in one draw: one draw_line each would be hundreds of
+	# canvas commands a frame (they count against the render budget).
 	var steps := maxi(24, int(r * TAU / 6.0))
+	var dashes := PackedVector2Array()
 	for i in range(0, steps, 2):
 		var a0 := TAU * i / steps
 		var a1 := TAU * (i + 1) / steps
 		var p0 := c + Vector2(cos(a0), sin(a0)) * r
 		var p1 := c + Vector2(cos(a1), sin(a1)) * r
 		if clip.has_point(p0) and clip.has_point(p1):
-			draw_line(p0, p1, col, 1.0, true)
+			dashes.append(p0)
+			dashes.append(p1)
+	if not dashes.is_empty():
+		draw_multiline(dashes, col, -1.0)
 
 
 ## One line is centred in its box; several (drop options) are stacked

@@ -152,31 +152,53 @@ static func build(hole: HoleData) -> HoleMap:
 		map.route_px.append(map.to_px_2d(q))
 	var w := WIDTH * SAMPLES
 	var h := HEIGHT * SAMPLES
-	var masks := Image.create_empty(w, h, false, Image.FORMAT_RGBA8)
-	var aux := Image.create_empty(w, h, false, Image.FORMAT_RGBA8)
+	# Bytes written straight in (set_pixel is slow), and the heights on a
+	# grid half as fine: the hillshade is soft anyway. About 4x quicker.
+	var mask_bytes := PackedByteArray()
+	mask_bytes.resize(w * h * 4)
+	var aux_bytes := PackedByteArray()
+	aux_bytes.resize(w * h * 4)
+	var hw := w / 2
+	var hh := h / 2
 	var heights := PackedFloat32Array()
-	heights.resize(w * h)
+	heights.resize(hw * hh)
 	var lo_h := INF
 	var hi_h := -INF
+	var step := map._side * map._metres_per_px / SAMPLES
+	var down := -map._up * map._metres_per_px / SAMPLES
+	var row_start := map.from_px(Vector2(0.5, 0.5) / SAMPLES)
+	for py in h:
+		var at := row_start + down * py
+		for px in w:
+			var s: int = hole.terrain.surface_at(at.x, at.y)
+			var i := (py * w + px) * 4
+			if s == Surface.Type.FAIRWAY or s == Surface.Type.TEE:
+				mask_bytes[i] = 255
+			elif s == Surface.Type.GREEN:
+				mask_bytes[i + 1] = 255
+			elif s == Surface.Type.FRINGE:
+				mask_bytes[i + 1] = 107
+			elif s == Surface.Type.SAND:
+				mask_bytes[i + 2] = 255
+			elif s == Surface.Type.WATER:
+				mask_bytes[i + 3] = 255
+			elif s == Surface.Type.DEEP_ROUGH or s == Surface.Type.OUT_OF_BOUNDS:
+				aux_bytes[i] = 255
+			if (px & 1) == 0 and (py & 1) == 0:
+				var y := hole.terrain.height_at(at.x, at.y)
+				heights[(py / 2) * hw + px / 2] = y
+				lo_h = minf(lo_h, y)
+				hi_h = maxf(hi_h, y)
+			at += step
+	var relief := maxf(hi_h - lo_h, 0.5)
 	for py in h:
 		for px in w:
-			var at := map.from_px(Vector2(px + 0.5, py + 0.5) / SAMPLES)
-			var s: int = hole.terrain.surface_at(at.x, at.y)
-			var fair := 1.0 if s == Surface.Type.FAIRWAY or s == Surface.Type.TEE else 0.0
-			var grn := 1.0 if s == Surface.Type.GREEN else (0.42 if s == Surface.Type.FRINGE else 0.0)
-			var deep := 1.0 if s == Surface.Type.DEEP_ROUGH or s == Surface.Type.OUT_OF_BOUNDS else 0.0
-			masks.set_pixel(px, py, Color(fair, grn, 1.0 if s == Surface.Type.SAND else 0.0,
-					1.0 if s == Surface.Type.WATER else 0.0))
-			aux.set_pixel(px, py, Color(deep, 0.0, 0.0))
-			var y := hole.terrain.height_at(at.x, at.y)
-			heights[py * w + px] = y
-			lo_h = minf(lo_h, y)
-			hi_h = maxf(hi_h, y)
-	var relief := maxf(hi_h - lo_h, 0.5)
-	for i in heights.size():
-		var c := aux.get_pixel(i % w, i / w)
-		c.g = (heights[i] - lo_h) / relief
-		aux.set_pixel(i % w, i / w, c)
+			var hy := heights[mini(py / 2, hh - 1) * hw + mini(px / 2, hw - 1)]
+			var i := (py * w + px) * 4
+			aux_bytes[i + 1] = int((hy - lo_h) / relief * 255.0)
+			aux_bytes[i + 3] = 255
+	var masks := Image.create_from_data(w, h, false, Image.FORMAT_RGBA8, mask_bytes)
+	var aux := Image.create_from_data(w, h, false, Image.FORMAT_RGBA8, aux_bytes)
 	map._add_trees(hole, aux)
 	map._render(masks, aux, metres_per_px, relief)
 	return map
@@ -248,6 +270,7 @@ func _render(masks: Image, aux: Image, metres_per_px: float, relief: float) -> v
 	_viewport = SubViewport.new()
 	_viewport.size = Vector2i(WIDTH * RES, HEIGHT * RES)
 	_viewport.disable_3d = true
+	_viewport.own_world_3d = true
 	_viewport.transparent_bg = false
 	_viewport.render_target_update_mode = SubViewport.UPDATE_ONCE
 	var rect := ColorRect.new()
