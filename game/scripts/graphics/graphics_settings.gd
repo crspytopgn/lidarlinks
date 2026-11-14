@@ -91,6 +91,9 @@ var render_scale := 1.0  ## 3D resolution relative to the window
 var fov := 40.0
 var wind: int = Wind.Level.MODERATE
 var presentation: int = Presentation.BROADCAST
+## Broadcast and Tour: one camera that follows the ball through its flight
+## and roll (true) instead of TV-style cuts (ShotDirector follow_ball).
+var follow_ball := true
 ## Web only: copy the disc's crowd, menu and golfer voice sounds into memory
 ## at startup (tens of MB) instead of using the light placeholder sounds.
 ## Desktop builds always read them from the game folder.
@@ -343,6 +346,7 @@ static func _load_saved(path: String) -> GraphicsSettings:
 	s.fov = clampf(float(cfg.get_value(SECTION, "fov", s.fov)), 35.0, 90.0)
 	s.wind = clampi(int(cfg.get_value(GAME_SECTION, "wind", s.wind)), Wind.Level.OFF, Wind.Level.STRONG)
 	s.presentation = clampi(int(cfg.get_value(GAME_SECTION, "presentation", s.presentation)), Presentation.CLASSIC, Presentation.TOUR)
+	s.follow_ball = bool(cfg.get_value(GAME_SECTION, "follow_ball", s.follow_ball))
 	s.web_disc_sounds = bool(cfg.get_value(GAME_SECTION, "web_disc_sounds", s.web_disc_sounds))
 	s.skill = clampi(int(cfg.get_value(GAME_SECTION, "skill", s.skill)), 0, LinksLaunch.SKILL_COUNT - 1)
 	s.green_firmness = clampi(int(cfg.get_value(GAME_SECTION, "green_firmness", s.green_firmness)), 0, 2)
@@ -415,6 +419,7 @@ func save(path := PATH) -> void:
 	cfg.set_value(SECTION, "fov", fov)
 	cfg.set_value(GAME_SECTION, "wind", wind)
 	cfg.set_value(GAME_SECTION, "presentation", presentation)
+	cfg.set_value(GAME_SECTION, "follow_ball", follow_ball)
 	cfg.set_value(GAME_SECTION, "web_disc_sounds", web_disc_sounds)
 	cfg.set_value(GAME_SECTION, "skill", skill)
 	cfg.set_value(GAME_SECTION, "green_firmness", green_firmness)

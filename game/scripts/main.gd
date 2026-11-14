@@ -3343,6 +3343,7 @@ func _apply_graphics() -> void:
 	broadcast = graphics.broadcast()
 	tour = broadcast and graphics.tour()
 	camera.broadcast = broadcast
+	camera.follow_ball = graphics.follow_ball
 	hud.set_broadcast(broadcast, tour)
 	_fold_hints()
 	trail.visible = not broadcast

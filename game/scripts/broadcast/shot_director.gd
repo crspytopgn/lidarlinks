@@ -7,10 +7,33 @@ extends RefCounted
 ## moment of the shot. `variant` picks between the alternatives, so replays
 ## and consecutive shots don't look the same. Used by RoundCamera in the
 ## Broadcast presentation; Classic keeps the Links 2003 framing.
+##
+## With `follow_ball` (Settings > Shot camera > Follow the ball) a full shot
+## gets one tracking camera instead of the cuts: it starts where the player
+## stood and drifts after the ball on a slow, critically damped spring, so
+## it trails the flight smoothly and never jerks, then drops low behind the
+## ball as it lands and rides over the bounces and roll, where the small
+## bumps of the ground show, as in modern home sims.
 
-enum Cam { BEHIND, CHASE, SIDE, LANDING, PIN, PUTT }
+enum Cam { BEHIND, CHASE, SIDE, LANDING, PIN, PUTT, FOLLOW }
 
-const CAM_NAMES := ["", "Chase cam", "Side cam", "Landing cam", "Pin cam", ""]
+const CAM_NAMES := ["", "Chase cam", "Side cam", "Landing cam", "Pin cam", "", "Ball cam"]
+## The follow camera: how far behind the ball and above it it aims to be in
+## the air and once the ball is on the ground, how stiff its spring is
+## (radians per second: lower trails further and moves more lazily), the
+## share of the ball's height it climbs to, and how fast it turns to a new
+## heading (per second) as the ball curves or kicks.
+const FOLLOW_BACK_AIR := 12.0
+const FOLLOW_UP_AIR := 3.0
+const FOLLOW_CLIMB := 0.6
+const FOLLOW_BACK_ROLL := 7.0
+const FOLLOW_UP_ROLL := 1.6
+const FOLLOW_STIFF_AIR := 2.2
+const FOLLOW_STIFF_ROLL := 2.8
+const FOLLOW_TURN := 1.2
+## Seconds the follow camera takes to settle from its flight framing to its
+## low roll framing after the first landing.
+const FOLLOW_SETTLE_S := 1.2
 ## Shorter shots than this stay on the behind and pin cameras.
 const FULL_SHOT_CARRY := 60.0
 ## Landings this close to the pin cut to the camera behind the green.
@@ -51,13 +74,20 @@ var _terrain: CourseTerrain
 ## Things only the cameras keep out of (the gallery's grandstands).
 var _blockers: ObstacleField
 var _cut := -1
+## Follow camera state: velocity, heading, the ball's last place, the first
+## landing time and 0 (air) to 1 (rolling).
+var _vel := Vector3.ZERO
+var _fdir := Vector3.FORWARD
+var _last_ball := Vector3.INF
+var _t_land := INF
+var _roll := 0.0
 ## The golfer the putting camera keeps clear of (null: none).
 var golfer: Node3D
 
 
 ## Plans the cameras for `shot`. `behind` is where the camera stood at
 ## address; `putting` keeps a single low tracking camera.
-static func plan(shot: ShotResult, pin: Vector3, terrain: CourseTerrain, behind: Vector3, putting: bool, variant: int, blockers: ObstacleField = null) -> ShotDirector:
+static func plan(shot: ShotResult, pin: Vector3, terrain: CourseTerrain, behind: Vector3, putting: bool, variant: int, blockers: ObstacleField = null, follow_ball := false) -> ShotDirector:
 	var d := ShotDirector.new()
 	d._blockers = blockers
 	d._shot = shot
@@ -77,6 +107,13 @@ static func plan(shot: ShotResult, pin: Vector3, terrain: CourseTerrain, behind:
 	d.fixed[Cam.BEHIND] = behind
 	d._add(0.0, Cam.BEHIND)
 	var t_land := RoundCamera.time_near(shot, land) if shot.bounces > 0 else shot.time_s
+	if follow_ball and shot.carry_m >= FULL_SHOT_CARRY:
+		d._fdir = d._dir
+		d._t_land = t_land
+		d.cut_times.clear()
+		d.cut_cams.clear()
+		d._add(0.0, Cam.FOLLOW)
+		return d
 	var near_pin := _flat(land, pin) < PIN_CAM_RANGE
 	var last_cut := 0.0
 	if shot.carry_m >= FULL_SHOT_CARRY:
@@ -143,6 +180,8 @@ func step(t: float, ball: Vector3, from: Vector3, delta: float) -> Array:
 		Cam.CHASE:
 			var want := _clear_above(_above(ball - _dir * CHASE_BACK + Vector3.UP * CHASE_UP))
 			pos = want if cut else from.lerp(want, 1.0 - exp(-delta * 3.5))
+		Cam.FOLLOW:
+			pos = _follow(t, ball, from, delta)
 		Cam.PUTT:
 			var aim := Vector3(_pin.x - ball.x, 0.0, _pin.z - ball.z)
 			var back := _dir if aim.length() < 1.0 else aim.normalized()
@@ -153,6 +192,34 @@ func step(t: float, ball: Vector3, from: Vector3, delta: float) -> Array:
 		_:
 			pos = fixed.get(cam, from)
 	return [pos, look, cut]
+
+
+## The follow camera's next place, from `from`, `delta` seconds on.
+func _follow(t: float, ball: Vector3, from: Vector3, delta: float) -> Vector3:
+	var dt := minf(delta, 0.05)
+	if dt <= 0.0:
+		return from
+	# Turn towards where the ball is heading, slowly, so a fade or a kick
+	# off a slope swings the view round rather than snapping it.
+	if _last_ball != Vector3.INF:
+		var step := Vector3(ball.x - _last_ball.x, 0.0, ball.z - _last_ball.z)
+		if step.length() > 0.02 * dt * 60.0:
+			_fdir = _fdir.lerp(step.normalized(), 1.0 - exp(-dt * FOLLOW_TURN)).normalized()
+	_last_ball = ball
+	if t >= _t_land:
+		_roll = move_toward(_roll, 1.0, dt / FOLLOW_SETTLE_S)
+	var w := smoothstep(0.0, 1.0, _roll)
+	var ground := _ground(ball)
+	var back := lerpf(FOLLOW_BACK_AIR, FOLLOW_BACK_ROLL, w)
+	var spot := ball - _fdir * back
+	var air_y := maxf(_ground(spot) + FOLLOW_UP_AIR, ground + (ball.y - ground) * FOLLOW_CLIMB + FOLLOW_UP_AIR)
+	spot.y = lerpf(air_y, maxf(ball.y, ground) + FOLLOW_UP_ROLL, w)
+	var want := _clear_above(_above(spot))
+	# Critically damped: it gathers speed and eases to a stop without
+	# overshooting, the lazy, smooth trail of a ball camera.
+	var k := lerpf(FOLLOW_STIFF_AIR, FOLLOW_STIFF_ROLL, w)
+	_vel += ((want - from) * k * k - _vel * 2.0 * k) * dt
+	return _above(from + _vel * dt)
 
 
 ## `p` moved straight out sideways until it is PUTT_GOLFER_CLEAR from the
