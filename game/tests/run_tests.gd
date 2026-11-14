@@ -1550,14 +1550,20 @@ func _test_buggy_drive() -> void:
 	for i in 300:
 		d.step(dt, 1.0, 0.0, fairway)
 	print("  fairway top speed %.2f m/s" % d.speed)
-	_check(d.speed > 6.0 and d.speed <= BuggyDrive.GOVERNED, "governed at about 15 mph on grass (%.2f)" % d.speed)
+	_check(d.speed > 6.0 and d.speed <= BuggyDrive.GOVERNED, "governed at about 18 mph on grass (%.2f)" % d.speed)
 	_check(d.position.z > 40.0 and absf(d.position.x) < 1e-3, "drives straight down +z (%s)" % d.position)
 	var rough := FlatTerrain.new(Surface.Type.ROUGH)
 	var r := BuggyDrive.new()
 	r.place(Vector3.ZERO, 0.0, rough)
-	for i in 300:
+	var brisk := BuggyDrive.new()
+	brisk.place(Vector3.ZERO, 0.0, fairway)
+	for i in 60:
+		brisk.step(dt, 1.0, 0.0, fairway)
+	for i in 90:
 		r.step(dt, 1.0, 0.0, rough)
-	_check(r.speed < d.speed - 1.0, "slower in the rough (%.2f)" % r.speed)
+	print("  after 2 s on grass %.2f m/s, after 3 s in the rough %.2f m/s" % [brisk.speed, r.speed])
+	_check(brisk.speed > 5.4, "brisk pickup: 12 mph in 2 s on grass (%.2f)" % brisk.speed)
+	_check(r.speed < 7.0, "slower to pick up in the rough (%.2f)" % r.speed)
 	for i in 60:
 		d.step(dt, 1.0, 1.0, fairway)
 	print("  full lock at speed: %.0f deg, sliding %.2f m/s, %.2f g" % [d.heading_deg, d.lateral, d.accel_lat / BuggyDrive.GRAVITY])
@@ -1574,7 +1580,7 @@ func _test_buggy_drive() -> void:
 	print("  stops from top speed in %.1f s, %.1f m" % [t * dt, d.position.z - from])
 	# Rear drum brakes only, as on real fleet carts: about 0.3 g on grass,
 	# held back by the grip of the rear tyres.
-	_check(t * dt < 2.6 and d.position.z - from < 9.0 and d.position.z - from > 4.0, "rear brakes stop it in a few metres")
+	_check(t * dt < 3.2 and d.position.z - from < 13.0 and d.position.z - from > 5.0, "rear brakes stop it in a few metres")
 	for i in 150:
 		d.step(dt, -1.0, 0.0, fairway)
 	_check(d.speed < 0.0 and d.speed >= -BuggyDrive.GOVERNED_REVERSE - 0.1, "backs up slowly (%.2f)" % d.speed)
@@ -1586,7 +1592,7 @@ func _test_buggy_drive() -> void:
 	up.place(Vector3.ZERO, 0.0, hill)
 	for i in 450:
 		up.step(dt, 1.0, 0.0, hill)
-	_check(up.speed < BuggyDrive.TOP_GRASS - 1.5, "slower up a 15%% hill (%.2f)" % up.speed)
+	_check(up.speed < BuggyDrive.TOP_GRASS - 0.5 and up.speed > 6.0, "climbs a 15%% hill at about 15 mph (%.2f)" % up.speed)
 	var down := BuggyDrive.new()
 	down.place(Vector3.ZERO, 180.0, hill)
 	for i in 450:

@@ -65,12 +65,13 @@ info and wind panels hide until the drive ends.
 
 Handling (`BuggyDrive`) is a planar rigid-body vehicle model stepped at
 120 Hz, with the published figures of a current two-seat electric fleet
-cart (448 kg kerb weight, 1.635 m wheelbase, 3.3 kW 48 V AC motor, 24 km/h):
+cart (448 kg kerb weight, 1.635 m wheelbase, 48 V AC motor rated 3.3 kW
+that peaks at about 7 kW), governed at the 18 mph most courses set:
 
 - 530 kg with the golfer aboard, 300 kg m^2 of yaw inertia, the centre of
   gravity behind the middle (the batteries) and 0.55 m up.
-- Rear drive: 1500 N at the wheels from a stand, then the motor's 3.3 kW,
-  and a governor at 15 mph (5.5 mph in reverse) that also
+- Rear drive: 2000 N at the wheels from a stand, then the motor's 7 kW
+  peak, and a governor at 18 mph (5.5 mph in reverse) that also
   regenerates to hold the speed downhill. Pedals take a moment to press,
   and the automatic park brake holds it, even on a hill, once the pedals
   are up and it has stopped.
@@ -84,14 +85,17 @@ cart (448 kg kerb weight, 1.635 m wheelbase, 3.3 kW 48 V AC motor, 24 km/h):
 - Brakes on the rear wheels only (the real cart has self-adjusting rear
   drums), so it stops at about 0.3 g, in 8 m from full speed on grass,
   and the rear can slide if you stamp on it on wet-feeling turf.
-- Rolling resistance by ground (0.015 on paths, 0.045 on grass, 0.14 in the
-  rough, 0.22 in deep rough), air drag, and gravity along and across the
+- Rolling resistance by ground (0.015 on paths, 0.035 on grass, 0.10 in the
+  rough, 0.16 in deep rough, for wide low-pressure turf tyres), air drag, and gravity along and across the
   slope.
 
-What comes out of that, checked in the tests: about 15 mph on grass and
-paths (0 to 13 mph in 4 to 5 s), 10 mph in the rough, 6.5 mph in deep
-rough, 8.5 mph up a 15% hill, held at the governor coming down, half a g of
-cornering grip, and a stop from full speed in about 2.2 s.
+What comes out of that, checked in the tests: 18 mph on grass and paths
+(0 to 13 mph in about 2 s, 18 mph in about 3.5 s, as brisk as a current AC
+cart), still about 17 mph once going in the rough but slower to pick up,
+a crawl to get going in deep rough, about 15 mph up a 15% hill and 10 mph
+up 25%, held at the governor coming down, half a g of cornering grip, and
+a stop from full speed in under 3 s. (It was underpowered before: 15 mph,
+rated rather than peak motor power and too much drag in the rough.)
 
 Sound (`BuggySound`) is made in code as looping clips whose pitch and
 volume follow the cart, so it works on the web build too: the AC motor's
