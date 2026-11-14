@@ -70,7 +70,7 @@ const TIMES := {
 	# (photos, promo), so pushed a little past the photos.
 	"dawn": {elevation = 6.0, bearing = 85.0, sun = Color(1.0, 0.74, 0.52), energy = 1.0, fill = 0.6, fill_fwd = 4.0,
 		ambient = Color(0.6, 0.66, 0.8), sky = Color(0.95, 0.95, 1.05), horizon = Color(1.12, 0.96, 0.86), glow = 0.6,
-		haze = Color(0.8, 0.8, 0.86), fog = 3.5, exposure = 1.6, scatter = 0.5, warm = Color(1.07, 0.99, 0.88), cool = Color(0.92, 0.97, 1.1), pop = 1.06},
+		haze = Color(0.8, 0.8, 0.86), fog = 3.5, exposure = 1.45, scatter = 0.5, warm = Color(1.07, 0.99, 0.88), cool = Color(0.92, 0.97, 1.1), pop = 1.06},
 	"sunset": {elevation = 5.0, bearing = 245.0, sun = Color(1.0, 0.6, 0.36), energy = 1.3, fill = 0.5, fill_fwd = 4.2,
 		ambient = Color(0.7, 0.66, 0.72), sky = Color(1.02, 0.92, 0.86), horizon = Color(1.18, 0.9, 0.72), glow = 0.9,
 		haze = Color(0.88, 0.74, 0.62), fog = 2.0, exposure = 1.75, scatter = 0.6, warm = Color(1.12, 0.96, 0.78), cool = Color(0.92, 0.95, 1.1), pop = 1.12},
@@ -504,10 +504,16 @@ func _set_grade_look() -> void:
 ## read as pale, flat skin and light cloth that blooms, so in Compatibility
 ## at Photoreal people take them back and get their fill light more from
 ## above than below, as from a sky. Forward+ and Classic leave people be.
+## The fill is not cut all the way back: a person's shade side still gets
+## the sky and the bounce off sunlit turf, and at 1/COMPAT_FILL_LIFT the
+## shaded half of a shirt went near black once the sun got low.
+const PEOPLE_COMPAT_FILL := 0.85
+
+
 static func people_light(photo: bool, forward_plus: bool) -> Vector3:
 	if not photo or forward_plus:
 		return Vector3(1.0, 1.0, 0.0)
-	return Vector3(1.0 / COMPAT_EXPOSURE_LIFT, 1.0 / COMPAT_FILL_LIFT, 1.0)
+	return Vector3(1.0 / COMPAT_EXPOSURE_LIFT, PEOPLE_COMPAT_FILL, 1.0)
 
 
 ## Photoreal light follows a sky the player picked: under cloud the sun
