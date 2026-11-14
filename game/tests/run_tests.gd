@@ -1863,6 +1863,11 @@ func _test_hd_pack() -> void:
 func _test_graphics_settings() -> void:
 	_check(SettingsPanel.scroll_height(1100.0, 120.0, 720.0) == 584.0, "settings: the rows scroll in a 720p window")
 	_check(SettingsPanel.scroll_height(400.0, 120.0, 720.0) == 400.0, "settings: no scrolling when they fit")
+	# Built-in graphics' pixel budget: a 1080p window fits High's, a Retina
+	# 3200x1800 window draws 1080p's worth of pixels and is upscaled.
+	_check(GraphicsSettings.budget_scale(1920.0 * 1080.0, GraphicsSettings.IGPU_PIXEL_BUDGET[2]) == 1.0, "pixel budget: 1080p fits High")
+	var retina := GraphicsSettings.budget_scale(3200.0 * 1800.0, GraphicsSettings.IGPU_PIXEL_BUDGET[2])
+	_check(retina > 0.55 and retina < 0.65 and absf(3200.0 * 1800.0 * retina * retina - 2.1e6) < 1.0e3, "pixel budget: Retina window scaled to High's pixels (%.3f)" % retina)
 	# Heat shimmer: a level camera has the horizon mid-screen, one tipped
 	# down sees it higher up, and the top edge is half the lens away.
 	_check(is_equal_approx(PostProcess.horizon_screen_y(0.0, 0.7), 0.5), "shimmer: level camera, horizon mid-screen")
@@ -2308,6 +2313,15 @@ func _test_gallery() -> void:
 	_check(sun_shadows != null and sun_shadows.multimesh.instance_count == g.card_count(), "every crowd card casts a sun shadow")
 	var person_shadows := g.get_node_or_null("ContactShadowsSun") as MultiMeshInstance3D
 	_check(g.crowd_count() == 0 or (person_shadows != null and person_shadows.multimesh.instance_count == g.crowd_count()), "every 3D spectator casts a sun shadow")
+	if not spot.is_empty():
+		# A ball come to rest in the stand gets free relief, clear of it and
+		# no nearer the hole; the stand is solid to the ball.
+		var in_stand: Vector3 = spot[0] - (spot[1] as Vector3) * 2.0
+		var drop := g.stand_relief(in_stand, hole.pin)
+		_check(drop != Vector3.INF and g.stand_relief(drop, hole.pin) == Vector3.INF, "a ball in the grandstand is dropped clear of it")
+		_check(drop == Vector3.INF or Vector2(drop.x - hole.pin.x, drop.z - hole.pin.z).length() >= Vector2(in_stand.x - hole.pin.x, in_stand.z - hole.pin.z).length() - 1e-3, "and no nearer the hole")
+		var through := g.camera_blockers.segment_hit(in_stand + Vector3(0, 3, 0) + (spot[1] as Vector3) * 8.0, in_stand + Vector3(0, 3, 0))
+		_check(not through.is_empty(), "the grandstand is solid")
 	var tee_stand := Gallery.tee_stand_spot(hole, hole.pin)
 	if not tee_stand.is_empty():
 		var tee_front: Vector3 = tee_stand[0]

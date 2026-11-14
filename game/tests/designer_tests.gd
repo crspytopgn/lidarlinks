@@ -130,7 +130,10 @@ func _test_splat_and_stakes() -> void:
 	var splat := mat.get_shader_parameter("splat_tex") as Texture2D
 	check(mat.get_shader_parameter("has_splat") == true and splat != null, "the ground has a splat map")
 	if splat != null:
-		check(splat.get_width() == ceili(c.area.size.x / DesignedTerrain.RES), "splat map at the raster's 0.5 m")
+		var codes: Vector2i = mat.get_shader_parameter("splat_codes")
+		check(codes.x == ceili(c.area.size.x / DesignedTerrain.RES) and splat.get_width() >= codes.x, "splat map at the raster's 0.5 m")
+		var block: Vector2i = mat.get_shader_parameter("green_edge_size")
+		check(splat.get_width() >= block.x * DesignedTerrain.EDGE_SURFACES.size(), "edge distances for greens, bunkers and tees")
 	var stakes := t.build_stakes()
 	check(stakes != null and stakes.multimesh.instance_count > 5, "the starter pond has hazard stakes")
 	if stakes != null:

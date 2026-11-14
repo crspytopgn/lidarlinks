@@ -681,8 +681,8 @@ func start_hole(index: int) -> void:
 	var dressed := practice == null and not round_setup.facility
 	if broadcast and dressed and graphics != null and graphics.quality > GraphicsSettings.Quality.LOW:
 		# The course's furniture: tee sign, ball washer, bench, bunker rakes.
-		hole_root.add_child(CourseProps.build(hole, _first_leg(), CourseProps.RAKES_BY_QUALITY[graphics.quality]))
-	if broadcast and dressed:
+		hole_root.add_child(CourseProps.build(hole, _first_leg(), CourseProps.RAKES_BY_QUALITY[graphics.quality], course.course_name))
+	if broadcast and dressed and course.tournament:
 		# Tournament dressing: gallery ropes, and a crowd at the tee and green.
 		var crowd := Gallery.CROWD_BY_QUALITY[graphics.quality] if graphics != null else 0
 		# Grandstands go up where tournaments build them: at par 3s and the last green.
@@ -692,6 +692,8 @@ func start_hole(index: int) -> void:
 	else:
 		gallery = null
 	camera.blockers = gallery.camera_blockers if gallery != null else null
+	# The stands are solid: the ball bounces off them.
+	hole.terrain.hole_obstacles = gallery.camera_blockers if gallery != null else null
 	marks = CourseMarks.new()
 	hole_root.add_child(marks)
 	if on_range:
@@ -1371,7 +1373,7 @@ func _caption_voice(event_name: String) -> void:
 
 ## Settings > Captions: the crowd after a broadcast shot.
 func _caption_crowd(crowd: int) -> void:
-	if not graphics.captions:
+	if not graphics.captions or not _crowd_on():
 		return
 	var sound: StringName = {Commentary.Crowd.POLITE: &"applause", Commentary.Crowd.CHEER: &"crowd_cheer",
 		Commentary.Crowd.ROAR: &"crowd_roar", Commentary.Crowd.GROAN: &"crowd_groan",
@@ -1379,6 +1381,12 @@ func _caption_crowd(crowd: int) -> void:
 	var text := SoundCaptions.crowd(sound)
 	if not text.is_empty():
 		hud.show_sound_caption(text)
+
+
+## Whether there is a crowd to clap: only on a course dressed for a
+## tournament, not at an everyday local club.
+func _crowd_on() -> bool:
+	return course != null and course.tournament
 
 
 ## Whether the player may start a swing now.
@@ -2243,6 +2251,10 @@ func _complete_flight() -> void:
 				golfer.play(&"upset")
 		_:
 			ball_at = shot.rest
+			# On, under or against a grandstand: free relief, dropped clear.
+			var relief := gallery.stand_relief(ball_at, hole.pin) if gallery != null and is_instance_valid(gallery) else Vector3.INF
+			if relief != Vector3.INF:
+				ball_at = relief
 			var s := hole.terrain.surface_at(ball_at.x, ball_at.z)
 			# Broadcast has its shot card for this; a second line under it
 			# said the same again.
@@ -2254,6 +2266,8 @@ func _complete_flight() -> void:
 				msg = "%s    Carry %d yd    Total %d yd" % [Surface.name_of(s), roundi(shot.carry_m * YARDS_PER_METRE), roundi(shot.total_m * YARDS_PER_METRE)]
 			if golfer and clubs[club_index].is_putter and _shot_from_pin < SLUMP_PUTT:
 				golfer.play(&"slump")
+			if relief != Vector3.INF:
+				msg = "Grandstand: free relief, dropped clear of it."
 	if _gimme_now():
 		_concede_putt()
 		return
@@ -2532,7 +2546,8 @@ func _hole_out(picked_up: bool) -> void:
 	p.picked_up = picked_up
 	var title := "Picked up" if picked_up else Scorecard.score_name(strokes, hole.par)
 	if not picked_up and strokes < hole.par:
-		sounds.play(&"applause")
+		if _crowd_on():
+			sounds.play(&"applause")
 		_caption_crowd(Commentary.Crowd.POLITE)
 		if golfer:
 			# A fist pump for a birdie; both arms up for an eagle or better.
@@ -4093,7 +4108,7 @@ func _report_shot() -> void:
 	_caption_crowd(line[1])
 	if gallery != null and is_instance_valid(gallery):
 		gallery.react(line[1])
-	match line[1]:
+	match line[1] if _crowd_on() else -1:
 		Commentary.Crowd.POLITE:
 			sounds.play(&"applause")
 		Commentary.Crowd.CHEER:
@@ -4106,7 +4121,7 @@ func _report_shot() -> void:
 			sounds.play(&"crowd_ooh")
 		_:
 			# Spectators round the tee applaud a tee shot that finds the short grass.
-			if strokes == 1 and not putting and (surface == Surface.Type.FAIRWAY or surface == Surface.Type.GREEN):
+			if _crowd_on() and strokes == 1 and not putting and (surface == Surface.Type.FAIRWAY or surface == Surface.Type.GREEN):
 				sounds.play(&"crowd_tee")
 	if not str(line[0]).is_empty():
 		hud.show_message(line[0], 4.0)

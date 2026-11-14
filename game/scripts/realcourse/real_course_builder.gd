@@ -475,7 +475,18 @@ func _add_shapes(c: DesignedCourse) -> void:
 		if d.has("wood"):
 			continue
 		var surface: int = d["surface"]
-		var pts := simplify_ring(d["ring"], TOLERANCE.get(surface, 0.5))
+		var pts: PackedVector2Array
+		if surface == Surface.Type.SAND:
+			# Mappers trace a bunker click by click, half a metre off either
+			# way, and the spline through those clicks drew a wavy edge.
+			pts = smooth_ring(d["ring"])
+		elif surface == Surface.Type.TEE:
+			# A tee is mostly mapped as four corners, and the spline through
+			# four points bulged it into a lumpy oval: points every metre
+			# keep its sides straight, with mown, rounded corners.
+			pts = smooth_ring(d["ring"], 1.0, 1)
+		else:
+			pts = simplify_ring(d["ring"], TOLERANCE.get(surface, 0.5))
 		if pts.size() >= 3:
 			c.shapes.append(CourseShape.new(surface, pts))
 	for s in _streams:
@@ -868,6 +879,60 @@ static func simplify_line(line: PackedVector2Array, tolerance: float) -> PackedV
 		if keep[i] == 1:
 			out.append(line[i])
 	return out
+
+
+## A closed ring as a clean, flowing outline, the way a bunker's edge is
+## really cut: control points every `spacing` metres along it (fewer on a
+## big one, at most MAX_POINTS), smoothed with `passes` rounds of Taubin
+## smoothing (which, unlike plain averaging, doesn't shrink it), then
+## scaled back to the ring's own area. Even spacing also keeps the designer's
+## spline from overshooting where a short side meets a long one. Wiggles
+## shorter than a few spacings go; the bays and fingers of the shape stay.
+static func smooth_ring(ring: PackedVector2Array, spacing := 1.5, passes := 4) -> PackedVector2Array:
+	var n := ring.size()
+	if n >= 2 and ring[0].is_equal_approx(ring[n - 1]):
+		ring = ring.slice(0, n - 1)
+		n -= 1
+	if n < 3:
+		return ring
+	var perimeter := 0.0
+	for i in n:
+		perimeter += ring[i].distance_to(ring[(i + 1) % n])
+	var count := clampi(roundi(perimeter / spacing), 8, MAX_POINTS)
+	var step := perimeter / count
+	# Even resample along the ring.
+	var pts := PackedVector2Array()
+	var seg := 0
+	var seg_start := 0.0
+	for k in count:
+		var want := k * step
+		while seg < n - 1 and seg_start + ring[seg].distance_to(ring[(seg + 1) % n]) < want:
+			seg_start += ring[seg].distance_to(ring[(seg + 1) % n])
+			seg += 1
+		var a := ring[seg]
+		var b := ring[(seg + 1) % n]
+		var seg_len := a.distance_to(b)
+		pts.append(a.lerp(b, clampf((want - seg_start) / seg_len, 0.0, 1.0) if seg_len > 0.0 else 0.0))
+	var at := absf(_ring_area(ring))
+	for _pass in passes:
+		for f: float in [0.5, -0.53]:
+			var next := PackedVector2Array()
+			next.resize(count)
+			for i in count:
+				var mid := (pts[(i - 1 + count) % count] + pts[(i + 1) % count]) * 0.5
+				next[i] = pts[i] + (mid - pts[i]) * f
+			pts = next
+	# Back to the mapped area, about the centre.
+	var now := absf(_ring_area(pts))
+	if now > 0.0 and at > 0.0:
+		var centre := Vector2.ZERO
+		for p in pts:
+			centre += p
+		centre /= count
+		var k := sqrt(at / now)
+		for i in count:
+			pts[i] = centre + (pts[i] - centre) * k
+	return pts
 
 
 ## A closed ring simplified to the tolerance, loosened until it has at most

@@ -29,4 +29,7 @@ func load_course(_path: String) -> CourseData:
 static func source() -> DesignedCourse:
 	if _parsed == null:
 		_parsed = DesignedCourse.load_file(FILE)
+		# The built-in course is the tour's showcase: dressed for an event.
+		if _parsed != null:
+			_parsed.tournament = true
 	return _parsed
