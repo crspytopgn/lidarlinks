@@ -107,7 +107,8 @@ take off speed and spin as they do for a swing. Each message is answered
 with code 200, and the app is told which club is up (code 201, `"Club":
 "DR"`, `"7I"`, `"PT"`). HLA and spin axis are taken as positive to the
 right. Shots are recorded as measured (`ShotRecord.monitor`), so replays
-play them back and online play can tell them apart.
+play them back and online play can tell them apart. Per-brand setup and the
+simulated test client: [launch-monitors.md](launch-monitors.md).
 
 ### Gimmes
 
