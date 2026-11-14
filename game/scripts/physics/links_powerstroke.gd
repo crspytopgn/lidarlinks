@@ -120,6 +120,26 @@ class Run:
 		var full := FULL_POWER if mode == Mode.FULL else LAST
 		return float(pos - SNAP) / float(full - SNAP)
 
+	## Where to draw the marker, as `value()` but between positions. The
+	## game moves it a whole position at a time, a few ticks apart, which
+	## looks steppy on a modern screen; this glides it towards the next
+	## position as that step's wait runs down, arriving just as the step
+	## lands, so the true position is always the one it last passed.
+	## Display only: clicks and timing still use `pos`.
+	func smooth_value() -> float:
+		var full := FULL_POWER if mode == Mode.FULL else LAST
+		return (smooth_pos() - SNAP) / float(full - SNAP)
+
+	func smooth_pos() -> float:
+		if done:
+			return float(pos)
+		var step := 1.0 if rising else -1.0
+		if rising and pos >= TOP:
+			step = 0.0  # held one step at the top before it turns
+		elif not rising and pos <= 0:
+			step = 0.0
+		return float(pos) + step * clampf(_frames / float(_need), 0.0, 1.0)
+
 	func value_of(p: int) -> float:
 		var full := FULL_POWER if mode == Mode.FULL else LAST
 		return float(p - SNAP) / float(full - SNAP)

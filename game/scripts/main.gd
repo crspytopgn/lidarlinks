@@ -991,6 +991,10 @@ func _process(delta: float) -> void:
 	# in the air and the countdowns all wait.
 	var paused := pause_menu.visible or settings_panel.visible
 	hud.meter.set_process(not paused)
+	# Show the putting meter as soon as the putter is in hand, not only once
+	# the stroke starts.
+	if state == State.AIM and not hud.meter.is_swinging() and club_index < clubs.size():
+		hud.meter.mode = _meter_mode()
 	# The meter would sit on top of the drop options and means nothing there.
 	# Nor during the shot once the ball is away, or over the result: it sat
 	# in the corner of every broadcast camera saying "click to swing".

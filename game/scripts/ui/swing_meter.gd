@@ -13,7 +13,15 @@ extends Control
 ## hooks, late (past it) pushes and slices. The marker moves as Links 2003's
 ## does (LinksPowerStroke): one of the game's 69 positions at a time, at the
 ## game's speeds, with the snap line 15 positions up. Chips and putts have
-## their own meters, set with `mode` before the first click.
+## their own meters, set with `mode` before the first click. The marker is
+## drawn gliding between the game's positions (Run.smooth_value) so it moves
+## smoothly every frame; the clicks still land on the game's own positions.
+##
+## Putts get their own look: a PUTT stroke scale with fine ticks every 5
+## percent of the backstroke (labelled at 25, 50 and 75) instead of the
+## full swing's quarter marks, a cooler fill, and a putt's miss named as a
+## pull or a push, which is all a PowerStroke miss does to a putt (the face
+## turns, docs/formats/physics.md).
 
 signal backswing_started
 signal swing_finished(power: float, accuracy: float)
@@ -49,6 +57,10 @@ static func _fill() -> Color:
 	return Color(0.3, 0.55, 1.0) if colour_safe else Color(0.3, 0.8, 0.35)
 
 
+## The putting meter's backstroke fill.
+const PUTT_FILL := Color(0.62, 0.92, 0.84, 0.92)
+
+
 static func _marker() -> Color:
 	return Color(1, 1, 1) if colour_safe else Color(0.9, 0.1, 0.1)
 
@@ -57,7 +69,13 @@ var value := 0.0  ## marker position: 0 = snap line, 1 = full power
 var power := 0.0
 var accuracy := 0.0
 ## The meter for the next swing (LinksPowerStroke.Mode).
-var mode := LinksPowerStroke.Mode.FULL
+var mode := LinksPowerStroke.Mode.FULL:
+	set(v):
+		if v != mode:
+			mode = v
+			queue_redraw()
+## Where the marker is drawn: `value`, gliding between the game's positions.
+var shown := 0.0
 ## Where the power click landed, in the game's positions (for chips, whose
 ## power comes from their own table: LinksPowerStroke.chip_power).
 var power_position := 0
@@ -102,6 +120,7 @@ func reset() -> void:
 	run = null
 	power_position = 0
 	value = 0.0
+	shown = 0.0
 	power = 0.0
 	accuracy = 0.0
 	queue_redraw()
@@ -118,6 +137,7 @@ func click() -> void:
 			phase = Phase.BACKSWING
 			run = LinksPowerStroke.Run.new(mode)
 			value = run.value()
+			shown = run.smooth_value()
 			power = 0.0
 			power_position = 0
 			accuracy = 0.0
@@ -141,6 +161,7 @@ func _process(delta: float) -> void:
 ## Takes the meter's state from the run.
 func _follow() -> void:
 	value = run.value()
+	shown = run.smooth_value()
 	if run.power_pos != 0 and power_position == 0:
 		power_position = run.power_pos
 		power = run.value_of(run.power_pos)
@@ -151,9 +172,44 @@ func _follow() -> void:
 	if run.done and phase != Phase.DONE:
 		if run.snap_pos >= 0:
 			value = run.value_of(run.snap_pos)
+			shown = value
 		accuracy = run.accuracy()
 		phase = Phase.DONE
 		swing_finished.emit(power, accuracy)
+
+
+func putting() -> bool:
+	return mode == LinksPowerStroke.Mode.PUTT or mode == LinksPowerStroke.Mode.SHORT_PUTT
+
+
+## The scale's marks, as meter values: quarters for a full swing or chip,
+## every 5 percent of the stroke for a putt.
+func marks() -> Array[float]:
+	var out: Array[float] = []
+	var n := 20 if putting() else 4
+	for i in range(1, n + 1):
+		out.append(float(i) / n)
+	return out
+
+
+## A mark the scale makes bigger (and, on a putt, labels).
+static func major(v: float) -> bool:
+	return absf(v * 4.0 - roundf(v * 4.0)) < 1e-3
+
+
+func title() -> String:
+	return "PUTT" if putting() else "POWER"
+
+
+## The result of the snap, in the meter's words: a putt only pulls or
+## pushes (the face turns); a full swing or chip hooks or slices.
+func miss_text() -> String:
+	var pct := roundi(absf(accuracy) * 100.0)
+	if accuracy == 0.0:
+		return "SQUARE" if putting() else "PERFECT"
+	if putting():
+		return ("PULL %d%%" if accuracy < 0.0 else "PUSH %d%%") % pct
+	return ("HOOK %d%%" if accuracy < 0.0 else "SLICE %d%%") % pct
 
 
 ## The meter's span below the snap line and above it, in meter values: the
@@ -209,29 +265,28 @@ func _draw() -> void:
 	_arc(ACCURACY_ZONE, _high(), Color(0.85, 0.85, 0.85, 0.35), WIDTH)
 	match phase:
 		Phase.BACKSWING:
-			_arc(0.0, value, _fill(), WIDTH)
+			_arc(0.0, shown, PUTT_FILL if putting() else _fill(), WIDTH)
 		Phase.DOWNSWING, Phase.DONE:
 			_arc(0.0, power, Color(0.95, 0.55, 0.2), WIDTH)
-	for quarter in [0.25, 0.5, 0.75, 1.0]:
-		_tick(quarter, Color(1, 1, 1, 0.7), WIDTH * 0.5, 4.0, 1.5)
+	for m in marks():
+		if major(m):
+			_tick(m, Color(1, 1, 1, 0.7), WIDTH * 0.5, 4.0, 1.5)
+		else:
+			_tick(m, Color(1, 1, 1, 0.45), WIDTH * 0.5, 0.0, 1.0)
 	_tick(0.0, Color.WHITE, WIDTH * 0.5 + 4.0, 8.0, 3.0)
 	if target >= 0.0:
 		draw_circle(size * 0.5 + Vector2.from_angle(_angle(target)) * (RADIUS + WIDTH * 0.5 + 8.0), 5.0, TARGET)
 	if phase != Phase.IDLE:
-		_tick(value, _marker(), WIDTH * 0.5 + 2.0, 10.0, 4.0)
+		_tick(shown, _marker(), WIDTH * 0.5 + 2.0, 10.0, 4.0)
 
 	var font := ThemeDB.fallback_font
 	var c := size * 0.5
-	var text := "POWER"
+	var text := title()
 	if phase == Phase.DOWNSWING or phase == Phase.DONE:
 		text = "%d%%" % roundi(power * 100.0)
 	draw_string(font, c + Vector2(-40, 6), text, HORIZONTAL_ALIGNMENT_CENTER, 80.0, 18)
 	if phase == Phase.DONE:
-		var label := "Perfect"
-		if accuracy < 0.0:
-			label = "Hook %d%%" % roundi(-accuracy * 100.0)
-		elif accuracy > 0.0:
-			label = "Slice %d%%" % roundi(accuracy * 100.0)
+		var label := miss_text().capitalize()
 		draw_string(font, c + Vector2(-50, 28), label, HORIZONTAL_ALIGNMENT_CENTER, 100.0, 14)
 
 
@@ -259,18 +314,19 @@ func _draw_bar() -> void:
 	draw_rect(Rect2(_bar_x(-ACCURACY_ZONE), mid - band * 0.5, _bar_x(ACCURACY_ZONE) - _bar_x(-ACCURACY_ZONE), band), Color(1.0, 0.95, 0.5, 0.35))
 	match phase:
 		Phase.BACKSWING:
-			_bar_fill(0.0, value, Color(_fill(), 0.75), mid, band)
+			_bar_fill(0.0, shown, Color(PUTT_FILL if putting() else _fill(), 0.75), mid, band)
 		Phase.DOWNSWING, Phase.DONE:
 			_bar_fill(0.0, power, Color(1.0, 0.6, 0.15, 0.75), mid, band)
-	for quarter in [0.25, 0.5, 0.75, 1.0]:
-		var x := _bar_x(quarter)
-		draw_line(Vector2(x, mid - bar_h * 0.6), Vector2(x, mid + bar_h * 0.6), Color(1, 1, 1, 0.8), 1.5)
+	for m in marks():
+		var x := _bar_x(m)
+		var reach := 0.6 if major(m) else 0.3
+		draw_line(Vector2(x, mid - bar_h * reach), Vector2(x, mid + bar_h * reach), Color(1, 1, 1, 0.8 if major(m) else 0.5), 1.5 if major(m) else 1.0)
 	var snap := _bar_x(0.0)
 	draw_line(Vector2(snap, mid - bar_h * 1.4), Vector2(snap, mid + bar_h * 1.4), Color.WHITE, 2.5)
 	if target >= 0.0:
 		draw_circle(Vector2(_bar_x(target), mid - bar_h * 1.4), 5.0, TARGET)
 	if phase != Phase.IDLE:
-		var x := _bar_x(value)
+		var x := _bar_x(shown)
 		draw_line(Vector2(x, mid - bar_h * 1.1), Vector2(x, mid + bar_h * 1.1), _marker(), 4.0)
 
 	var font := ThemeDB.fallback_font
@@ -278,12 +334,7 @@ func _draw_bar() -> void:
 	if phase == Phase.DOWNSWING or phase == Phase.DONE:
 		text = "%d%%" % roundi(power * 100.0)
 	if phase == Phase.DONE:
-		if accuracy < 0.0:
-			text += "   Hook %d%%" % roundi(-accuracy * 100.0)
-		elif accuracy > 0.0:
-			text += "   Slice %d%%" % roundi(accuracy * 100.0)
-		else:
-			text += "   Perfect"
+		text += "   " + miss_text().capitalize()
 	if not text.is_empty():
 		draw_string_outline(font, Vector2(snap + 10.0, bar_top - 8.0), text, HORIZONTAL_ALIGNMENT_LEFT, -1, 16, 4, Color(0, 0, 0, 0.8))
 		draw_string(font, Vector2(snap + 10.0, bar_top - 8.0), text, HORIZONTAL_ALIGNMENT_LEFT, -1, 16)
@@ -326,35 +377,39 @@ func _draw_modern() -> void:
 	_capsule(zone, Color(1, 1, 1, 0.12))
 	match phase:
 		Phase.BACKSWING:
-			_capsule(Rect2(snap, mid - h * 0.5, maxf(_modern_x(value) - snap, h), h), SWING)
+			_capsule(Rect2(snap, mid - h * 0.5, maxf(_modern_x(shown) - snap, h), h), PUTT_FILL if putting() else SWING)
 		Phase.DOWNSWING, Phase.DONE:
 			_capsule(Rect2(snap, mid - h * 0.5, maxf(_modern_x(power) - snap, h), h), GOLD)
-	for quarter in [0.25, 0.5, 0.75, 1.0]:
-		draw_circle(Vector2(_modern_x(quarter), mid + h + 5.0), 1.6, Color(1, 1, 1, 0.45))
+	if putting():
+		# The stroke scale: a fine tick every 5 percent, 25/50/75 labelled.
+		var small := GlassTheme.font(500)
+		for m in marks():
+			var x := _modern_x(m)
+			var big := major(m)
+			draw_line(Vector2(x, mid + h * 0.5 + 3.0), Vector2(x, mid + h * 0.5 + (9.0 if big else 6.0)), Color(1, 1, 1, 0.55 if big else 0.3), 1.0, true)
+			if big and m < 0.999:
+				draw_string(small, Vector2(x - 12.0, mid + h * 0.5 + 19.0), str(roundi(m * 100.0)), HORIZONTAL_ALIGNMENT_CENTER, 24.0, 9, Color(1, 1, 1, 0.45))
+	else:
+		for quarter in [0.25, 0.5, 0.75, 1.0]:
+			draw_circle(Vector2(_modern_x(quarter), mid + h + 5.0), 1.6, Color(1, 1, 1, 0.45))
 	draw_line(Vector2(snap, mid - h * 1.6), Vector2(snap, mid + h * 1.6), Color(1, 1, 1, 0.85), 2.0, true)
 	if target >= 0.0:
 		draw_circle(Vector2(_modern_x(target), mid - h - 6.0), 4.5, TARGET)
 	if phase != Phase.IDLE:
-		var x := _modern_x(value)
+		var x := _modern_x(shown)
 		_capsule(Rect2(x - 4.0, mid - 13.0, 8.0, 26.0), Color(1, 1, 1, 0.25))
 		_capsule(Rect2(x - 2.0, mid - 11.0, 4.0, 22.0), Color.WHITE)
 
 	var font := GlassTheme.font(600)
 	var top := 24.0
-	draw_string(font, Vector2(MODERN_INSET, top), "POWER", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color(1, 1, 1, 0.55))
+	draw_string(font, Vector2(MODERN_INSET, top), title(), HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color(1, 1, 1, 0.55))
 	if phase == Phase.BACKSWING:
-		draw_string(font, Vector2(MODERN_INSET + 52.0, top), "%d%%" % roundi(value * 100.0), HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color(1, 1, 1, 0.9))
+		draw_string(font, Vector2(MODERN_INSET + 52.0, top), "%d%%" % roundi(shown * 100.0), HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color(1, 1, 1, 0.9))
 	elif phase == Phase.DOWNSWING or phase == Phase.DONE:
 		draw_string(font, Vector2(MODERN_INSET + 52.0, top), "%d%%" % roundi(power * 100.0), HORIZONTAL_ALIGNMENT_LEFT, -1, 15, GOLD)
 	if phase == Phase.DONE:
-		var label := "PERFECT"
-		var colour := good()
-		if accuracy < 0.0:
-			label = "HOOK %d%%" % roundi(-accuracy * 100.0)
-			colour = GOLD
-		elif accuracy > 0.0:
-			label = "SLICE %d%%" % roundi(accuracy * 100.0)
-			colour = GOLD
+		var label := miss_text()
+		var colour := good() if accuracy == 0.0 else GOLD
 		draw_string(font, Vector2(0, top), label, HORIZONTAL_ALIGNMENT_RIGHT, size.x - MODERN_INSET, 15, colour)
 	elif phase == Phase.IDLE:
-		draw_string(font, Vector2(0, top), "CLICK TO SWING", HORIZONTAL_ALIGNMENT_RIGHT, size.x - MODERN_INSET, 12, Color(1, 1, 1, 0.45))
+		draw_string(font, Vector2(0, top), "CLICK TO PUTT" if putting() else "CLICK TO SWING", HORIZONTAL_ALIGNMENT_RIGHT, size.x - MODERN_INSET, 12, Color(1, 1, 1, 0.45))
