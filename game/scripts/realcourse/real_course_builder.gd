@@ -50,7 +50,7 @@ var _holes: Array[Dictionary] = []  ## {"ref", "par", "line"}
 var _trees: Array[Dictionary] = []  ## {"p", "leaf", "height"}
 var _rows: Array[Dictionary] = []  ## tree rows: {"line", "leaf"}
 var _streams: Array[Dictionary] = []  ## {"line", "width"}
-var _paths: Array[PackedVector2Array] = []
+var _paths: Array[Dictionary] = []  ## {"line", "width", "bridge"}: cart paths and roads
 var _pins: PackedVector2Array = []
 var _buildings: Array[Dictionary] = []  ## {"ring", "box"}, grown 2 m
 
@@ -251,7 +251,13 @@ func _read(elements: Array) -> void:
 					"course": str(t.get("golf:course:name", "")), "line": line})
 		elif golf == "cartpath" or str(t.get("golf_cart", "")) == "designated":
 			if not closed:
-				_paths.append(_local_line(_geo_points(e)))
+				_paths.append({"line": _local_line(_geo_points(e)), "width": maxf(_metres(t.get("width", "")), 2.5), "bridge": _is_bridge(t)})
+		elif t.has("highway") and type == "way" and not closed:
+			# Roads and paved paths through the course: tarmac, played as a
+			# cart path (hard bounce and roll, free relief).
+			var w := road_width(t)
+			if w > 0.0:
+				_paths.append({"line": _local_line(_geo_points(e)), "width": w, "bridge": _is_bridge(t)})
 		elif GOLF_SURFACES.has(golf) and closed:
 			_add_poly(e, {"surface": GOLF_SURFACES[golf]})
 		elif natural == "water" or t.has("water") or str(t.get("landuse", "")) in ["reservoir", "basin"]:
@@ -563,19 +569,56 @@ func _tees_for(line: PackedVector2Array, pin: Vector2, tees: Array[PackedVector2
 
 
 func _add_paths(c: DesignedCourse) -> void:
-	for line in _paths:
-		var pts := simplify_line(line, 0.5)
+	for d in _paths:
+		var pts := simplify_line(d["line"], 0.5)
 		var inside := PackedVector2Array()
 		for p in pts:
 			if area.has_point(p):
 				inside.append(p)
 			elif inside.size() >= 2:
-				c.paths.append(CoursePath.new(inside, 2.5))
+				c.paths.append(CoursePath.new(inside, d["width"], d["bridge"]))
 				inside = PackedVector2Array()
 			else:
 				inside.clear()
 		if inside.size() >= 2:
-			c.paths.append(CoursePath.new(inside, 2.5))
+			c.paths.append(CoursePath.new(inside, d["width"], d["bridge"]))
+
+
+## The width in metres of a mapped road or path that is drawn as tarmac,
+## or 0 to leave it out: tunnels, and unpaved tracks and footpaths (most
+## footpaths across a course are just mown grass). From its width or lanes
+## tags where mapped, else a typical width for its class (UK and US road
+## standards: about 3.2 m a lane).
+static func road_width(t: Dictionary) -> float:
+	if str(t.get("tunnel", "no")) != "no" or str(t.get("covered", "no")) == "yes" or str(t.get("area", "no")) == "yes":
+		return 0.0
+	var hw := str(t.get("highway", ""))
+	var surface := str(t.get("surface", ""))
+	var paved := surface in ["asphalt", "paved", "concrete", "concrete:plates", "concrete:lanes", "paving_stones", "sett", "chipseal", "metal"]
+	var typical := {"motorway": 11.0, "trunk": 9.0, "primary": 7.5, "secondary": 7.0, "tertiary": 6.5,
+		"unclassified": 5.5, "residential": 5.5, "living_street": 5.0, "service": 3.5}
+	var base := 0.0
+	if typical.has(hw):
+		# A road mapped as unpaved is a farm or maintenance track.
+		if surface in ["unpaved", "gravel", "dirt", "grass", "ground", "earth", "compacted", "fine_gravel", "sand", "mud"]:
+			return 0.0
+		base = typical[hw]
+		if hw == "service" and str(t.get("service", "")) == "parking_aisle":
+			base = 5.0
+	elif hw == "track":
+		base = 3.0 if paved else 0.0
+	elif hw in ["footway", "path", "cycleway", "bridleway"]:
+		base = 1.8 if paved else 0.0
+	if base <= 0.0:
+		return 0.0
+	var w := _metres(t.get("width", ""))
+	if w <= 0.0 and str(t.get("lanes", "")).is_valid_int():
+		w = int(str(t.get("lanes", ""))) * 3.2
+	return clampf(w if w > 0.0 else base, CoursePath.MIN_WIDTH, CoursePath.MAX_WIDTH)
+
+
+static func _is_bridge(t: Dictionary) -> bool:
+	return str(t.get("bridge", "no")) not in ["no", ""]
 
 
 func _add_trees(c: DesignedCourse) -> void:

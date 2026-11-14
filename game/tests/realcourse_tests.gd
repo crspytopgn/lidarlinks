@@ -100,7 +100,12 @@ func _test_simplify() -> void:
 	check(turns < TAU * 1.15, "a smoothed bunker turns about once round, no zigzags (%.2f turns)" % (turns / TAU))
 	var area_in := absf(RealCourseBuilder._ring_area(traced))
 	check(absf(absf(RealCourseBuilder._ring_area(smooth)) - area_in) < area_in * 0.01, "smoothing keeps the bunker's area")
-	# A tee mapped as four corners keeps its straight sides.
+	# Roads through a course come in as tarmac at their real width.
+	check(is_equal_approx(RealCourseBuilder.road_width({"highway": "residential"}), 5.5), "a residential road is 5.5 m of tarmac")
+	check(is_equal_approx(RealCourseBuilder.road_width({"highway": "tertiary", "lanes": "2"}), 6.4), "two lanes are 6.4 m")
+	check(RealCourseBuilder.road_width({"highway": "footway"}) == 0.0 and RealCourseBuilder.road_width({"highway": "footway", "surface": "asphalt"}) > 0.0, "only paved footpaths are tarmac")
+	check(RealCourseBuilder.road_width({"highway": "service", "tunnel": "yes"}) == 0.0, "tunnels are left out")
+	# A four-corner tee keeps its straight sides.
 	var tee := RealCourseBuilder.smooth_ring(PackedVector2Array([Vector2(0, 0), Vector2(12, 0), Vector2(12, 20), Vector2(0, 20)]), 1.0, 1)
 	var straight := 0
 	for p in tee:
