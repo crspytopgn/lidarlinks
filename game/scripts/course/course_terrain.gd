@@ -63,6 +63,13 @@ func normal_at(x: float, z: float) -> Vector3:
 	return Vector3(-dx, 2.0 * e, -dz).normalized()
 
 
+## What grows here besides turf, for the foliage dresser: one of
+## CourseShape.COVERS ("heath", "scrub", "wetland", "dune", "meadow"), or ""
+## for nothing special. Looks only.
+func cover_at(_x: float, _z: float) -> String:
+	return ""
+
+
 ## True in the first cut: the band of rough beside a fairway mown a little
 ## longer than the fairway and shorter than the rough. Looks only: it plays
 ## as rough (surface_at says ROUGH).

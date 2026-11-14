@@ -16,6 +16,12 @@ var guessed := false
 ## With `guessed`: traced from the aerial photo (CourseDetector) rather
 ## than drawn at a standard size.
 var found := false
+## What grows here besides turf, from the map (one of COVERS, or "" for
+## nothing special): the foliage dresser picks its plants by it (heather and
+## gorse on heath, bushes on scrub, reeds on wetland, marram on dunes).
+var cover := ""
+
+const COVERS := ["heath", "scrub", "wetland", "dune", "meadow"]
 
 var _outline := PackedVector2Array()
 var _bounds := Rect2()
@@ -118,6 +124,8 @@ func to_dict() -> Dictionary:
 		d["guessed"] = true
 		if found:
 			d["found"] = true
+	if not cover.is_empty():
+		d["cover"] = cover
 	return d
 
 
@@ -128,6 +136,8 @@ static func from_dict(d: Dictionary) -> CourseShape:
 		s.points.append(Vector2(float(flat[i]), float(flat[i + 1])))
 	s.guessed = bool(d.get("guessed", false))
 	s.found = s.guessed and bool(d.get("found", false))
+	var c := str(d.get("cover", ""))
+	s.cover = c if COVERS.has(c) else ""
 	return s
 
 

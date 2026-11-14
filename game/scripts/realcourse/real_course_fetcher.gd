@@ -336,7 +336,7 @@ static func overpass_query(s: float, w: float, n: float, e: float) -> String:
 	return ("[out:json][timeout:90];(" +
 		"nwr[\"golf\"]%s;" % bb +
 		"nwr[\"leisure\"=\"golf_course\"]%s;" % bb +
-		"nwr[\"natural\"~\"^(water|wood|scrub|heath)$\"]%s;" % bb +
+		"nwr[\"natural\"~\"^(water|wood|scrub|heath|wetland|dune|grassland)$\"]%s;" % bb +
 		"way[\"natural\"=\"tree_row\"]%s;" % bb +
 		"nwr[\"landuse\"~\"^(forest|reservoir|basin)$\"]%s;" % bb +
 		"node[\"natural\"=\"tree\"]%s;" % bb +

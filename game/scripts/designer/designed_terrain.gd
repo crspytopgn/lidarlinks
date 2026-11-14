@@ -229,6 +229,10 @@ func surface_at(x: float, z: float) -> int:
 	return Surface.Type.ROUGH if s == FIRST_CUT_CODE else (Surface.Type.FRINGE if s == COLLAR_CODE else s)
 
 
+func cover_at(x: float, z: float) -> String:
+	return course.cover_at(Vector2(x, z))
+
+
 func first_cut_at(x: float, z: float) -> bool:
 	var a := course.area
 	if not a.has_point(Vector2(x, z)):

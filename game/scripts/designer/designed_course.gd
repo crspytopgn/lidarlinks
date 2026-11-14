@@ -187,6 +187,18 @@ func shape_at(p: Vector2) -> int:
 	return best
 
 
+## What grows at `p` besides turf (CourseShape.cover): the smallest shape
+## with a cover that contains it, or "".
+func cover_at(p: Vector2) -> String:
+	var best := ""
+	var best_area := INF
+	for s in shapes:
+		if not s.cover.is_empty() and s.bounds().has_point(p) and s.contains(p) and s.area() < best_area:
+			best = s.cover
+			best_area = s.area()
+	return best
+
+
 ## Trees within `radius` of `p`, nearest first.
 func objects_near(p: Vector2, radius: float) -> Array[int]:
 	var out: Array[int] = []

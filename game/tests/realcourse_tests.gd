@@ -20,6 +20,7 @@ func run_all() -> Array[String]:
 	_test_land_cover()
 	_test_guesser()
 	_test_detector()
+	_test_megascans_cards()
 	return failures
 
 
@@ -134,6 +135,7 @@ func _test_builder() -> void:
 	els.append({"type": "node", "lat": f.lat_of(Vector2(-40, 40)), "lon": f.lon_of(Vector2(-40, 40)), "tags": {"natural": "tree", "height": "21"}})
 	els.append(_way({"waterway": "stream"}, f, [Vector2(-150, 60), Vector2(0, 70), Vector2(150, 60)], false))
 	els.append(_way({"golf": "cartpath"}, f, [Vector2(-30, -190), Vector2(-30, 140)], false))
+	els.append(_way({"natural": "heath"}, f, _rect(Vector2(-140, 180), Vector2(-60, 240))))
 	# The fairway as a multipolygon of two open ways that join into one ring.
 	var left := [Vector2(-20, -150), Vector2(-20, 130), Vector2(20, 130)]
 	var right := [Vector2(20, 130), Vector2(20, -150), Vector2(-20, -150)]
@@ -188,8 +190,25 @@ func _test_builder() -> void:
 	# It saves, loads and plays.
 	var again := DesignedCourse.from_json(c.to_json())
 	check(again != null and again.credits == c.credits and again.holes.size() == 1, "real course round trip")
+	var shift2 := b.frame.to_local(lat0, lon0)
+	check(again != null and again.cover_at(Vector2(-100, 210) + shift2) == "heath", "the heath keeps its cover through a save")
 	var data := c.to_course_data()
+	check(data.holes.size() == 1 and data.holes[0].terrain.cover_at(-100 + shift2.x, 210 + shift2.y) == "heath"
+		and data.holes[0].terrain.cover_at(0 + shift2.x, 0 + shift2.y) == "", "cover_at: heath on the heath, nothing on the fairway")
 	check(data.holes.size() == 1 and data.holes[0].terrain.surface_at(data.holes[0].pin.x, data.holes[0].pin.z) == Surface.Type.GREEN, "the pin is on a green")
+
+
+func _test_megascans_cards() -> void:
+	var cards := MegascansCards.parse(JSON.stringify({"cards": [
+		{"uid": "a", "title": "Marram Grass", "kind": "grass", "height_m": 0.9, "roles": ["dune", "links_fescue"], "file": "cards/a.png"},
+		{"uid": "b", "title": "Reed Grass", "kind": "reed", "height_m": 1.8, "roles": ["water_edge"], "file": "cards/b.png"},
+		{"uid": "c", "title": "Log", "kind": "log", "file": "cards/c.png"},
+		{"uid": "d", "kind": "shrub"},
+	]}))
+	check(cards.size() == 2, "unknown kinds and cards with no file are skipped (%d)" % cards.size())
+	check(MegascansCards.for_cover("dune", cards).size() == 1 and MegascansCards.for_cover("wetland", cards)[0]["uid"] == "b", "cards picked by cover")
+	check(MegascansCards.for_cover("heath", cards)[0]["uid"] == "a", "heath falls back to links fescue")
+	check(MegascansCards.for_cover("", cards).is_empty() and MegascansCards.parse("nonsense").is_empty(), "no cover, no cards")
 
 
 static func _rect(a: Vector2, b: Vector2) -> Array:

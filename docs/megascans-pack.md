@@ -25,6 +25,21 @@ Grass, marram, reeds, thatching grass, lady fern, field poppy, and a shrub
 card from Dwarf Birch and Downy Willow). Megascans has no full trees,
 gorse or heather.
 
+`tools/megascans/build_pack.py MEGASCANS_DIR PACK_DIR` does this for every 3D
+plant in the download's `catalogue.json` that has billboards: it bakes
+`foliage/cards/<uid8>.png` and writes `foliage/cards.json`, one entry per
+card with its kind (grass, fern, flower, rush, reed, shrub), full height in
+metres and golf roles (links_fescue, deep_rough, dune, water_edge, heath,
+scrub, meadow, woodland_edge), from rules on the plant's name. The game
+reads the list through `MegascansCards` (`cards()`, `for_kind()`,
+`for_role()`, `for_cover()`, `atlas()`), which is empty without a pack.
+
+The real-course importer records what grows on OpenStreetMap
+`natural=heath`, `scrub`, `wetland`, `dune` and `grassland` areas as the
+shape's cover (all played as deep rough). `CourseTerrain.cover_at(x, z)`
+returns it, so the foliage dresser can put heath plants on heath, reeds on
+wetland and marram on dunes (`MegascansCards.for_cover()`).
+
 Tried and not used: Megascans turf, sand, path and dirt surfaces in place of
 the free ground set. Up close on a tee, the lawn scans looked mottled and
 clumpy, even with their low frequencies flattened and their colour matched,

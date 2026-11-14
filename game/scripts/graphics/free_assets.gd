@@ -190,6 +190,12 @@ static func _load_megascans(file: String) -> Texture2D:
 	return tex
 
 
+## A texture under the pack's foliage/ folder (such as "cards/x.png"),
+## or null without a pack.
+static func megascans_texture(file: String) -> Texture2D:
+	return _load_megascans(file) if not file.is_empty() else null
+
+
 static func _load(file: String) -> Texture2D:
 	var scan := _load_megascans(file)
 	if scan != null:
