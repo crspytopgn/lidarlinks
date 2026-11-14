@@ -42,6 +42,8 @@ uniform float finish_contrast = 1.0;
 // leave the picture as it is.
 global uniform vec4 grade_warm;
 global uniform vec3 grade_cool;
+// The least of the drawn colour the grade keeps in the darks.
+const float DARK_FLOOR = 0.5;
 
 float hash(vec2 p) {
 	vec3 p3 = fract(vec3(p.xyx) * 0.1031);
@@ -86,6 +88,7 @@ void fragment() {
 		}
 	}
 	vec3 c = texture(screen_tex, uv).rgb;
+	vec3 c0 = c;
 	if (sharpen > 0.0) {
 		vec2 px = SCREEN_PIXEL_SIZE;
 		vec3 n = texture(screen_tex, uv + vec2(0.0, -px.y)).rgb;
@@ -132,6 +135,11 @@ void fragment() {
 		g = mix(vec3(lg), g, mix(grade_warm.a, 1.0, sky));
 		c = max(g * (l / max(dot(g, W), 1e-4)), vec3(0.0));
 	}
+	// The grade deepens the darks, but no further than DARK_FLOOR of what
+	// the renderer drew: the S-curve, the learned grade and the finish
+	// contrast together took the shaded side of the golfer's trousers from
+	// about 0.1 to pure black, a hard black streak down the leg.
+	c = max(c, c0 * DARK_FLOOR);
 	vec2 d = uv - 0.5;
 	c *= 1.0 - vignette * smoothstep(0.15, 0.75, dot(d, d) * 2.0);
 	c += (hash(FRAGCOORD.xy + fract(TIME) * 913.0) - 0.5) * grain;
