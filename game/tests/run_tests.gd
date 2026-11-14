@@ -644,6 +644,44 @@ func _test_swing_meter() -> void:
 	while chip.rising:
 		chip.advance(0.004)
 	_check(chip.power_pos == 16 and chip.pos == 22, "chip power waits for 16 and turns at 22 (%d, %d)" % [chip.power_pos, chip.pos])
+	# The marker glides between positions: never more than one ahead of the
+	# game's own, never behind it, and never jumping (60 fps frames).
+	var glide := LinksPowerStroke.Run.new(LinksPowerStroke.Mode.FULL)
+	var last := glide.smooth_pos()
+	var worst := 0.0
+	var behind := false
+	while not glide.done:
+		glide.advance(1.0 / 60.0)
+		if glide.pos == 40 and glide.rising and glide.power_pos == 0:
+			glide.click_power()
+		var at := glide.smooth_pos()
+		worst = maxf(worst, absf(at - last))
+		var step := 1.0 if glide.rising else -1.0
+		if (at - glide.pos) * step < -1e-6 or (at - glide.pos) * step > 1.0 + 1e-6:
+			behind = true
+		last = at
+	_check(worst <= 1.0 + 1e-6, "the meter marker never jumps more than a position a frame (%.2f)" % worst)
+	_check(not behind, "the drawn marker stays within a position ahead of the game's")
+	# Putts have their own meter: a finer stroke scale and pull/push.
+	meter.mode = LinksPowerStroke.Mode.PUTT
+	_check(meter.putting() and meter.marks().size() == 20 and meter.title() == "PUTT", "putts get the fine PUTT scale")
+	meter.accuracy = 0.2
+	_check(meter.miss_text() == "PUSH 20%", "a late putt is a push")
+	meter.mode = LinksPowerStroke.Mode.FULL
+	_check(meter.marks().size() == 4 and meter.miss_text() == "SLICE 20%", "full swings keep quarters and slices")
+	# The Broadcast putting meter's distance scale, by the round's physics.
+	var putter: Club = null
+	for c in Club.standard_set():
+		if c.is_putter:
+			putter = c
+	var roll := GolfRound.putt_roll_feet(StandardShotModel.new(), putter, Surface.Type.GREEN)
+	var rising_roll := roll.size() == 21 and roll[20] > 10.0
+	for i in range(1, roll.size()):
+		rising_roll = rising_roll and roll[i] >= roll[i - 1]
+	_check(rising_roll, "putts roll further the further back the stroke (%s)" % [roll])
+	meter.set_putt_scale(PackedFloat32Array([0.0, 10.0, 30.0]), 20.0)
+	_check_near(meter.value_for_feet(20.0), 0.75, 1e-6, "the putt scale finds the hole's place on the meter")
+	_check_near(meter.feet_for_value(0.25), 5.0, 1e-6, "the putt scale reads feet back")
 	meter.free()
 
 
@@ -1550,14 +1588,20 @@ func _test_buggy_drive() -> void:
 	for i in 300:
 		d.step(dt, 1.0, 0.0, fairway)
 	print("  fairway top speed %.2f m/s" % d.speed)
-	_check(d.speed > 6.0 and d.speed <= BuggyDrive.GOVERNED, "governed at about 15 mph on grass (%.2f)" % d.speed)
+	_check(d.speed > 6.0 and d.speed <= BuggyDrive.GOVERNED, "governed at about 18 mph on grass (%.2f)" % d.speed)
 	_check(d.position.z > 40.0 and absf(d.position.x) < 1e-3, "drives straight down +z (%s)" % d.position)
 	var rough := FlatTerrain.new(Surface.Type.ROUGH)
 	var r := BuggyDrive.new()
 	r.place(Vector3.ZERO, 0.0, rough)
-	for i in 300:
+	var brisk := BuggyDrive.new()
+	brisk.place(Vector3.ZERO, 0.0, fairway)
+	for i in 60:
+		brisk.step(dt, 1.0, 0.0, fairway)
+	for i in 90:
 		r.step(dt, 1.0, 0.0, rough)
-	_check(r.speed < d.speed - 1.0, "slower in the rough (%.2f)" % r.speed)
+	print("  after 2 s on grass %.2f m/s, after 3 s in the rough %.2f m/s" % [brisk.speed, r.speed])
+	_check(brisk.speed > 5.4, "brisk pickup: 12 mph in 2 s on grass (%.2f)" % brisk.speed)
+	_check(r.speed < 7.0, "slower to pick up in the rough (%.2f)" % r.speed)
 	for i in 60:
 		d.step(dt, 1.0, 1.0, fairway)
 	print("  full lock at speed: %.0f deg, sliding %.2f m/s, %.2f g" % [d.heading_deg, d.lateral, d.accel_lat / BuggyDrive.GRAVITY])
@@ -1574,7 +1618,7 @@ func _test_buggy_drive() -> void:
 	print("  stops from top speed in %.1f s, %.1f m" % [t * dt, d.position.z - from])
 	# Rear drum brakes only, as on real fleet carts: about 0.3 g on grass,
 	# held back by the grip of the rear tyres.
-	_check(t * dt < 2.6 and d.position.z - from < 9.0 and d.position.z - from > 4.0, "rear brakes stop it in a few metres")
+	_check(t * dt < 3.2 and d.position.z - from < 13.0 and d.position.z - from > 5.0, "rear brakes stop it in a few metres")
 	for i in 150:
 		d.step(dt, -1.0, 0.0, fairway)
 	_check(d.speed < 0.0 and d.speed >= -BuggyDrive.GOVERNED_REVERSE - 0.1, "backs up slowly (%.2f)" % d.speed)
@@ -1586,7 +1630,7 @@ func _test_buggy_drive() -> void:
 	up.place(Vector3.ZERO, 0.0, hill)
 	for i in 450:
 		up.step(dt, 1.0, 0.0, hill)
-	_check(up.speed < BuggyDrive.TOP_GRASS - 1.5, "slower up a 15%% hill (%.2f)" % up.speed)
+	_check(up.speed < BuggyDrive.TOP_GRASS - 0.5 and up.speed > 6.0, "climbs a 15%% hill at about 15 mph (%.2f)" % up.speed)
 	var down := BuggyDrive.new()
 	down.place(Vector3.ZERO, 180.0, hill)
 	for i in 450:
@@ -1998,7 +2042,20 @@ func _test_trees() -> void:
 		_check(box.end.y > low and box.end.y < high and box.position.y > -0.5, "tree %d is its species' size (%.1f m)" % [v, box.end.y])
 		var again := TreeFactory.build_mesh(spec[0], spec[1])
 		_check(again.surface_get_array_len(1) == m.surface_get_array_len(1), "tree %d grows the same each time" % v)
-		_check(TreeFactory.frame_size(v) >= box.end.y, "tree %d fits its impostor frame" % v)
+	# The photoscanned trees (when fetched) and the variants in use.
+	for spec: Array in TreeFactory.SCANNED:
+		if not ScannedTree.available(spec[1]):
+			continue
+		var m := ScannedTree.build(spec[1], spec[2])
+		_check(m != null and m.get_surface_count() == 2, "scanned %s has bark and leaves" % spec[1])
+		var tris := 0
+		for i in m.get_surface_count():
+			tris += m.surface_get_array_index_len(i) / 3
+		_check(tris > 2000 and tris < 60000, "scanned %s stays light (%d triangles)" % [spec[1], tris])
+		var box := m.get_aabb()
+		_check(box.end.y > 2.5 and box.end.y < 20.0 and box.position.y > -0.5, "scanned %s stands on the ground (%.1f m)" % [spec[1], box.end.y])
+	for v in TreeFactory.SCANNED.size() if TreeFactory.scans_available() else TreeFactory.VARIANTS.size():
+		_check(TreeFactory.frame_size(v) >= TreeFactory.mesh(v).get_aabb().end.y, "tree %d fits its impostor frame" % v)
 	var lib := PlaceholderObjectLibrary.new()
 	TreeFactory.level = 0
 	var classic := lib.instantiate("tree_pine")
@@ -2262,6 +2319,12 @@ func _test_gallery() -> void:
 	_check(facing.distance_to(Vector3(0.6, 0, 0.8)) < 1e-4, "spectators face what they watch")
 	g.watch_point(hole.tee + Vector3.UP)
 	_check(g.murmur_db() == Gallery.MURMUR_DB, "the gallery murmurs")
+	var murmur_at := Gallery.murmur_spots(hole, hole.pin)
+	var green_m := Vector2(murmur_at[1].x - hole.pin.x, murmur_at[1].z - hole.pin.z).length()
+	var tee_m := Vector2(murmur_at[0].x - hole.tee.x, murmur_at[0].z - hole.tee.z).length()
+	_check(green_m >= Gallery.GREEN_MARGIN + Gallery.CROWD_FAR and tee_m >= Gallery.TEE_SIDE,
+		"the murmur comes from the crowd, not the flag or the tee box")
+	_check(Gallery.MURMUR_DB <= -18.0 and Gallery.MURMUR_HUSH_DB < Gallery.MURMUR_DB, "the murmur sits low in the mix")
 	g.react(Commentary.Crowd.ROAR)
 	g.free()
 	_check_near(Gallery.stand_depth(), 6.8, 1e-4, "eight bleacher rows of 0.85 m")

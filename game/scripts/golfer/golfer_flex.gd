@@ -55,6 +55,8 @@ var _signs := Vector3.ONE
 func _ready() -> void:
 	_skeleton = get_parent() as Skeleton3D
 	if _skeleton != null:
+		# Read the bones once the modifiers have posed them (as drawn).
+		_skeleton.skeleton_updated.connect(_on_skeleton_updated)
 		for b in ["pelvis", "spine_03", "neck_01", "head", "upperarm_l", "lowerarm_l", "hand_l",
 				"upperarm_r", "lowerarm_r", "hand_r", "index_01_l", "pinky_01_l", "middle_01_l",
 				"index_01_r", "pinky_01_r", "middle_01_r"]:
@@ -87,7 +89,16 @@ func _pose(bone: String) -> Transform3D:
 	return _skeleton.get_bone_global_pose(i) if i >= 0 else Transform3D.IDENTITY
 
 
-func _process(delta: float) -> void:
+## Review tools step it themselves (_update) at a fixed rate.
+var manual := false
+
+
+func _on_skeleton_updated() -> void:
+	if not manual:
+		_update(get_process_delta_time())
+
+
+func _update(delta: float) -> void:
 	if materials.is_empty() or _skeleton == null:
 		return
 	if detail <= 0:

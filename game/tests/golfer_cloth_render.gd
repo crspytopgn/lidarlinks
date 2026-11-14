@@ -78,7 +78,7 @@ func _initialize() -> void:
 	scene.add_child(_golfer)
 	_player = _golfer.find_child("AnimationPlayer", true, false) as AnimationPlayer
 	_cloth = _golfer._cloth
-	_cloth.set_process(false)
+	_cloth.manual = true
 	_cam = Camera3D.new()
 	_cam.fov = 28.0
 	scene.add_child(_cam)
@@ -140,7 +140,7 @@ func _run(job: Array) -> void:
 		var t := 0.0
 		while t < float(st[1]) - 0.001:
 			_player.advance(DT)
-			_cloth._process(DT)
+			_cloth._update_cloth(DT)
 			t += DT
 	var cam: Array = job[5]
 	_cam.position = _golfer.to_global(cam[0])
