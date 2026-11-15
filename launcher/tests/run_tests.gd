@@ -317,6 +317,7 @@ func _test_game_config() -> void:
 	c.window_size = Vector2i(1920, 1080)
 	c.master = 40
 	c.swing_method = 0
+	c.quick_pace = false
 	c.folder = "/games/links"
 	_check(c.save_to(path) == OK, "settings: saved")
 	cfg = ConfigFile.new()
@@ -327,7 +328,8 @@ func _test_game_config() -> void:
 	_check(cfg.get_value("graphics", "window_width") == 1920 and cfg.get_value("audio", "master") == 40, "settings: window size and volume")
 	_check(cfg.get_value("game", "folder") == "/games/links" and cfg.get_value("round", "course") == "keep me", "settings: game folder set, other sections kept")
 	var again := GameConfig.load_from(path) as GameConfig
-	_check(again.display_choice() == 2 and again.shown_look() == 4 and again.shown_quality() == 2 and again.swing_method == 0, "settings: read back")
+	_check(again.display_choice() == 2 and again.shown_look() == 4 and again.shown_quality() == 2 and again.swing_method == 0 \
+		and not again.quick_pace, "settings: read back")
 
 
 func _test_installer() -> void:

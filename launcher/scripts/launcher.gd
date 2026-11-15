@@ -850,6 +850,8 @@ func _build_settings() -> void:
 	controls.row("Swing skill", _option(GameConfig.SKILLS, c.skill, set_skill, 230.0))
 	var set_help := func(on: bool) -> void: c.swing_help = on
 	controls.row("Swing help", _switch(c.swing_help, set_help), "Links 2003's help for straight mouse swings.")
+	var set_pace := func(on: bool) -> void: c.quick_pace = on
+	controls.row("Quick pace", _switch(c.quick_pace, set_pace), "Brisk chip and putt meters and less waiting. Off is Links 2003's own meter timing.")
 	var set_monitor := func(on: bool) -> void: c.launch_monitor = on
 	controls.row("Launch monitor", _switch(c.launch_monitor, set_monitor), "Take real swings from a launch monitor app (OpenConnect).")
 	_settings.add_child(controls)

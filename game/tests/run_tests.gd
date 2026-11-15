@@ -694,7 +694,75 @@ func _test_swing_meter() -> void:
 	meter.set_putt_scale(PackedFloat32Array([0.0, 10.0, 30.0]), 20.0)
 	_check_near(meter.value_for_feet(20.0), 0.75, 1e-6, "the putt scale finds the hole's place on the meter")
 	_check_near(meter.feet_for_value(0.25), 5.0, 1e-6, "the putt scale reads feet back")
+	_test_quick_pace(meter, roll)
 	meter.free()
+
+
+## Quick pace: brisk chip and putt meters through the same snap, a putting
+## meter sized to the putt, and the full swing's carry scale.
+func _test_quick_pace(meter: SwingMeter, roll: PackedFloat32Array) -> void:
+	var timed := func(quick: bool, power_at: int) -> float:
+		var r := LinksPowerStroke.Run.new(LinksPowerStroke.Mode.PUTT, quick)
+		var t := 0.0
+		while not r.done and t < 20.0:
+			r.advance(0.004)
+			t += 0.004
+			if r.rising and r.pos == power_at and r.power_pos == 0:
+				r.click_power()
+			if not r.rising and r.pos == LinksPowerStroke.SNAP:
+				r.click_snap()
+		return t
+	var quick_run := LinksPowerStroke.Run.new(LinksPowerStroke.Mode.PUTT, true)
+	_check(quick_run.pos == LinksPowerStroke.SNAP, "a Quick putt starts on the snap line")
+	_check(LinksPowerStroke.Run.new(LinksPowerStroke.Mode.PUTT).pos == 0, "a Classic putt starts at the bottom")
+	_check(not LinksPowerStroke.Run.new(LinksPowerStroke.Mode.FULL, true).quick, "full swings keep the game's timing")
+	var classic_mid: float = timed.call(false, 41)
+	var quick_mid: float = timed.call(true, 41)
+	_check(classic_mid > 4.0 and quick_mid < 2.4, "a mid-meter putt: Classic %.2f s, Quick %.2f s" % [classic_mid, quick_mid])
+	var quick_short: float = timed.call(true, 24)
+	_check(quick_short < 1.5, "a short Quick putt is over in %.2f s" % quick_short)
+	# Through the snap, Quick moves no faster than Classic does on a short putt.
+	var through := func(quick: bool) -> int:
+		var r := LinksPowerStroke.Run.new(LinksPowerStroke.Mode.PUTT, quick)
+		while r.rising or r.pos > LinksPowerStroke.SNAP + 1:
+			r.advance(0.004)
+			if r.rising and r.pos == 22 and r.power_pos == 0:
+				r.click_power()
+		return r._need
+	_check(through.call(true) >= through.call(false) - 1, "the snap is as easy to hit in Quick (%d vs %d frames)" % [through.call(true), through.call(false)])
+	# The putting meter sized to the putt: about twice the hole on the level.
+	var full := PackedFloat32Array()
+	for i in 21:
+		full.append(100.0 * pow(float(i) / 20.0, 1.5))  # 100 ft at the top
+	_check_near(GolfRound.putt_range_for(full, 5.0), 0.3, 1e-6, "a 5-footer gets the shortest putting meter")
+	_check_near(GolfRound.putt_range_for(full, 14.0), 0.45, 1e-6, "a 14-footer the next")
+	_check_near(GolfRound.putt_range_for(full, 80.0), 1.0, 1e-6, "a long putt the full meter")
+	var putter: Club = null
+	var seven: Club = null
+	for c in Club.standard_set():
+		if c.is_putter:
+			putter = c
+		elif c.short_name == "7i":
+			seven = c
+	var short_roll := GolfRound.putt_roll_feet(StandardShotModel.new(), putter, Surface.Type.GREEN, 0.3)
+	_check(short_roll[20] < roll[20] * 0.6 and short_roll[20] > 0.0, "the short putting meter's top rolls less (%.1f of %.1f ft)" % [short_roll[20], roll[20]])
+	var read_off := GolfRound.rescale_roll(roll, 0.3)
+	var worst := 0.0
+	for i in range(1, 21):
+		worst = maxf(worst, absf(read_off[i] - short_roll[i]))
+	_check(worst < 0.15, "the short meter's scale read off the full one is within %.2f ft of simulating it" % worst)
+	# The full swing reads in carry yards.
+	meter.mode = LinksPowerStroke.Mode.FULL
+	meter.set_yard_scale(PackedFloat32Array([0.25, 0.5, 0.75, 1.0]), PackedFloat32Array([40.0, 80.0, 120.0, 160.0]))
+	_check_near(meter.yards_for_value(0.6), 96.0, 1e-4, "the swing meter reads carry yards between its marks")
+	_check_near(meter.yards_for_value(0.1), 16.0, 1e-4, "and from the snap line")
+	_check_near(meter.yards_for_value(-0.2), 0.0, 1e-6, "nothing below the snap line")
+	if seven != null:
+		var model := StandardShotModel.new()
+		var half := GolfRound.carry_yards(model, seven, Surface.Type.FAIRWAY, false, 0.5)
+		var whole := GolfRound.carry_yards(model, seven, Surface.Type.FAIRWAY, false, 1.0)
+		_check(whole > half and half > 10.0, "carry grows with the swing (%.0f, %.0f yd)" % [half, whole])
+	meter.set_yard_scale(PackedFloat32Array(), PackedFloat32Array())
 
 
 func _test_scorecard() -> void:
