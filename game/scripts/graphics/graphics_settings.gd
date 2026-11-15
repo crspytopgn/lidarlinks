@@ -476,7 +476,13 @@ static func is_forward_plus() -> bool:
 ## baked ground shade carries the far trees' shadows.
 func shadow_distance() -> float:
 	var d: float = [150.0, 250.0, 400.0, 600.0][quality]
-	return minf(d, 200.0) if OS.has_feature("web") else d
+	# Built-in graphics, like the browser, keep the sun's shadow map to the
+	# near course (the baked ground shade carries the far trees' shadows):
+	# sun shadows were a fifth of an M4's frame, and the four splits then
+	# cover less ground each, so near shadows get sharper, not worse.
+	if OS.has_feature("web"):
+		return minf(d, 200.0)
+	return minf(d, 250.0) if integrated_gpu() else d
 
 
 ## Built-in graphics: Apple's M chips, Intel and AMD laptop graphics. They

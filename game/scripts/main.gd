@@ -362,6 +362,7 @@ func _ready() -> void:
 	AssetProviders.ensure_defaults()
 	shot_model = AssetProviders.shot_model
 	clubs = Club.standard_set()
+	FrameBenchmark.prepare()
 	graphics = GraphicsSettings.load_saved()
 	Glass.allow_blur = graphics.quality != GraphicsSettings.Quality.LOW
 	GlassTheme.install()

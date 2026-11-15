@@ -35,6 +35,20 @@ static func wanted() -> bool:
 	return OS.get_cmdline_user_args().has("--benchmark")
 
 
+## `-- --benchmark --look=natural` measures a preset look (LOOK_NAMES,
+## lower case, spaces as _) instead of the saved settings. Call before the
+## settings load.
+static func prepare() -> void:
+	if not wanted():
+		return
+	for arg: String in OS.get_cmdline_user_args():
+		if arg.begins_with("--look="):
+			var name := arg.trim_prefix("--look=").replace("_", " ")
+			for i in GraphicsSettings.LOOK_NAMES.size():
+				if GraphicsSettings.LOOK_NAMES[i].to_lower() == name:
+					GraphicsSettings.force_look = i
+
+
 func _init(game: GolfRound) -> void:
 	_game = game
 

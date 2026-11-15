@@ -230,8 +230,10 @@ static func _load(file: String) -> Texture2D:
 ## keeps the WebP, as phones there can't read S3TC, and so does
 ## Compatibility, whose video memory budget in CI stands for the browser.
 static func gpu_compress() -> bool:
+	# Exported games have no BC compressor (it's in the editor build only),
+	# so this saves memory only when run from the editor, as CI does.
 	return GraphicsSettings.is_forward_plus() and not OS.has_feature("web") \
-		and RenderingServer.has_os_feature("s3tc")
+		and not OS.has_feature("template") and RenderingServer.has_os_feature("s3tc")
 
 
 ## A block-compressed copy of `tex` (BC1, or BC3 with alpha), with mipmaps.
