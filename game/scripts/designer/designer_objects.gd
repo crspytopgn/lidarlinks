@@ -75,6 +75,8 @@ static func measure(id: String) -> Dictionary:
 
 
 static func is_built_in(id: String) -> bool:
+	if RockFormations.is_rock(id) or DesertPlants.is_plant(id):
+		return true
 	for item: Array in BUILT_IN:
 		if item[0] == id:
 			return true
@@ -113,6 +115,12 @@ static func stand_in(o: PlacedObject, saved: Dictionary) -> PlacedObject:
 ## player's files don't have): models are a box the size of the model, trees
 ## a trunk and a canopy, solid billboards a column, soft ones nothing.
 static func add_obstacles(field: ObstacleField, o: PlacedObject, y: float, saved := {}) -> void:
+	if RockFormations.is_rock(o.id):
+		RockFormations.add_obstacles(field, o, y)
+		return
+	if DesertPlants.is_plant(o.id):
+		DesertPlants.add_obstacles(field, o, y)
+		return
 	var x := o.position.x
 	var z := o.position.z
 	var s := o.scale

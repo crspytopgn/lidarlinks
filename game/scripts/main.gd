@@ -490,6 +490,8 @@ func start_round() -> void:
 	card = scoring.cards[0]
 	scenery.set_backdrop(course.horizon, course.sky)
 	scenery.set_far_scenery(course)
+	# The real land round an epic course is drawn kilometres out.
+	camera.far = Landscape.CAMERA_FAR if course.landscape else 3000.0
 	if ambience != null:
 		ambience.queue_free()
 		ambience = null
@@ -3422,6 +3424,7 @@ func _apply_graphics() -> void:
 	RenderingServer.global_shader_parameter_set("foliage_sway", 1.0 if graphics.foliage_wind else 0.0)
 	RenderingServer.global_shader_parameter_set("cloud_shadow", CLOUD_SHADOW if graphics.cloud_shadows else 0.0)
 	TreeFactory.set_level(graphics.trees)
+	Landscape.detail = graphics.quality
 	GolferCloth.detail = graphics.quality
 	GolferFlex.detail = mini(graphics.quality, 2)
 	GolferSurface.face_detail = mini(graphics.quality, 2)

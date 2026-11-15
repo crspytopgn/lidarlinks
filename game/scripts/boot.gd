@@ -508,7 +508,7 @@ func _on_tournament_play(chosen: RoundSetup) -> void:
 ## Every course the setup page offers after the placeholder: the game's
 ## courses, then the player's own designs.
 func _all_courses() -> PackedStringArray:
-	return _course_paths + DesignedCourse.saved_paths()
+	return _course_paths + PackedStringArray(PlaceholderCourseLoader.EPIC.keys()) + DesignedCourse.saved_paths()
 
 
 ## True if there is a saved round and its course is among the player's files

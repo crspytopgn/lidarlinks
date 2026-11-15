@@ -293,7 +293,7 @@ func set_far_scenery(course: CourseData) -> void:
 	if far != null:
 		far.queue_free()
 		far = null
-	if course == null or course.horizon != null:
+	if course == null or course.horizon != null or course.landscape:
 		return
 	far = FarScenery.create(course)
 	if far == null:
@@ -311,6 +311,7 @@ func _choose_sky() -> void:
 	_pick_sky()
 	if far != null:
 		far.set_haze(environment.fog_light_color, environment.fog_density, 1.0 if _photo else 2.2)
+	Landscape.set_haze(environment.fog_light_color, environment.fog_density, 1.0 if _photo else 1.6)
 
 
 func _pick_sky() -> void:
