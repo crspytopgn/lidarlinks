@@ -168,7 +168,7 @@ static func megascans_dir() -> String:
 ## A texture from the Megascans pack's foliage/, or null. Mipmapped, and
 ## block-compressed like the free ones on the desktop; halved to 1K in
 ## Compatibility, which keeps them uncompressed.
-static func _load_megascans(file: String) -> Texture2D:
+static func _load_megascans(file: String, max_size := 0) -> Texture2D:
 	var dir := megascans_dir()
 	if dir.is_empty():
 		return null
@@ -180,8 +180,11 @@ static func _load_megascans(file: String) -> Texture2D:
 	var img := Image.load_from_file(path)
 	if img == null or img.is_empty():
 		return null
-	if not gpu_compress() and img.get_width() > 1024:
-		img.resize(1024, 1024 * img.get_height() / img.get_width(), Image.INTERPOLATE_LANCZOS)
+	var cap := 1024 if not gpu_compress() else 1 << 30
+	if max_size > 0:
+		cap = mini(cap, max_size)
+	if img.get_width() > cap:
+		img.resize(cap, cap * img.get_height() / img.get_width(), Image.INTERPOLATE_LANCZOS)
 	img.generate_mipmaps()
 	if gpu_compress():
 		img.compress(Image.COMPRESS_S3TC)
@@ -191,9 +194,9 @@ static func _load_megascans(file: String) -> Texture2D:
 
 
 ## A texture under the pack's foliage/ folder (such as "cards/x.png"),
-## or null without a pack.
-static func megascans_texture(file: String) -> Texture2D:
-	return _load_megascans(file) if not file.is_empty() else null
+## no wider than `max_size` (0 for as baked), or null without a pack.
+static func megascans_texture(file: String, max_size := 0) -> Texture2D:
+	return _load_megascans(file, max_size) if not file.is_empty() else null
 
 
 static func _load(file: String) -> Texture2D:

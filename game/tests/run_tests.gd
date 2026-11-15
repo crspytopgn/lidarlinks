@@ -5444,6 +5444,36 @@ func _test_broadcast_pieces() -> void:
 	_check(FescueField.card_for(dressed, "water_edge", 10.0, 10.0)["uid"] == "b", "reeds by the water")
 	_check(FescueField.card_for(dressed, "heath", 1.0, 1.0).is_empty(), "no card for a role the pack lacks")
 	_check(FescueField.dress_cards([] as Array[Dictionary]).is_empty(), "no pack, no cards: the drawn fescue stays")
+	# The pack's 3D plants (ScannedPlants): groups from their titles, the
+	# meshes from an .olplant, and the place picking what grows.
+	var plants3d := MegascansPlants.parse('{"plants": [{"uid": "f", "title": "Lady Fern", "kind": "fern", "height_m": 0.6, "variants": 4, "file": "plants/f"},'
+		+ '{"uid": "m", "title": "Marram Grass", "kind": "grass", "height_m": 0.9, "variants": 2, "file": "plants/m"},'
+		+ '{"uid": "x", "title": "Broken", "variants": 0, "file": "plants/x"}]}')
+	_check(plants3d.size() == 2 and plants3d[0]["group"] == "fern" and plants3d[1]["group"] == "dune", "3D plants grouped by title (%s)" % [plants3d.map(func(p: Dictionary) -> String: return p["group"])])
+	_check(MegascansPlants.group_of("Toad Rush") == "wet" and MegascansPlants.group_of("Field Poppy") == "flower" and MegascansPlants.group_of("Wild Grass") == "grass", "reeds, flowers and grasses")
+	var olp := PackedByteArray()
+	olp.resize(4 * 4 + 3 * 32 + 3 * 4)
+	olp.encode_u32(0, 1)
+	olp.encode_u32(4, 1)
+	olp.encode_u32(8, 3)
+	olp.encode_u32(12, 3)
+	var tri := [Vector3(0, 0, 0), Vector3(0.5, 0, 0), Vector3(0, 0.6, 0)]
+	for i in 3:
+		var b := 16 + i * 32
+		olp.encode_float(b, tri[i].x)
+		olp.encode_float(b + 4, tri[i].y)
+		olp.encode_float(b + 8, tri[i].z)
+		olp.encode_float(b + 20, 1.0)
+		olp.encode_float(b + 24, tri[i].x)
+		olp.encode_float(b + 28, tri[i].y)
+		olp.encode_u32(16 + 96 + i * 4, i)
+	var olv := MegascansPlants.decode(olp)
+	_check(olv.size() == 1 and (olv[0][0] as ArrayMesh).get_aabb().size.y > 0.59, "an .olplant's mesh is read")
+	_check(MegascansPlants.decode(olp.slice(0, 40)).is_empty(), "a cut-short .olplant reads as nothing")
+	var bare := ScannedPlants.new()
+	bare.setup(null, 3)
+	_check(bare.instances == 0 and bare.get_child_count() == 0, "no hole or no pack, no 3D plants")
+	bare.free()
 	_check(far_air < 70.0, "the follow camera keeps the ball in sight in the air (%.1f m)" % far_air)
 	_check(rest_gap > 4.0 and rest_gap < 11.0 and cam.y < 3.0 and cam.z < 215.0, "the follow camera settles low behind the ball at rest (%s)" % cam)
 	_check((late[0] as Vector3).z > 240.0, "pin camera stands beyond the pin")

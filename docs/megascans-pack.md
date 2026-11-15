@@ -44,3 +44,31 @@ Tried and not used: Megascans turf, sand, path and dirt surfaces in place of
 the free ground set. Up close on a tee, the lawn scans looked mottled and
 clumpy, even with their low frequencies flattened and their colour matched,
 and from further back they looked no different.
+
+## 3D plants round the tees and greens
+
+`tools/megascans/plant_meshes.py MEGASCANS_DIR PACK_DIR` bakes the real
+scanned meshes of the download's 3D plants (ferns, wild grasses,
+wildflowers, reeds; logs, ivy, dead and tropical plants left out) into
+`foliage/plants/<uid8>.olplant`, with `<uid8>_albedo.png` (opacity in alpha)
+and `<uid8>_normal.png` (translucency in alpha) at 2048, and lists them in
+`foliage/plants.json`. Each plant keeps up to four variants, each with a
+near mesh (the most detailed Megascans LOD under 2,600 triangles) and a mid
+mesh (the next one down); the flat billboard LODs are dropped, since the
+plant cards take over further off. `tools/megascans/fbx_mesh.py` is the
+small binary FBX reader it uses (numpy only). The format is described at
+the top of `plant_meshes.py`.
+
+The game reads them through `MegascansPlants` and grows them with
+`ScannedPlants`: beds on the long grass round the hole's tee boxes (30 m)
+and green (34 m), on the deep rough anywhere and on the plain rough only
+well off the line of play, never within 1.4 m of a mown or sandy surface.
+What grows follows the course's place, as the ambience hears it
+(`FreeAmbience.setting_for_place`): meadow grasses, ferns and wildflowers
+on parkland, mostly ferns in woodland, marram and xeric grass on a links,
+dry grasses and rushes in the desert (the download has no cacti or
+succulents), fewer ferns where it is warm; ferns under tree crowns and
+reeds by water wherever those grow. Near the camera each plant is its
+near mesh, then the mid mesh, which dissolves into the plant cards
+(`shaders/scanned_plant.gdshader`, the trees' dithered cross-fade). Off at
+Low grass and on the web; Medium grows fewer plants and hands over sooner.

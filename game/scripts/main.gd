@@ -284,6 +284,7 @@ var _drive_to := -1  ## the ball the buggy is driving to
 var dynamic_resolution: DynamicResolution
 var grass: GrassField
 var fescue: FescueField  ## tall fescue on the deep rough, further out
+var plants: ScannedPlants  ## real scanned plants round the tee and green (private pack)
 
 var _trail_mesh := ImmediateMesh.new()
 ## Broadcast presentation pieces (GraphicsSettings.presentation).
@@ -710,6 +711,8 @@ func start_hole(index: int) -> void:
 		grass.setup(hole.terrain, graphics.grass)
 	if fescue.terrain != hole.terrain:
 		fescue.setup(hole.terrain, graphics.grass)
+	plants.set_place(course)
+	plants.setup(hole, graphics.grass)
 	if ambience != null:
 		ambience.start_hole(hole.tee)
 
@@ -3291,6 +3294,8 @@ func _build_world() -> void:
 	add_child(grass)
 	fescue = FescueField.new()
 	add_child(fescue)
+	plants = ScannedPlants.new()
+	add_child(plants)
 	post = PostProcess.new()
 	add_child(post)
 	dynamic_resolution = DynamicResolution.new()
@@ -3430,6 +3435,7 @@ func _apply_graphics() -> void:
 	if grass.level != graphics.grass and hole != null:
 		grass.setup(hole.terrain, graphics.grass)
 		fescue.setup(hole.terrain, graphics.grass)
+		plants.setup(hole, graphics.grass)
 	broadcast = graphics.broadcast()
 	tour = broadcast and graphics.tour()
 	camera.broadcast = broadcast
