@@ -18,7 +18,12 @@ extends Node3D
 
 const SHADER := preload("res://shaders/fescue.gdshader")
 const CHUNK := 32.0
-const BUILDS_PER_FRAME := 2
+## Milliseconds a frame spent building fescue (FescueField._build).
+const BUILD_BUDGET_MS := 2.5
+## Chunks the camera left are kept hidden, up to this many, rather than
+## freed: broadcast cameras go back and forth between the tee, the landing
+## area and the green, and rebuilding each was most of the stutter.
+const SPARE_MAX := 160
 ## Per Grass level (Off, Low, Medium, High): tufts per square metre of deep
 ## rough, and how far out they grow.
 const DENSITY := [0.0, 0.4, 0.6, 0.8]
@@ -104,10 +109,12 @@ static func available() -> bool:
 func setup(t: CourseTerrain, grass_level: int) -> void:
 	terrain = t
 	level = clampi(grass_level, 0, DENSITY.size() - 1) if available() else 0
-	for node in _chunks.values():
+	for node in _chunks.values() + _spare.values():
 		if node != null:
 			node.queue_free()
 	_chunks.clear()
+	_spare.clear()
+	_generation += 1
 	_crowns = crowns_by_chunk(t.obstacles if t != null else null)
 	dress = dress_cards(MegascansCards.cards())
 	var r: float = RADIUS[level]
@@ -125,9 +132,7 @@ func update_around(eye: Vector3) -> void:
 	var here := Vector2(eye.x, eye.z)
 	for key: Vector2i in _chunks.keys():
 		if _centre(key).distance_to(here) > r + CHUNK:
-			var node: Node = _chunks[key]
-			if node != null:
-				node.queue_free()
+			_park(key, _chunks[key])
 			_chunks.erase(key)
 	var wanted: Array[Vector2i] = []
 	var reach := ceili(r / CHUNK)
@@ -136,22 +141,60 @@ func update_around(eye: Vector3) -> void:
 		for dx in range(-reach, reach + 1):
 			var key := at + Vector2i(dx, dz)
 			if not _chunks.has(key) and _centre(key).distance_to(here) < r + CHUNK * 0.71:
-				wanted.append(key)
+				if _spare.has(key):
+					# Built before: the camera came back (tee, landing, green).
+					var kept: Node3D = _spare[key]
+					_spare.erase(key)
+					if kept != null:
+						kept.visible = true
+					_chunks[key] = kept
+				else:
+					wanted.append(key)
 	wanted.sort_custom(func(a: Vector2i, b: Vector2i) -> bool:
 		return _centre(a).distance_squared_to(here) < _centre(b).distance_squared_to(here))
-	for i in mini(BUILDS_PER_FRAME, wanted.size()):
-		var key := wanted[i]
-		var meshes := build_chunk(terrain, key, DENSITY[level], _crowns.get(key, PackedVector3Array()), UNDER_DENSITY[level], dress)
-		var node: Node3D = null
-		if not meshes.is_empty():
-			node = Node3D.new()
-			for mm in meshes:
-				var inst := MultiMeshInstance3D.new()
-				inst.multimesh = mm
-				inst.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-				node.add_child(inst)
-			add_child(node)
-		_chunks[key] = node
+	if not _building and not wanted.is_empty():
+		_build_in_frames(wanted[0])
+
+
+var _building := false
+var _generation := 0  ## raised by setup(), so a build for the old hole is dropped
+
+
+## Builds one chunk a few milliseconds a frame (BUILD_BUDGET_MS), so the
+## round never waits on it: a chunk took over 20 ms, and a camera move
+## needs dozens.
+func _build_in_frames(key: Vector2i) -> void:
+	_building = true
+	var gen := _generation
+	var meshes: Array[MultiMesh] = await _build(terrain, key, DENSITY[level], _crowns.get(key, PackedVector3Array()), UNDER_DENSITY[level], dress, BUILD_BUDGET_MS)
+	_building = false
+	if gen != _generation or _chunks.has(key) or not is_inside_tree():
+		return
+	var node: Node3D = null
+	if not meshes.is_empty():
+		node = Node3D.new()
+		for mm in meshes:
+			var inst := MultiMeshInstance3D.new()
+			inst.multimesh = mm
+			inst.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			node.add_child(inst)
+		add_child(node)
+	_chunks[key] = node
+
+
+var _spare := {}  ## Vector2i -> Node3D or null, hidden, oldest first
+
+
+func _park(key: Vector2i, node: Node3D) -> void:
+	if node != null:
+		node.visible = false
+	_spare[key] = node
+	while _spare.size() > SPARE_MAX:
+		var oldest: Vector2i = _spare.keys()[0]
+		var gone: Node3D = _spare[oldest]
+		if gone != null:
+			gone.queue_free()
+		_spare.erase(oldest)
 
 
 func chunk_count() -> int:
@@ -188,6 +231,20 @@ static func crowns_by_chunk(field: ObstacleField) -> Dictionary:
 ## plants, a stand of one kind every few metres. Deterministic. One
 ## MultiMesh per atlas used (the fescue's first, if any).
 static func build_chunk(t: CourseTerrain, key: Vector2i, density: float, crowns := PackedVector3Array(), under_density := 0.0, cards := {}) -> Array[MultiMesh]:
+	# Called through a Callable: with no budget it never waits, so it
+	# returns at once.
+	var out: Array[MultiMesh] = _build.call(t, key, density, crowns, under_density, cards, 0.0)
+	return out
+
+
+## build_chunk() spread over frames: after `budget_ms` of work in a frame
+## it waits for the next (0: all at once). Only one runs at a time, as the
+## tufts go into the shared _buf.
+static func _build(t: CourseTerrain, key: Vector2i, density: float, crowns: PackedVector3Array, under_density: float, cards: Dictionary, budget_ms: float) -> Array[MultiMesh]:
+	var tree := Engine.get_main_loop() as SceneTree
+	var budget_us := int(budget_ms * 1000.0)
+	var start := Time.get_ticks_usec()
+	var tick := 0
 	# Sparse bunch grass and scrub in the desert, none through snow (Biome).
 	var biome := Biome.of(t)
 	var wild := Biome.wild_grass(biome)
@@ -202,10 +259,19 @@ static func build_chunk(t: CourseTerrain, key: Vector2i, density: float, crowns 
 	_buf = PackedFloat32Array()
 	_card_bufs = {}
 	var origin := Vector2(key) * CHUNK
+	# A coarse look over the chunk first: most chunks have no deep rough or
+	# no water, and the thousands of tries below each ask the terrain what
+	# is there (the reeds seven times). Each part keeps its own seed, so
+	# skipping one leaves the others where they were.
+	var found := _surfaces_near(t, origin)
 	# Fescue, thicker and taller in the native drifts (the extra tries only
 	# land where native_at is high).
-	var tries := roundi(CHUNK * CHUNK * density * NATIVE_DENSITY)
+	var tries := roundi(CHUNK * CHUNK * density * NATIVE_DENSITY) if found.has(Surface.Type.DEEP_ROUGH) else 0
 	for i in tries:
+		tick += 1
+		if budget_us > 0 and tick % 32 == 0 and Time.get_ticks_usec() - start > budget_us:
+			await tree.process_frame
+			start = Time.get_ticks_usec()
 		var x := origin.x + rng.randf() * CHUNK
 		var z := origin.y + rng.randf() * CHUNK
 		var yaw := rng.randf() * TAU
@@ -238,7 +304,12 @@ static func build_chunk(t: CourseTerrain, key: Vector2i, density: float, crowns 
 				continue
 		_put(t, x, z, yaw, h * lerpf(rng.randf_range(1.0, 1.3), rng.randf_range(1.6, 2.2), native), h, c, pick, -0.03)
 	# Reeds: tall tufts on the bank, the ground just short of the water.
-	for i in roundi(CHUNK * CHUNK * density * REED_DENSITY):
+	rng.seed = hash(key) + 78
+	for i in roundi(CHUNK * CHUNK * density * REED_DENSITY) if found.has(Surface.Type.WATER) else 0:
+		tick += 1
+		if budget_us > 0 and tick % 32 == 0 and Time.get_ticks_usec() - start > budget_us:
+			await tree.process_frame
+			start = Time.get_ticks_usec()
 		var x := origin.x + rng.randf() * CHUNK
 		var z := origin.y + rng.randf() * CHUNK
 		var yaw := rng.randf() * TAU
@@ -260,10 +331,15 @@ static func build_chunk(t: CourseTerrain, key: Vector2i, density: float, crowns 
 		if not reed.is_empty():
 			h = reed["height_m"] * rng.randf_range(0.8, 1.2)
 		_put(t, x, z, yaw, h * rng.randf_range(0.7, 1.0), h, REED_COLOUR.lerp(native_colour(tone), 0.35), pick, -0.05, reed.get("uid", ""))
+	rng.seed = hash(key) + 79
 	for crown in crowns:
 		var reach := crown.z * UNDER_REACH_DEEP
 		var count := roundi(PI * reach * reach * under_density)
 		for i in count:
+			tick += 1
+			if budget_us > 0 and tick % 32 == 0 and Time.get_ticks_usec() - start > budget_us:
+				await tree.process_frame
+				start = Time.get_ticks_usec()
 			# Uniform over the disc out to `reach`.
 			var d := sqrt(rng.randf()) * reach
 			var ang := rng.randf() * TAU
@@ -290,6 +366,20 @@ static func build_chunk(t: CourseTerrain, key: Vector2i, density: float, crowns 
 			out.append(_multimesh(PackedFloat32Array(_card_bufs[uid]), mesh))
 	_buf = PackedFloat32Array()
 	_card_bufs = {}
+	return out
+
+
+## The surfaces seen on a SCAN_STEP grid over the chunk and REED_REACH
+## round it, as a set (surface -> true).
+const SCAN_STEP := 2.0
+
+
+static func _surfaces_near(t: CourseTerrain, origin: Vector2) -> Dictionary:
+	var out := {}
+	var n := ceili((CHUNK + 2.0 * REED_REACH) / SCAN_STEP)
+	for j in n + 1:
+		for i in n + 1:
+			out[t.surface_at(origin.x - REED_REACH + i * SCAN_STEP, origin.y - REED_REACH + j * SCAN_STEP)] = true
 	return out
 
 

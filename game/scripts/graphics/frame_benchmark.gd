@@ -27,6 +27,12 @@ const CASES := [
 ]
 const KEYS := ["quality", "msaa", "render_scale", "ssao", "sharpen", "bloom", "vignette", "grain", "grass", "trees", "cloud_shadows", "foliage_wind", "dynamic_res", "dof", "upscaler", "lighting"]
 
+## Seconds of automatic play (shots, ball flight, camera moves, the next
+## hole) timed frame by frame with v-sync back on, as a player sees it:
+## averages hide hitches, so this reports percentiles and the worst frames.
+const PLAY_SECONDS := 90.0
+const WAIT := {GolfRound.State.AIM: 1.5, GolfRound.State.SWING: 1.5, GolfRound.State.COMPUTER: 1.5, GolfRound.State.SHOT_RESULT: 2.0, GolfRound.State.DROP: 1.0, GolfRound.State.DRIVE: 1.0, GolfRound.State.HOLE_DONE: 2.0}
+
 var _game: GolfRound
 var _base := {}
 
@@ -115,8 +121,52 @@ func _run() -> void:
 		print(line)
 		lines.append(line)
 	GraphicsSettings.ignore_pixel_budget = false
+	for k: String in KEYS:
+		g.set(k, _base[k])
+	_game._apply_graphics()
+	_game.scenery.sun.shadow_enabled = true
+	lines.append_array(await _play(PLAY_SECONDS))
 	var f := FileAccess.open("user://benchmark.txt", FileAccess.WRITE)
 	if f != null:
 		f.store_string("\n".join(lines) + "\n")
 	print("benchmark written to %s" % ProjectSettings.globalize_path("user://benchmark.txt"))
 	tree.quit()
+
+
+func _play(seconds: float) -> PackedStringArray:
+	var tree := get_tree()
+	DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_ENABLED)
+	var out := PackedStringArray()
+	var times: Array[float] = []
+	var spikes: Array = []  ## [ms, state, process ms, draws, time]
+	var state := _game.state
+	var in_state := 0.0
+	var start := Time.get_ticks_usec()
+	var last := start
+	while (last - start) < seconds * 1.0e6:
+		await tree.process_frame
+		var now := Time.get_ticks_usec()
+		var ms := (now - last) / 1000.0
+		last = now
+		times.append(ms)
+		if ms > 20.0:
+			spikes.append([ms, GolfRound.State.keys()[_game.state], Performance.get_monitor(Performance.TIME_PROCESS) * 1000.0, Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME), (now - start) / 1.0e6])
+		if _game.state != state:
+			state = _game.state
+			in_state = 0.0
+		in_state += ms / 1000.0
+		if WAIT.has(state) and in_state > WAIT[state]:
+			in_state = 0.0
+			_game.auto_play_step()
+	var sorted := times.duplicate()
+	sorted.sort()
+	var n := sorted.size()
+	var pct := func(p: float) -> float: return sorted[clampi(int(p * n), 0, n - 1)]
+	var over := func(limit: float) -> int: return times.filter(func(t: float) -> bool: return t > limit).size()
+	out.append("play %.0f s, v-sync on: %d frames, p50 %.1f ms, p95 %.1f, p99 %.1f, max %.1f; frames over 20 ms: %d, over 33 ms: %d, over 100 ms: %d" % [seconds, n, pct.call(0.5), pct.call(0.95), pct.call(0.99), sorted[n - 1], over.call(20.0), over.call(33.0), over.call(100.0)])
+	spikes.sort_custom(func(a: Array, b: Array) -> bool: return a[0] > b[0])
+	for sp: Array in spikes.slice(0, 15):
+		out.append("spike %.1f ms at %.1f s, state %s, script %.1f ms, draws %d" % [sp[0], sp[4], sp[1], sp[2], sp[3]])
+	for line in out:
+		print(line)
+	return out

@@ -523,6 +523,7 @@ func start_round() -> void:
 		record.green_firmness = versus.green_firmness
 		record.green_speed = versus.green_speed
 	LinksGround.set_greens(record.green_firmness, record.green_speed)
+	_putt_scales.clear()
 	record.course_hash = RoundRecord.file_hash(course_path)
 	record.course_file = course_path.get_file()
 	hud.scorecard.visible = false
@@ -2069,7 +2070,7 @@ func _quiet_advice() -> void:
 func _step_advice() -> void:
 	if _advice == null or advice_note == null or not advice_note.text_empty():
 		return
-	if _advice.step(Caddie.PLAN_BUDGET_MS):
+	if _advice.step_background(Caddie.PLAN_BUDGET_MS):
 		advice_note.say(_advice.text)
 
 
@@ -3430,6 +3431,7 @@ func _apply_graphics() -> void:
 	# settings apply from the next round.
 	if record == null:
 		LinksGround.set_greens(graphics.green_firmness, graphics.green_speed)
+		_putt_scales.clear()
 	scenery.apply(graphics)
 	post.apply(graphics)
 	dynamic_resolution.setup(get_viewport(), graphics)
@@ -4440,12 +4442,21 @@ func _update_putt_scale() -> void:
 		hud.meter.set_putt_scale(hud.meter.putt_feet, hole_ft)
 		return
 	_putt_scale_from = ball_at
-	hud.meter.set_putt_scale(putt_roll_feet(shot_model, clubs[club_index], lie), hole_ft)
+	# 21 putts on a level green: the same wherever the ball is, so worked
+	# out once per putter, lie and green speed (it stalled every arrival on
+	# the green).
+	var key := "%d|%s|%d" % [shot_model.get_instance_id(), clubs[club_index].short_name, lie]
+	if not _putt_scales.has(key):
+		_putt_scales[key] = putt_roll_feet(shot_model, clubs[club_index], lie)
+	hud.meter.set_putt_scale(_putt_scales[key], hole_ft)
 
 
 ## Feet a putt rolls on a level green for meter values 0, 1/20 ... 1, by
 ## `model`'s own physics. The model's random numbers and mouse swing are
 ## left as they were, so the round plays out the same.
+var _putt_scales := {}  ## see _update_putt_scale()
+
+
 static func putt_roll_feet(model: ShotModel, putter: Club, from_lie: int) -> PackedFloat32Array:
 	var out := PackedFloat32Array()
 	var flat := FlatTerrain.new(Surface.Type.GREEN)

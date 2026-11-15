@@ -590,3 +590,13 @@ memory. At the Ultra tee view this cut Forward+ video memory from 1027 to
 it (players' builds still use the larger figure); importing the textures
 VRAM-compressed for desktop exports would be the real fix. Compatibility
 keeps them as they are, so its CI budget still stands for the browser.
+
+The benchmark ends with 90 seconds of automatic play (shots, flights,
+camera moves, the next hole) with v-sync on, and reports frame-time
+percentiles and the worst frames. Averages hide hitches: on 2026-11-15 the
+round averaged 7 ms a frame in the cloud but had 229 frames over 33 ms.
+They came from building the tall grass (FescueField, over 20 ms a 32 m
+chunk; now built a few milliseconds a frame, and kept when the camera
+leaves), the shot read (CaddieAdvice, now on a worker thread where there
+are threads) and the putting meter's scale (now worked out once per
+putter, lie and green speed). After: 15 frames over 33 ms, p99 17 ms.
