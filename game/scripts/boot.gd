@@ -25,6 +25,7 @@ var _players: PlayersPanel
 var _creator: PlayerCreator
 var _career: CareerPanel
 var _tournament: TournamentPanel
+var _courses: CoursesPanel
 var _graphics: GraphicsSettings
 var _community: VBoxContainer
 var _community_hint: Label
@@ -112,6 +113,11 @@ func _build_ui() -> void:
 	_tournament.back_pressed.connect(_close_tournament)
 	_tournament.play_pressed.connect(_on_tournament_play)
 	center.add_child(_tournament)
+	_courses = CoursesPanel.new()
+	_courses.back_pressed.connect(_close_courses)
+	_courses.add_links_pressed.connect(_add_web_course)
+	_courses.remove_web_pressed.connect(_remove_web_course)
+	center.add_child(_courses)
 
 	_title = _home.title
 	_status = Label.new()
@@ -212,6 +218,7 @@ func _ask_for_files(problem := "") -> void:
 		["Career", _open_career],
 		["Tournament", _open_tournament],
 		["Course designer", _open_designer],
+		["Courses", _open_courses],
 		["Players", _open_players],
 		["Settings", _open_settings],
 	])
@@ -314,7 +321,7 @@ Saved round: %s." % SavedRound.describe()
 		items.append(["Resume round", _resume_round])
 	items.append(["Career", _open_career])
 	items.append(["Tournament", _open_tournament])
-	items += extra + [["Players", _open_players], ["Course designer", _open_designer], ["Settings", _open_settings]]
+	items += extra + [["Players", _open_players], ["Courses", _open_courses], ["Course designer", _open_designer], ["Settings", _open_settings]]
 	if not OS.has_feature("web"):
 		items.append(["Quit", get_tree().quit])
 	_set_buttons(items)
@@ -341,7 +348,7 @@ func _open_setup() -> void:
 	if _busy:
 		return
 	var names := PackedStringArray([PlaceholderCourseLoader.NAME + " (built in)"])
-	_setup_paths = _all_courses()
+	_setup_paths = CourseLibrary.shown(_all_courses())
 	for path in _setup_paths:
 		names.append(CourseFiles.display_name(path))
 	var saved := RoundSetup.load_saved()
@@ -363,7 +370,7 @@ func _open_online() -> void:
 	if _busy:
 		return
 	var names := PackedStringArray([PlaceholderCourseLoader.NAME + " (built in)"])
-	_setup_paths = _all_courses()
+	_setup_paths = CourseLibrary.shown(_all_courses())
 	for path in _setup_paths:
 		names.append(CourseFiles.display_name(path))
 	var saved := RoundSetup.load_saved()
@@ -506,9 +513,66 @@ func _on_tournament_play(chosen: RoundSetup) -> void:
 
 
 ## Every course the setup page offers after the placeholder: the game's
-## courses, then the player's own designs.
+## courses, the other built-in courses, those the player added (desktop),
+## then the player's own designs.
+## The setup and online pages leave out hidden ones (CourseLibrary.shown).
 func _all_courses() -> PackedStringArray:
-	return _course_paths + PackedStringArray(PlaceholderCourseLoader.EPIC.keys()) + DesignedCourse.saved_paths()
+	return _course_paths + PackedStringArray(PlaceholderCourseLoader.EPIC.keys()) + CourseLibrary.added_courses() + DesignedCourse.saved_paths()
+
+
+# --- Courses page ---------------------------------------------------------------
+
+func _open_courses() -> void:
+	if _busy:
+		return
+	_main_box.visible = false
+	_settings.close()
+	_players.close()
+	_courses.open(_course_paths, await _web_added(), _web != null)
+	SceneFade.pop_in(_courses)
+
+
+func _close_courses() -> void:
+	_courses.close()
+	_main_box.visible = true
+	SceneFade.pop_in(_main_box)
+	if _play:
+		_play.grab_focus.call_deferred()
+
+
+## The browser's added courses among the game's course files.
+func _web_added() -> PackedStringArray:
+	if _web == null or _stored.is_empty():
+		return PackedStringArray()
+	return CourseFiles.in_list(Array(await _web.added_courses()))
+
+
+func _add_web_course() -> void:
+	if _busy or _web == null:
+		return
+	if _stored.is_empty():
+		_courses.refresh(_course_paths, PackedStringArray(), "Load your game files first: Links courses are played with your own copy of the game.")
+		return
+	_busy = true
+	var n: int = await _web.pick_courses()
+	_busy = false
+	await _reload_web_courses("That didn't work: %s" % _web.last_error if n < 0 else ("Added." if n > 0 else ""))
+
+
+func _remove_web_course(rel: String) -> void:
+	if _busy or _web == null:
+		return
+	_busy = true
+	var ok: bool = await _web.remove_course(rel)
+	_busy = false
+	await _reload_web_courses(("Deleted %s." % rel.get_file().get_basename()) if ok else "Couldn't delete it: %s" % _web.last_error)
+
+
+## Reads the browser's game files again after an add or remove.
+func _reload_web_courses(message: String) -> void:
+	_stored = await _web.stored_files()
+	_course_paths = CourseFiles.in_list(_stored.keys())
+	_courses.refresh(_course_paths, await _web_added(), message)
 
 
 ## True if there is a saved round and its course is among the player's files
@@ -571,6 +635,8 @@ func _unhandled_input(event: InputEvent) -> void:
 			_close_career()
 		elif _tournament.visible:
 			_close_tournament()
+		elif _courses.visible and not _courses.busy():
+			_close_courses()
 
 
 static func _last_course() -> String:
@@ -650,6 +716,7 @@ func _show_desktop_choice() -> void:
 		["Career", _open_career],
 		["Tournament", _open_tournament],
 		["Course designer", _open_designer],
+		["Courses", _open_courses],
 		["Players", _open_players],
 		["Settings", _open_settings],
 	])

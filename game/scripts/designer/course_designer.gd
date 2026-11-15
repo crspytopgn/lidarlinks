@@ -1180,21 +1180,7 @@ func _on_imported(text: String, file_name: String) -> void:
 
 func _on_real_built(c: DesignedCourse, summary: Dictionary) -> void:
 	# The aerial photo is kept beside the course file, not in it.
-	var photo: Image = summary.get("photo", null)
-	var target := c.save_path()
-	if photo != null:
-		var file := target.get_basename().get_file() + ".photo.jpg"
-		DirAccess.make_dir_recursive_absolute(DesignedCourse.FOLDER)
-		if photo.save_jpg(DesignedCourse.FOLDER.path_join(file), 0.85) == OK:
-			c.source["photo"] = file
-		c.set_photo(photo)
-	var cover: Image = summary.get("ground_cover", null)
-	if photo == null and cover != null:
-		var gfile := target.get_basename().get_file() + ".ground.png"
-		DirAccess.make_dir_recursive_absolute(DesignedCourse.FOLDER)
-		if cover.save_png(DesignedCourse.FOLDER.path_join(gfile)) == OK:
-			c.source["ground"] = gfile
-		c.set_ground_cover(cover)
+	RealCourseUpdate.keep_images(c, summary, c.save_path())
 	_photo_on = true
 	_set_course(c, "")
 	_unsaved = true

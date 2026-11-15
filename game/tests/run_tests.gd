@@ -93,6 +93,7 @@ func _initialize() -> void:
 	_run("course_reader", _test_course_reader)
 	_run("course_designer", _test_course_designer)
 	_run("real_courses", _test_real_courses)
+	_run("course_library", _test_course_library)
 	# Nodes added here only get _ready() once the main loop runs, so the
 	# full round is played from _process().
 	# Fixed wind, so the shots (and what the camera sees) are the same every run.
@@ -191,6 +192,12 @@ func _test_course_reader() -> void:
 
 func _test_real_courses() -> void:
 	var tests: RefCounted = load("res://tests/realcourse_tests.gd").new()
+	for failure: String in tests.call("run_all"):
+		_check(false, failure)
+
+
+func _test_course_library() -> void:
+	var tests: RefCounted = load("res://tests/course_library_tests.gd").new()
 	for failure: String in tests.call("run_all"):
 		_check(false, failure)
 

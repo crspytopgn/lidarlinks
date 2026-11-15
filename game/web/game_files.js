@@ -469,6 +469,25 @@
     return added.size;
   }
 
+  // Removes an added course and the companions with its base name.
+  async function removeCourse(rel) {
+    const added = await addedCourses();
+    const stem = rel.replace(/\.[^./]*$/, "").toLowerCase();
+    let n = 0;
+    for (const key of [...added.keys()]) {
+      if (key === rel || (key.replace(/\.[^./]*$/, "").toLowerCase() === stem && COURSE_FILE.test(key))) {
+        added.delete(key);
+        n++;
+      }
+    }
+    try {
+      await put("courses", [...added]);
+    } catch (e) {
+      // Gone for this visit at least.
+    }
+    return n;
+  }
+
   // ---- Picking -------------------------------------------------------------
 
   const ACCEPT = [".b6i", ".b6t", ".b5i", ".b5t", ".bwi", ".bwt", ".iso", ".bin", ".img", ".nrg", ".mdf"];
@@ -600,6 +619,16 @@
     // read(path, offset, length, cb): cb(ok, ArrayBuffer).
     read(path, offset, length, cb) {
       report(readFile(path, offset, length).then((bytes) => bytes.buffer), cb);
+    },
+
+    // added(cb): cb(ok, JSON of the added courses' paths).
+    added(cb) {
+      report(addedCourses().then((added) => JSON.stringify([...added.keys()])), cb);
+    },
+
+    // removeCourse(path, cb): cb(ok, files removed) for an added course.
+    removeCourse(path, cb) {
+      report(removeCourse(path), cb);
     },
 
     // forget(cb): forgets the picked files.
