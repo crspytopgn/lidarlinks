@@ -46,6 +46,8 @@ var _game: GolfRound
 var _designer: Node
 var _frames := 0
 var _settle := 0
+## 1 while the tee view is shot again without the HUD (for UI mockups).
+var _clean := 0
 var _out := ""
 var _golfer_scene: Node3D
 var _golfer_player: AnimationPlayer
@@ -90,6 +92,12 @@ func _process(_delta: float) -> bool:
 		# cost: wait it out, and a few frames for its viewport to go.
 		_settle = 0 if CrowdImpostors.baking() else _settle + 1
 		_frames -= 1
+	elif _frames == SHOT_FRAME and _clean == 1:
+		# The same tee view with no HUD, for designing the UI over it.
+		_save_jpg(root.get_texture().get_image(), "-tee-clean")
+		(_game.hud.get_parent() as CanvasLayer).visible = true
+		_clean = 2
+		_game.auto_play_step()
 	elif _frames == SHOT_FRAME:
 		var tee := root.get_texture().get_image()
 		_save_jpg(tee, "-tee")
@@ -98,7 +106,9 @@ func _process(_delta: float) -> bool:
 		_tee_sky = _mean(tee, Rect2i(tee.get_width() / 3, 0, tee.get_width() / 3, tee.get_height() / 8))
 		if not _check_budget("tee"):
 			return true
-		_game.auto_play_step()
+		(_game.hud.get_parent() as CanvasLayer).visible = false
+		_clean = 1
+		_frames -= 1
 	elif _frames == CAPTURE_FRAME:
 		if not _capture():
 			return true

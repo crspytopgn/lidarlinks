@@ -60,8 +60,10 @@ float body_occlusion(vec3 p, vec3 normal) {
 // sky's does. (1, 1, 0) leaves them as they are (Forward+, Classic).
 global uniform vec3 people_light;
 
-// The share of the fill light a surface facing world normal `normal` gets.
+// The share of the fill light a surface facing world normal `normal` gets:
+// most from the sky above, less but not none from below (sunlit turf
+// bounces a good share back up onto the legs and under the arms).
 float people_fill(vec3 normal) {
 	float up = normalize(normal).y * 0.5 + 0.5;
-	return people_light.y * mix(1.0, mix(0.45, 1.3, up), people_light.z);
+	return people_light.y * mix(1.0, mix(0.7, 1.3, up), people_light.z);
 }

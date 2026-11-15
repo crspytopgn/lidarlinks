@@ -26,7 +26,7 @@ enum Grade { NEUTRAL, VIVID, WARM, COOL, FILM }
 ## against tour statistics, or the game's own computer miss generators.
 enum ComputerPlay { REALISTIC, CLASSIC }
 const COMPUTER_PLAY_NAMES := ["Realistic (tour statistics)", "Classic Links"]
-enum TimeOfDay { AFTERNOON, MORNING, MIDDAY, GOLDEN, ROUND }
+enum TimeOfDay { AFTERNOON, MORNING, MIDDAY, GOLDEN, ROUND, DAWN, SUNSET }
 ## Fullscreen as a borderless window the size of the screen (quick to switch
 ## away from) or exclusive fullscreen (can be a little faster on Windows).
 enum DisplayMode { BORDERLESS, EXCLUSIVE }
@@ -50,7 +50,7 @@ const UPSCALER_NAMES := ["Off", "FSR 1", "FSR 2"]
 const GRADE_NAMES := ["Neutral", "Vivid", "Warm afternoon", "Cool morning", "Film"]
 const LEVEL_NAMES := ["Off", "Low", "Medium", "High"]
 const PUTTING_GRID_NAMES := ["Off", "Yellow (Links)", "Coloured by height (Links)", "Coloured by slope (TV)"]
-const TIME_NAMES := ["Afternoon", "Morning", "Midday", "Golden hour", "Through the round"]
+const TIME_NAMES := ["Afternoon", "Morning", "Midday", "Golden hour", "Through the round", "Dawn", "Sunset"]
 ## Trees: the course's own (classic) or 3D, by how far out they stay 3D
 ## before turning into impostors (TreeFactory.IMPOSTOR_DISTANCE).
 const TREE_NAMES := ["Classic", "3D near", "3D", "3D far"]
@@ -93,6 +93,9 @@ var render_scale := 1.0  ## 3D resolution relative to the window
 var fov := 40.0
 var wind: int = Wind.Level.MODERATE
 var presentation: int = Presentation.BROADCAST
+## Broadcast and Tour: one camera that follows the ball through its flight
+## and roll (true) instead of TV-style cuts (ShotDirector follow_ball).
+var follow_ball := true
 ## Web only: copy the disc's crowd, menu and golfer voice sounds into memory
 ## at startup (tens of MB) instead of using the light placeholder sounds.
 ## Desktop builds always read them from the game folder.
@@ -345,6 +348,7 @@ static func _load_saved(path: String) -> GraphicsSettings:
 	s.fov = clampf(float(cfg.get_value(SECTION, "fov", s.fov)), 35.0, 90.0)
 	s.wind = clampi(int(cfg.get_value(GAME_SECTION, "wind", s.wind)), Wind.Level.OFF, Wind.Level.STRONG)
 	s.presentation = clampi(int(cfg.get_value(GAME_SECTION, "presentation", s.presentation)), Presentation.CLASSIC, Presentation.TOUR)
+	s.follow_ball = bool(cfg.get_value(GAME_SECTION, "follow_ball", s.follow_ball))
 	s.web_disc_sounds = bool(cfg.get_value(GAME_SECTION, "web_disc_sounds", s.web_disc_sounds))
 	s.skill = clampi(int(cfg.get_value(GAME_SECTION, "skill", s.skill)), 0, LinksLaunch.SKILL_COUNT - 1)
 	s.green_firmness = clampi(int(cfg.get_value(GAME_SECTION, "green_firmness", s.green_firmness)), 0, 2)
@@ -355,7 +359,7 @@ static func _load_saved(path: String) -> GraphicsSettings:
 	s.breakline = bool(cfg.get_value(GAME_SECTION, "breakline", s.breakline))
 	s.putting_assistant = bool(cfg.get_value(GAME_SECTION, "putting_assistant", s.putting_assistant))
 	s.caddie = bool(cfg.get_value(GAME_SECTION, "caddie", s.caddie))
-	s.time_of_day = clampi(int(cfg.get_value(SECTION, "time_of_day", s.time_of_day)), TimeOfDay.AFTERNOON, TimeOfDay.ROUND)
+	s.time_of_day = clampi(int(cfg.get_value(SECTION, "time_of_day", s.time_of_day)), TimeOfDay.AFTERNOON, TimeOfDay.SUNSET)
 	s.true_size_ball = bool(cfg.get_value(GAME_SECTION, "ball_true_size", s.true_size_ball))
 	s.photo_golfer = cfg.get_value(GAME_SECTION, "photo_golfer", s.photo_golfer) == true
 	s.buggy = bool(cfg.get_value(GAME_SECTION, "buggy", s.buggy))
@@ -417,6 +421,7 @@ func save(path := PATH) -> void:
 	cfg.set_value(SECTION, "fov", fov)
 	cfg.set_value(GAME_SECTION, "wind", wind)
 	cfg.set_value(GAME_SECTION, "presentation", presentation)
+	cfg.set_value(GAME_SECTION, "follow_ball", follow_ball)
 	cfg.set_value(GAME_SECTION, "web_disc_sounds", web_disc_sounds)
 	cfg.set_value(GAME_SECTION, "skill", skill)
 	cfg.set_value(GAME_SECTION, "green_firmness", green_firmness)
