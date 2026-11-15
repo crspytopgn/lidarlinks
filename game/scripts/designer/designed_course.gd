@@ -53,6 +53,16 @@ var tournament := false
 ## Where a real course came from: {"kind": "openstreetmap", "lat", "lon",
 ## "base_height"} (see docs/real-courses.md). Empty for hand-made courses.
 var source := {}
+## Where in the world it is set (Biome: "" parkland, "desert", "snow",
+## "tropical"): the ground's colours between the holes, plants and the land
+## round about.
+var biome := ""
+## The real land round the course, drawn to the horizon (Landscape): its
+## grid's corner `origin` (x, z), `cell` metres between samples, `cols`,
+## `rows` and `heights` (metres, on the same datum as `heights`). Empty
+## for courses without one. Saved as given; the designer doesn't edit it.
+var landscape := {}
+var _landscape_saved := {}
 var _photo: Image
 var _photo_tried := false
 var _cover: Image
@@ -220,6 +230,8 @@ func to_course_data() -> CourseData:
 	var data := CourseData.new()
 	data.course_name = course_name
 	data.tournament = tournament
+	data.biome = biome
+	data.landscape = not landscape.is_empty()
 	if source.has("lat") and source.has("lon"):
 		data.location = Vector2(float(source.lat), float(source.lon))
 	for n in holes.size():
@@ -277,6 +289,10 @@ func played_hole(number: int) -> DesignedHole:
 func _objects_for(dh: DesignedHole, terrain: DesignedTerrain) -> Array[PlacedObject]:
 	var out: Array[PlacedObject] = []
 	for o in objects:
+		# Rock formations and cacti are drawn for the whole course at once
+		# (DesignedTerrain.build_visual).
+		if RockFormations.is_rock(o.id) or DesertPlants.is_plant(o.id):
+			continue
 		if near_hole(dh, Vector2(o.position.x, o.position.z)):
 			var shown := DesignerObjects.stand_in(o, object_info)
 			if shown != null:
@@ -306,7 +322,7 @@ func to_dict(with_heights := true) -> Dictionary:
 	for o in objects:
 		object_list.append({"id": o.id, "x": snappedf(o.position.x, 0.01), "z": snappedf(o.position.z, 0.01),
 			"yaw": snappedf(o.yaw_deg, 0.1), "scale": snappedf(o.scale, 0.01)})
-	return {
+	var out := {
 		"format": FORMAT,
 		"version": VERSION,
 		"name": course_name,
@@ -328,6 +344,11 @@ func to_dict(with_heights := true) -> Dictionary:
 		"venue": "tournament" if tournament else "club",
 		"source": source.duplicate(true),
 	}
+	if not biome.is_empty():
+		out["biome"] = biome
+	if not _landscape_saved.is_empty():
+		out["landscape"] = _landscape_saved.duplicate(true)
+	return out
 
 
 func to_json() -> String:
@@ -348,6 +369,12 @@ static func from_dict(d: Dictionary) -> DesignedCourse:
 	c.tournament = str(d.get("venue", "club")) == "tournament"
 	if d.get("source", {}) is Dictionary:
 		c.source = d.get("source", {})
+	c.biome = str(d.get("biome", ""))
+	var land: Variant = d.get("landscape", {})
+	if land is Dictionary and not (land as Dictionary).is_empty():
+		c.landscape = _decode_landscape(land)
+		if not c.landscape.is_empty():
+			c._landscape_saved = land
 	c.area = Rect2(float(a[0]), float(a[1]), float(a[2]), float(a[3]))
 	if c.area.size.x < CELL * 4 or c.area.size.y < CELL * 4 or c.area.size.x > 4000 or c.area.size.y > 4000:
 		return null
@@ -541,3 +568,32 @@ func _decode_heights(d: Variant) -> bool:
 		cm += raw.decode_s16(k * 2)
 		heights[k] = cm * 0.01
 	return true
+
+
+const LAND_ENCODING := "dm-delta-s16-deflate-base64"
+
+
+## The landscape as saved (decimetres, each the difference from the one
+## before, as little-endian int16, deflated and base64-encoded), or {} if
+## it can't be read.
+static func _decode_landscape(d: Dictionary) -> Dictionary:
+	var o: Variant = d.get("origin", [])
+	var cols := int(d.get("cols", 0))
+	var rows := int(d.get("rows", 0))
+	var cell := float(d.get("cell", 0.0))
+	var h: Variant = d.get("heights", {})
+	if not o is Array or (o as Array).size() != 2 or cols < 2 or rows < 2 or cols * rows > 4000000 or cell <= 0.0:
+		return {}
+	if not h is Dictionary or str(h.get("encoding", "")) != LAND_ENCODING or int(h.get("count", -1)) != cols * rows:
+		return {}
+	var count := cols * rows
+	var raw := Marshalls.base64_to_raw(str(h.get("data", ""))).decompress(count * 2, FileAccess.COMPRESSION_DEFLATE)
+	if raw.size() != count * 2:
+		return {}
+	var heights := PackedFloat32Array()
+	heights.resize(count)
+	var dm := 0
+	for k in count:
+		dm += raw.decode_s16(k * 2)
+		heights[k] = dm * 0.1
+	return {"origin": Vector2(float(o[0]), float(o[1])), "cell": cell, "cols": cols, "rows": rows, "heights": heights}

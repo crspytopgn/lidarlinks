@@ -307,6 +307,8 @@ static func _chunk_centre(key: Vector2i) -> Vector2:
 ## The tufts of one chunk, or null when it has no rough. Deterministic: the
 ## same chunk always grows the same grass.
 static func build_chunk(t: CourseTerrain, key: Vector2i, density: float) -> MultiMesh:
+	# Desert hardpan and snow grow no grass (Biome).
+	var biome := Biome.of(t)
 	var rng := RandomNumberGenerator.new()
 	rng.seed = hash(key)
 	# One tuft in each cell of a grid, jittered: an even sward, where
@@ -325,7 +327,7 @@ static func build_chunk(t: CourseTerrain, key: Vector2i, density: float) -> Mult
 		var size := rng.randf()
 		var phase := rng.randf()
 		var surface := t.surface_at(x, z)
-		if not HEIGHTS.has(surface):
+		if not HEIGHTS.has(surface) or Biome.is_bare(biome, surface):
 			continue
 		var hr: Vector2 = FIRST_CUT_HEIGHT if surface == Surface.Type.ROUGH and t.first_cut_at(x, z) else HEIGHTS[surface]
 		var h := lerpf(hr.x, hr.y, size)

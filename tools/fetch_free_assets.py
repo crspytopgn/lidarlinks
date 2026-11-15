@@ -85,6 +85,10 @@ SLOTS = {
     "path": ("textures", ["concrete_floor_02", "concrete_floor_01"], ["concrete"], texture_maps("1k")),
     "dirt": ("textures", ["brown_mud_02", "dry_ground_rocks"], ["mud", "dirt"], texture_maps("1k")),
     "bark": ("textures", ["bark_brown_02", "bark_brown_01", "pine_bark"], ["bark"], texture_maps("1k")),
+    # Bedded cliff rock for the desert courses' sandstone formations
+    # (RockFormations): only its light and dark and its bumps are used.
+    "cliff": ("textures", ["cliff_side", "rock_06"], ["cliff", "rock face"],
+              {k: v for k, v in texture_maps("1k").items() if k in ("albedo.jpg", "normal.jpg")}),
     "sky": ("hdris", ["kloofendal_48d_partly_cloudy_puresky", "kloofendal_43d_clear_puresky"], ["pure sky", "clear"], {"panorama.hdr": ("hdri", "2k", "hdr")}),
 }
 
@@ -176,7 +180,7 @@ def fetch_slot(out_dir, slot, spec):
 
 # Slots seen mostly from a distance, kept at 1024 pixels to save video
 # memory in the browser.
-SMALL_SLOTS = ("path_", "dirt_", "bark_")
+SMALL_SLOTS = ("path_", "dirt_", "bark_", "cliff_")
 
 
 def size_limit(out_name):
