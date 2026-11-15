@@ -64,3 +64,13 @@ scenery only. The stone follows the course's place (FreeAmbience's setting):
 - woodland and parkland: mossy, lichened boulders and grey upland stone.
 
 `RockField.mesh(id)` and `material(id)` load one rock for other features.
+
+## Dry-stone walls
+
+`StoneWalls` (game/scripts/graphics/stone_walls.gd) draws a course's field
+walls. A course built from a map gets them from OpenStreetMap's
+barrier=wall, dry_stone_wall and stone_wall, stored as
+`DesignedCourse.walls`. Each wall is about 1.2 m high, battered from
+0.7 m to 0.4 m, with coping stones set on edge. stone_wall.gdshader lays
+ragged courses of grey stone on the faces. This is in the public build as
+well. With the pack, each stone shows a patch of a scanned rock.

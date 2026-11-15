@@ -36,6 +36,9 @@ var holes: Array[DesignedHole] = []
 var objects: Array[PlacedObject] = []
 ## Cart paths and bridges.
 var paths: Array[CoursePath] = []
+## Field walls (dry-stone and mortared), each a line of (x, z) points:
+## scenery, drawn by StoneWalls.
+var walls: Array[PackedVector2Array] = []
 ## What the course knows about each library object it uses (DesignerObjects
 ## measures them when the player's files are there), so a course shared with
 ## someone without the files still has the right obstacles and stand-ins.
@@ -315,6 +318,11 @@ func to_dict(with_heights := true) -> Dictionary:
 		"holes": hole_list,
 		"objects": object_list,
 		"paths": path_list,
+		"walls": walls.map(func(w: PackedVector2Array) -> Array:
+			var flat := []
+			for p in w:
+				flat.append_array([snappedf(p.x, 0.01), snappedf(p.y, 0.01)])
+			return flat),
 		"object_info": object_info.duplicate(true),
 		"credits": credits,
 		"venue": "tournament" if tournament else "club",
@@ -359,6 +367,13 @@ static func from_dict(d: Dictionary) -> DesignedCourse:
 		var path := CoursePath.from_dict(p)
 		if path.is_valid():
 			c.paths.append(path)
+	var wall_list: Variant = d.get("walls", [])
+	for w: Variant in wall_list if wall_list is Array else []:
+		if w is Array and (w as Array).size() >= 4:
+			var line := PackedVector2Array()
+			for i in range(0, (w as Array).size() - 1, 2):
+				line.append(Vector2(float(w[i]), float(w[i + 1])))
+			c.walls.append(line)
 	var info: Variant = d.get("object_info", {})
 	if info is Dictionary:
 		for id: Variant in info:

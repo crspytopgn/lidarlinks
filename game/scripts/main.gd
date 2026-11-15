@@ -688,6 +688,10 @@ func start_hole(index: int) -> void:
 		var rocks := RockField.build(hole, graphics.quality, RockField.setting_of(course))
 		if rocks != null:
 			hole_root.add_child(rocks)
+		# The course's field walls, where the map has them.
+		var walls := StoneWalls.build(hole)
+		if walls != null:
+			hole_root.add_child(walls)
 	if broadcast and dressed and course.tournament:
 		# Tournament dressing: gallery ropes, and a crowd at the tee and green.
 		var crowd := Gallery.CROWD_BY_QUALITY[graphics.quality] if graphics != null else 0

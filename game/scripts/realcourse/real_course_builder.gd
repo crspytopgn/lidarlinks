@@ -50,7 +50,10 @@ var _holes: Array[Dictionary] = []  ## {"ref", "par", "line"}
 var _trees: Array[Dictionary] = []  ## {"p", "leaf", "height"}
 var _rows: Array[Dictionary] = []  ## tree rows: {"line", "leaf"}
 var _streams: Array[Dictionary] = []  ## {"line", "width"}
+## OpenStreetMap barrier values drawn as stone walls.
+const WALLS := ["wall", "dry_stone_wall", "stone_wall"]
 var _paths: Array[Dictionary] = []  ## {"line", "width", "bridge"}: cart paths and roads
+var _walls: Array[PackedVector2Array] = []  ## field walls
 var _pins: PackedVector2Array = []
 var _buildings: Array[Dictionary] = []  ## {"ring", "box"}, grown 2 m
 
@@ -156,6 +159,7 @@ func build(height: Callable, fallback := Callable()) -> DesignedCourse:
 	_add_holes(c)
 	# Paths first: sandy tracks found in the photo aren't bunkers.
 	_add_paths(c)
+	_add_walls(c)
 	_guessed.clear()
 	var detected := 0
 	for s in CourseGuesser.fill(c, hash(c.course_name), photo, details):
@@ -278,6 +282,8 @@ func _read(elements: Array) -> void:
 						r = r.expand(p)
 					if r.intersects(area):
 						_buildings.append({"ring": ring, "box": r})
+		elif str(t.get("barrier", "")) in WALLS and type == "way":
+			_walls.append(_local_line(_geo_points(e)))
 		elif natural == "tree_row" and type == "way":
 			_rows.append({"line": _local_line(_geo_points(e)), "leaf": str(t.get("leaf_type", ""))})
 		elif STREAM_WIDTHS.has(str(t.get("waterway", ""))) and type == "way":
@@ -587,6 +593,21 @@ func _add_paths(c: DesignedCourse) -> void:
 				inside.clear()
 		if inside.size() >= 2:
 			c.paths.append(CoursePath.new(inside, d["width"], d["bridge"]))
+
+
+## Mapped walls, cut to the course area.
+func _add_walls(c: DesignedCourse) -> void:
+	for line in _walls:
+		var inside := PackedVector2Array()
+		for p in simplify_line(line, 0.3):
+			if area.has_point(p):
+				inside.append(p)
+			else:
+				if inside.size() >= 2:
+					c.walls.append(inside)
+				inside = PackedVector2Array()
+		if inside.size() >= 2:
+			c.walls.append(inside)
 
 
 ## The width in metres of a mapped road or path that is drawn as tarmac,
