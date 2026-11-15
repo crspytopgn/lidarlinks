@@ -5474,6 +5474,9 @@ func _test_broadcast_pieces() -> void:
 	bare.setup(null, 3)
 	_check(bare.instances == 0 and bare.get_child_count() == 0, "no hole or no pack, no 3D plants")
 	bare.free()
+	_check(ScannedPlants.setting_for_biome(Biome.DESERT, FreeAmbience.Setting.PARKLAND) == FreeAmbience.Setting.DESERT
+		and ScannedPlants.setting_for_biome(Biome.PARKLAND, FreeAmbience.Setting.SEASIDE) == FreeAmbience.Setting.SEASIDE
+		and float(ScannedPlants.BIOME_DENSITY.get(Biome.SNOW, 1.0)) == 0.0, "3D plants follow a designed course's biome")
 	# Scanned surfaces (private pack): known slots with a colour map only, and
 	# without a pack every material is the flat fallback.
 	var surf := ScannedSurfaces.parse('{"slots": {"path": {"albedo": "p.jpg", "normal": "pn.jpg", "size_m": 2.0},'
