@@ -50,7 +50,10 @@ const SKY_SHADER := preload("res://shaders/photo_sky.gdshader")
 ## haze's glow towards the sun (Environment.fog_sun_scatter). Golden hour
 ## was fitted to 37 real low-sun golf photos: a near-neutral sky, green
 ## turf, and only the sunlit patches warm, so its shade needs a strong,
-## cool fill (Forward+ shade is darker, hence its own fill).
+## cool fill (Forward+ shade is darker, hence its own fill). Afternoon's
+## sun is only lightly warm, with thin haze: a deep orange sun, thick haze
+## and a strong warm grade turned mown fairways and tees olive-yellow and
+## washed out (Michael, 2026-11-15).
 const TIMES := {
 	"morning": {elevation = 17.0, bearing = 100.0, sun = Color(1.0, 0.86, 0.7), energy = 0.85, fill = 0.95, fill_fwd = 0.95,
 		ambient = Color(0.62, 0.69, 0.8), sky = Color(0.92, 0.96, 1.04), horizon = Color(1.05, 1.0, 0.95), glow = 0.25,
@@ -58,9 +61,9 @@ const TIMES := {
 	"midday": {elevation = 62.0, bearing = 160.0, sun = Color(1.0, 0.97, 0.93), energy = 1.0, fill = 1.0, fill_fwd = 1.0,
 		ambient = Color(0.66, 0.70, 0.76), sky = Color(1.0, 1.0, 1.02), horizon = Color(1.0, 1.0, 1.0), glow = 0.0,
 		haze = Color(0.70, 0.78, 0.88), fog = 0.9, exposure = 0.95, scatter = 0.05, warm = Color(1.02, 1.0, 0.96), cool = Color(0.98, 1.0, 1.03), pop = 1.04},
-	"afternoon": {elevation = 24.0, bearing = 145.0, sun = Color(1.0, 0.82, 0.6), energy = 1.35, fill = 1.0, fill_fwd = 1.0,
+	"afternoon": {elevation = 28.0, bearing = 145.0, sun = Color(1.0, 0.9, 0.76), energy = 1.15, fill = 1.0, fill_fwd = 1.0,
 		ambient = Color(0.66, 0.70, 0.76), sky = Color(1.0, 1.0, 1.0), horizon = Color(1.06, 1.0, 0.93), glow = 0.2,
-		haze = Color(0.74, 0.78, 0.82), fog = 2.0, exposure = 1.0, scatter = 0.35, warm = Color(1.04, 1.0, 0.92), cool = Color(0.95, 0.99, 1.06), pop = 1.08},
+		haze = Color(0.74, 0.78, 0.82), fog = 1.4, exposure = 1.0, scatter = 0.2, warm = Color(1.02, 1.0, 0.97), cool = Color(0.97, 1.0, 1.04), pop = 1.1},
 	"golden": {elevation = 9.0, bearing = 205.0, sun = Color(1.0, 0.74, 0.5), energy = 1.3, fill = 0.55, fill_fwd = 4.2,
 		ambient = Color(0.68, 0.7, 0.74), sky = Color(1.0, 0.96, 0.92), horizon = Color(1.08, 0.98, 0.88), glow = 0.5,
 		haze = Color(0.82, 0.78, 0.72), fog = 1.6, exposure = 1.6, scatter = 0.45, warm = Color(1.08, 0.99, 0.84), cool = Color(0.94, 0.98, 1.08), pop = 1.1},
