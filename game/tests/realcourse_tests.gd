@@ -22,6 +22,8 @@ func run_all() -> Array[String]:
 	_test_detector()
 	_test_megascans_cards()
 	_test_stone_walls()
+	_test_buildings()
+	_test_real_world_fixes()
 	_test_retries()
 	return failures
 
@@ -712,6 +714,95 @@ func _test_stone_walls() -> void:
 	var none: Array[PackedVector2Array] = []
 	check(StoneWalls.from_lines(none, t) == null, "no walls, no mesh")
 	check(RockField.place(t, Vector3.ZERO, Vector3(0, 0, 300), 1.0, 5).is_empty(), "no rocks off the course's rough")
+
+
+## Mapped buildings: heights from the lidar (surface minus ground) where it
+## has them, tags or typical heights otherwise; pitched roofs on small,
+## simple outlines; saved, drawn and solid to the ball.
+func _test_buildings() -> void:
+	var f := GeoFrame.new(51.65, 0.01)
+	var els: Array = []
+	els.append(_way({"leisure": "golf_course", "name": "Roof Links"}, f, _rect(Vector2(-150, -150), Vector2(150, 150))))
+	els.append(_way({"golf": "hole", "ref": "1", "par": "3"}, f, [Vector2(0, -80), Vector2(0, 80)], false))
+	# A house 12 x 8 m whose roof the lidar sees rising 5 m to 9 m at its middle line.
+	els.append(_way({"building": "house"}, f, _rect(Vector2(-100, -20), Vector2(-88, -12))))
+	# A clubhouse, L-shaped: flat roof over the outline.
+	els.append(_way({"building": "yes", "name": "Club House"}, f, [Vector2(60, 60), Vector2(90, 60), Vector2(90, 70), Vector2(70, 70), Vector2(70, 90), Vector2(60, 90), Vector2(60, 60)]))
+	# A shed with no lidar under it and a tagged two-storey block.
+	els.append(_way({"building": "shed"}, f, _rect(Vector2(100, -100), Vector2(104, -96))))
+	els.append(_way({"building": "apartments", "building:levels": "4"}, f, _rect(Vector2(-130, 100), Vector2(-100, 120))))
+	# Off the course area: left out.
+	els.append(_way({"building": "house"}, f, _rect(Vector2(400, 400), Vector2(410, 410))))
+	var b := RealCourseBuilder.new({"elements": els}, 51.65, 0.01)
+	b.surface = func(la: float, lo: float) -> float:
+		var p := b.frame.to_local(la, lo)
+		if p.x > -101 and p.x < -87 and p.y > -21 and p.y < -11:
+			return 10.0 + 9.0 - absf(p.y + 16.0)  # ridge along x at z = -16, 9 m up, 5 m at the walls
+		return NAN
+	var c := b.build(func(_la: float, _lo: float) -> float: return 10.0)
+	check(c.buildings.size() == 4, "four buildings on the course (%d)" % c.buildings.size())
+	var by_kind := {}
+	for bl in c.buildings:
+		by_kind[bl.kind] = bl
+	var house: CourseBuilding = by_kind.get("house")
+	check(house != null and house.roof == "gabled", "the house has a gabled roof")
+	if house != null:
+		check(absf(house.ridge - 8.7) < 0.6, "its ridge as the lidar sees it (%.1f)" % house.ridge)
+		check(house.eave > 4.0 and house.eave < 7.0, "and its eaves below (%.1f)" % house.eave)
+		var box := house.oriented_box()
+		check(absf((box["half"] as Vector2).x - 6.0) < 0.1 and absf((box["half"] as Vector2).y - 4.0) < 0.1, "the oriented box fits the outline")
+	var club: CourseBuilding = by_kind.get("clubhouse")
+	check(club != null and club.roof == "flat", "the L-shaped clubhouse has a flat roof")
+	var shed: CourseBuilding = by_kind.get("shed")
+	check(shed != null and shed.ridge < 4.0, "a shed is low (%.1f)" % (shed.ridge if shed else 0.0))
+	var block: CourseBuilding = by_kind.get("block")
+	check(block != null and absf(block.eave - 11.9) < 0.1, "four storeys from the tag (%.1f)" % (block.eave if block else 0.0))
+	var back := DesignedCourse.from_dict(c.to_dict())
+	check(back.buildings.size() == 4 and back.buildings[0].roof == c.buildings[0].roof and back.buildings[0].points.size() == c.buildings[0].points.size(), "buildings survive saving")
+	var t := CourseTerrain.new()
+	var node := CourseBuildings.from_buildings(c.buildings, t)
+	check(node != null and node.mesh.get_surface_count() == 1, "a building mesh is built")
+	if node != null:
+		node.free()
+	var field := ObstacleField.new()
+	for bl in c.buildings:
+		CourseBuildings.add_obstacles(field, bl, t)
+	field.finalize()
+	var hit := field.segment_hit(Vector3(-110, 3, -16), Vector3(-80, 3, -16))
+	check(not hit.is_empty(), "a ball flying into the house hits it")
+	check(field.segment_hit(Vector3(-110, 30, -16), Vector3(-80, 30, -16)).is_empty(), "and one high above it doesn't")
+
+
+## West Essex (Nov 2026): a culverted drain was dug across a field as an open
+## ditch, and hay meadows were drawn as mown rough.
+func _test_real_world_fixes() -> void:
+	var f := GeoFrame.new(51.65, 0.01)
+	var els: Array = []
+	els.append(_way({"leisure": "golf_course", "name": "Drain Links"}, f, _rect(Vector2(-150, -150), Vector2(150, 150))))
+	els.append(_way({"golf": "hole", "ref": "1", "par": "3"}, f, [Vector2(0, -80), Vector2(0, 80)], false))
+	els.append(_way({"waterway": "drain", "covered": "yes", "layer": "-1"}, f, [Vector2(-100, -100), Vector2(-100, 100)], false))
+	els.append(_way({"waterway": "stream", "tunnel": "culvert"}, f, [Vector2(-60, -100), Vector2(-60, 100)], false))
+	els.append(_way({"waterway": "ditch"}, f, [Vector2(100, -100), Vector2(100, 100)], false))
+	els.append(_way({"landuse": "meadow"}, f, _rect(Vector2(-140, -140), Vector2(-110, -110))))
+	var b := RealCourseBuilder.new({"elements": els}, 51.65, 0.01)
+	var c := b.build(func(_la: float, _lo: float) -> float: return 10.0)
+	var water := 0
+	var meadow := 0
+	for s in c.shapes:
+		if s.surface == Surface.Type.WATER:
+			water += 1
+			check(s.outline()[0].x > 50.0, "only the open ditch is water")
+		if s.surface == Surface.Type.DEEP_ROUGH and s.cover == "meadow":
+			meadow += 1
+	check(water > 0, "the open ditch is still dug")
+	# With lidar: a ditch the ground shows is kept, one it doesn't (a piped
+	# field drain) isn't dug.
+	var line := PackedVector2Array([Vector2(0, -50), Vector2(0, 50)])
+	var dip := func(la: float, lo: float) -> float: return 10.0 - (0.6 if absf(f.to_local(la, lo).x) < 1.0 else 0.0)
+	var flat := func(_la: float, _lo: float) -> float: return 10.0
+	check(RealCourseBuilder.is_open_ditch(line, 1.5, dip, f), "a ditch in the lidar is open")
+	check(not RealCourseBuilder.is_open_ditch(line, 1.5, flat, f), "a drain the lidar can't see is piped")
+	check(meadow == 1, "the hay meadow is long grass")
 
 
 ## A lidar or tile download that stalls or meets a busy server is asked for

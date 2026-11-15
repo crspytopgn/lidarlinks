@@ -180,7 +180,9 @@ product lead builds it.
   - [x] Real courses: close-up photos round the greens, bunkers only where they sit in grass, and a benchmark of 21 mapped courses (`tools/realcourse_bench/`)
   - [x] Real courses: imported areas the map lacked are dashed in the designer (guesses in orange); hole lengths checked against scorecards
   - [ ] Real courses: find fairways on more holes, and greens and bunkers where there is no open photo (England)
-  - [ ] Real courses: Scotland, Wales, Ireland, Denmark, Canada and the rest (need a key or reprojection from national grids), buildings
+  - [ ] Real courses: Scotland, Wales, Ireland, Denmark, Canada and the rest (need a key or reprojection from national grids)
+  - [x] Real courses: buildings from the map with lidar heights and roofs, lidar woods in full (30,000 trees), piped drains not dug, hay meadows as long grass
+  - [ ] Real courses: the real land to the horizon (Landscape) coloured from land cover, car parks as tarmac, hedges
   - [x] Crisp surface edges (splat map) on designed and real courses
   - [x] Hazard stakes round ponds and out of bounds, and a built-in bush
   - [ ] Free built-in buildings, per-course skies

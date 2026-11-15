@@ -709,6 +709,11 @@ func start_hole(index: int) -> void:
 		var walls := StoneWalls.build(hole)
 		if walls != null:
 			hole_root.add_child(walls)
+	if dressed:
+		# The clubhouse and the houses round the course, where the map has them.
+		var buildings := CourseBuildings.build(hole)
+		if buildings != null:
+			hole_root.add_child(buildings)
 	if broadcast and dressed and course.tournament:
 		# Tournament dressing: gallery ropes, and a crowd at the tee and green.
 		var crowd := Gallery.CROWD_BY_QUALITY[graphics.quality] if graphics != null else 0

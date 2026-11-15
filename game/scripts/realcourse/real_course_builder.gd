@@ -11,7 +11,11 @@ extends RefCounted
 const MARGIN := 80.0  ## metres of ground kept round the course boundary
 const MAX_SIZE := 3600.0  ## largest course side, metres
 const SEARCH_RADIUS := 1500.0  ## metres round the picked point with no boundary
-const MAX_TREES := 6000
+## Trees at most. Woods round a course are drawn far off as impostors
+## without sun shadows, so a forest course's lidar woods can be planted in
+## full (West Essex, in Epping Forest, has about 25,000 crowns; at 6000 its
+## woods beyond the holes were bare grass).
+const MAX_TREES := 30000
 const LAND_TREE_CLEAR := 25.0  ## metres from a hole's line kept free of land-cover trees
 const NEAR_CELL := 8.0  ## metres, for spacing checks between trees
 const WOOD_SPACING := 9.0  ## metres between trees in a wood
@@ -56,6 +60,12 @@ var _paths: Array[Dictionary] = []  ## {"line", "width", "bridge"}: cart paths a
 var _walls: Array[PackedVector2Array] = []  ## field walls
 var _pins: PackedVector2Array = []
 var _buildings: Array[Dictionary] = []  ## {"ring", "box"}, grown 2 m
+var _footprints: Array[Dictionary] = []  ## {"ring", "tags"}: building outlines as mapped
+## The lidar's surface model, Callable(lat, lon) -> metres above sea level
+## (NAN where it has none), for the buildings' real heights; or none.
+var surface := Callable()
+## True when the ground heights are lidar (fine enough to see a ditch).
+var lidar_ground := false
 
 ## Extra trees found by the fetcher, planted after the mapped ones: from
 ## the lidar canopy height ({"lat", "lon", "height"}), and from the aerial
@@ -155,11 +165,14 @@ func build(height: Callable, fallback := Callable()) -> DesignedCourse:
 	c.area = area
 	c._alloc()
 	_fill_heights(c, height, fallback)
+	if lidar_ground:
+		_streams = _streams.filter(func(d: Dictionary) -> bool: return not d["small"] or is_open_ditch(d["line"], d["width"], height, frame))
 	_add_shapes(c)
 	_add_holes(c)
 	# Paths first: sandy tracks found in the photo aren't bunkers.
 	_add_paths(c)
 	_add_walls(c)
+	_add_buildings(c, height)
 	_guessed.clear()
 	var detected := 0
 	for s in CourseGuesser.fill(c, hash(c.course_name), photo, details):
@@ -171,7 +184,7 @@ func build(height: Callable, fallback := Callable()) -> DesignedCourse:
 			r = r.expand(p)
 		_guessed.append({"ring": ring, "box": r})
 	_add_trees(c)
-	summary = {"holes": c.holes.size(), "areas": c.shapes.size(), "trees": c.objects.size(), "paths": c.paths.size(), "guessed": _guessed.size() - detected, "detected": detected}
+	summary = {"holes": c.holes.size(), "areas": c.shapes.size(), "trees": c.objects.size(), "paths": c.paths.size(), "buildings": c.buildings.size(), "guessed": _guessed.size() - detected, "detected": detected}
 	return c
 
 
@@ -270,12 +283,15 @@ func _read(elements: Array) -> void:
 		elif natural in ["scrub", "heath", "wetland", "dune"] and closed:
 			# Played as deep rough; the cover says what grows there.
 			_add_poly(e, {"surface": Surface.Type.DEEP_ROUGH, "cover": natural})
-		elif natural == "grassland" and closed:
+		elif (natural == "grassland" or str(t.get("landuse", "")) == "meadow") and closed:
+			# Hay meadows round a course: long grass, not
+			# the mown rough the course is otherwise drawn with.
 			_add_poly(e, {"surface": Surface.Type.DEEP_ROUGH, "cover": "meadow"})
 		elif (natural == "wood" or str(t.get("landuse", "")) == "forest") and closed:
 			_add_poly(e, {"wood": true, "leaf": str(t.get("leaf_type", ""))})
 		elif t.has("building") and closed:
 			for g in _geo_rings(e):
+				_footprints.append({"ring": _local_ring(g), "tags": t})
 				for ring in Geometry2D.offset_polygon(_local_ring(g), 2.0):
 					var r := Rect2(ring[0], Vector2.ZERO)
 					for p in ring:
@@ -286,9 +302,10 @@ func _read(elements: Array) -> void:
 			_walls.append(_local_line(_geo_points(e)))
 		elif natural == "tree_row" and type == "way":
 			_rows.append({"line": _local_line(_geo_points(e)), "leaf": str(t.get("leaf_type", ""))})
-		elif STREAM_WIDTHS.has(str(t.get("waterway", ""))) and type == "way":
+		elif STREAM_WIDTHS.has(str(t.get("waterway", ""))) and type == "way" and not _underground(t):
 			var w := _metres(t.get("width", ""))
-			_streams.append({"line": _local_line(_geo_points(e)), "width": w if w > 0.5 else float(STREAM_WIDTHS[str(t["waterway"])])})
+			_streams.append({"line": _local_line(_geo_points(e)), "width": w if w > 0.5 else float(STREAM_WIDTHS[str(t["waterway"])]),
+				"small": str(t["waterway"]) in ["ditch", "drain"]})
 
 
 ## Adds each outer ring of `e`, clipped to the course area.
@@ -595,6 +612,154 @@ func _add_paths(c: DesignedCourse) -> void:
 			c.paths.append(CoursePath.new(inside, d["width"], d["bridge"]))
 
 
+## Building kinds by their building=* tag (CourseBuilding.kind).
+const BUILDING_KINDS := {
+	"house": "house", "detached": "house", "semidetached_house": "house", "terrace": "house",
+	"bungalow": "bungalow", "residential": "house", "farmhouse": "house", "cabin": "shed",
+	"garage": "shed", "garages": "shed", "shed": "shed", "hut": "shed", "carport": "shed",
+	"greenhouse": "shed", "kiosk": "shed", "toilets": "shed", "service": "shed", "roof": "shed",
+	"barn": "barn", "farm_auxiliary": "barn", "stable": "barn", "cowshed": "barn", "sports_hall": "barn",
+	"clubhouse": "clubhouse", "pavilion": "clubhouse",
+	"apartments": "block", "commercial": "block", "industrial": "block", "retail": "block",
+	"office": "block", "school": "block", "hotel": "block", "hospital": "block", "public": "block",
+	"church": "block", "warehouse": "barn",
+}
+## Typical heights without lidar or tags: kind -> [eave, ridge] (metres).
+const BUILDING_HEIGHTS := {
+	"house": [5.3, 8.6], "bungalow": [2.8, 5.6], "shed": [2.3, 3.2], "barn": [4.5, 8.0],
+	"clubhouse": [4.6, 8.4], "block": [9.0, 9.0], "other": [3.5, 6.0],
+}
+
+
+## The mapped buildings inside the area, as tall as the lidar sees them
+## (surface minus ground) where it covers them, else as tagged or typical
+## for their kind, with pitched roofs on houses and other small buildings.
+func _add_buildings(c: DesignedCourse, height: Callable) -> void:
+	for f in _footprints:
+		var ring: PackedVector2Array = f["ring"]
+		if ring.size() >= 4 and ring[0].is_equal_approx(ring[ring.size() - 1]):
+			ring = ring.slice(0, ring.size() - 1)
+		if ring.size() < 3:
+			continue
+		var inside := true
+		for p in ring:
+			if not area.grow(-1.0).has_point(p):
+				inside = false
+				break
+		if not inside:
+			continue
+		var b := building_from(ring, f["tags"], _lidar_heights(ring, height))
+		if b.is_valid():
+			c.buildings.append(b)
+
+
+## A building from its outline, OSM tags and lidar heights above the ground
+## at points inside it (sorted, possibly empty).
+static func building_from(ring: PackedVector2Array, t: Dictionary, lidar: PackedFloat32Array) -> CourseBuilding:
+	var b := CourseBuilding.new(ring)
+	var tag := str(t.get("building", "yes"))
+	var size := absf(b.area())
+	var kind: String = BUILDING_KINDS.get(tag, "")
+	var name := str(t.get("name", "")).to_lower()
+	if str(t.get("club", "")) == "golf" or str(t.get("golf", "")) == "clubhouse" or name.contains("club") and (name.contains("house") or name.contains("golf")):
+		kind = "clubhouse"
+	if kind.is_empty():
+		kind = "shed" if size < 30.0 else ("house" if size < 220.0 else "other")
+	b.kind = kind
+	var hb: Array = BUILDING_HEIGHTS.get(kind, BUILDING_HEIGHTS["other"])
+	var eave: float = hb[0]
+	var ridge: float = hb[1]
+	var levels := str(t.get("building:levels", ""))
+	if levels.is_valid_float():
+		eave = maxf(float(levels), 1.0) * 2.9 + 0.3
+		ridge = eave + (3.0 if kind in ["house", "clubhouse", "bungalow"] else 0.0)
+	var pitched := ridge > eave + 0.5
+	var tagged := _tag_metres(t.get("height", ""))
+	if tagged > 0.0:
+		ridge = tagged
+		eave = minf(eave, ridge)
+	elif lidar.size() >= 6 and lidar[int(lidar.size() * 0.5)] >= CourseBuilding.MIN_HEIGHT:
+		# The roof as the lidar sees it. A pitched roof's points spread
+		# evenly from the eaves to the ridge, so the 15th and 65th
+		# percentiles give both, leaving out the top third, where branches
+		# over the roof and chimneys are.
+		var lo := lidar[int(lidar.size() * 0.15)]
+		var mid := lidar[int(lidar.size() * 0.65)]
+		pitched = mid - lo > 0.5
+		if pitched:
+			var rise := (mid - lo) / 0.5
+			eave = lo - rise * 0.15
+			ridge = eave + rise
+		else:
+			eave = lidar[int(lidar.size() * 0.5)]
+			ridge = eave
+	var shape := str(t.get("roof:shape", ""))
+	match shape:
+		"flat", "skillion", "dome", "onion":
+			pitched = false
+		"gabled", "half-hipped", "gambrel", "saltbox", "mansard", "hipped", "pyramidal":
+			pitched = true
+	if not pitched or b.squareness() < 0.78 or size > 1200.0:
+		# Flat roofs, and complex outlines a pitched roof over the
+		# rectangle round them wouldn't fit.
+		b.roof = "flat"
+		b.eave = clampf(ridge if not pitched else lerpf(eave, ridge, 0.3), CourseBuilding.MIN_HEIGHT, CourseBuilding.MAX_HEIGHT)
+		b.ridge = b.eave
+		return b
+	var box := b.oriented_box()
+	var half: Vector2 = box["half"]
+	# Keep the roof's pitch between about 20 and 45 degrees.
+	var rise := clampf(ridge - eave, half.y * 0.36, half.y)
+	b.ridge = clampf(maxf(ridge, CourseBuilding.MIN_HEIGHT + rise), CourseBuilding.MIN_HEIGHT, CourseBuilding.MAX_HEIGHT)
+	b.eave = clampf(b.ridge - rise, CourseBuilding.MIN_HEIGHT, CourseBuilding.MAX_HEIGHT)
+	if shape in ["hipped", "pyramidal"]:
+		b.roof = "hipped"
+	elif shape.is_empty():
+		# British houses are mostly gabled along their long side; square
+		# ones and bungalows are often hipped.
+		b.roof = "hipped" if half.x < half.y * 1.25 or kind == "bungalow" else "gabled"
+	else:
+		b.roof = "gabled"
+	return b
+
+
+static func _tag_metres(v: Variant) -> float:
+	var s := str(v).replace("m", "").strip_edges()
+	return float(s) if s.is_valid_float() else 0.0
+
+
+## Lidar heights above the ground at points about a metre apart inside the
+## outline (kept 0.8 m in from the walls), sorted; empty without lidar.
+func _lidar_heights(ring: PackedVector2Array, height: Callable) -> PackedFloat32Array:
+	var out := PackedFloat32Array()
+	if not surface.is_valid():
+		return out
+	var inner := Geometry2D.offset_polygon(ring, -0.8)
+	if inner.is_empty():
+		return out
+	var poly: PackedVector2Array = inner[0]
+	var r := Rect2(poly[0], Vector2.ZERO)
+	for p in poly:
+		r = r.expand(p)
+	var step := maxf(1.0, sqrt(r.get_area() / 400.0))
+	var z := r.position.y + step * 0.5
+	while z < r.end.y:
+		var x := r.position.x + step * 0.5
+		while x < r.end.x:
+			var p := Vector2(x, z)
+			if Geometry2D.is_point_in_polygon(p, poly):
+				var lat := frame.lat_of(p)
+				var lon := frame.lon_of(p)
+				var top := float(surface.call(lat, lon))
+				var ground := float(height.call(lat, lon))
+				if not is_nan(top) and not is_nan(ground):
+					out.append(top - ground)
+			x += step
+		z += step
+	out.sort()
+	return out
+
+
 ## Mapped walls, cut to the course area.
 func _add_walls(c: DesignedCourse) -> void:
 	for line in _walls:
@@ -641,6 +806,46 @@ static func road_width(t: Dictionary) -> float:
 	if w <= 0.0 and str(t.get("lanes", "")).is_valid_int():
 		w = int(str(t.get("lanes", ""))) * 3.2
 	return clampf(w if w > 0.0 else base, CoursePath.MIN_WIDTH, CoursePath.MAX_WIDTH)
+
+
+## Whether the lidar ground shows a mapped ditch or drain as one: lower
+## than the ground a few metres either side along a good part of it. Field
+## drains are often mapped as ditches, and some are piped without a tag
+## saying so (West Essex, Nov 2026); cutting those into the ground made
+## long straight trenches across fields.
+static func is_open_ditch(line: PackedVector2Array, width: float, height: Callable, f: GeoFrame) -> bool:
+	var at := func(p: Vector2) -> float: return float(height.call(f.lat_of(p), f.lon_of(p)))
+	var off := width * 0.5 + 3.0
+	var dips := 0
+	var n := 0
+	for i in range(1, line.size()):
+		var a := line[i - 1]
+		var b := line[i]
+		var len := a.distance_to(b)
+		if len < 0.5:
+			continue
+		var d := (b - a) / len
+		var side := Vector2(-d.y, d.x) * off
+		var s := 2.0
+		while s < len - 2.0 or (n == 0 and s < len):
+			var p := a + d * s
+			var mid: float = at.call(p)
+			var l: float = at.call(p + side)
+			var r: float = at.call(p - side)
+			s += 4.0
+			if is_nan(mid) or is_nan(l) or is_nan(r):
+				continue
+			n += 1
+			if (l + r) * 0.5 - mid > 0.12:
+				dips += 1
+	return n == 0 or float(dips) / n >= 0.35
+
+
+## True for a culverted or piped watercourse (tunnel, covered, below
+## ground), which mustn't be cut into the ground as an open ditch.
+static func _underground(t: Dictionary) -> bool:
+	return str(t.get("tunnel", "no")) not in ["no", ""] or str(t.get("covered", "no")) == "yes" \
+			or str(t.get("location", "")) == "underground" or str(t.get("layer", "0")).begins_with("-")
 
 
 static func _is_bridge(t: Dictionary) -> bool:
