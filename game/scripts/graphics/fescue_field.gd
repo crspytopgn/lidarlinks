@@ -30,6 +30,15 @@ const SURFACES := [Surface.Type.DEEP_ROUGH]
 const UNDER_DENSITY := [0.0, 0.5, 0.8, 1.1]
 const UNDER_REACH_DEEP := 1.3
 const UNDER_REACH_ROUGH := 0.9
+## Scanned plant cards (MegascansCards, private pack, desktop only): a
+## stand of one plant is about this many metres across, a meadow flower
+## turns up in this share of a golden drift, the cards' own colour against
+## the ground's (shaders/fescue.gdshader ground_pull), and the cards left
+## out because they read badly or don't belong on a temperate course.
+const STAND_M := 6.0
+const FLOWER_SHARE := 0.07
+const CARD_GROUND_PULL := 0.6
+const CARD_SKIP := ["Boston Fern", "Grass Clumps", "Kikuyu Grass", "Red Fountain Grass", "Basket Grass", "Ribbon Grass", "Rubber Bush", "Giant Reed", "Dead Shrubs"]
 ## Crowns smaller than this (bushes) get none: a bush is its own brush.
 const UNDER_MIN_RADIUS := 1.5
 ## Understory tufts: height range (m), width against height, and how much
@@ -69,12 +78,18 @@ const FAR_GAIN_FORWARD_PLUS := 0.7
 
 var terrain: CourseTerrain
 var level := 0
-var _chunks := {}  ## Vector2i -> MultiMeshInstance3D (null for an empty chunk)
+var _chunks := {}  ## Vector2i -> Node3D of MultiMeshInstance3Ds (null for an empty chunk)
 var _crowns := {}  ## Vector2i chunk -> PackedVector3Array of crowns centred in it
 
 static var _mesh: ArrayMesh
 static var _mat: ShaderMaterial
 static var _buf := PackedFloat32Array()  ## the chunk build_chunk is filling
+static var _card_bufs := {}  ## card uid -> Array of floats, the chunk's tufts drawn from that card
+static var _card_mats := {}  ## card uid -> ShaderMaterial
+static var _card_meshes := {}  ## card uid -> ArrayMesh
+## The private pack's plant cards by dresser role ({} without a pack); see
+## dress_cards().
+static var dress := {}
 
 
 func _init() -> void:
@@ -94,6 +109,7 @@ func setup(t: CourseTerrain, grass_level: int) -> void:
 			node.queue_free()
 	_chunks.clear()
 	_crowns = crowns_by_chunk(t.obstacles if t != null else null)
+	dress = dress_cards(MegascansCards.cards())
 	var r: float = RADIUS[level]
 	material().set_shader_parameter("far_start", r * 0.7)
 	material().set_shader_parameter("far_end", r)
@@ -103,6 +119,8 @@ func update_around(eye: Vector3) -> void:
 	if terrain == null or level == 0:
 		return
 	material().set_shader_parameter("camera_pos", eye)
+	for m: ShaderMaterial in _card_mats.values():
+		m.set_shader_parameter("camera_pos", eye)
 	var r: float = RADIUS[level]
 	var here := Vector2(eye.x, eye.z)
 	for key: Vector2i in _chunks.keys():
@@ -123,12 +141,15 @@ func update_around(eye: Vector3) -> void:
 		return _centre(a).distance_squared_to(here) < _centre(b).distance_squared_to(here))
 	for i in mini(BUILDS_PER_FRAME, wanted.size()):
 		var key := wanted[i]
-		var mm := build_chunk(terrain, key, DENSITY[level], _crowns.get(key, PackedVector3Array()), UNDER_DENSITY[level])
-		var node: MultiMeshInstance3D = null
-		if mm != null:
-			node = MultiMeshInstance3D.new()
-			node.multimesh = mm
-			node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		var meshes := build_chunk(terrain, key, DENSITY[level], _crowns.get(key, PackedVector3Array()), UNDER_DENSITY[level], dress)
+		var node: Node3D = null
+		if not meshes.is_empty():
+			node = Node3D.new()
+			for mm in meshes:
+				var inst := MultiMeshInstance3D.new()
+				inst.multimesh = mm
+				inst.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+				node.add_child(inst)
 			add_child(node)
 		_chunks[key] = node
 
@@ -162,11 +183,15 @@ static func crowns_by_chunk(field: ObstacleField) -> Dictionary:
 ## The tufts of one chunk, or null with no deep rough or understory in it:
 ## fescue on its deep rough (in golden drifts of native grass where
 ## native_at() says so), reeds round its ponds, then brush under the
-## `crowns` (x, z, radius) whose trunks stand in it. Deterministic.
-static func build_chunk(t: CourseTerrain, key: Vector2i, density: float, crowns := PackedVector3Array(), under_density := 0.0) -> MultiMesh:
+## `crowns` (x, z, radius) whose trunks stand in it. With `cards` (from
+## dress_cards) the drifts, reeds, brush and mapped cover grow scanned
+## plants, a stand of one kind every few metres. Deterministic. One
+## MultiMesh per atlas used (the fescue's first, if any).
+static func build_chunk(t: CourseTerrain, key: Vector2i, density: float, crowns := PackedVector3Array(), under_density := 0.0, cards := {}) -> Array[MultiMesh]:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = hash(key) + 77
 	_buf = PackedFloat32Array()
+	_card_bufs = {}
 	var origin := Vector2(key) * CHUNK
 	# Fescue, thicker and taller in the native drifts (the extra tries only
 	# land where native_at is high).
@@ -188,6 +213,18 @@ static func build_chunk(t: CourseTerrain, key: Vector2i, density: float, crowns 
 		var c := t.ground_color_at(x, z)
 		if native > 0.0:
 			c = c.lerp(native_colour(tone), native)
+		if not cards.is_empty():
+			var cover := t.cover_at(x, z)
+			var role := ""
+			if not cover.is_empty():
+				role = "cover:" + cover
+			elif native > 0.5:
+				role = "flower" if grow < FLOWER_SHARE else "links_fescue"
+			var card := card_for(cards, role, x, z)
+			if not card.is_empty():
+				var ch: float = card["height_m"] * rng.randf_range(0.8, 1.2)
+				_put(t, x, z, yaw, ch * rng.randf_range(1.0, 1.3), ch, c, pick, -0.03, card["uid"])
+				continue
 		_put(t, x, z, yaw, h * lerpf(rng.randf_range(1.0, 1.3), rng.randf_range(1.6, 2.2), native), h, c, pick, -0.03)
 	# Reeds: tall tufts on the bank, the ground just short of the water.
 	for i in roundi(CHUNK * CHUNK * density * REED_DENSITY):
@@ -208,7 +245,10 @@ static func build_chunk(t: CourseTerrain, key: Vector2i, density: float, crowns 
 				break
 		if not wet:
 			continue
-		_put(t, x, z, yaw, h * rng.randf_range(0.7, 1.0), h, REED_COLOUR.lerp(native_colour(tone), 0.35), pick, -0.05)
+		var reed := card_for(cards, "water_edge", x, z)
+		if not reed.is_empty():
+			h = reed["height_m"] * rng.randf_range(0.8, 1.2)
+		_put(t, x, z, yaw, h * rng.randf_range(0.7, 1.0), h, REED_COLOUR.lerp(native_colour(tone), 0.35), pick, -0.05, reed.get("uid", ""))
 	for crown in crowns:
 		var reach := crown.z * UNDER_REACH_DEEP
 		var count := roundi(PI * reach * reach * under_density)
@@ -225,21 +265,89 @@ static func build_chunk(t: CourseTerrain, key: Vector2i, density: float, crowns 
 			var s := t.surface_at(x, z)
 			if not (s == Surface.Type.DEEP_ROUGH or (s == Surface.Type.ROUGH and d < crown.z * UNDER_REACH_ROUGH)):
 				continue
-			_put(t, x, z, yaw, w, h, t.ground_color_at(x, z) * UNDER_SHADE, pick, -0.05)
-	@warning_ignore("integer_division")
-	var n := _buf.size() / 16
-	if n == 0:
-		return null
-	var buffer := _buf
+			var brush := card_for(cards, "woodland_edge", x, z)
+			if not brush.is_empty():
+				h = brush["height_m"] * rng.randf_range(1.0, 1.6)
+				w = h * rng.randf_range(1.0, 1.4)
+			_put(t, x, z, yaw, w, h, t.ground_color_at(x, z) * UNDER_SHADE, pick, -0.05, brush.get("uid", ""))
+	var out: Array[MultiMesh] = []
+	if not _buf.is_empty():
+		out.append(_multimesh(_buf, _shared_mesh()))
+	for uid: String in _card_bufs:
+		var mesh := _card_mesh(uid, cards)
+		if mesh != null:
+			out.append(_multimesh(PackedFloat32Array(_card_bufs[uid]), mesh))
 	_buf = PackedFloat32Array()
+	_card_bufs = {}
+	return out
+
+
+static func _multimesh(buffer: PackedFloat32Array, mesh: Mesh) -> MultiMesh:
 	var mm := MultiMesh.new()
 	mm.transform_format = MultiMesh.TRANSFORM_3D
 	mm.use_custom_data = true
-	mm.mesh = _shared_mesh()
-	mm.instance_count = n
+	mm.mesh = mesh
+	@warning_ignore("integer_division")
+	mm.instance_count = buffer.size() / 16
 	mm.buffer = buffer
 	mm.set_meta("buffer", buffer)
 	return mm
+
+
+## The pack's cards by dresser role: "links_fescue" (the golden drifts),
+## "flower" (meadow flowers sprinkled in them), "water_edge" (reeds),
+## "woodland_edge" (brush under crowns) and "cover:<cover>" for each mapped
+## cover (CourseTerrain.cover_at). Each card is {"uid", "height_m", "card"}.
+static func dress_cards(all: Array[Dictionary]) -> Dictionary:
+	var ok := all.filter(func(c: Dictionary) -> bool: return not CARD_SKIP.has(c["title"]))
+	var typed: Array[Dictionary] = []
+	typed.assign(ok)
+	var out := {}
+	if typed.is_empty():
+		return out
+	out["links_fescue"] = MegascansCards.for_role("links_fescue", typed)
+	out["flower"] = MegascansCards.for_role("meadow", MegascansCards.for_kind("flower", typed))
+	out["water_edge"] = MegascansCards.for_role("water_edge", typed)
+	out["woodland_edge"] = MegascansCards.for_role("woodland_edge", typed)
+	for cover: String in MegascansCards.COVER_ROLES:
+		out["cover:" + cover] = MegascansCards.for_cover(cover, typed)
+	for k: String in out.keys():
+		if (out[k] as Array).is_empty():
+			out.erase(k)
+	return out
+
+
+## The card for `role` at (x, z): one plant per stand of about STAND_M, so
+## kinds grow in patches as real ones do. {} when the role has none.
+static func card_for(cards: Dictionary, role: String, x: float, z: float) -> Dictionary:
+	var list: Array = cards.get(role, [])
+	if list.is_empty():
+		return {}
+	var stand := Vector2i(floori(x / STAND_M), floori(z / STAND_M))
+	return list[absi(hash([stand, role])) % list.size()]
+
+
+static func _card_mesh(uid: String, cards: Dictionary) -> ArrayMesh:
+	if _card_meshes.has(uid):
+		return _card_meshes[uid]
+	var tex: Texture2D = null
+	for list: Array in cards.values():
+		for c: Dictionary in list:
+			if c["uid"] == uid:
+				tex = MegascansCards.atlas(c)
+				break
+		if tex != null:
+			break
+	var mesh: ArrayMesh = null
+	if tex != null:
+		var mat := material().duplicate() as ShaderMaterial
+		mat.set_shader_parameter("atlas", tex)
+		mat.set_shader_parameter("ground_pull", CARD_GROUND_PULL)
+		_card_mats[uid] = mat
+		mesh = tuft_mesh()
+		mesh.surface_set_material(0, mat)
+	_card_meshes[uid] = mesh
+	return mesh
 
 
 ## How much the deep rough at (x, z), where the ground's normal has y `up`,
@@ -283,20 +391,27 @@ static func native_colour(tone: float) -> Color:
 
 
 ## Adds one tuft (yaw, width `w`, height `h`, sRGB ground colour `c`,
-## atlas pick, sunk `sink` m) at (x, z) to the chunk being built.
-static func _put(t: CourseTerrain, x: float, z: float, yaw: float, w: float, h: float, c: Color, pick: float, sink: float) -> void:
+## atlas pick, sunk `sink` m) at (x, z) to the chunk being built, drawn
+## from the plant card `card` (a uid) or else the fescue atlas.
+static func _put(t: CourseTerrain, x: float, z: float, yaw: float, w: float, h: float, c: Color, pick: float, sink: float, card := "") -> void:
 	# The ground's slope rides along in the card's up axis as a tiny lean
 	# (NORMAL_LEAN of the height, under a centimetre), so the shader can
 	# light the tuft as the ground under it is lit.
 	var up := t.normal_at(x, z)
 	var cs := cos(yaw)
 	var sn := sin(yaw)
-	_buf.append_array(PackedFloat32Array([
+	var row := [
 		cs * w, 0.0, sn * w, x,
 		up.x * NORMAL_LEAN * h, h, up.z * NORMAL_LEAN * h, t.height_at(x, z) + sink,
 		-sn * w, 0.0, cs * w, z,
 		c.r, c.g, c.b, pick,
-	]))
+	]
+	if card.is_empty():
+		_buf.append_array(PackedFloat32Array(row))
+	else:
+		if not _card_bufs.has(card):
+			_card_bufs[card] = []
+		(_card_bufs[card] as Array).append_array(row)
 
 
 static func material() -> ShaderMaterial:

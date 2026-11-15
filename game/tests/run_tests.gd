@@ -5432,6 +5432,18 @@ func _test_broadcast_pieces() -> void:
 	var rest_gap := Vector2(cam.x - 0.0, cam.z - 215.0).length()
 	print("  follow cam: farthest in the air %.1f m, rest gap %.1f m, height %.1f m, worst change per frame %.3f m" % [far_air, rest_gap, cam.y, worst_jerk])
 	_check(worst_jerk < 0.08, "the follow camera never jerks (worst %.3f m per frame)" % worst_jerk)
+	# The auto-dresser's plant cards: roles from the pack's tags, weak cards
+	# left out, and one plant per stand.
+	var pack := MegascansCards.parse('{"cards": [{"uid": "a", "title": "Wild Grass", "kind": "grass", "height_m": 0.7, "roles": ["links_fescue"], "file": "a.png"},'
+		+ '{"uid": "b", "title": "Reed Grass", "kind": "reed", "height_m": 1.8, "roles": ["water_edge"], "file": "b.png"},'
+		+ '{"uid": "c", "title": "Field Poppy", "kind": "flower", "height_m": 0.6, "roles": ["meadow"], "file": "c.png"},'
+		+ '{"uid": "d", "title": "Boston Fern", "kind": "fern", "height_m": 0.8, "roles": ["woodland_edge"], "file": "d.png"}]}')
+	var dressed := FescueField.dress_cards(pack)
+	_check(dressed.has("links_fescue") and dressed.has("water_edge") and dressed.has("flower"), "dresser roles from the tags (%s)" % [dressed.keys()])
+	_check(not dressed.has("woodland_edge"), "weak cards are left out of the dresser")
+	_check(FescueField.card_for(dressed, "water_edge", 10.0, 10.0)["uid"] == "b", "reeds by the water")
+	_check(FescueField.card_for(dressed, "heath", 1.0, 1.0).is_empty(), "no card for a role the pack lacks")
+	_check(FescueField.dress_cards([] as Array[Dictionary]).is_empty(), "no pack, no cards: the drawn fescue stays")
 	_check(far_air < 70.0, "the follow camera keeps the ball in sight in the air (%.1f m)" % far_air)
 	_check(rest_gap > 4.0 and rest_gap < 11.0 and cam.y < 3.0 and cam.z < 215.0, "the follow camera settles low behind the ball at rest (%s)" % cam)
 	_check((late[0] as Vector3).z > 240.0, "pin camera stands beyond the pin")
