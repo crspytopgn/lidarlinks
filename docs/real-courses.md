@@ -98,10 +98,16 @@ to 30,000 (2,500 on phones and tablets); with lidar trees, woods aren't
 filled by guesswork. Until November 2026 the limit was 6000, which on a
 course in a forest (West Essex, in Epping Forest) planted the trees along
 the holes and left the woods beyond them as bare grass. The extra trees
-stand well away from the holes, where the round draws them in batches that
-turn into impostors past 70 m and cast no sun shadow, so they cost little:
-on West Essex, about 10 more draw calls and 0.2 to 0.4 million more
-triangles from the tees.
+stand well away from the holes, where the round draws them in batches
+without sun shadows, and those more than 130 m from the hole being played
+as impostors only (`DesignedCourse.FULL_TREE_REACH`): a camera near the
+line of play is past the impostor distance from them anyway. Every crown
+within 150 m of a hole is planted; when there are more crowns farther off
+than room for them, an even share of them is planted (a little bigger),
+so the woods reach the edge of the area instead of stopping in a ring round
+the holes (Hilversum has 40,000 crowns). On Hilversum, 30,000 trees cost
+about the same draw calls as the old 6,000 and a fifth more triangles from
+the first tee, and fewer from inside the woods.
 
 ### Aerial photos
 
@@ -305,10 +311,15 @@ OpenStreetMap from the club's own published scorecard.
   least 78% of the rectangle round them) get a pitched roof over that
   rectangle: gabled along the long side, hipped when nearly square, on a
   bungalow, or as `roof:shape` says; complex ones and big ones are flat.
-  `building.gdshader` draws brick courses or render, windows on each floor
-  (none on sheds and barns) and roof tiles, in the brick, render, slate
-  and clay colours of a British street, shared along a street more often
-  than not.
+  `building.gdshader` draws brick courses, render or clapboard siding,
+  windows on each floor (none on sheds and barns) and roof tiles, in the
+  colours of the course's region (`ScannedSurfaces.region`): British brick
+  and render under slate and clay, European render under terracotta and
+  anthracite, American siding and brick under asphalt shingles (and red
+  barns), stucco under clay in deserts and the tropics; shared along a
+  street more often than not. The United States lidar has no surface model,
+  so American buildings take typical heights (a house 4 m to the eaves,
+  7.2 m to the ridge) unless the map tags them.
 - **Roads:** `highway=*` ways crossing the course (not tunnels or unpaved tracks; footpaths only when paved) as tarmac paths, at their `width`, `lanes` x 3.2 m or a typical width for the road class. The ball bounces and runs on them as on the Links path surface, and they give free relief.
 - **Ground:** the lidar or tile heights at every 2 m sample, bilinear. Heights below
   -12 m (the sea floor) are raised to -12 m, then the grid is stored round

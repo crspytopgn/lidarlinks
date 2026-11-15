@@ -21,6 +21,11 @@ const TREE_NAMES := ["Pine", "Broadleaf", "Bush"]
 const TREE_KINDS := 2
 ## Metres round a hole within which its objects are placed one by one.
 const HOLE_REACH := 60.0
+## Trees further than this from the hole's line are only ever seen as
+## impostors (a camera near the line is past the impostor distance from
+## them), so the round draws them as impostors only: the deep woods of a
+## forest course then cost almost nothing.
+const FULL_TREE_REACH := 130.0
 
 var course_name := "New course"
 var author := ""
@@ -264,11 +269,11 @@ func to_course_data() -> CourseData:
 ## points, pin): the objects the round places one by one for that hole.
 ## Trees further off are drawn batched by DesignedTerrain (impostors at a
 ## distance), which is far cheaper than a node each.
-static func near_hole(dh: DesignedHole, p: Vector2) -> bool:
+static func near_hole(dh: DesignedHole, p: Vector2, reach := HOLE_REACH) -> bool:
 	if dh.tees.is_empty():
 		return false
 	var prev := dh.tees[0]
-	var r2 := HOLE_REACH * HOLE_REACH
+	var r2 := reach * reach
 	for t in dh.tees:
 		if p.distance_squared_to(t) <= r2:
 			return true
