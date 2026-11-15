@@ -340,9 +340,10 @@ void fragment() {
 	col *= mix(vec3(1.0), vec3(0.97, 1.0, 0.98), cut);
 	// Grass is matt: a mown blade has a faint sheen, but a sward of them
 	// scatters it, so even cut turf must not glint like a wet floor when
-	// looking into a low sun (it did at 0.72 with dawn and sunset).
-	ROUGHNESS = mix(0.95, 0.88, cut);
-	SPECULAR = 0.06;
+	// looking into a low sun (it did at 0.72 with dawn and sunset); but
+	// a little sheen keeps cut turf crisp and green rather than flat.
+	ROUGHNESS = mix(0.95, 0.8, cut);
+	SPECULAR = 0.08;
 
 	if (textured) {
 		vec2 uv = p / texture_metres;
