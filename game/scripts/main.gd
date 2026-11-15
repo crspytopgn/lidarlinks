@@ -23,6 +23,9 @@ const CLOUD_SHADOW := 0.32  ## how much light a passing cloud's shadow takes
 const AIM_RATE_DEG := 25.0  ## per second, holding left or right
 const PUTT_AIM_RATE_DEG := 6.0
 const RESULT_PAUSE := 2.5
+## Quick pace's pause after a putt that stays out (Space or a click still
+## goes on at once): the ball has stopped, the next putt is all there is.
+const QUICK_PUTT_PAUSE := 1.0
 ## Seconds into the flight the swing meter stays up to show the swing.
 const METER_LINGER_S := 1.5
 ## A putt missed from inside this many metres (8 ft) gets a slump.
@@ -310,6 +313,15 @@ var _assist_from := Vector3.INF
 ## The putting meter's distance scale (SwingMeter.putt_feet), and where it
 ## was worked out from.
 var _putt_scale_from := Vector3.INF
+## Quick pace's putting meter is sized to the putt (PUTT_RANGES): the share
+## of the full putt meter's power the whole meter gives now, 1 for the
+## full meter (Classic, and wherever the meter shows no distances).
+var _putt_range := 1.0
+## The full-swing and chip meter's carry scale (SwingMeter.yards), worked
+## out a sample a frame: what it is for, and the samples still to do.
+var _yard_key := []
+var _yard_job := PackedFloat32Array()
+var _yard_done := PackedFloat32Array()
 var read_view := 0  ## GreenRead.View
 ## The Green Analyzer's free camera (GreenRead.orbit_*): which read view
 ## it was moved in (-1 none), its yaw, pitch and distance, the point it
@@ -1072,6 +1084,7 @@ func _process(delta: float) -> void:
 		camera.update(delta, _replay_time if _replaying else shot_time, _ball_base)
 	_update_reticle(paused)
 	_step_advice()
+	_step_yard_scale()
 	grass.update_around(camera.global_position)
 	fescue.update_around(camera.global_position)
 	_update_ball_size()
@@ -1701,6 +1714,10 @@ func _on_swing_finished(power: float, accuracy: float) -> void:
 		if _chip and not clubs[club_index].is_putter:
 			# A chip's meter position reads its own power table.
 			power = LinksPowerStroke.chip_power(hud.meter.power_position) / 100.0
+		elif clubs[club_index].is_putter:
+			# Quick pace's meter sized to the putt: its top is this share of
+			# the full putt meter's power.
+			power *= _putt_range
 		play_shot(power, accuracy)
 
 
@@ -2305,6 +2322,8 @@ func _complete_flight() -> void:
 	hud.mouse_swing.reset()
 	state = State.SHOT_RESULT
 	result_timer = RESULT_PAUSE
+	if graphics.quick_pace and clubs[club_index].is_putter:
+		result_timer = QUICK_PUTT_PAUSE
 	if _can_mulligan():
 		hud.hint.text = HINT_WAIT + "    U: mulligan"
 		result_timer = RESULT_PAUSE * 2.0
@@ -3465,9 +3484,13 @@ func _apply_graphics() -> void:
 	if not broadcast:
 		hud.overlay.show_pip(false)
 		camera.end_flyover()
+	hud.meter.quick = graphics.quick_pace
+	_putt_scale_from = Vector3.INF  # the putt meter's size goes with the pace
+	_yard_key = []
 	if hole != null and state == State.AIM:
 		_update_green_grid()
 		_update_green_aids()
+		_update_yard_scale()
 	if advice_note == null:
 		advice_note = CaddieNote.new()
 		hud.add_child(advice_note)
@@ -3972,6 +3995,7 @@ func _update_hud() -> void:
 		hud.overlay.set_status(_status(state == State.AIM or state == State.SWING))
 	_update_tour()
 	_update_putting_panel()
+	_update_yard_scale()
 
 
 ## The player's name, with the level of a computer golfer unless the name
@@ -4419,9 +4443,9 @@ func _update_green_aids() -> void:
 	if hole == null:
 		return
 	_update_breakline()
+	_update_putt_scale()  # first: the assistant's dot sits on this meter
 	_update_assistant()
 	_update_putting_panel()
-	_update_putt_scale()
 
 
 ## The Broadcast and Tour putting meter's distance scale: how far a putt at
@@ -4433,19 +4457,63 @@ func _update_putt_scale() -> void:
 	if not hud.meter.modern or not _putting_on_green() or shot_model == null:
 		hud.meter.set_putt_scale(PackedFloat32Array(), -1.0)
 		_putt_scale_from = Vector3.INF
+		_putt_range = 1.0
 		return
 	var hole_ft := Vector2(hole.pin.x - ball_at.x, hole.pin.z - ball_at.z).length() * LinksLaunch.FEET_PER_METRE
 	if _putt_scale_from.is_equal_approx(ball_at):
 		hud.meter.set_putt_scale(hud.meter.putt_feet, hole_ft)
 		return
 	_putt_scale_from = ball_at
-	hud.meter.set_putt_scale(putt_roll_feet(shot_model, clubs[club_index], lie), hole_ft)
+	var full := putt_roll_feet(shot_model, clubs[club_index], lie)
+	_putt_range = putt_range_for(full, hole_ft) if graphics.quick_pace else 1.0
+	hud.meter.set_putt_scale(rescale_roll(full, _putt_range), hole_ft)
 
 
-## Feet a putt rolls on a level green for meter values 0, 1/20 ... 1, by
-## `model`'s own physics. The model's random numbers and mouse swing are
-## left as they were, so the round plays out the same.
-static func putt_roll_feet(model: ShotModel, putter: Club, from_lie: int) -> PackedFloat32Array:
+## Quick pace's putting meters, as shares of the full meter's power: the
+## original has a long and a short putt meter, and one meter for every
+## putt from a tap-in to 100 feet left a 10-footer in its first quarter,
+## a sliver to judge. The smallest that rolls PUTT_RANGE_ROOM times the
+## hole's distance on the level is used, so the hole sits two thirds or so
+## along the meter with room for an uphill putt. The same stroke on any of
+## them rolls the ball by the same physics; only the meter's size changes.
+const PUTT_RANGES: Array[float] = [0.3, 0.45, 0.65, 1.0]
+const PUTT_RANGE_ROOM := 2.0
+
+
+## The putting meter for a hole `hole_ft` away, from the full meter's
+## scale (putt_roll_feet with range 1).
+static func putt_range_for(full_feet: PackedFloat32Array, hole_ft: float) -> float:
+	if full_feet.size() < 2:
+		return 1.0
+	for r in PUTT_RANGES:
+		var x := r * (full_feet.size() - 1)
+		var i := mini(int(x), full_feet.size() - 2)
+		if lerpf(full_feet[i], full_feet[i + 1], x - i) >= hole_ft * PUTT_RANGE_ROOM:
+			return r
+	return 1.0
+
+
+## The full meter's scale (`full_feet`, at 0, 1/20 ... 1) for a meter
+## whose top is `share` of the full meter's power, read off it: the roll is
+## smooth enough in the stroke that this is within an inch of simulating
+## each point again (and costs nothing).
+static func rescale_roll(full_feet: PackedFloat32Array, share: float) -> PackedFloat32Array:
+	if share >= 1.0 or full_feet.size() < 2:
+		return full_feet
+	var out := PackedFloat32Array()
+	var n := full_feet.size() - 1
+	for i in n + 1:
+		var x := float(i) / n * share * n
+		var j := mini(int(x), n - 1)
+		out.append(lerpf(full_feet[j], full_feet[j + 1], x - j))
+	return out
+
+
+## Feet a putt rolls on a level green for meter values 0, 1/20 ... 1 of a
+## meter whose top is `share` of the full meter's power, by `model`'s own
+## physics. The model's random numbers and mouse swing are left as they
+## were, so the round plays out the same.
+static func putt_roll_feet(model: ShotModel, putter: Club, from_lie: int, share := 1.0) -> PackedFloat32Array:
 	var out := PackedFloat32Array()
 	var flat := FlatTerrain.new(Surface.Type.GREEN)
 	var links := model as LinksShotModel
@@ -4454,7 +4522,7 @@ static func putt_roll_feet(model: ShotModel, putter: Club, from_lie: int) -> Pac
 	if links != null:
 		links.mouse_swing = null
 	for i in 21:
-		var v := maxf(float(i) / 20.0, 0.02)
+		var v := maxf(float(i) / 20.0 * share, 0.02)
 		var start := model.launch(putter, v, 0.0, 0.0, from_lie, Vector3.ZERO)
 		var r := model.simulate(start, flat, Vector3(0, 0, 1.0e5))
 		out.append(Vector2(r.rest.x, r.rest.z).length() * LinksLaunch.FEET_PER_METRE)
@@ -4462,6 +4530,74 @@ static func putt_roll_feet(model: ShotModel, putter: Club, from_lie: int) -> Pac
 		links.rng.state = rng_state
 		links.mouse_swing = mouse
 	return out
+
+
+## The Broadcast and Tour full-swing and chip meter's carry scale: what
+## each quarter of the swing carries with this club from this lie, on the
+## flat with no wind, by the round's own physics, so the bar reads in
+## yards. Worked out a sample a frame (_step_yard_scale); Classic Links
+## keeps the original's bare meter.
+func _update_yard_scale() -> void:
+	var club := clubs[club_index] if club_index < clubs.size() else null
+	if not hud.meter.modern or shot_model == null or club == null or club.is_putter or not (state == State.AIM or state == State.SWING) or not _human_turn():
+		_yard_key = []
+		_yard_job = PackedFloat32Array()
+		hud.meter.set_yard_scale(PackedFloat32Array(), PackedFloat32Array())
+		return
+	var key := [ball_at, club_index, lie, _chip]
+	if key == _yard_key:
+		return
+	_yard_key = key
+	_yard_job = yard_values(_chip)
+	_yard_done = PackedFloat32Array()
+	hud.meter.set_yard_scale(PackedFloat32Array(), PackedFloat32Array())
+
+
+func _step_yard_scale() -> void:
+	if _yard_job.size() == 0 or _yard_done.size() >= _yard_job.size():
+		return
+	var v := _yard_job[_yard_done.size()]
+	_yard_done.append(carry_yards(shot_model, clubs[club_index], lie, _chip, v))
+	if _yard_done.size() == _yard_job.size():
+		hud.meter.set_yard_scale(_yard_job, _yard_done)
+		_yard_job = PackedFloat32Array()
+
+
+## The meter values the carry scale samples: the quarters, and a full
+## swing's top of the overswing.
+static func yard_values(chip: bool) -> PackedFloat32Array:
+	var out := PackedFloat32Array([0.25, 0.5, 0.75, 1.0])
+	if not chip:
+		out.append(float(LinksPowerStroke.TOP - LinksPowerStroke.SNAP) / float(LinksPowerStroke.FULL_POWER - LinksPowerStroke.SNAP))
+	return out
+
+
+## Carry in yards of a square strike at meter value `v` with `club` from
+## `from_lie`, on the flat with no wind (a chip's meter reads its own power
+## table). The model's random numbers, mouse swing and chip flag are left
+## as they were, so the round plays out the same.
+static func carry_yards(model: ShotModel, club: Club, from_lie: int, chip: bool, v: float) -> float:
+	var span := LinksPowerStroke.FULL_POWER - LinksPowerStroke.SNAP
+	var power := v
+	if chip:
+		span = LinksPowerStroke.LAST - LinksPowerStroke.SNAP
+		power = LinksPowerStroke.chip_power(LinksPowerStroke.SNAP + roundi(v * span)) / 100.0
+	elif v > 1.0:
+		power = LinksPowerStroke.full_power(LinksPowerStroke.SNAP + roundi(v * span))
+	var links := model as LinksShotModel
+	var rng_state := links.rng.state if links != null else 0
+	var mouse: LinksMouse.Outcome = links.mouse_swing if links != null else null
+	var was_chip := links.chip if links != null else false
+	if links != null:
+		links.mouse_swing = null
+		links.chip = chip
+	var start := model.launch(club, power, 0.0, 0.0, from_lie, Vector3.ZERO)
+	var r := model.simulate(start, FlatTerrain.new(Surface.Type.FAIRWAY), Vector3(0, 0, 1.0e5))
+	if links != null:
+		links.rng.state = rng_state
+		links.mouse_swing = mouse
+		links.chip = was_chip
+	return r.carry_m * YARDS_PER_METRE
 
 
 func _hide_green_aids() -> void:
@@ -4501,7 +4637,8 @@ func _update_assistant() -> void:
 		_assist_from = ball_at
 	if level == 2:
 		assistant.show_read(_assist, ball_at)
-		hud.meter.target = float(_assist.power) if not _assist.is_empty() else -1.0
+		# The dot is on this putt's meter (Quick pace sizes it to the putt).
+		hud.meter.target = clampf(float(_assist.power) / _putt_range, 0.0, 1.0) if not _assist.is_empty() else -1.0
 	else:
 		assistant.show_band(_assist)
 		hud.meter.target = -1.0

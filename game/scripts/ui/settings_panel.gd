@@ -37,6 +37,7 @@ var _sky_values := PackedStringArray()  ## CourseBackdrop sky settings, per _sky
 var _disc_sounds: OptionButton  ## web only
 var _skill: OptionButton
 var _swing: OptionButton
+var _pace: OptionButton
 var _swing_help: OptionButton
 var _ball_size: OptionButton
 var _photo_golfer: OptionButton
@@ -125,6 +126,8 @@ func _ready() -> void:
 		# the browser's memory, so they are a choice, used from the next start.
 		_disc_sounds = _row(grid, "Sounds", ["Light", "Full disc sounds (about 100 MB, next start)"])
 	_swing = _row(grid, "Swing", ["Three-click meter", "Mouse swing (PowerStroke)"])
+	_pace = _row(grid, "Pace", ["Quick", "Classic (Links 2003 meter timing)"])
+	_pace.tooltip_text = "Quick: the 3-click chip and putt meters start on the white line and move briskly, the Broadcast and Tour putting meter is sized to each putt, and less waiting after a putt. The ball's physics and the timing at the white line are the same either way."
 	_swing_help = _row(grid, "Swing help", ["Off", "On"])
 	_ball_size = _row(grid, "Ball size", ["Bigger far away (Links)", "True size (42.67 mm)"])
 	_skill = _row(grid, "Swing skill", SKILL_NAMES)
@@ -184,6 +187,7 @@ func open(s: GraphicsSettings) -> void:
 		_disc_sounds.select(1 if s.web_disc_sounds else 0)
 	_skill.select(s.skill)
 	_swing.select(s.swing_method)
+	_pace.select(0 if s.quick_pace else 1)
 	_swing_help.select(1 if s.swing_help else 0)
 	_ball_size.select(1 if s.true_size_ball else 0)
 	_photo_golfer.select(1 if s.photo_golfer else 0)
@@ -427,6 +431,7 @@ func _on_selected() -> void:
 		settings.web_disc_sounds = _disc_sounds.selected == 1
 	settings.skill = _skill.selected
 	settings.swing_method = _swing.selected
+	settings.quick_pace = _pace.selected == 0
 	settings.swing_help = _swing_help.selected == 1
 	settings.true_size_ball = _ball_size.selected == 1
 	settings.photo_golfer = _photo_golfer.selected == 1
