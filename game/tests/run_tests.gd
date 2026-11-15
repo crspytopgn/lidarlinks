@@ -5444,6 +5444,22 @@ func _test_broadcast_pieces() -> void:
 	_check(FescueField.card_for(dressed, "water_edge", 10.0, 10.0)["uid"] == "b", "reeds by the water")
 	_check(FescueField.card_for(dressed, "heath", 1.0, 1.0).is_empty(), "no card for a role the pack lacks")
 	_check(FescueField.dress_cards([] as Array[Dictionary]).is_empty(), "no pack, no cards: the drawn fescue stays")
+	# Scanned surfaces (private pack): known slots with a colour map only, and
+	# without a pack every material is the flat fallback.
+	var surf := ScannedSurfaces.parse('{"slots": {"path": {"albedo": "p.jpg", "normal": "pn.jpg", "size_m": 2.0},'
+		+ '"deck": {"normal": "d.jpg"}, "wall": {"albedo": "w.jpg"}, "bench": {"albedo": "b.jpg", "size_m": 99}}}')
+	_check(surf.has("path") and not surf.has("deck") and not surf.has("wall"), "surface slots need a colour map and a known name (%s)" % [surf.keys()])
+	_check(is_equal_approx(float(surf["bench"]["size_m"]), 20.0), "a surface's size is clamped")
+	ScannedSurfaces.region = "us"
+	_check(ScannedSurfaces.entry("path", ScannedSurfaces.parse('{"slots": {"path": {"albedo": "a.jpg"}, "path@us": {"albedo": "c.jpg"}, "path@mars": {"albedo": "m.jpg"}}}'))["albedo"] == "c.jpg", "a regional surface wins in its region")
+	ScannedSurfaces.region = "uk"
+	_check(ScannedSurfaces.entry("path", ScannedSurfaces.parse('{"slots": {"path": {"albedo": "a.jpg"}, "path@us": {"albedo": "c.jpg"}}}'))["albedo"] == "a.jpg", "elsewhere the plain surface")
+	ScannedSurfaces.region = ""
+	_check(ScannedSurfaces.region_for(Vector2(56.28, -3.75), FreeAmbience.Setting.PARKLAND) == "uk" and ScannedSurfaces.region_for(Vector2(35.19, -79.47), FreeAmbience.Setting.PARKLAND) == "us", "Gleneagles is British, Pinehurst American")
+	_check(ScannedSurfaces.region_for(Vector2(20.0, -155.8), FreeAmbience.Setting.SEASIDE) == "tropical" and ScannedSurfaces.region_for(Vector2(22.9, -109.8), FreeAmbience.Setting.DESERT) == "desert", "Hawaii tropical, Cabo desert")
+	_check(ScannedSurfaces.region_for(Vector2(NAN, NAN), FreeAmbience.Setting.PARKLAND) == "", "an unknown place has no region")
+	var flat := StandardMaterial3D.new()
+	_check(ScannedSurfaces.uv_material("path", 2.5, flat) == flat and ScannedSurfaces.triplanar_material("bench", null) == null, "no pack, no scans: flat materials stay")
 	_check(far_air < 70.0, "the follow camera keeps the ball in sight in the air (%.1f m)" % far_air)
 	_check(rest_gap > 4.0 and rest_gap < 11.0 and cam.y < 3.0 and cam.z < 215.0, "the follow camera settles low behind the ball at rest (%s)" % cam)
 	_check((late[0] as Vector3).z > 240.0, "pin camera stands beyond the pin")

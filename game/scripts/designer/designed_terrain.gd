@@ -440,6 +440,8 @@ func _path_mesh(p: CoursePath) -> MeshInstance3D:
 	var verts := PackedVector3Array()
 	var uvs := PackedVector2Array()
 	var rail_verts := PackedVector3Array()
+	var rail_normals := PackedVector3Array()
+	var rail_uvs := PackedVector2Array()
 	for smp: Array in samples:
 		var c: Vector2 = smp[0]
 		var side: Vector2 = (smp[1] as Vector2).orthogonal() * p.width * 0.5
@@ -453,6 +455,11 @@ func _path_mesh(p: CoursePath) -> MeshInstance3D:
 			for e: Vector2 in [l, r]:
 				rail_verts.append(Vector3(e.x, y, e.y))
 				rail_verts.append(Vector3(e.x, y + 1.0, e.y))
+				var out := (e - c).normalized()
+				rail_normals.append(Vector3(out.x, 0.0, out.y))
+				rail_normals.append(Vector3(out.x, 0.0, out.y))
+				rail_uvs.append(Vector2(along / p.width, 1.0 / p.width))
+				rail_uvs.append(Vector2(along / p.width, 0.0))
 		else:
 			verts.append(Vector3(l.x, height_at(l.x, l.y) + 0.05, l.y))
 			verts.append(Vector3(r.x, height_at(r.x, r.y) + 0.05, r.y))
@@ -482,8 +489,10 @@ func _path_mesh(p: CoursePath) -> MeshInstance3D:
 	arrays[Mesh.ARRAY_NORMAL] = normals
 	arrays[Mesh.ARRAY_TEX_UV] = uvs
 	arrays[Mesh.ARRAY_INDEX] = indices
-	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
-	mesh.surface_set_material(0, _path_material(p.bridge))
+	_add_surface(mesh, arrays)
+	# The UVs run 0 to 1 across and one unit per path width along, so a
+	# scanned surface (private pack) spans the width in metres both ways.
+	mesh.surface_set_material(0, ScannedSurfaces.uv_material("deck" if p.bridge else "path", p.width, _path_material(p.bridge), p.bridge))
 	if p.bridge and rail_verts.size() >= 8:
 		# Two rails, each a strip of upright quads along one edge.
 		var rail_idx := PackedInt32Array()
@@ -493,19 +502,30 @@ func _path_mesh(p: CoursePath) -> MeshInstance3D:
 				var a := 4 * k + 2 * side
 				var b := 4 * (k + 1) + 2 * side
 				rail_idx.append_array(PackedInt32Array([a, b, a + 1, a + 1, b, b + 1]))
-		var rail_normals := PackedVector3Array()
-		rail_normals.resize(rail_verts.size())
-		rail_normals.fill(Vector3.UP)
 		var rails := []
 		rails.resize(Mesh.ARRAY_MAX)
 		rails[Mesh.ARRAY_VERTEX] = rail_verts
 		rails[Mesh.ARRAY_NORMAL] = rail_normals
+		rails[Mesh.ARRAY_TEX_UV] = rail_uvs
 		rails[Mesh.ARRAY_INDEX] = rail_idx
-		mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, rails)
-		mesh.surface_set_material(1, _path_material(true))
+		_add_surface(mesh, rails)
+		# Boarded sides: the boards run along the bridge.
+		mesh.surface_set_material(1, ScannedSurfaces.uv_material("timber", p.width, _path_material(true), true))
 	var inst := MeshInstance3D.new()
 	inst.mesh = mesh
 	return inst
+
+
+## Adds a surface, with tangents when a scanned surface (whose normal
+## map needs them) is in the pack.
+static func _add_surface(mesh: ArrayMesh, arrays: Array) -> void:
+	if ScannedSurfaces.slots().is_empty():
+		mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+		return
+	var st := SurfaceTool.new()
+	st.create_from_arrays(arrays)
+	st.generate_tangents()
+	st.commit(mesh)
 
 
 static var _path_mat: StandardMaterial3D
