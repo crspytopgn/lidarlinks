@@ -57,7 +57,9 @@ RED_SPIRE = dict(
              tilt=(2.2, 0.6), tier=None, seed=111),
         # 2: a par 5 bending round a hoodoo garden in its elbow.
         # A wash across the fairway at the lay-up: carry it or stop short.
-        dict(par=5, tee=(1180, 1130), route=[(1400, 1000)], carry=140.0, gaps=[(320.0, 360.0)], green=(1560, 820), gsize=(33, 22),
+        # The green sits up on a mesa, 35 m above: the third is played up
+        # over its wall.
+        dict(par=5, tee=(1180, 1130), route=[(1400, 1000)], carry=140.0, gaps=[(320.0, 360.0), (425.0, 470.0)], green=(1560, 820), gsize=(33, 22),
              fw=(36, 31, 24), bunkers=[("fw", 240, -20, 26, 11), ("fw", 380, 17, 18, 9), ("gs", 280, 15, 7),
                                        ("gs", 80, 12, 6)],
              tilt=(1.8, -0.8), tier=(0.55, 0.4), seed=123),
@@ -73,7 +75,7 @@ RED_SPIRE = dict(
         # 5: short and downhill, drivable, with a hoodoo standing in the
         # middle of the fairway 225 m out, on a strip of desert: play either
         # side of it, over it, or short.
-        dict(par=4, tee=(1665, 1195), route=[], gaps=[(208.0, 242.0)], green=(1405, 1390), gsize=(27, 24),
+        dict(par=4, tee=(1665, 1195), route=[], carry=130.0, gaps=[(208.0, 242.0)], green=(1405, 1390), gsize=(27, 24),
              fw=(30, 27, 22), bunkers=[("fw", 190, 15, 22, 10), ("gs", 320, 12, 6), ("gs", 30, 13, 6)],
              tilt=(2.6, -0.5), tier=None, seed=153),
         # 6: the long par 5 across the open desert.
@@ -93,12 +95,24 @@ RED_SPIRE = dict(
                                        ("gs", 60, 15, 7)],
              tilt=(1.9, 0.5), tier=None, seed=183),
         # 9: back up to the clubhouse, a tower guarding the left.
-        dict(par=4, tee=(665, 1515), route=[], carry=120.0, green=(845, 1245), gsize=(31, 24),
+        # Its green is up on a mesa 28 m above, the wall in front of it.
+        dict(par=4, tee=(665, 1515), route=[], carry=120.0, gaps=[(270.0, 305.0)], green=(845, 1245), gsize=(31, 24),
              fw=(33, 30, 23), bunkers=[("fw", 210, -18, 26, 11), ("gs", 280, 15, 7), ("gs", 70, 14, 7),
                                        ("gs", 0, 9, 5)],
              tilt=(1.7, -0.7), tier=(0.45, 0.4), seed=197),
     ],
     stroke_index=[5, 1, 15, 7, 13, 3, 17, 9, 11],
+    # Mesas sculpted into the valley floor, with sheer bedded walls: tees on
+    # top playing down, greens perched up on them. Centre (E, S), size
+    # (length, width m), angle (degrees, game frame), rise (m).
+    benches=[
+        dict(centre=(919, 1429), size=(100, 70), angle=133, rise=30.0, seed=501),  # 1st tee
+        dict(centre=(1575, 800), size=(150, 95), angle=158, rise=35.0, seed=502),  # 2nd green, 3rd tee
+        dict(centre=(1645, 1210), size=(100, 70), angle=-37, rise=40.0, seed=503),  # 5th tee
+        dict(centre=(1156, 1910), size=(75, 60), angle=18, rise=24.0, seed=504),  # 7th tee
+        dict(centre=(969, 1797), size=(100, 70), angle=40, rise=32.0, seed=505),  # 8th tee
+        dict(centre=(851, 1237), size=(85, 75), angle=0, rise=28.0, seed=506),  # 9th green
+    ],
     # The rock formations, the course's centrepiece: (kind, E, S, yaw
     # degrees, scale). Spires and hoodoos are towers (scale 1: about 40 m
     # and 14 m high), buttes flat-topped mesas (scale 1: about 90 m across
@@ -157,6 +171,8 @@ def configure(spec):
     hc.CREDITS = spec["credits"]
     hc.ROUGH_BAND = spec["rough_band"]
     hc.FW_WANDER = spec.get("wander", hc.FW_WANDER)
+    hc.BLUR = spec.get("blur", hc.BLUR)
+    hc.BENCHES = spec.get("benches", [])
     hc.ROUGH_WANDER = spec.get("wander", hc.ROUGH_WANDER) * 0.92
 
 
@@ -200,6 +216,13 @@ def desert_dressing(spec):
         for kind, x, z, yaw, scale in rocks:
             r = ROCK_REACH[kind] * scale + 3.0
             blocked |= (X - x) ** 2 + (Z - z) ** 2 < r * r
+        # Cart paths play as fairway: keep them clear.
+        for p in hc.LAST_PATHS:
+            d, _ = geom.polyline_distance(np.asarray(p, dtype=np.float64), X, Z)
+            blocked |= d < 5.0
+        # Bare rock: nothing grows on the steep slickrock.
+        gz, gx = np.gradient(height, hc.CELL)
+        blocked |= np.hypot(gx, gz) > 0.5
         near = np.full(X.shape, np.inf)
         for h in holes:
             d, _ = geom.polyline_distance(h.line, X, Z)
@@ -357,6 +380,9 @@ def main():
     dem, mpp = hc.fetch_dem(args.cache)
     holes, shapes, paths, objects, area, cols, rows, height = hc.build(dem, mpp)
     hc.EXTRA = {"biome": spec["biome"], "landscape": landscape(spec, area, height, args.cache)}
+    if hc.LAST_BENCHES:
+        # The benches' walls, drawn as bedded rock cliffs (RockFormations).
+        hc.EXTRA["cliffs"] = [[round(float(v), 2) for p in o for v in p] for o in hc.LAST_BENCHES]
     out = os.path.join(OUT_DIR, spec["file"])
     hc.write_course(out, holes, shapes, paths, objects, area, cols, rows, height)
     total = 0

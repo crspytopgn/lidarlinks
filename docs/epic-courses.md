@@ -2,12 +2,15 @@
 
 Built-in courses set somewhere dramatic: vast real scenery, each with its own
 ground, plants and rock, and Links 2003's physics and difficulty unchanged.
-They are original designs on real landforms; none is, or copies, a real golf
-course. They show in the course list after Kettle Hollow as "(built in)".
+Most are original designs on real landforms. One, Vermilion Ridge, plays a
+real course's hole layout as mapped on OpenStreetMap, under our own name and
+with our own scenery (see below). They show in the course list after Kettle
+Hollow as "(built in)".
 
 | Course | Biome | Where the ground comes from | Status |
 |---|---|---|---|
 | Red Spire | desert | Castle Valley, Utah (38.64 N, 109.39 W): a red-rock valley floor between 400 m sandstone walls | Playable |
+| Vermilion Ridge | desert | a real 18-hole layout in the badlands near Mesquite, Nevada, from OpenStreetMap, on USGS 3DEP lidar | Playable |
 | (snow) | snow | an alpine valley | Planned |
 | (volcanic coast) | tropical | a Hawaiian lava coast | Planned |
 
@@ -88,3 +91,42 @@ fairway 225 m out; 6 the long par 5 across the open desert with a wash at
 300 m; 7 the signature hole, a par 3 played through a natural arch 75 m from
 the tee, over an oasis pool; 8 doglegs home past a mesa; 9 climbs back to the
 clubhouse past a tower.
+
+## Red Spire's mesas
+
+Michael wanted height change. Ten-metre elevation tiles cannot make a crisp
+cliff, so some tees and greens stand on sculpted mesas (`benches` in the
+spec): an outline, a rise of 24 to 40 m and near-sheer walls. The builder adds
+each mesa to both the ground and the 20 m blur that tee grading eases toward,
+or the tees sink into pits. The outlines are saved as `cliffs` in the course
+file, and `RockFormations.cliff_mesh` skins each wall in strata rock (the
+ground underneath is what the ball plays). Steep bare ground everywhere is
+drawn as strata rock too (`rock_slopes` in the terrain shader).
+
+## Vermilion Ridge: a real layout, our scenery
+
+Michael's ask: "use a real course layout but make the scenery epic yourself",
+shipped publicly. `tools/homecourse/dress_real_course.py` takes a course built
+by the designer's "Real course..." button (OpenStreetMap layout, USGS 3DEP
+lidar ground) and keeps every tee, fairway, green, bunker, pond and the ground
+exactly as mapped and measured. Only the scenery changes:
+
+- the town goes: roads, the airfield, other courses' shapes, the aerial photo
+  and garden trees (anything far from the holes);
+- the ground between the holes is bare desert (one deep-rough base), with a
+  rough band of 5 to 9 m round each tee, fairway and green, plus the mapped
+  rough;
+- sandstone formations are placed by rule: big buttes and towers out on the
+  skyline (aiming about 170 to 260 m from play), smaller towers, an arch and
+  hoodoos as near the holes as they fit, never within 22 m of play;
+- saguaros, barrel cacti and prickly pear as on Red Spire;
+- the real land for 8 km round, from the Terrain Tiles.
+
+The club's name and marks are not used, and the credits say the course is not
+connected with any club. The layout is credited to OpenStreetMap
+contributors (ODbL). Rebuild:
+
+```bash
+# 1. Build the real course in the designer (or tools/realcourse_bench), then:
+python3 tools/homecourse/dress_real_course.py "Real.olc" game/assets/courses/vermilion_ridge.olc --name "Vermilion Ridge" --cache /tmp/dem
+```

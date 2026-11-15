@@ -17,6 +17,7 @@ uniform float bump = 0.35; // strength of the close-up normal detail
 #include "res://shaders/ground_shade.gdshaderinc"
 #include "res://shaders/turf_tone.gdshaderinc"
 #include "res://shaders/mow_sheen.gdshaderinc"
+#include "res://shaders/rock_strata.gdshaderinc"
 
 uniform bool textured = false;
 uniform sampler2D grass_albedo : source_color, filter_linear_mipmap, repeat_enable;
@@ -77,6 +78,11 @@ uniform vec2 surface_weights[11]; // rough and sand weight
 // 1 for bare ground (Biome: desert hardpan, snow): drawn with the sand
 // texture under the surface's own colour, with no bunker edge, lip or damp.
 uniform float surface_bare[11];
+// Biomes with bare ground (desert, snow): where it is steep it is rock, as
+// real slickrock domes, fins and cliffs are (Biome.LAND rock colours).
+uniform bool rock_slopes = false;
+uniform vec3 slope_rock : source_color = vec3(0.52, 0.2, 0.1);
+uniform vec3 slope_rock2 : source_color = vec3(0.66, 0.34, 0.18);
 uniform float surface_mown[11]; // 1 where the surface gets mowing stripes
 // How closely each surface is cut (Materials.terrain_cut): the green's
 // turf is finer, denser and smoother than the fairway's, the collar
@@ -422,6 +428,15 @@ void fragment() {
 	col *= mix(1.0, 0.9 - 0.22 * damp, sand);
 	col *= 1.0 + 0.07 * rake * sand * (0.6 + 0.4 * value_noise(p * 0.4));
 	vec3 albedo = clamp(tone_turf(col), vec3(0.0), vec3(1.0));
+	if (rock_slopes) {
+		float steep = smoothstep(0.97, 0.86, ground_up) * clamp(bare, 0.0, 1.0);
+		if (steep > 0.0) {
+			vec3 rn = vec3(0.0, ground_up, sqrt(max(1.0 - ground_up * ground_up, 0.0)));
+			vec3 rock = strata_color(world_pos, rn, slope_rock, slope_rock2, 1.0);
+			rock *= 0.9 + 0.2 * value_noise(world_pos.xz * 0.7);
+			albedo = mix(albedo, rock, steep);
+		}
+	}
 	ALBEDO = albedo * shade_fill.a * ground_shading(p, length(VERTEX));
 	EMISSION = albedo * shade_fill.rgb;
 }

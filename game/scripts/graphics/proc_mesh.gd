@@ -101,7 +101,9 @@ static func add_tube(part: Dictionary, path: PackedVector3Array, radii: PackedFl
 			if ribs > 0:
 				# The grooves are in their own shade.
 				var base_col: Color = colors[k] if k < colors.size() else Color.WHITE
-				shaded.append(base_col.darkened(0.32 * groove))
+				# Ridges carry the pale spines; grooves sit in shade.
+				var c := base_col.darkened(0.32 * groove)
+				shaded.append(c.lerp(Color(0.78, 0.74, 0.58), 0.22 * pow(1.0 - groove, 4.0)))
 		rings.append(ring)
 	add_rings(part, rings, shaded if ribs > 0 else colors, true)
 

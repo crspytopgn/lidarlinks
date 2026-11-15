@@ -403,6 +403,10 @@ func material() -> ShaderMaterial:
 		for i in COLORS.size() + 2:
 			bare.append(1.0 if i < COLORS.size() and Biome.is_bare(course.biome, i) else 0.0)
 		_material.set_shader_parameter("surface_bare", bare)
+		var land := Biome.land(course.biome)
+		_material.set_shader_parameter("rock_slopes", Biome.BARE.has(course.biome))
+		_material.set_shader_parameter("slope_rock", land.rock)
+		_material.set_shader_parameter("slope_rock2", land.rock2)
 		_material.set_shader_parameter("has_splat", true)
 		_update_splat()
 	return _material

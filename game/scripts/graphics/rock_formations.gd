@@ -85,6 +85,15 @@ static func build(terrain: DesignedTerrain) -> Node3D:
 		inst.position = Vector3(o.position.x, y, o.position.z)
 		inst.rotation_degrees.y = o.yaw_deg
 		root.add_child(inst)
+	for k in terrain.course.cliffs.size():
+		if root == null:
+			root = Node3D.new()
+			root.name = "RockFormations"
+		var wall := MeshInstance3D.new()
+		wall.name = "Cliff%d" % k
+		wall.mesh = cliff_mesh(terrain, terrain.course.cliffs[k], 9100 + k * 31)
+		wall.material_override = material()
+		root.add_child(wall)
 	for v in BOULDER_VARIANTS:
 		if boulders[v].is_empty():
 			continue
@@ -301,6 +310,68 @@ static func _arch(part: Dictionary, p: Dictionary) -> void:
 		(part.colors as PackedColorArray).append_array(ab.colors)
 		for i: int in ab.indices:
 			(part.indices as PackedInt32Array).append(i + off)
+
+
+# --- Cliffs ---------------------------------------------------------------------
+# The wall of a mesa sculpted into the ground (DesignedCourse.cliffs): the
+# heights already rise near sheer over a few metres there, and this skins
+# that slope with bedded rock: rows from just under the floor to the lip,
+# leaning back a little, with buttresses and gullies running down it and
+# ledges where the hard beds stand out.
+
+static func cliff_mesh(terrain: DesignedTerrain, outline: PackedVector2Array, seed_value: int) -> ArrayMesh:
+	# Anticlockwise in (x, z), as the towers' rings are.
+	var area := 0.0
+	for i in outline.size():
+		var a := outline[i]
+		var b := outline[(i + 1) % outline.size()]
+		area += a.x * b.y - b.x * a.y
+	var pts := PackedVector2Array()
+	var src := outline.duplicate()
+	if area < 0.0:
+		src.reverse()
+	# About 1.5 m between columns.
+	for i in src.size():
+		var a := src[i]
+		var b := src[(i + 1) % src.size()]
+		var n := maxi(1, ceili(a.distance_to(b) / 1.5))
+		for k in n:
+			pts.append(a.lerp(b, float(k) / n))
+	var count := pts.size()
+	var rows := 28
+	var tops := PackedFloat32Array()
+	var foots := PackedFloat32Array()
+	var outs := PackedVector2Array()
+	var along := PackedFloat32Array()
+	var run := 0.0
+	for i in count:
+		var t := (pts[(i + 1) % count] - pts[(i - 1 + count) % count]).normalized()
+		var out := Vector2(t.y, -t.x)
+		outs.append(out)
+		tops.append(terrain.height_at(pts[i].x - out.x * 3.0, pts[i].y - out.y * 3.0))
+		foots.append(terrain.height_at(pts[i].x + out.x * 6.0, pts[i].y + out.y * 6.0))
+		along.append(run)
+		run += pts[i].distance_to(pts[(i + 1) % count])
+	var rings: Array[PackedVector3Array] = []
+	var colors := PackedColorArray()
+	for j in rows + 1:
+		var t := float(j) / rows
+		var ring := PackedVector3Array()
+		for i in count:
+			var y := lerpf(foots[i] - 1.5, tops[i] + 0.2, t)
+			# Buttresses and gullies down the face, ledges across it.
+			var fin := ProcMesh.noise(along[i] / 9.0, 0.5, seed_value) - 0.5
+			fin += 0.5 * (ProcMesh.noise(along[i] / 3.5, y / 30.0, seed_value + 3) - 0.5)
+			var ledge := smoothstep(0.42, 0.58, ProcMesh.noise(y / 2.6, 0.5, seed_value + 7))
+			var off := lerpf(4.2, -0.4, pow(t, 0.85)) + fin * 2.2 * sin(t * PI) + ledge * 0.5 * sin(t * PI)
+			var p := pts[i] + outs[i] * off
+			ring.append(Vector3(p.x, y, p.y))
+		rings.append(ring)
+		colors.append(Color.WHITE.darkened(0.2 * (1.0 - smoothstep(0.0, 0.2, t))))
+	var part := ProcMesh.new_part()
+	# No cap: the mesa's own ground is its top.
+	ProcMesh.add_rings(part, rings, colors, false)
+	return ProcMesh.to_mesh(part)
 
 
 # --- Boulders -------------------------------------------------------------------
