@@ -186,6 +186,8 @@ product lead builds it.
   - [ ] Free built-in buildings, per-course skies
 - [ ] Epic built-in courses in dramatic places, original designs on real elevation ([epic-courses.md](docs/epic-courses.md))
   - [x] Red Spire: a desert nine among red sandstone spires, hoodoos, buttes and an arch, with saguaros, barrel cacti and prickly pear, the real land to the horizon
+  - [x] Red Spire mesas: tees and greens up on sheer-walled mesas with rock veneer
+  - [x] Vermilion Ridge: a real 18-hole desert layout (OpenStreetMap, USGS lidar) dressed in our own epic scenery
   - [ ] A snowy mountain course (snow-laden pines) and a Hawaiian volcanic coast course (palms, sea)
 - [ ] Community add-on courses
   - [x] Suggest popular free courses with links to Links Corner, and add them from a downloaded `.zip` in the browser ([community-courses.md](docs/community-courses.md))

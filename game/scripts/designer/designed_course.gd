@@ -63,6 +63,10 @@ var biome := ""
 ## for courses without one. Saved as given; the designer doesn't edit it.
 var landscape := {}
 var _landscape_saved := {}
+## Sheer rock walls round raised ground (mesas sculpted into the heights):
+## each a closed outline (x, z) at the foot of the wall's top edge, drawn
+## by RockFormations as a bedded cliff. The heights make the wall itself.
+var cliffs: Array[PackedVector2Array] = []
 var _photo: Image
 var _photo_tried := false
 var _cover: Image
@@ -348,6 +352,14 @@ func to_dict(with_heights := true) -> Dictionary:
 		out["biome"] = biome
 	if not _landscape_saved.is_empty():
 		out["landscape"] = _landscape_saved.duplicate(true)
+	if not cliffs.is_empty():
+		var list := []
+		for o in cliffs:
+			var flat := []
+			for p in o:
+				flat.append_array([snappedf(p.x, 0.01), snappedf(p.y, 0.01)])
+			list.append(flat)
+		out["cliffs"] = list
 	return out
 
 
@@ -375,6 +387,16 @@ static func from_dict(d: Dictionary) -> DesignedCourse:
 		c.landscape = _decode_landscape(land)
 		if not c.landscape.is_empty():
 			c._landscape_saved = land
+	var cl: Variant = d.get("cliffs", [])
+	if cl is Array:
+		for o: Variant in cl:
+			if not o is Array or (o as Array).size() < 8:
+				continue
+			var pts := PackedVector2Array()
+			var flat: Array = o
+			for i in range(0, flat.size() - 1, 2):
+				pts.append(Vector2(float(flat[i]), float(flat[i + 1])))
+			c.cliffs.append(pts)
 	c.area = Rect2(float(a[0]), float(a[1]), float(a[2]), float(a[3]))
 	if c.area.size.x < CELL * 4 or c.area.size.y < CELL * 4 or c.area.size.x > 4000 or c.area.size.y > 4000:
 		return null

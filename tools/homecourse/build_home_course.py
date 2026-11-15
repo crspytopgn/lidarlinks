@@ -57,6 +57,15 @@ ROUGH_WANDER = 0.12
 # The elevation (metres) the course's heights are measured from: its
 # lowest point, set by build().
 DATUM = 0.0
+LAST_PATHS = []
+# Cells of blur on the raw ground (rock country keeps its edges sharper).
+BLUR = 3.0
+# Raised benches (mesas) sculpted into the ground for rock-country courses:
+# dicts of centre (E, S), size (length, width m), angle (degrees), rise (m)
+# and seed. Their walls are near sheer; LAST_BENCHES keeps their outlines
+# (game x, z) for the course file's cliffs.
+BENCHES = []
+LAST_BENCHES = []
 
 
 def to_game(p):
@@ -233,7 +242,7 @@ def build(dem, mpp):
     E = CENTRE[0] - X
     S = CENTRE[1] - Z
     raw = sample(dem, mpp, E, S)
-    base = geom.gaussian(raw, 3.0)  # ~6 m
+    base = geom.gaussian(raw, BLUR)  # ~6 m
     smooth = geom.gaussian(raw, 10.0)  # ~20 m, for graded corridors
     # Ground movement too small for the tiles (fairways are never flat).
     micro = (0.28 * geom.value_noise(X, Z, 31.0, 1) + 0.12 * geom.value_noise(X, Z, 13.0, 2)
@@ -244,6 +253,19 @@ def build(dem, mpp):
         d, _ = geom.polyline_distance(h.line, X, Z)
         corridor_w = np.maximum(corridor_w, 1.0 - geom.smoothstep(22.0, 45.0, d))
     height = base + (smooth - base) * corridor_w * 0.55 + micro
+    global LAST_BENCHES
+    LAST_BENCHES = []
+    for b in BENCHES:
+        c = np.array(to_game(b["centre"]))
+        ctrl = geom.smooth_blob(c, b["size"][0], b["size"][1], math.radians(b["angle"]), b["seed"], count=18, wobble=0.12)
+        out = geom.outline(ctrl)
+        d = geom.signed_distance(out, X, Z)
+        # Sheer walls: up from the floor over 4 m, the top a little domed.
+        lift = b["rise"] * (1.0 - geom.smoothstep(-1.0, 3.0, d)) + 0.6 * (1.0 - geom.smoothstep(-25.0, 0.0, d))
+        height = height + lift
+        # The tee grading eases toward `smooth`, so it must stand on the mesa too.
+        smooth = smooth + lift
+        LAST_BENCHES.append(out)
 
     tee_list = []
     for h in holes:
@@ -486,6 +508,9 @@ def build(dem, mpp):
         paths.append(curve)
 
     # --- Trees ----------------------------------------------------------------
+    # The cart paths, for a place_trees that keeps plants off them.
+    global LAST_PATHS
+    LAST_PATHS = paths
     objects = place_trees(holes, shapes, X, Z, height, area)
 
     return holes, shapes, paths, objects, area, cols, rows, height

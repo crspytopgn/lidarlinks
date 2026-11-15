@@ -23,8 +23,8 @@ const TROPICAL := "tropical"
 const GROUND := {
 	DESERT: {
 		Surface.Type.ROUGH: Color(0.26, 0.38, 0.15),
-		Surface.Type.DEEP_ROUGH: Color(0.6, 0.36, 0.22),
-		Surface.Type.OUT_OF_BOUNDS: Color(0.57, 0.34, 0.21),
+		Surface.Type.DEEP_ROUGH: Color(0.62, 0.36, 0.17),
+		Surface.Type.OUT_OF_BOUNDS: Color(0.6, 0.35, 0.17),
 	},
 	SNOW: {
 		Surface.Type.DEEP_ROUGH: Color(0.86, 0.89, 0.93),
@@ -54,7 +54,7 @@ const WILD_TINT := {DESERT: Color(0.4, 0.41, 0.3)}
 const LAND := {
 	PARKLAND: {low = Color(0.16, 0.24, 0.09), high = Color(0.2, 0.26, 0.12), rock = Color(0.38, 0.36, 0.33),
 		rock2 = Color(0.3, 0.29, 0.27), plants = Color(0.07, 0.12, 0.05), cover = 0.6, snow_from = 99999.0, sea = -99999.0},
-	DESERT: {low = Color(0.58, 0.34, 0.21), high = Color(0.52, 0.31, 0.2), rock = Color(0.52, 0.2, 0.1),
+	DESERT: {low = Color(0.58, 0.34, 0.21), high = Color(0.48, 0.27, 0.17), rock = Color(0.52, 0.2, 0.1),
 		rock2 = Color(0.66, 0.34, 0.18), plants = Color(0.2, 0.22, 0.13), cover = 0.35, snow_from = 99999.0, sea = -99999.0},
 	SNOW: {low = Color(0.86, 0.89, 0.94), high = Color(0.92, 0.94, 0.97), rock = Color(0.32, 0.31, 0.31),
 		rock2 = Color(0.42, 0.41, 0.4), plants = Color(0.05, 0.09, 0.06), cover = 0.55, snow_from = 40.0, sea = -99999.0},

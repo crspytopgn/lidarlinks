@@ -49,7 +49,7 @@ void fragment() {
 	ground = mix(ground, plant_color, plants * 0.85);
 	// Rock wherever it is steep: bedded and varnished, at the scale of
 	// cliffs seen from a kilometre or more.
-	float rock = smoothstep(0.07, 0.2, slope + (big - 0.5) * 0.08);
+	float rock = smoothstep(0.05, 0.16, slope + (big - 0.5) * 0.08);
 	// Crags: the 40 m grid smooths cliffs into slopes, so the rock gets
 	// buttresses and gullies in its shading, from the slope of a noise
 	// that runs down the fall line.

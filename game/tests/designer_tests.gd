@@ -43,7 +43,7 @@ func _test_epic_courses() -> void:
 		var land := designed.landscape
 		check(not land.is_empty() and int(land.cols) * int(land.rows) == (land.heights as PackedFloat32Array).size(), "%s has its landscape" % name)
 		var course := DesignedCourseLoader.new().load_course(path)
-		check(course != null and course.holes.size() == 9 and course.landscape and course.biome == designed.biome, "%s plays nine holes" % name)
+		check(course != null and course.holes.size() in [9, 18] and course.landscape and course.biome == designed.biome, "%s plays its holes" % name)
 		check(CourseFiles.display_name(path) == name + " (built in)", "%s is listed as built in" % name)
 		var terrain := DesignedTerrain.new(designed)
 		var rocks := 0
@@ -71,6 +71,13 @@ func _test_epic_courses() -> void:
 		check(Biome.is_bare(designed.biome, Surface.Type.DEEP_ROUGH) == (designed.biome in [Biome.DESERT, Biome.SNOW]), "%s: bare ground follows the biome" % name)
 		var mesh := RockFormations.mesh_for(designed.objects.filter(func(o: PlacedObject) -> bool: return o.id == "rock_arch")[0]) if designed.biome == Biome.DESERT else null
 		check(mesh == null or mesh.get_faces().size() > 3000, "%s: the arch has a mesh" % name)
+		if name == "Red Spire":
+			check(designed.cliffs.size() >= 3, "%s has mesas with rock walls (%d)" % [name, designed.cliffs.size()])
+			var round_trip := DesignedCourse.from_dict(designed.to_dict())
+			check(round_trip != null and round_trip.cliffs.size() == designed.cliffs.size(), "%s keeps its cliffs when saved" % name)
+			if not designed.cliffs.is_empty():
+				var wall := RockFormations.cliff_mesh(terrain, designed.cliffs[0], 1)
+				check(wall.get_faces().size() > 3000, "%s: a cliff has a mesh" % name)
 		var visual := terrain.build_visual()
 		check(visual.get_node_or_null("Landscape") != null and visual.get_node_or_null("Apron") == null, "%s: the landscape replaces the apron" % name)
 		visual.free()
