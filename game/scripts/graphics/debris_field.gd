@@ -46,9 +46,9 @@ const LIBRARY := {"log": 2, "stump": 2, "leaves": 3, "twigs": 2, "pine_branches"
 ## Colour grades (DebrisField -> shaders/debris.gdshader): the scans' bright
 ## autumn litter toned to a course's duller summer floor.
 const TONE := {
-	"leaves": [Color(0.8, 0.72, 0.58), 0.6, 0.55],
-	"needles": [Color(0.82, 0.7, 0.55), 0.55, 0.55],
-	"props": [Color(0.9, 0.88, 0.84), 0.85, 0.7],
+	"leaves": [Color(0.86, 0.8, 0.66), 0.7, 0.8],
+	"needles": [Color(0.8, 0.74, 0.66), 0.45, 0.75],
+	"props": [Color(0.86, 0.84, 0.8), 0.6, 1.0],
 }
 ## Ground the debris may lie on: under the crown on the rough, anywhere
 ## round it on the deep rough and out of bounds.
@@ -248,10 +248,13 @@ static func plan_chunk(t: CourseTerrain, crowns: Array, lib: Dictionary, lvl: in
 				var kind := "twigs"
 				var pick := rng.randf()
 				if conifer:
-					kind = "cones" if pick < 0.45 else ("pine_branches" if pick < 0.6 else "twigs")
+					kind = "cones" if pick < 0.5 else ("pine_branches" if pick < 0.58 else "twigs")
 				else:
 					kind = "leaves" if pick < 0.7 else "twigs"
-				_place(t, rng, lib, kind, conifer, x0, z0, r, Vector2(0.1, 0.9), Vector2(0.8, 1.2), props, uses, kind != "cones")
+				# The fallen pine branches scan is a 4 m bed of needles: a
+				# smaller drift of it reads better than a haystack.
+				var sc := Vector2(0.4, 0.55) if kind == "pine_branches" else Vector2(0.8, 1.2)
+				_place(t, rng, lib, kind, conifer, x0, z0, r, Vector2(0.1, 0.9), sc, props, uses, kind != "cones")
 	return {"litter": litter, "props": props, "uses": uses}
 
 

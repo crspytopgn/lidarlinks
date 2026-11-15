@@ -27,6 +27,7 @@ PROP_TEX = 1024  # px per prop texture
 # The litter atlases: four patches each, from these surface scans (title,
 # uid8, the scan's size in metres). A patch is PATCH_M across.
 PATCH_M = 2.5
+LITTER_LUMA = 0.32
 LITTER = {
     'leaves': [('Dry Fallen Leaves', '6984772c', 2.0), ('Fallen Leaves', 'ba04f3c3', 1.0),
                ('Fallen Oak Leaves', 'ef487f44', 4.0), ('Dry Fallen Leaves', '6984772c', 2.0)],
@@ -123,6 +124,9 @@ def litter_cell(d, tile_m, rng):
         cut = np.clip(cut * 255, 0, 255).astype(np.uint8)
         return np.asarray(Image.fromarray(cut).resize((CELL, CELL), Image.LANCZOS), np.float32) / 255.0
     col = tiled('BaseColor', 'RGB')
+    # Every patch to the same mean brightness, so a dark scan (Fallen Oak
+    # Leaves) doesn't read as a hole in the shade.
+    col = np.clip(col * (LITTER_LUMA / max(float((col @ [0.2126, 0.7152, 0.0722]).mean()), 1e-3)), 0.0, 1.0)
     nrm = tiled('Normal', 'RGB')
     disp = tiled('Displacement', 'L') if find_map(d, 'Displacement') else np.full((CELL, CELL), 0.5, np.float32)
     disp = (disp - disp.mean()) / max(disp.std(), 1e-3)
@@ -178,7 +182,7 @@ def bake_prop_textures(d, uid8, pack):
     col = load(find_map(d, 'BaseColor'), PROP_TEX, 'RGB')
     ao_p = find_map(d, 'AO')
     if ao_p:
-        col *= (0.4 + 0.6 * load(ao_p, PROP_TEX, 'L'))[..., None]
+        col *= (0.65 + 0.35 * load(ao_p, PROP_TEX, 'L'))[..., None]
     op_p = find_map(d, 'Opacity')
     albedo = 'debris/%s.png' % uid8 if op_p else 'debris/%s.jpg' % uid8
     if op_p:
