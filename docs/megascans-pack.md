@@ -44,3 +44,16 @@ Tried and not used: Megascans turf, sand, path and dirt surfaces in place of
 the free ground set. Up close on a tee, the lawn scans looked mottled and
 clumpy, even with their low frequencies flattened and their colour matched,
 and from further back they looked no different.
+
+## Turf detail (ground/)
+
+`tools/megascans/turf_detail.py SCAN_DIR PACK_DIR` bakes a Megascans lawn
+scan (its BaseColor and Normal, 1 x 1 m) into `ground/turf_detail.jpg` and
+`ground/turf_normal.jpg`. Both are high-passed at about 3 cm, so only the
+blades are left: no clumps, bare patches or light baked into the photo.
+When the pack has them, `Materials.terrain()` turns on `has_scan` in
+terrain.gdshader, and the mown turf (fairway, tee, collar and green) shows
+the scan's blades at real size, 1.5 times finer on close-cut turf. They sit
+over the course's own colour, mowing stripes and a soft metre-scale tint
+from the free grass. The scan's displacement isn't used for relief. The
+Uncut_Grass_a4d8af19 scan gave the evenest result (2026-11-15).

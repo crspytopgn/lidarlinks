@@ -35,6 +35,14 @@ static func terrain() -> ShaderMaterial:
 				_terrain.set_shader_parameter("grass_height_mean", FreeAssets.mean_color(gh).r)
 				_terrain.set_shader_parameter("rough_height_mean", FreeAssets.mean_color(rh).r)
 				_terrain.set_shader_parameter("has_height", true)
+			# The private pack's photoscanned lawn, as blade detail on the
+			# mown turf (docs/megascans-pack.md).
+			var sd := FreeAssets.megascans_texture("turf_detail.jpg", "ground/")
+			var sn := FreeAssets.megascans_texture("turf_normal.jpg", "ground/")
+			if sd != null and sn != null:
+				_terrain.set_shader_parameter("scan_detail", sd)
+				_terrain.set_shader_parameter("scan_normal", sn)
+				_terrain.set_shader_parameter("has_scan", true)
 	return _terrain
 
 

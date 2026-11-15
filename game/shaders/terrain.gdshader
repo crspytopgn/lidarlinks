@@ -44,6 +44,18 @@ uniform float texture_strength = 0.85;
 // How much of the photo's own colour shows through (at the vertex colour's
 // brightness), which tames the flat, saturated surface colours.
 uniform float photo_mix = 0.5;
+// A photoscanned lawn for the mown turf from the private Megascans pack
+// (docs/megascans-pack.md): only its blade-scale detail, baked as colour
+// and normal around a mid grey (0.5 is "no change") by
+// tools/megascans/turf_detail.py, so the scan's clumps and bare patches
+// are gone and our own colour, patches and stripes stay. Tiled at its real
+// size, at one scale (a second, enlarged copy turned its blades into
+// blotches), and finer on close-cut turf.
+uniform bool has_scan = false;
+uniform sampler2D scan_detail : filter_linear_mipmap_anisotropic, repeat_enable;
+uniform sampler2D scan_normal : filter_linear_mipmap_anisotropic, repeat_enable;
+uniform float scan_metres = 1.0;
+uniform float scan_strength = 1.5;
 
 uniform float stripe_metres = 7.0; // width of one mowing stripe
 uniform float stripe_strength = 0.07;
@@ -355,19 +367,30 @@ void fragment() {
 		if (has_height && dist < 110.0) {
 			vec3 view = normalize(CAMERA_POSITION_WORLD - world_pos);
 			float turf = w_grass + w_rough;
-			float h = w_grass * (texture(grass_height, uv).r - grass_height_mean) + w_rough * (texture(rough_height, uv).r - rough_height_mean);
+			float wg = has_scan ? 0.0 : w_grass;
+			float h = wg * (texture(grass_height, uv).r - grass_height_mean) + w_rough * (texture(rough_height, uv).r - rough_height_mean);
 			// Greens and tees are cut to a few millimetres: little relief.
 			float near_relief = (1.0 - smoothstep(10.0, 35.0, dist)) * (1.0 - 0.75 * cut);
 			// One parallax step: blades and clumps stand up near the camera.
 			uv -= view.xz / max(view.y, 0.3) * (relief_metres / texture_metres) * h * near_relief;
-			h = w_grass * (texture(grass_height, uv).r - grass_height_mean) + w_rough * (texture(rough_height, uv).r - rough_height_mean);
+			h = wg * (texture(grass_height, uv).r - grass_height_mean) + w_rough * (texture(rough_height, uv).r - rough_height_mean);
 			shade_relief = mix(1.0, clamp(1.0 + h * 2.0 * cavity, 0.3, 1.4), turf * (1.0 - smoothstep(25.0, 110.0, dist)) * (1.0 - 0.7 * cut));
 		}
 		// The green's blades are a few millimetres long: the lawn scan
 		// much smaller and calmer there, so it reads as a fine, smooth
 		// surface (coarser on the collar and tee, which are cut longer).
 		vec2 uv_g = uv * mix(1.0, 5.0, cut);
-		vec3 g = two_scale(grass_albedo, uv_g).rgb;
+		vec2 uv_s = p / scan_metres * mix(1.0, 1.5, cut);
+		vec3 g;
+		if (has_scan) {
+			// The photoscanned lawn's blades (high-passed, so no clumps or
+			// baked light) at their real size over the free grass's soft
+			// metre-scale tint, which keeps the turf from looking uniform.
+			vec3 macro = mix(grass_mean, texture(grass_albedo, uv * 0.137 + vec2(0.31, 0.71), 4.0).rgb, 0.6);
+			g = macro * max(mix(vec3(1.0), texture(scan_detail, uv_s).rgb * 2.0, scan_strength), vec3(0.15));
+		} else {
+			g = two_scale(grass_albedo, uv_g).rgb;
+		}
 		// The scan's pale, dry blades drew white scratches across a green
 		// up close; a green's sward is dense and even, with no dead blades
 		// lying on top, so clip its highlights on close-cut turf.
@@ -384,7 +407,7 @@ void fragment() {
 		float strength = texture_strength * mix(0.35, 1.0, 1.0 - smoothstep(40.0, 250.0, length(VERTEX))) * (1.0 - 0.4 * cut);
 		col = mix(col * mix(vec3(1.0), detail, strength), photo_toned, photo_mix * strength);
 		col *= shade_relief;
-		vec3 n = w_grass * two_scale(grass_normal, uv_g).rgb + w_rough * two_scale(rough_normal, uv).rgb
+		vec3 n = w_grass * (has_scan ? mix(vec3(0.5, 0.5, 1.0), texture(scan_normal, uv_s).rgb, scan_strength) : two_scale(grass_normal, uv_g).rgb) + w_rough * two_scale(rough_normal, uv).rgb
 			+ w_sand * two_scale(sand_normal, uv).rgb;
 		n = n * 2.0 - 1.0;
 		// The textures lie flat on the ground: u along +x, v along +z. The
