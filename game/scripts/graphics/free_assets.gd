@@ -168,7 +168,7 @@ static func megascans_dir() -> String:
 ## A texture from the Megascans pack's `folder` (foliage/ or ground/), or null. Mipmapped, and
 ## block-compressed like the free ones on the desktop; halved to 1K in
 ## Compatibility, which keeps them uncompressed.
-static func _load_megascans(file: String, folder := "foliage/") -> Texture2D:
+static func _load_megascans(file: String, folder := "foliage/", normal := false) -> Texture2D:
 	var dir := megascans_dir()
 	if dir.is_empty():
 		return null
@@ -183,17 +183,23 @@ static func _load_megascans(file: String, folder := "foliage/") -> Texture2D:
 	if not gpu_compress() and img.get_width() > 1024:
 		img.resize(1024, 1024 * img.get_height() / img.get_width(), Image.INTERPOLATE_LANCZOS)
 	img.generate_mipmaps()
-	if gpu_compress():
+	# Normal maps stay uncompressed: S3TC blocks show as facets in them.
+	if gpu_compress() and not normal:
 		img.compress(Image.COMPRESS_S3TC)
 	var tex := ImageTexture.create_from_image(img)
 	_vram[path] = tex
 	return tex
 
 
+## A texture under the pack's surfaces/ folder (ScannedSurfaces), or null.
+static func megascans_surface(file: String, normal := false) -> Texture2D:
+	return _load_megascans(file, "surfaces/", normal) if not file.is_empty() else null
+
+
 ## A texture under the pack's foliage/ folder (such as "cards/x.png"), or
-## another of its folders, or null without a pack.
-static func megascans_texture(file: String, folder := "foliage/") -> Texture2D:
-	return _load_megascans(file, folder) if not file.is_empty() else null
+## another of its folders (such as "rocks/"), or null without a pack.
+static func megascans_texture(file: String, folder := "foliage/", normal := false) -> Texture2D:
+	return _load_megascans(file, folder, normal) if not file.is_empty() else null
 
 
 static func _load(file: String) -> Texture2D:

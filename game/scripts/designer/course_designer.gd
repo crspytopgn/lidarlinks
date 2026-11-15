@@ -138,6 +138,7 @@ func _ready() -> void:
 
 func _set_course(c: DesignedCourse, p_path: String) -> void:
 	course = c
+	ScannedSurfaces.region = ""  # the plain scans (a designed course has no place yet)
 	path = p_path
 	terrain = DesignedTerrain.new(course)
 	_load_photo()

@@ -80,7 +80,7 @@ static func material(id: String) -> Material:
 	if not _materials.has(id):
 		var m := StandardMaterial3D.new()
 		m.albedo_texture = FreeAssets.megascans_texture(id + "_albedo.jpg", "rocks/")
-		var n := FreeAssets.megascans_texture(id + "_normal.jpg", "rocks/")
+		var n := FreeAssets.megascans_texture(id + "_normal.jpg", "rocks/", true)
 		if n != null:
 			m.normal_enabled = true
 			m.normal_texture = n
