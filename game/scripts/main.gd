@@ -674,6 +674,8 @@ func start_hole(index: int) -> void:
 	hole_root = Node3D.new()
 	hole_root.name = "Hole%d" % hole.number
 	add_child(hole_root)
+	# Snow lies on the trees' crowns on a snow course (tree_leaves, tree_impostor).
+	RenderingServer.global_shader_parameter_set("tree_snow", 1.0 if Biome.of(hole.terrain) == Biome.SNOW else 0.0)
 	hole_root.add_child(hole.terrain.build_visual())
 	if course.objects != null:
 		hole_root.add_child(course.objects.build_visual(hole))

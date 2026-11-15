@@ -11,7 +11,7 @@ Hollow as "(built in)".
 |---|---|---|---|
 | Red Spire | desert | Castle Valley, Utah (38.64 N, 109.39 W): a red-rock valley floor between 400 m sandstone walls | Playable |
 | Vermilion Ridge | desert | a real 18-hole layout in the badlands near Mesquite, Nevada, from OpenStreetMap, on USGS 3DEP lidar | Playable |
-| (snow) | snow | an alpine valley | Planned |
+| Glacier Crown | snow | a real 18-hole Alpine layout 1,500 m up in Valais, Switzerland, from OpenStreetMap, above the Rhône valley | Playable |
 | (volcanic coast) | tropical | a Hawaiian lava coast | Planned |
 
 ## How they are built
@@ -129,4 +129,18 @@ contributors (ODbL). Rebuild:
 ```bash
 # 1. Build the real course in the designer (or tools/realcourse_bench), then:
 python3 tools/homecourse/dress_real_course.py "Real.olc" game/assets/courses/vermilion_ridge.olc --name "Vermilion Ridge" --cache /tmp/dem
+```
+
+## Glacier Crown: snow
+
+The same tool with `--biome snow`: deep snow between the holes (bare ground,
+no grass), a mown band round each tee, fairway and green, spruce woods in
+stands on the slopes (`--pines`), the mapped trees kept as spruce, and the
+Alps and the Rhône valley to the horizon (snow above 40 m over the course).
+The trees carry snow on their crowns: the `tree_snow` shader global (set
+from the course's biome when a hole loads) whitens the upward faces of the
+full trees' leaves and the tops of their impostors.
+
+```bash
+python3 tools/homecourse/dress_real_course.py "Real.olc" game/assets/courses/glacier_crown.olc --name "Glacier Crown" --biome snow --cache /tmp/dem
 ```
