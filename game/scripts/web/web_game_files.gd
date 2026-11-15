@@ -215,6 +215,32 @@ func copy_file(rel: String, size: int) -> bool:
 	return true
 
 
+## The add-on courses' relative paths (with their companions).
+func added_courses() -> PackedStringArray:
+	_api.added(_reply_cb)
+	var r: Array = await _replied
+	var out := PackedStringArray()
+	if not r[0]:
+		last_error = str(r[1])
+		return out
+	var parsed: Variant = JSON.parse_string(str(r[1]))
+	if parsed is Array:
+		for p: Variant in parsed:
+			out.append(str(p))
+	return out
+
+
+## Removes an add-on course and its companions. False on error.
+func remove_course(rel: String) -> bool:
+	_api.removeCourse(rel, _reply_cb)
+	var r: Array = await _replied
+	if not r[0]:
+		last_error = str(r[1])
+		return false
+	DirAccess.remove_absolute(ROOT.path_join(rel))
+	return true
+
+
 ## Forgets the picked files.
 func forget() -> void:
 	_api.forget(_reply_cb)

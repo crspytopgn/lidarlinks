@@ -186,6 +186,7 @@ product lead builds it.
   - [ ] Free built-in buildings, per-course skies
 - [ ] Community add-on courses
   - [x] Suggest popular free courses with links to Links Corner, and add them from a downloaded `.zip` in the browser ([community-courses.md](docs/community-courses.md))
+  - [x] Courses page in the main menu: add course files (.olc, .crz, .zip) on desktop and in the browser, delete your own, hide the game's, and Update a real course to rebuild it with the newest builder ([course-library.md](docs/course-library.md))
 - [ ] Game-folder picker on each platform, including the browser file picker
 
 ## Phase 5: later
