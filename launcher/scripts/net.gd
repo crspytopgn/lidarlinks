@@ -11,6 +11,9 @@ const TIMEOUT_JSON := 20.0
 signal download_progress(done: int, total: int)
 
 var _download: HTTPRequest
+## url -> [etag, decoded data] of the last 200 answer, so repeat checks ask
+## GitHub "anything new since this?" and a 304 doesn't use up the hourly limit.
+var _etags := {}
 
 
 func _new_request() -> HTTPRequest:
@@ -47,7 +50,9 @@ static func _apply_proxy(r: HTTPRequest) -> void:
 func get_json(url: String) -> Dictionary:
 	var r := _new_request()
 	r.timeout = TIMEOUT_JSON
-	var headers := PackedStringArray(["User-Agent: " + USER_AGENT, "Accept: application/vnd.github+json"])
+	var headers := PackedStringArray(["User-Agent: " + USER_AGENT, "Accept: application/vnd.github+json", "Cache-Control: no-cache"])
+	if _etags.has(url):
+		headers.append("If-None-Match: " + str(_etags[url][0]))
 	var err := r.request(url, headers)
 	if err != OK:
 		r.queue_free()
@@ -58,13 +63,27 @@ func get_json(url: String) -> Dictionary:
 	var code: int = res[1]
 	if result != HTTPRequest.RESULT_SUCCESS:
 		return {"ok": false, "code": code, "error": "No connection (%d)." % result}
+	if code == 304 and _etags.has(url):
+		return {"ok": true, "code": code, "data": _etags[url][1]}
 	if code != 200:
 		var why := "GitHub's limit for checks this hour was reached." if code == 403 or code == 429 else "GitHub answered %d." % code
 		return {"ok": false, "code": code, "error": why}
 	var data: Variant = JSON.parse_string((res[3] as PackedByteArray).get_string_from_utf8())
 	if data == null:
 		return {"ok": false, "code": code, "error": "GitHub's answer couldn't be read."}
+	var etag := header(res[2], "etag")
+	if not etag.is_empty():
+		_etags[url] = [etag, data]
 	return {"ok": true, "code": code, "data": data}
+
+
+## The value of header `name` (any case) in `headers`, or "".
+static func header(headers: PackedStringArray, name: String) -> String:
+	var want := name.to_lower() + ":"
+	for h in headers:
+		if h.to_lower().begins_with(want):
+			return h.substr(want.length()).strip_edges()
+	return ""
 
 
 ## Downloads `url` to `path`, emitting download_progress. {ok, error}.

@@ -13,6 +13,13 @@ const CONTENTS_URL := API + "/contents/?ref=main"
 ## Lines that end the part of a commit message worth showing.
 const STOP := ["co-authored-by:", "claude-session:", "---------", "signed-off-by:"]
 const MAX_POINTS := 5
+## While the launcher is open it looks for a new build this often, and
+## sooner after a failed check or while CI is republishing the release.
+const RECHECK_SECONDS := 600.0
+const RETRY_SECONDS := 60.0
+## While newer changes on main are still being built, look more often so
+## the build is picked up soon after CI publishes it.
+const PENDING_SECONDS := 120.0
 const MAX_SUMMARY := 280
 
 
@@ -176,3 +183,34 @@ static func launcher_tree(json: Variant) -> String:
 ## The short form of a commit id.
 static func short(commit: String) -> String:
 	return commit.left(7)
+
+
+## Whether the installed build `installed` differs from the release's
+## commit `latest`. The "latest" tag is reused for every build, so builds
+## are told apart by commit, never by the tag.
+static func needs_update(installed: String, latest: String) -> bool:
+	return not latest.is_empty() and installed != latest
+
+
+## Seconds until the next background check: soon after a failure or while
+## the release is missing (CI deletes and recreates it on each build).
+static func next_check_in(ok: bool, release_missing: bool, pending := 0) -> float:
+	if release_missing or not ok:
+		return RETRY_SECONDS
+	return PENDING_SECONDS if pending > 0 else RECHECK_SECONDS
+
+
+## How many changes on main are newer than the release's commit, so not in
+## any download yet (CI is still building them). 0 when the release's
+## commit isn't in the list.
+static func pending_changes(entries: Array[Dictionary], release_commit: String) -> int:
+	var n := count_new(entries, release_commit)
+	return 0 if n >= entries.size() else n
+
+
+## "Checked just now", "Checked 5 min ago", ... for a unix time; "" for 0.
+static func checked_text(last_unix: float, now_unix: float = -1.0) -> String:
+	if last_unix <= 0.0:
+		return ""
+	var when := relative_date(Time.get_datetime_string_from_unix_time(int(last_unix)) + "Z", now_unix)
+	return "Checked " + (when.to_lower() if when == "Just now" or when == "Yesterday" else when)

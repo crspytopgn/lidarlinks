@@ -18,6 +18,16 @@ images or install, on their own computer.
   next to the installed one and swaps them, so a failed update leaves the old
   build playable. With *Update automatically* on (the default) this happens
   as soon as the launcher opens.
+- **Check for updates.** A button under the build number checks GitHub at
+  once, and the launcher also checks by itself every 10 minutes while it is
+  open, when it comes back into focus and when the game closes. The
+  `latest` tag is reused for every build, so builds are told apart by
+  commit. The line beside the button says what it found: up to date (and
+  when it last checked), a new build, updated, or changes on `main` that CI
+  is still building (then it rechecks every 2 minutes). While CI deletes and
+  recreates the release it rechecks every minute instead of reporting
+  offline. Repeat checks send the last ETag, so unchanged answers don't use
+  up GitHub's hourly limit.
 - **What's New.** The last 40 commits on `main`, one per merged pull request,
   with the squashed commit titles as points and a green dot on the changes
   since the installed build. Cached for offline starts.
