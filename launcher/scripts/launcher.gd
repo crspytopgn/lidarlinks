@@ -62,6 +62,13 @@ var _state := State.CHECKING
 var _error := ""
 var _offline := false
 var _launcher_update := ""
+var _checking := false
+var _release_missing := false
+var _last_check := 0.0
+var _next_check := 0.0
+var _updated_to := ""
+var _updated_at := 0.0
+var _check_line_at := 0.0
 var _thread: Thread
 var _thread_result := ""
 var _import: DiscImport
@@ -80,6 +87,8 @@ var _builder: Button
 var _progress: ProgressBar
 var _progress_text: Label
 var _sub: Label
+var _check_text: Label
+var _check_button: Button
 var _message: Label
 var _tabs: Segmented
 var _pages: Array[Control] = []
@@ -224,6 +233,17 @@ func _build_hero() -> Control:
 	_sub = UI.label("", 12, "Regular", UI.TEXT_3)
 	_sub.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	status.add_child(_sub)
+	var check_row := HBoxContainer.new()
+	check_row.alignment = BoxContainer.ALIGNMENT_CENTER
+	check_row.add_theme_constant_override("separation", 10)
+	status.add_child(check_row)
+	_check_text = UI.label("", 12, "Regular", UI.TEXT_3)
+	check_row.add_child(_check_text)
+	_check_button = UI.link_button("Check for updates")
+	_check_button.add_theme_font_size_override("font_size", 12)
+	_check_button.tooltip_text = "Looks for a newer build on GitHub now. The launcher also checks every few minutes while it's open."
+	_check_button.pressed.connect(_check)
+	check_row.add_child(_check_button)
 	return hero
 
 
@@ -320,6 +340,12 @@ func _process(delta: float) -> void:
 			get_window().mode = Window.MODE_WINDOWED
 		_state = State.READY
 		_refresh()
+		_check()  # a build may have landed while they played
+	var now := Time.get_unix_time_from_system()
+	if not _checking and _next_check > 0.0 and now >= _next_check and _state != State.PLAYING:
+		_check()
+	if now - _check_line_at >= 1.0:
+		_update_check_line()
 
 
 ## Floats the ball gently, and keeps its glow in the background under it.
@@ -363,14 +389,21 @@ static func _write_json(path: String, data: Variant) -> void:
 		f.store_string(JSON.stringify(data))
 
 
+## Asks GitHub for the newest build. The first check at start-up blocks Play
+## until it answers; later ones (the button, every few minutes, after the
+## game closes) run in the background and only change things if a new
+## build is out.
 func _check() -> void:
-	if _state in [State.DOWNLOADING, State.INSTALLING, State.PLAYING]:
+	if _checking or _state in [State.DOWNLOADING, State.INSTALLING]:
 		return
-	_state = State.CHECKING
+	_checking = true
 	_error = ""
 	_refresh()
 	var r: Dictionary = await _net.get_json(ReleaseFeed.RELEASE_URL)
-	_offline = not r.ok
+	# CI deletes and recreates "latest" on each build, so for a minute or two
+	# it's missing: that's a build on its way, not being offline.
+	_release_missing = not r.ok and int(r.get("code", 0)) == 404
+	_offline = not r.ok and not _release_missing
 	if r.ok:
 		_write_json(Paths.cache_dir().path_join("release.json"), r.data)
 		_release = ReleaseFeed.parse_release(r.data, Paths.game_asset())
@@ -383,8 +416,14 @@ func _check() -> void:
 		if l.ok:
 			var tree := ReleaseFeed.launcher_tree(l.data)
 			_launcher_update = tree if not tree.is_empty() and tree != BuildInfo.LAUNCHER_TREE else ""
-	if not r.ok and _installed.is_empty():
+	if _offline and _installed.is_empty():
 		_error = str(r.get("error", ""))
+	_checking = false
+	_last_check = Time.get_unix_time_from_system()
+	_next_check = _last_check + ReleaseFeed.next_check_in(r.ok, _release_missing, _pending())
+	if _state in [State.DOWNLOADING, State.INSTALLING, State.PLAYING]:
+		_refresh()  # Play was pressed meanwhile; the next check picks this up.
+		return
 	_decide()
 
 
@@ -396,7 +435,7 @@ func _decide() -> void:
 			_refresh()
 			_download()
 			return
-	elif not _release.is_empty() and str(_installed.get("commit", "")) != str(_release.commit):
+	elif ReleaseFeed.needs_update(str(_installed.get("commit", "")), str(_release.get("commit", ""))):
 		_state = State.UPDATE
 		if _auto_update():
 			_refresh()
@@ -436,7 +475,7 @@ func _decide_after_failure() -> void:
 	if _installed.is_empty():
 		_state = State.NO_GAME if not _release.is_empty() else State.OFFLINE_NO_GAME
 	else:
-		_state = State.UPDATE if str(_installed.get("commit", "")) != str(_release.get("commit", "")) else State.READY
+		_state = State.UPDATE if ReleaseFeed.needs_update(str(_installed.get("commit", "")), str(_release.get("commit", ""))) else State.READY
 	_refresh()
 
 
@@ -452,6 +491,8 @@ func _on_installed(why: String) -> void:
 	if why.is_empty():
 		_error = ""
 		_installed = Installer.installed()
+		_updated_to = str(_installed.get("commit", ""))
+		_updated_at = Time.get_unix_time_from_system()
 		_state = State.READY
 		_refresh()
 	else:
@@ -536,6 +577,7 @@ func _refresh() -> void:
 	_message.text = _error
 	_message.visible = not _error.is_empty()
 	_sub.text = _build_line()
+	_update_check_line()
 	_set_chip()
 	_fill_news()
 
@@ -557,6 +599,11 @@ func _set_chip() -> void:
 		State.CHECKING:
 			text = "Checking for updates"
 			colour = UI.TEXT_3
+		State.READY when _checking:
+			text = "Checking for updates"
+			colour = UI.TEXT_3
+		State.READY when _recently_updated():
+			text = "Updated to build %s" % ReleaseFeed.short(_updated_to)
 		State.DOWNLOADING, State.INSTALLING:
 			text = "Updating"
 			colour = UI.BLUE
@@ -567,13 +614,52 @@ func _set_chip() -> void:
 			text = "Playing"
 		_:
 			text = "Up to date"
-	if _offline and _state != State.CHECKING:
+	if _offline and not _checking and _state != State.CHECKING:
 		text = "Offline"
 		colour = UI.ORANGE
 	if not _launcher_update.is_empty() and _state == State.READY:
 		text += " · New launcher available"
 	_chip_text.text = text
 	_chip_dot.add_theme_color_override("font_color", colour)
+
+
+## Changes merged into main that no download has yet (CI is building them).
+func _pending() -> int:
+	return ReleaseFeed.pending_changes(_entries, str(_release.get("commit", "")))
+
+
+func _recently_updated() -> bool:
+	return not _updated_to.is_empty() and Time.get_unix_time_from_system() - _updated_at < 600.0
+
+
+## The line under the build number: what the last check found, when it ran,
+## and the Check for updates button.
+func _update_check_line() -> void:
+	if _check_text == null:
+		return
+	_check_line_at = Time.get_unix_time_from_system()
+	var busy := _state in [State.DOWNLOADING, State.INSTALLING]
+	_check_button.disabled = _checking or busy
+	_check_button.text = "Checking..." if _checking else "Check for updates"
+	var checked := ReleaseFeed.checked_text(_last_check)
+	var text := ""
+	if _checking or busy:
+		text = ""
+	elif _release_missing:
+		text = "A new build is being published. Checking again in a minute."
+	elif _offline:
+		text = "Couldn't reach GitHub" + ((" · " + checked.to_lower()) if not checked.is_empty() else "")
+	elif _state == State.UPDATE:
+		text = "Build %s is out" % ReleaseFeed.short(str(_release.get("commit", "")))
+	elif _state == State.READY and _recently_updated():
+		text = "Updated to the latest build"
+	elif _state == State.READY:
+		text = "Up to date" + ((" · " + checked.to_lower()) if not checked.is_empty() else "")
+		var pending := _pending()
+		if pending > 0 and not _offline:
+			text = "Up to date · %d newer change%s still building" % [pending, "" if pending == 1 else "s"]
+	_check_text.text = text
+	_check_text.visible = not text.is_empty()
 
 
 # ---- What's New ------------------------------------------------------------------
@@ -592,6 +678,11 @@ func _fill_news() -> void:
 		head.text = "You have the latest build."
 	else:
 		head.text = "%d change%s since your build" % [fresh, "" if fresh == 1 else "s"]
+		var building := _pending()
+		if building >= fresh:
+			head.text += ", still being built. They download as soon as the build is out."
+		elif building > 0:
+			head.text += " (%d still being built)" % building
 		head.add_theme_color_override("font_color", UI.GREEN)
 	_news.add_child(head)
 	for i in _entries.size():
@@ -943,6 +1034,8 @@ func _on_imported() -> void:
 
 
 func _notification(what: int) -> void:
+	if what == NOTIFICATION_APPLICATION_FOCUS_IN and _last_check > 0.0 and Time.get_unix_time_from_system() - _last_check > 120.0:
+		_check()
 	if what == NOTIFICATION_WM_CLOSE_REQUEST or what == NOTIFICATION_PREDELETE:
 		if _thread != null:
 			_thread.wait_to_finish()
