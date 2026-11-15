@@ -72,9 +72,19 @@ Nothing is placed on a tee, fairway, green, fringe or bunker (checked by
 
 ## Red Spire's routing
 
-Par 36, 3,418 yards, on the valley floor rising gently toward the rock band:
-1 plays uphill to a green with a spire beyond it; 2 is a par 5 bending round a
-hoodoo garden; 3 a par 3 into the foot of twin towers; 4 back down the valley
-past a butte; 5 short and downhill; 6 the long par 5 across the open desert; 7 a
-par 3 over an oasis pool to a green framed by the arch; 8 doglegs home past a
-mesa; 9 climbs back to the clubhouse past a tower.
+Par 36, 3,418 yards, on the valley floor rising gently toward the rock band.
+It plays as real desert courses do ("target golf"): the grass is islands in the
+desert. Most holes start with a carry of 120 to 150 m over bare desert from the
+tees to the fairway (`carry` in the hole spec), and dry washes cross some
+fairways (`gaps`), so the tee shot is a choice between laying up and carrying
+them. Fairway and rough edges wander more than on parkland (`wander`).
+
+1 plays uphill over the desert to a green with a spire beyond it; 2 is a par 5
+bending round a hoodoo garden, with a wash across the lay-up zone; 3 a par 3
+into the foot of twin towers; 4 back down the valley past a butte, a wash
+across the driving zone (lay up, or carry it 235 m); 5 short, downhill and
+drivable, with a hoodoo standing on a strip of desert in the middle of the
+fairway 225 m out; 6 the long par 5 across the open desert with a wash at
+300 m; 7 the signature hole, a par 3 played through a natural arch 75 m from
+the tee, over an oasis pool; 8 doglegs home past a mesa; 9 climbs back to the
+clubhouse past a tower.

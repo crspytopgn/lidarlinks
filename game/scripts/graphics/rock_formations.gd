@@ -176,7 +176,9 @@ static func _hoodoo_profile(t: float, p: Dictionary) -> float:
 	var waist: float = p.waist
 	var cap: float = p.cap
 	# A pedestal, a column of soft and hard beds (beads), a cap rock.
-	var beads := 1.0 + 0.22 * sin(t * 26.0)
+	# Beads of uneven thickness, not a regular stack.
+	var bead := ProcMesh.noise(t * 7.5, 1.5, int(p.seed) + 41)
+	var beads := 0.8 + 0.42 * smoothstep(0.3, 0.7, bead)
 	var r := lerpf(base, waist * beads, smoothstep(0.0, 0.3, t))
 	r = lerpf(r, cap, smoothstep(0.82, 0.86, t))
 	return r
@@ -208,8 +210,10 @@ static func _tower(part: Dictionary, p: Dictionary, profile: Callable) -> void:
 		var t := clampf(y / height, 0.0, 1.0)
 		var r: float = profile.call(t, p)
 		# Beds: ledges every 2 to 5 metres, the hard ones standing out.
-		var bed := ProcMesh.noise(y / 3.1, 0.5, seed_value + 7)
-		r *= 0.965 + 0.07 * smoothstep(0.35, 0.65, bed)
+		# Hard beds stand out in sharp ledges, soft ones weather back.
+		var bed := ProcMesh.noise(y / 2.6, 0.5, seed_value + 7)
+		var thick := ProcMesh.noise(y / 9.0, 4.5, seed_value + 19)
+		r *= 0.93 + 0.08 * smoothstep(0.42, 0.58, bed) + 0.06 * smoothstep(0.35, 0.65, thick)
 		var ring := PackedVector3Array()
 		for i in sides:
 			var a := TAU * i / sides
@@ -222,6 +226,8 @@ static func _tower(part: Dictionary, p: Dictionary, profile: Callable) -> void:
 			var wobble := 0.36 * (ProcMesh.ring_noise(a, y / 22.0, 5, seed_value) - 0.5)
 			wobble += 0.16 * (ProcMesh.ring_noise(a, y / 7.0, 13, seed_value + 3) - 0.5)
 			wobble += 0.05 * (ProcMesh.ring_noise(a, y / 40.0, 31, seed_value + 5) - 0.5)
+			# Vertical flutes and joints, running far up the face.
+			wobble += 0.09 * (ProcMesh.ring_noise(a, y / 70.0, 23, seed_value + 11) - 0.5)
 			var rr := r * square * (1.0 + wobble)
 			ring.append(Vector3(c * rr * stretch, y, sn * rr))
 		rings.append(ring)
