@@ -390,6 +390,16 @@ func _test_paths() -> void:
 	var y := t.height_at(0, 60)
 	check(not t.obstacle_hit(Vector3(0, y + 3.0, 60), Vector3(0, y + 0.1, 60)).is_empty(), "a ball lands on the bridge deck")
 	check(t.obstacle_hit(Vector3(0, y + 3.0, 70), Vector3(0, y + 0.1, 70)).is_empty(), "and nowhere else")
+	var bridge := t._path_mesh(span)
+	var rails := bridge.mesh.surface_get_arrays(1)[Mesh.ARRAY_VERTEX] as PackedVector3Array if bridge.mesh.get_surface_count() == 2 else PackedVector3Array()
+	var top := -INF
+	for v in rails:
+		top = maxf(top, v.y)
+	var deck := -INF
+	for v in bridge.mesh.surface_get_arrays(0)[Mesh.ARRAY_VERTEX] as PackedVector3Array:
+		deck = maxf(deck, v.y)
+	check(not rails.is_empty() and absf(top - deck - (DesignedTerrain.RAIL_TOP + 0.05)) < 0.05, "a bridge has post-and-rail sides at railing height (%.2f m)" % (top - deck))
+	bridge.free()
 	var back := DesignedCourse.from_json(c.to_json())
 	check(back != null and back.paths.size() == 2, "paths are saved")
 	if back != null and back.paths.size() == 2:
