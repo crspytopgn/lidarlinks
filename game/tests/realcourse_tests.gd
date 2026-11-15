@@ -21,6 +21,7 @@ func run_all() -> Array[String]:
 	_test_guesser()
 	_test_detector()
 	_test_megascans_cards()
+	_test_stone_walls()
 	return failures
 
 
@@ -693,3 +694,20 @@ func _photo_source(id: String) -> Dictionary:
 		if src["id"] == id:
 			return src
 	return {}
+
+
+func _test_stone_walls() -> void:
+	var c := DesignedCourse.new()
+	c.area = Rect2(0, 0, 200, 200)
+	c.walls.append(PackedVector2Array([Vector2(1, 2), Vector2(30.5, 2), Vector2(40, 12.25)]))
+	c._alloc()
+	var back := DesignedCourse.from_dict(c.to_dict())
+	check(back.walls.size() == 1 and back.walls[0].size() == 3 and back.walls[0][2].is_equal_approx(Vector2(40, 12.25)), "walls survive saving")
+	var t := CourseTerrain.new()
+	var lines: Array[PackedVector2Array] = [c.walls[0]]
+	var w := StoneWalls.from_lines(lines, t)
+	check(w != null and w.mesh.get_surface_count() == 1, "a wall mesh is built")
+	w.free()
+	var none: Array[PackedVector2Array] = []
+	check(StoneWalls.from_lines(none, t) == null, "no walls, no mesh")
+	check(RockField.place(t, Vector3.ZERO, Vector3(0, 0, 300), 1.0, 5).is_empty(), "no rocks off the course's rough")

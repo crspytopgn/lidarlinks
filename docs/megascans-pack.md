@@ -47,6 +47,35 @@ the free ground set. Up close on a tee, the lawn scans looked mottled and
 clumpy, even with their low frequencies flattened and their colour matched,
 and from further back they looked no different.
 
+## Rocks (rocks/)
+
+`tools/megascans/rock_prep.py MEGASCANS PREP` picks 32 rock scans (beach,
+sandstone, mossy forest and upland boulders, sea cliffs, one huge layered
+boulder) and shrinks their maps to 2K. `tools/megascans/rock_pack.gd`
+(copied into game/tests/tmp/) then bakes each into `rocks/<id>.res`, an
+ArrayMesh with LODs at real size, base at y = 0. It also writes the three
+textures and `rocks/rocks.json` with `{id, title, size, kind}`.
+
+`RockField` (game/scripts/graphics/rock_field.gd) places them on each hole
+when the pack has them, at Medium quality and up, outside Classic Links.
+They go along pond and creek banks, and in small groups through the deep
+rough and woods, never within 7 m of mown turf, sand or a green. They're
+scenery only. The stone follows the course's place (FreeAmbience's setting):
+- links: beach boulders and sea-cliff outcrops;
+- desert: sandstone, three times as many;
+- woodland and parkland: mossy, lichened boulders and grey upland stone.
+
+`RockField.mesh(id)` and `material(id)` load one rock for other features.
+
+## Dry-stone walls
+
+`StoneWalls` (game/scripts/graphics/stone_walls.gd) draws a course's field
+walls. A course built from a map gets them from OpenStreetMap's
+barrier=wall, dry_stone_wall and stone_wall, stored as
+`DesignedCourse.walls`. Each wall is about 1.2 m high, battered from
+0.7 m to 0.4 m, with coping stones set on edge. stone_wall.gdshader lays
+ragged courses of grey stone on the faces. This is in the public build as
+well. With the pack, each stone shows a patch of a scanned rock.
 ## Scanned surfaces
 
 `ScannedSurfaces` reads `surfaces/surfaces.json`: one scan per slot with its
