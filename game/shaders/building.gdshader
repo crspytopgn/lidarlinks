@@ -46,6 +46,12 @@ void fragment() {
 		// Render: weathered and a little grainy, never paper white.
 		vec3 render = base * (0.88 + 0.1 * wear + 0.06 * (noise(m * 37.0) - 0.5));
 		vec3 wall = mix(render, c, brick);
+		if (COLOR.a < 0.75) {
+			// Clapboard siding: boards 0.18 m deep, each shading to a dark
+			// line under the lap of the one above.
+			float lap = fract(m.y / 0.18);
+			wall = base * (0.9 + 0.08 * wear) * mix(0.62, 1.0, smoothstep(0.0, 0.12, lap)) * mix(1.04, 0.96, lap);
+		}
 		// Darker at the foot (splash and damp).
 		wall *= mix(0.72, 1.0, smoothstep(-0.2, 0.6, m.y));
 		ALBEDO = wall;

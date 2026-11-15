@@ -24,6 +24,7 @@ func run_all() -> Array[String]:
 	_test_stone_walls()
 	_test_buildings()
 	_test_real_world_fixes()
+	_test_far_woods()
 	_test_retries()
 	return failures
 
@@ -771,6 +772,29 @@ func _test_buildings() -> void:
 	var hit := field.segment_hit(Vector3(-110, 3, -16), Vector3(-80, 3, -16))
 	check(not hit.is_empty(), "a ball flying into the house hits it")
 	check(field.segment_hit(Vector3(-110, 30, -16), Vector3(-80, 30, -16)).is_empty(), "and one high above it doesn't")
+
+
+## More lidar crowns than room: all near the holes, and the rest spread
+## out so the woods reach the edge of the area.
+func _test_far_woods() -> void:
+	var f := GeoFrame.new(52.2, 5.2)
+	var els: Array = []
+	els.append(_way({"leisure": "golf_course", "name": "Wood Links"}, f, _rect(Vector2(-700, -100), Vector2(100, 100))))
+	els.append(_way({"golf": "hole", "ref": "1", "par": "3"}, f, [Vector2(50, -80), Vector2(50, 80)], false))
+	var b := RealCourseBuilder.new({"elements": els}, 52.2, 5.2)
+	b.max_trees = 3000
+	var crowns: Array[Dictionary] = []
+	for i in 176:
+		for j in 41:
+			var p := Vector2(20.0 - i * 4.0, -80.0 + j * 4.0)
+			crowns.append({"lat": b.frame.lat_of(p), "lon": b.frame.lon_of(p), "height": 15.0})
+	b.lidar_trees = crowns
+	var c := b.build(func(_la: float, _lo: float) -> float: return 1.0)
+	var west := 0.0
+	for o in c.objects:
+		west = minf(west, o.position.x)
+	check(c.objects.size() <= 3000, "within the tree limit")
+	check(west < c.area.position.x + 10.0, "the woods reach the edge of the area (%.0f of %.0f)" % [west, c.area.position.x])
 
 
 ## West Essex (Nov 2026): a culverted drain was dug across a field as an open
