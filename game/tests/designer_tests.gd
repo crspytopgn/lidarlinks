@@ -68,7 +68,7 @@ func _test_epic_courses() -> void:
 			var c := Vector3(o.position.x, y + 10.0, o.position.z)
 			check(not terrain.obstacles.segment_hit(c + Vector3(60, 0, 0), c).is_empty(), "%s: a spire stops the ball" % name)
 			break
-		check(Biome.is_bare(designed.biome, Surface.Type.DEEP_ROUGH) == (designed.biome in [Biome.DESERT, Biome.SNOW]), "%s: bare ground follows the biome" % name)
+		check(Biome.is_bare(designed.biome, Surface.Type.DEEP_ROUGH) == (designed.biome in [Biome.DESERT, Biome.SNOW, Biome.TROPICAL]), "%s: bare ground follows the biome" % name)
 		var mesh := RockFormations.mesh_for(designed.objects.filter(func(o: PlacedObject) -> bool: return o.id == "rock_arch")[0]) if designed.biome == Biome.DESERT else null
 		check(mesh == null or mesh.get_faces().size() > 3000, "%s: the arch has a mesh" % name)
 		if name == "Red Spire":

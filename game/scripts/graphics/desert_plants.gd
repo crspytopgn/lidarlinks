@@ -11,8 +11,13 @@ extends RefCounted
 ## 40 cm across with 12 to 24 ribs; barrels 0.5 to 1 m; prickly pear pads
 ## about 25 by 18 cm, clumps up to a metre or so high (US National Park
 ## Service, Saguaro NP and Organ Pipe Cactus NM species pages).
+##
+## Also the coconut palm for tropical courses: a ringed, curving trunk 8 to
+## 15 m tall, 25 to 30 cm across, leaning toward the light, under a crown of
+## a dozen or more fronds 4 to 5 m long that arch out and droop (Hawaii
+## Tropical Plant Guide; University of Hawaii CTAHR coconut fact sheet).
 
-const IDS := ["cactus_saguaro", "cactus_barrel", "cactus_pear"]
+const IDS := ["cactus_saguaro", "cactus_barrel", "cactus_pear", "palm_coconut"]
 const VARIANTS := 4
 ## Metres on a side of the areas each MultiMesh covers.
 const AREA := 400.0
@@ -26,13 +31,17 @@ const BARREL := Color(0.26, 0.32, 0.16)
 const BARREL_CROWN := Color(0.85, 0.62, 0.22)  # the yellow fruit and spines on top
 const PAD := Color(0.3, 0.38, 0.17)
 const PAD_PURPLE := Color(0.38, 0.27, 0.27)  # pads turn purple in drought and cold
+const PALM_TRUNK := Color(0.46, 0.42, 0.36)  # weathered grey-brown
+const PALM_TRUNK_DARK := Color(0.32, 0.28, 0.22)  # the rings and the base
+const FROND := Color(0.24, 0.36, 0.1)
+const FROND_OLD := Color(0.55, 0.47, 0.2)  # lower fronds yellow before they drop
 
 static var _meshes := {}  ## id -> Array[ArrayMesh]
 static var _material: StandardMaterial3D
 
 
 static func is_plant(id: String) -> bool:
-	return id.begins_with("cactus_") and IDS.has(id)
+	return IDS.has(id)
 
 
 static func variant_of(o: PlacedObject) -> int:
@@ -47,7 +56,7 @@ static func build(terrain: DesignedTerrain) -> Node3D:
 	for o in terrain.course.objects:
 		if not is_plant(o.id):
 			continue
-		if o.id != "cactus_saguaro" and SMALL_RANGE[quality] <= 0.0:
+		if not _tall(o.id) and SMALL_RANGE[quality] <= 0.0:
 			continue
 		var cell := Vector2i(floori(o.position.x / AREA), floori(o.position.z / AREA))
 		var key := [o.id, variant_of(o), cell]
@@ -71,11 +80,15 @@ static func build(terrain: DesignedTerrain) -> Node3D:
 		var node := MultiMeshInstance3D.new()
 		node.multimesh = mm
 		node.material_override = material()
-		node.visibility_range_end = SAGUARO_RANGE[quality] if key[0] == "cactus_saguaro" else SMALL_RANGE[quality]
+		node.visibility_range_end = SAGUARO_RANGE[quality] if _tall(key[0]) else SMALL_RANGE[quality]
 		node.visibility_range_end_margin = 30.0
 		node.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF
 		root.add_child(node)
 	return root
+
+
+static func _tall(id: String) -> bool:
+	return id == "cactus_saguaro" or id == "palm_coconut"
 
 
 static func material() -> StandardMaterial3D:
@@ -102,6 +115,8 @@ static func mesh(id: String, variant: int) -> ArrayMesh:
 					_barrel(part, rng)
 				"cactus_pear":
 					_pear(part, rng)
+				"palm_coconut":
+					_palm(part, rng, v)
 			list.append(ProcMesh.to_mesh(part))
 		_meshes[id] = list
 	return (_meshes[id] as Array)[variant % VARIANTS]
@@ -206,6 +221,58 @@ static func _pear(part: Dictionary, rng: RandomNumberGenerator) -> void:
 		ProcMesh.add_rings(part, rings, cols, true)
 
 
+## Height of a palm variant's crown at scale 1 (for its obstacles).
+static func palm_height(variant: int) -> float:
+	return 8.5 + 1.8 * variant
+
+
+static func _palm(part: Dictionary, rng: RandomNumberGenerator, v: int) -> void:
+	var height := palm_height(v)
+	# The trunk leans and curves back up toward the top, as coconut palms
+	# grow toward the light (and the sea).
+	var lean_dir := Vector3(cos(rng.randf() * TAU), 0.0, sin(rng.randf() * TAU))
+	var lean := rng.randf_range(0.12, 0.32)
+	var path := PackedVector3Array()
+	var radii := PackedFloat32Array()
+	var cols := PackedColorArray()
+	var n := 24
+	for k in n + 1:
+		var t := float(k) / n
+		var side := lean * height * (t - 0.55 * t * t)
+		path.append(Vector3.UP * (t * height - 0.3) + lean_dir * side)
+		# Wider at the bole, then nearly even.
+		radii.append(0.15 + 0.12 * pow(1.0 - t, 6.0))
+		# Leaf-scar rings every few dozen centimetres.
+		var ring := 0.5 + 0.5 * sin(t * height * 14.0)
+		cols.append(PALM_TRUNK.lerp(PALM_TRUNK_DARK, 0.35 * ring + 0.4 * pow(1.0 - t, 8.0)))
+	ProcMesh.add_tube(part, path, radii, 14, 0, 0.0, cols)
+	var top := path[n]
+	var up := (path[n] - path[n - 2]).normalized()
+	# The crown: fronds all round, the upper ones rising, the lower ones
+	# hanging and yellower; each a long arching midrib with leaflets out
+	# to both sides in a shallow V.
+	var fronds := 14 + v * 2
+	for f in fronds:
+		var around := TAU * f / fronds + rng.randf_range(-0.2, 0.2)
+		var dir := Vector3(cos(around), 0.0, sin(around))
+		var low := float(f % 3) / 2.0  # 0 upper, 1 lower
+		var length := rng.randf_range(3.8, 5.0)
+		var rise := lerpf(0.55, -0.15, low) + rng.randf_range(-0.1, 0.1)
+		var col := FROND.lerp(FROND_OLD, low * low * rng.randf_range(0.2, 0.9))
+		var side := dir.cross(Vector3.UP).normalized()
+		var rings: Array[PackedVector3Array] = []
+		var rc := PackedColorArray()
+		var m := 10
+		for k in m + 1:
+			var t := float(k) / m
+			var c := top + up * 0.2 + dir * (length * t) + Vector3.UP * (length * (rise * t - 0.55 * t * t))
+			var w := 0.55 * sin(PI * minf(t * 1.15, 1.0)) + 0.02
+			var droop := Vector3.UP * (-0.35 * w)
+			rings.append(PackedVector3Array([c + side * w + droop, c + Vector3.UP * 0.025, c - side * w + droop, c - Vector3.UP * 0.025]))
+			rc.append(col)
+		ProcMesh.add_rings(part, rings, rc, false)
+
+
 ## What the ball can hit for cactus `o` standing on ground height `y`: a
 ## saguaro's trunk is solid and its arms catch like a canopy; the small
 ## cacti slow the ball like a bush.
@@ -223,3 +290,9 @@ static func add_obstacles(field: ObstacleField, o: PlacedObject, y: float) -> vo
 			field.add_cylinder(x, z, 0.35 * s, y, y + 0.8 * s, ObstacleField.Kind.CANOPY)
 		"cactus_pear":
 			field.add_cylinder(x, z, 0.6 * s, y, y + 1.0 * s, ObstacleField.Kind.CANOPY)
+		"palm_coconut":
+			# The trunk is solid; the crown catches like a canopy. (The lean
+			# is small next to the crown's reach, so both stand on the base.)
+			var h := palm_height(variant_of(o)) * s
+			field.add_cylinder(x, z, 0.2 * s, y - 0.5, y + h, ObstacleField.Kind.SOLID)
+			field.add_cylinder(x, z, 3.5 * s, y + h - 1.5 * s, y + h + 1.2 * s, ObstacleField.Kind.CANOPY)
