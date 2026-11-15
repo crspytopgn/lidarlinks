@@ -46,8 +46,8 @@ const LIBRARY := {"log": 2, "stump": 2, "leaves": 3, "twigs": 2, "pine_branches"
 ## Colour grades (DebrisField -> shaders/debris.gdshader): the scans' bright
 ## autumn litter toned to a course's duller summer floor.
 const TONE := {
-	"leaves": [Color(0.86, 0.8, 0.66), 0.7, 0.8],
-	"needles": [Color(0.8, 0.74, 0.66), 0.45, 0.75],
+	"leaves": [Color(0.9, 0.84, 0.72), 0.75, 1.0],
+	"needles": [Color(0.84, 0.77, 0.68), 0.5, 0.95],
 	"props": [Color(0.86, 0.84, 0.8), 0.6, 1.0],
 }
 ## Ground the debris may lie on: under the crown on the rough, anywhere

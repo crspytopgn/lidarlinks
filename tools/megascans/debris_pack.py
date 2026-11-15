@@ -22,12 +22,12 @@ import numpy as np
 from PIL import Image
 
 Image.MAX_IMAGE_PIXELS = None
-CELL = 1024  # px per litter patch in the 2 x 2 atlases
+CELL = 2048  # px per litter patch in the 2 x 2 atlases (a 4K atlas: about 800 px/m, sharp at your feet)
 PROP_TEX = 1024  # px per prop texture
 # The litter atlases: four patches each, from these surface scans (title,
 # uid8, the scan's size in metres). A patch is PATCH_M across.
 PATCH_M = 2.5
-LITTER_LUMA = 0.32
+LITTER_LUMA = 0.36
 LITTER = {
     'leaves': [('Dry Fallen Leaves', '6984772c', 2.0), ('Fallen Leaves', 'ba04f3c3', 1.0),
                ('Fallen Oak Leaves', 'ef487f44', 4.0), ('Dry Fallen Leaves', '6984772c', 2.0)],
