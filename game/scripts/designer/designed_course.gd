@@ -39,6 +39,9 @@ var paths: Array[CoursePath] = []
 ## Field walls (dry-stone and mortared), each a line of (x, z) points:
 ## scenery, drawn by StoneWalls.
 var walls: Array[PackedVector2Array] = []
+## Buildings (the clubhouse, houses along the boundary), drawn by
+## CourseBuildings and solid to the ball.
+var buildings: Array[CourseBuilding] = []
 ## What the course knows about each library object it uses (DesignerObjects
 ## measures them when the player's files are there), so a course shared with
 ## someone without the files still has the right obstacles and stand-ins.
@@ -344,6 +347,8 @@ func to_dict(with_heights := true) -> Dictionary:
 		"venue": "tournament" if tournament else "club",
 		"source": source.duplicate(true),
 	}
+	if not buildings.is_empty():
+		out["buildings"] = buildings.map(func(b: CourseBuilding) -> Dictionary: return b.to_dict())
 	if not biome.is_empty():
 		out["biome"] = biome
 	if not _landscape_saved.is_empty():
@@ -401,6 +406,12 @@ static func from_dict(d: Dictionary) -> DesignedCourse:
 			for i in range(0, (w as Array).size() - 1, 2):
 				line.append(Vector2(float(w[i]), float(w[i + 1])))
 			c.walls.append(line)
+	var building_list: Variant = d.get("buildings", [])
+	for b: Variant in building_list if building_list is Array else []:
+		if b is Dictionary:
+			var building := CourseBuilding.from_dict(b)
+			if building.is_valid():
+				c.buildings.append(building)
 	var info: Variant = d.get("object_info", {})
 	if info is Dictionary:
 		for id: Variant in info:

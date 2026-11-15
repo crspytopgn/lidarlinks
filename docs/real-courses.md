@@ -94,7 +94,14 @@ ground. Every local peak at least 3 m tall is a tree, its height the peak
 height, one per 4 m at most; level peaks (roofs) are skipped, and so are
 trees on OpenStreetMap buildings, play areas and water. A wooded course
 has tens of thousands, so the ones nearest the holes are planted first, up
-to 6000; with lidar trees, woods aren't filled by guesswork.
+to 30,000 (2,500 on phones and tablets); with lidar trees, woods aren't
+filled by guesswork. Until November 2026 the limit was 6000, which on a
+course in a forest (West Essex, in Epping Forest) planted the trees along
+the holes and left the woods beyond them as bare grass. The extra trees
+stand well away from the holes, where the round draws them in batches that
+turn into impostors past 70 m and cast no sun shadow, so they cost little:
+on West Essex, about 10 more draw calls and 0.2 to 0.4 million more
+triangles from the tees.
 
 ### Aerial photos
 
@@ -189,11 +196,18 @@ OpenStreetMap from the club's own published scorecard.
   are metres, since a `Vector2` would round them by tens of centimetres.
 - **Areas:** `golf=green`, `tee`, `fairway`, `bunker` (sand), `rough`,
   `fringe`, `water_hazard` and `lateral_water_hazard`, `natural=water`
-  (water), `natural=scrub` and `heath` (deep rough). Multipolygons are joined
+  (water), `natural=scrub` and `heath` (deep rough), `natural=grassland` and
+  `landuse=meadow` (deep rough with meadow grass). Multipolygons are joined
   from their outer ways. Outlines are simplified (0.3 m for greens, tees and
   bunkers, more for big areas, at most 90 points) and clipped to the area.
   Streams, ditches and rivers become water strips cut into 60 m pieces, so
-  each piece keeps its own water line on sloping ground.
+  each piece keeps its own water line on sloping ground. Culverted and
+  piped ones (`tunnel`, `covered=yes`, `location=underground` or a
+  negative `layer`) are left out, and with lidar ground a ditch or drain
+  is only dug where the lidar shows it: lower than the ground 3 m either
+  side by 12 cm or more along at least a third of it. Field drains are
+  often mapped as ditches without a tag saying they're piped, and were
+  cut as long straight trenches across fields.
 - **Several courses at one club:** when the holes' `golf:course:name` names
   two or more courses of nine holes or more, each is built as its own
   course; the first is opened and the others saved beside it.
@@ -205,7 +219,7 @@ OpenStreetMap from the club's own published scorecard.
 - **Trees:** `natural=tree` points (sized by their `height` tag),
   `natural=tree_row` lines (a tree every 7 m) and woods (`natural=wood`,
   `landuse=forest`) filled on a jittered 9 m grid, thinned to keep the
-  course under 5000 trees. `leaf_type` picks pines or broadleaves. No tree
+  course under the tree limit. `leaf_type` picks pines or broadleaves. No tree
   is planted on a fairway, green, tee, bunker or in water.
 - **What the map lacks:** many clubs are mapped with their hole lines but
   not every green, tee, fairway or bunker. `CourseGuesser`
@@ -279,6 +293,22 @@ OpenStreetMap from the club's own published scorecard.
   redrawn. Moving one or its points makes it the designer's own (no
   longer marked).
 - **Cart paths:** `golf=cartpath` and `golf_cart=designated` ways.
+- **Buildings:** every `building=*` outline inside the area: the
+  clubhouse, houses along the boundary, barns and sheds
+  (`CourseBuilding`, drawn by `CourseBuildings`, solid to the ball). With
+  a lidar surface model the height is the lidar's: the roof's top is the
+  90th percentile of surface minus ground at points a metre apart inside
+  the outline, and a roof whose points spread more than a metre from eaves
+  to ridge is pitched. Otherwise `height`, `building:levels` (2.9 m a
+  floor) or a typical height for the kind (a two-storey house 5.3 m to the
+  eaves, 8.6 m to the ridge; a shed 3.2 m). Simple outlines (filling at
+  least 78% of the rectangle round them) get a pitched roof over that
+  rectangle: gabled along the long side, hipped when nearly square, on a
+  bungalow, or as `roof:shape` says; complex ones and big ones are flat.
+  `building.gdshader` draws brick courses or render, windows on each floor
+  (none on sheds and barns) and roof tiles, in the brick, render, slate
+  and clay colours of a British street, shared along a street more often
+  than not.
 - **Roads:** `highway=*` ways crossing the course (not tunnels or unpaved tracks; footpaths only when paved) as tarmac paths, at their `width`, `lanes` x 3.2 m or a typical width for the road class. The ball bounces and runs on them as on the Links path surface, and they give free relief.
 - **Ground:** the lidar or tile heights at every 2 m sample, bilinear. Heights below
   -12 m (the sea floor) are raised to -12 m, then the grid is stored round
@@ -340,8 +370,10 @@ game/tests/realcourse_tests.gd  checks on a made-up map (no network)
   fairways in low-contrast photos.
 - More lidar and photo services (above); reprojecting from national
   grids would open most of the rest.
-- Buildings (`building=*`, already read to keep trees off them) as
-  objects, and the course outline as out of bounds where the club marks it
-  so.
+- The course outline as out of bounds where the club marks it so.
+- The real land round a real course to the horizon (Landscape, as the epic
+  courses have), coloured from the land cover, in place of the flat apron
+  beyond the area.
+- Hedges (`barrier=hedge`) and fences.
 - Building the ground over several frames, so the browser doesn't pause
   for a few seconds on big courses.

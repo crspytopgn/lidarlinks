@@ -214,6 +214,7 @@ func _build(place: Dictionary) -> DesignedCourse:
 		lidar_gaps = dtm_missing
 		if lidar.coverage() >= 0.25:
 			height = lidar.ground_at
+			builder.lidar_ground = true
 			ground_name = src["name"]
 			builder.extra_credits.append(src["credit"])
 			if lidar.has_dsm() and not lidar.dsm.is_empty():
@@ -225,6 +226,7 @@ func _build(place: Dictionary) -> DesignedCourse:
 						return null
 					lidar.trees_in(lidar.dsm[k], crowns, taken)
 				builder.lidar_trees = crowns
+				builder.surface = lidar.surface_at
 			break
 		lidar = null
 

@@ -198,6 +198,8 @@ func update_objects() -> void:
 	for p in course.paths:
 		if p.bridge and p.is_valid():
 			_add_bridge_obstacles(p)
+	for b in course.buildings:
+		CourseBuildings.add_obstacles(obstacles, b, self)
 	obstacles.finalize()
 
 
