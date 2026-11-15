@@ -12,7 +12,7 @@ Hollow as "(built in)".
 | Red Spire | desert | Castle Valley, Utah (38.64 N, 109.39 W): a red-rock valley floor between 400 m sandstone walls | Playable |
 | Vermilion Ridge | desert | a real 18-hole layout in the badlands near Mesquite, Nevada, from OpenStreetMap, on USGS 3DEP lidar | Playable |
 | Glacier Crown | snow | a real 18-hole Alpine layout 1,500 m up in Valais, Switzerland, from OpenStreetMap, above the Rhône valley | Playable |
-| (volcanic coast) | tropical | a Hawaiian lava coast | Planned |
+| Ember Coast | tropical | a real 18-hole layout on the Kohala lava coast of Hawaii's Big Island, from OpenStreetMap, on USGS 3DEP lidar | Playable |
 
 ## How they are built
 
@@ -143,4 +143,21 @@ full trees' leaves and the tops of their impostors.
 
 ```bash
 python3 tools/homecourse/dress_real_course.py "Real.olc" game/assets/courses/glacier_crown.olc --name "Glacier Crown" --biome snow --cache /tmp/dem
+```
+
+## Ember Coast: tropical
+
+`--biome tropical`: bare black lava between the holes (the deep rough and
+out of bounds, with dry fountain grass in it), a mown band round each tee,
+fairway and green, coconut palms in groves in the rough beside play (the
+mapped trees become palms too, kept off fairways and paths), small kiawe out
+on the lava, and nothing in the sea or on the shore. The sea is a water
+plane at sea level over the land (Landscape.sea_level: a map-built course's
+heights are measured from `source.base_height`), reaching past the far
+plane so the horizon is the sea's. The palm (`palm_coconut`, DesertPlants)
+is built from numbers like the cacti: a ringed, leaning trunk and a crown of
+arching, drooping fronds.
+
+```bash
+python3 tools/homecourse/dress_real_course.py "Real.olc" game/assets/courses/ember_coast.olc --name "Ember Coast" --biome tropical --cache /tmp/dem
 ```

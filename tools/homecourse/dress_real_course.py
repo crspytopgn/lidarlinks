@@ -3,9 +3,11 @@
 button) as an epic course in our own scenery, and the real land for miles
 round it. Desert: sandstone formations, saguaros and small cacti, bare
 desert between the holes. Snow: deep snow between the holes, snow on the
-trees and pine forests on the slopes.
+trees and pine forests on the slopes. Tropical: black lava between the
+holes, coconut palms round the tees, greens and fairway edges, scattered
+kiawe on the lava, and the sea.
 
-    python3 tools/homecourse/dress_real_course.py IN.olc OUT.olc --name "Vermilion Ridge" [--biome desert|snow] [--cache DIR] [--preview out.png]
+    python3 tools/homecourse/dress_real_course.py IN.olc OUT.olc --name "Vermilion Ridge" [--biome desert|snow|tropical] [--cache DIR] [--preview out.png]
 
 The holes, greens, bunkers, water and ground stay exactly as mapped and
 measured (OpenStreetMap layout, national lidar). What changes is only the
@@ -92,7 +94,8 @@ def main():
     ap.add_argument("out")
     ap.add_argument("--name", required=True)
     ap.add_argument("--cache", default="/tmp/dem")
-    ap.add_argument("--biome", default="desert", choices=["desert", "snow"])
+    ap.add_argument("--biome", default="desert", choices=["desert", "snow", "tropical"])
+    ap.add_argument("--palms", type=int, default=900)
     ap.add_argument("--pines", type=int, default=3500)
     ap.add_argument("--saguaros", type=int, default=650)
     ap.add_argument("--small", type=int, default=2600)
@@ -143,6 +146,7 @@ def main():
     d["shapes"] = kept
     shapes = [(s["surface"], flat(s["points"])) for s in d["shapes"]]
     trees = []
+    rng0 = np.random.default_rng(7)
     for o in d["objects"]:
         if not o["id"].startswith("tree_"):
             continue
@@ -152,6 +156,9 @@ def main():
         if args.biome == "desert":
             o["id"] = "tree_broadleaf"  # desert trees round the greens, not pines
             o["scale"] = round(min(o["scale"], 1.0) * 0.85, 2)
+        elif args.biome == "tropical":
+            o["id"] = "palm_coconut"
+            o["scale"] = round(rng0.uniform(0.8, 1.2), 2)
         else:
             o["id"] = "tree_pine"  # spruce and larch
         trees.append(o)
@@ -204,8 +211,9 @@ def main():
     rng = np.random.default_rng(2003)
     formations = []
     snow = args.biome == "snow"
+    tropical = args.biome == "tropical"
     edge = np.minimum.reduce([X - x0, x0 + w - X, Z - z0, z0 + hh - Z])
-    for kind, count, (s_lo, s_hi), target in ([] if snow else FORMATIONS):
+    for kind, count, (s_lo, s_hi), target in ([] if snow or tropical else FORMATIONS):
         for _ in range(count):
             scale = rng.uniform(s_lo, s_hi)
             reach = ROCK_REACH[kind] * scale
@@ -224,7 +232,26 @@ def main():
     for kind, x, z, _, sc in formations:
         r = ROCK_REACH[kind] * sc + 3.0
         blocked |= (X - x) ** 2 + (Z - z) ** 2 < r * r
+    # Palms stand in the rough beside play, so they get their own mask:
+    # off the played surfaces (with a margin) and the paths only.
+    palm_blocked = np.zeros(X.shape, dtype=bool)
+    for s_, p in shapes:
+        if s_ not in PLAY:
+            continue
+        margin = 14.0 if s_ == "Tee" else 6.0
+        lo = p.min(0) - margin
+        hi = p.max(0) + margin
+        mm = (X >= lo[0]) & (X <= hi[0]) & (Z >= lo[1]) & (Z <= hi[1])
+        palm_blocked[mm] |= geom.signed_distance(p, X[mm], Z[mm]) < margin
+    for p in paths:
+        dd, _ = geom.polyline_distance(flat(p["points"]), X, Z)
+        palm_blocked |= dd < 4.0
     blocked |= slope > 0.5
+    # Nothing stands in the sea (ground at or below sea level, which the
+    # course's base height says), nor right on the shore.
+    sea = height < 1.5 - float(d["source"].get("base_height", 0.0)) if args.biome == "tropical" else np.zeros(X.shape, dtype=bool)
+    blocked |= sea
+    palm_blocked |= sea
 
     objects = [dict(id=k, x=round(x, 1), z=round(z, 1), yaw=round(y, 1), scale=round(s, 2)) for k, x, z, y, s in formations]
     dens = geom.value_noise(X, Z, 120.0, 51) + 0.35 * geom.value_noise(X, Z, 40.0, 52)
@@ -264,7 +291,35 @@ def main():
         objects.append(dict(id="tree_pine", x=round(x, 1), z=round(z, 1), yaw=round(rng.uniform(0, 360), 1), scale=round(rng.uniform(0.8, 1.35), 2)))
         take(x, z)
         pines += 1
-    if snow:
+    palms = 0
+    tries = 0
+    while tropical and palms < args.palms and tries < 400000:
+        # Coconut palms in groves round the tees and greens and along the
+        # fairways' edges, in the rough; kiawe out on the lava.
+        tries += 1
+        x = rng.uniform(x0 + 4, x0 + w - 4)
+        z = rng.uniform(z0 + 4, z0 + hh - 4)
+        j, i = cell_of(x, z)
+        if palm_blocked[j, i] or near[j, i] < 16.0 or near[j, i] > 70.0:
+            continue
+        if rng.random() > (dens[j, i] - 0.15) * 1.8 or not clear(x, z, 5.0):
+            continue
+        objects.append(dict(id="palm_coconut", x=round(x, 1), z=round(z, 1), yaw=round(rng.uniform(0, 360), 1), scale=round(rng.uniform(0.8, 1.25), 2)))
+        take(x, z)
+        palms += 1
+    kiawe = 0
+    tries = 0
+    while tropical and kiawe < args.palms // 3 and tries < 200000:
+        tries += 1
+        x = rng.uniform(x0 + 4, x0 + w - 4)
+        z = rng.uniform(z0 + 4, z0 + hh - 4)
+        j, i = cell_of(x, z)
+        if blocked[j, i] or near[j, i] < 45.0 or not clear(x, z, 9.0):
+            continue
+        objects.append(dict(id="tree_broadleaf", x=round(x, 1), z=round(z, 1), yaw=round(rng.uniform(0, 360), 1), scale=round(rng.uniform(0.45, 0.75), 2)))
+        take(x, z)
+        kiawe += 1
+    if snow or tropical:
         args.saguaros = 0
         args.small = 0
     sag = 0
@@ -307,8 +362,13 @@ def main():
                 continue
             objects.append(dict(id="rock_boulder", x=round(bx, 1), z=round(bz, 1), yaw=round(rng.uniform(0, 360), 1), scale=round(rng.uniform(0.6, 2.2), 2)))
             boulders += 1
+    trees = [t for t in trees if not sea[cell_of(t["x"], t["z"])]]
+    if tropical:
+        # The mapped trees became palms, which the game draws as plants, so
+        # they keep off the fairways and cart paths as the others do.
+        trees = [t for t in trees if not palm_blocked[cell_of(t["x"], t["z"])]]
     d["objects"] = objects + trees
-    print(f"dressing: {pines} pines, {len(formations)} formations {[f[0] for f in formations]}, {boulders} boulders, {sag} saguaros, {small} small cacti")
+    print(f"dressing: {pines} pines, {palms} palms, {kiawe} kiawe, {len(formations)} formations {[f[0] for f in formations]}, {boulders} boulders, {sag} saguaros, {small} small cacti")
 
     # --- The land to the horizon -------------------------------------------
     src = d["source"]
@@ -341,7 +401,11 @@ def main():
     # --- Name, biome, credits ----------------------------------------------
     d["name"] = args.name
     d["biome"] = args.biome
-    src.pop("photo", None)
+    # Not a map-built course any more (the Courses page would offer to
+    # rebuild it from the map), and nothing that names the club.
+    for k in ("photo", "place", "map_name", "builder", "built"):
+        src.pop(k, None)
+    src["kind"] = "dressed"
     d["buildings"] = []  # the town goes too
     ground = [c.strip() for c in d.get("credits", "").split(". ") if c.strip().startswith(("Ground", "Lidar"))]
     d["author"] = "OpenLinks2003 (layout: OpenStreetMap contributors)"

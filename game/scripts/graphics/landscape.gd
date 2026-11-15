@@ -59,7 +59,38 @@ static func build(terrain: DesignedTerrain) -> Node3D:
 		inst.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		inst.gi_mode = GeometryInstance3D.GI_MODE_DISABLED
 		root.add_child(inst)
+	var sea := sea_level(terrain.course)
+	if not is_nan(sea):
+		# The sea over the land below sea level (the elevation tiles carry
+		# the sea floor), out to the land's edge.
+		var plane := PlaneMesh.new()
+		# Out past the far plane, so the horizon is the sea's.
+		plane.size = Vector2.ONE * CAMERA_FAR * 3.0
+		plane.subdivide_width = 48
+		plane.subdivide_depth = 48
+		var water := MeshInstance3D.new()
+		water.name = "Sea"
+		water.mesh = plane
+		water.material_override = Materials.water_surface()
+		water.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		var o: Vector2 = land.origin
+		var mid := o + Vector2(land.cols, land.rows) * float(land.cell) * 0.5
+		water.position = Vector3(mid.x, sea, mid.y)
+		root.add_child(water)
 	return root
+
+
+## The height of the sea on `course` (course metres), or NAN when its biome
+## has no sea. A course built from the map is measured from its own low
+## point (source.base_height metres above the sea); a built-in course
+## from its datum, where the biome's figure applies.
+static func sea_level(course: DesignedCourse) -> float:
+	var l := Biome.land(course.biome)
+	if float(l.sea) < -9000.0:
+		return NAN
+	if course.source.has("base_height"):
+		return float(l.sea) - float(course.source["base_height"])
+	return float(l.sea)
 
 
 ## The shared material for `biome`'s land.

@@ -3,7 +3,7 @@ extends RefCounted
 ## Where in the world a designed course is set, for the courses that aren't
 ## temperate parkland (the epic built-in courses, docs/epic-courses.md):
 ## the colour and texture of the ground between the holes, whether grass
-## grows there, and the colours of the real land round the course
+## grows there (desert hardpan, snow and lava are bare), and the colours of the real land round the course
 ## (Landscape). Saved per course as DesignedCourse.biome; "" is parkland,
 ## which keeps every default.
 ##
@@ -30,9 +30,13 @@ const GROUND := {
 		Surface.Type.DEEP_ROUGH: Color(0.86, 0.89, 0.93),
 		Surface.Type.OUT_OF_BOUNDS: Color(0.84, 0.87, 0.92),
 	},
+	# Tropical: a Hawaiian lava coast, the rough a lush green and beyond it
+	# bare black a'a lava (sRGB about 40, 37, 35 in photos of the Kohala
+	# coast courses).
 	TROPICAL: {
 		Surface.Type.ROUGH: Color(0.20, 0.42, 0.14),
-		Surface.Type.DEEP_ROUGH: Color(0.17, 0.36, 0.11),
+		Surface.Type.DEEP_ROUGH: Color(0.15, 0.135, 0.13),
+		Surface.Type.OUT_OF_BOUNDS: Color(0.14, 0.13, 0.125),
 	},
 }
 ## Surfaces drawn as bare ground (the sand texture, tinted by GROUND) with no
@@ -40,6 +44,7 @@ const GROUND := {
 const BARE := {
 	DESERT: [Surface.Type.DEEP_ROUGH, Surface.Type.OUT_OF_BOUNDS],
 	SNOW: [Surface.Type.DEEP_ROUGH, Surface.Type.OUT_OF_BOUNDS],
+	TROPICAL: [Surface.Type.DEEP_ROUGH, Surface.Type.OUT_OF_BOUNDS],
 }
 ## How much of the deep rough's fescue and wild grass still grows: sparse
 ## bunch grass and scrub in the desert, none through snow.
@@ -58,8 +63,8 @@ const LAND := {
 		rock2 = Color(0.66, 0.34, 0.18), plants = Color(0.2, 0.22, 0.13), cover = 0.35, snow_from = 99999.0, sea = -99999.0},
 	SNOW: {low = Color(0.86, 0.89, 0.94), high = Color(0.92, 0.94, 0.97), rock = Color(0.32, 0.31, 0.31),
 		rock2 = Color(0.42, 0.41, 0.4), plants = Color(0.05, 0.09, 0.06), cover = 0.55, snow_from = 40.0, sea = -99999.0},
-	TROPICAL: {low = Color(0.14, 0.3, 0.09), high = Color(0.18, 0.32, 0.12), rock = Color(0.13, 0.12, 0.12),
-		rock2 = Color(0.22, 0.2, 0.19), plants = Color(0.05, 0.14, 0.04), cover = 0.8, snow_from = 99999.0, sea = 0.0},
+	TROPICAL: {low = Color(0.16, 0.15, 0.14), high = Color(0.3, 0.32, 0.17), rock = Color(0.13, 0.12, 0.12),
+		rock2 = Color(0.22, 0.2, 0.19), plants = Color(0.08, 0.16, 0.05), cover = 0.45, snow_from = 99999.0, sea = 0.0},
 }
 
 
