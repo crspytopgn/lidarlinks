@@ -144,7 +144,10 @@ What grows follows the course's place, as the ambience hears it
 on parkland, mostly ferns in woodland, marram and xeric grass on a links,
 dry grasses and rushes in the desert (the download has no cacti or
 succulents), fewer ferns where it is warm; ferns under tree crowns and
-reeds by water wherever those grow. Near the camera each plant is its
+reeds by water wherever those grow. A designed course's biome wins over its
+place (`ScannedPlants.setting_for_biome`, `BIOME_DENSITY`): a desert course
+grows the desert's plants at a third of the density, scattered on the
+hardpan, a tropical one the woodland's ferns, and a snow course none. Near the camera each plant is its
 near mesh, then the mid mesh, which dissolves into the plant cards
 (`shaders/scanned_plant.gdshader`, the trees' dithered cross-fade). Off at
 Low grass and on the web; Medium grows fewer plants and hands over sooner.
