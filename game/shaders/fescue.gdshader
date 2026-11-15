@@ -16,6 +16,10 @@ uniform float near_end = 45.0;
 uniform float far_start = 120.0;
 uniform float far_end = 160.0;
 uniform float brightness = 1.0;
+// How far a tuft's colour is pulled towards the ground's: 1 for the drawn
+// fescue atlas, less for scanned plant cards, which keep their own colour
+// (FescueField.CARD_GROUND_PULL).
+uniform float ground_pull = 1.0;
 global uniform vec2 wind_vector;
 
 #include "res://shaders/ground_shade.gdshaderinc"
@@ -80,7 +84,7 @@ void fragment() {
 	// blades and the grass between them blur into one.
 	float far = clamp(lod / 4.0, 0.0, 1.0);
 	float warm = smoothstep(0.0, 0.06, base_color.r - base_color.g);
-	vec3 c = mix(t.rgb * 0.85, base_color * 1.05, mix(0.4, 0.65, far) + warm * 0.3) * vec3(1.04, 1.0, 0.9);
+	vec3 c = mix(t.rgb * 0.85, base_color * 1.05, (mix(0.4, 0.65, far) + warm * 0.3) * ground_pull) * vec3(1.04, 1.0, 0.9);
 	// Each tuft a little lighter or darker, greener or drier, so a slope is
 	// patchy as real long grass is.
 	float v = fract(cell * 0.37 + root_xz.x * 0.173 + root_xz.y * 0.291);

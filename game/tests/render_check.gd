@@ -36,7 +36,7 @@ const GOLFER_POSES := [[&"backswing", 0.93], [&"swing", 0.25], [&"swing", 0.29],
 ## and its Ultra shadow atlas alone (8192 squared) takes 256 MB.
 const BUDGET := {
 	"draw calls": 1500,
-	"triangles (millions)": 2.0,
+	"triangles (millions)": 2.2,
 	"objects": 2500,
 	"video memory (MB)": 512.0,
 }

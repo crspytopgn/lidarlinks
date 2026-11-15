@@ -231,7 +231,10 @@ static func frame_of(skeleton: Skeleton3D, which: String) -> Dictionary:
 ## `mesh` (a baked look pack part in `skeleton`'s rest pose) with each
 ## vertex's place on the forearms and the neck in UV2 and its colours (see
 ## golfer_flex.gdshaderinc). Cached per mesh.
-static func with_mask(mesh: ArrayMesh, bone_names: PackedStringArray, skeleton: Skeleton3D) -> ArrayMesh:
+## `rest_verts`: each surface's vertices at the skeleton's rest, when the
+## mesh's own are elsewhere (a Mixamo person's, in its own rest pose).
+static func with_mask(mesh: ArrayMesh, bone_names: PackedStringArray, skeleton: Skeleton3D,
+		rest_verts: Array[PackedVector3Array] = []) -> ArrayMesh:
 	if mesh == null:
 		return null
 	if _masked.has(mesh):
@@ -272,7 +275,7 @@ static func with_mask(mesh: ArrayMesh, bone_names: PackedStringArray, skeleton: 
 						right += w
 					elif neckish[b] == 1:
 						neck += w
-			var p := verts[v]
+			var p := verts[v] if rest_verts.is_empty() else rest_verts[si][v]
 			var colour := Color(0.5, 0.5, 0.0, 1.0)
 			var place := Vector2.ZERO
 			var which := "l" if left > 0.5 else ("r" if right > 0.5 else "")
