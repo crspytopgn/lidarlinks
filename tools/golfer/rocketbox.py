@@ -52,8 +52,37 @@ SIDES = {"L": "l", "R": "r"}
 FINGERS = {"0": "thumb", "1": "index", "2": "middle", "3": "ring", "4": "pinky"}
 
 
+# Mixamo's skeleton (a person rigged by Mixamo's auto-rigger, as
+# tools/golfer/mixamo_person.py reads): its bones to ours. End bones and
+# the eyes go to their parent.
+MIXAMO = {"Hips": "pelvis", "Spine": "spine_01", "Spine1": "spine_02", "Spine2": "spine_03",
+          "Neck": "neck_01", "Head": "head", "HeadTop_End": "head", "LeftEye": "head", "RightEye": "head"}
+for _side, _s in (("Left", "l"), ("Right", "r")):
+    MIXAMO.update({_side + "Shoulder": "clavicle_" + _s, _side + "Arm": "upperarm_" + _s,
+                   _side + "ForeArm": "lowerarm_" + _s, _side + "Hand": "hand_" + _s,
+                   _side + "UpLeg": "thigh_" + _s, _side + "Leg": "calf_" + _s, _side + "Foot": "foot_" + _s,
+                   _side + "ToeBase": "ball_" + _s, _side + "Toe_End": "ball_" + _s})
+    for _f in ("Thumb", "Index", "Middle", "Ring", "Pinky"):
+        for _k in range(1, 5):
+            MIXAMO["%sHand%s%d" % (_side, _f, _k)] = "%s_%02d_%s" % (_f.lower(), min(_k, 3), _s)
+MIXAMO_ENDS = {"HeadTop_End", "LeftEye", "RightEye", "LeftToe_End", "RightToe_End"} | {
+    "%sHand%s4" % (a, f) for a in ("Left", "Right") for f in ("Thumb", "Index", "Middle", "Ring", "Pinky")}
+
+
+def primary(name):
+    """True for the bone a rig bone starts at (the first of those mapped
+    to it): not the face's own bones, the Biped's root or Mixamo's ends."""
+    if name.startswith("mixamorig"):
+        return name.split("_", 1)[1] not in MIXAMO_ENDS
+    mine = our_bone(name)
+    n = name.replace("Bip01", "").strip()
+    return not ((mine == "head" and n != "Head") or (mine == "pelvis" and n != "Pelvis"))
+
+
 def our_bone(name):
-    """The rig bone a Biped bone's skinning goes to."""
+    """The rig bone a Biped (or Mixamo) bone's skinning goes to."""
+    if name.startswith("mixamorig"):
+        return MIXAMO[name.split("_", 1)[1]]
     n = name.replace("Bip01", "").strip()
     simple = {"Pelvis": "pelvis", "Spine": "spine_01", "Spine1": "spine_02", "Spine2": "spine_03",
               "Neck": "neck_01", "Head": "head", "": "pelvis", "Footsteps": "pelvis"}
@@ -178,18 +207,19 @@ def dump(fbx, godot, out):
     return d
 
 
-def person(d, rig):
+def person(d, rig, exact=False, out=None):
     """Moves dump `d` onto the rig: returns (surfaces, joint offsets,
-    height). Surfaces carry rig bone indices and weights (4 each)."""
+    height). Surfaces carry rig bone indices and weights (4 each).
+    `exact` keeps the person's own joints (a Mixamo rig whose clips are
+    baked for it): no longer arms, shoulders forward or spine pivots moved.
+    `out` gets each rig bone's turn from the person's rest ("rot"), the
+    person's joints ("from") and the new ones ("to")."""
     names = list(rig.keys())
     turn = np.diag([-1.0, 1.0, -1.0])  # face -z, left at -x, as the rig
     rb = {}  # rig bone -> the Biped joint it starts at (the first mapped)
     for b in d["bones"]:
         mine = our_bone(b["name"])
-        n = b["name"].replace("Bip01", "").strip()
-        if mine == "head" and n != "Head":
-            continue
-        if mine == "pelvis" and n != "Pelvis":
+        if not primary(b["name"]):
             continue
         rb.setdefault(mine, turn @ np.array(b["origin"]))
     # Absolute turn per rig bone: its Biped direction onto the rig's.
@@ -220,7 +250,7 @@ def person(d, rig):
             u_, sv, vt = np.linalg.svd(b.T @ a)
             fix = np.diag([1.0, 1.0, np.sign(np.linalg.det(u_ @ vt))])
             rot[h] = u_ @ fix @ vt
-            scale[h] = float(np.trace(np.diag(sv) @ fix) / (a * a).sum())
+            scale[h] = 1.0 if exact else float(np.trace(np.diag(sv) @ fix) / (a * a).sum())
             print("  hand_%s scale %.3f, fit %.1f mm" % (s, scale[h], 1000 * np.sqrt(
                 ((scale[h] * a @ rot[h].T - b) ** 2).sum(1).mean())))
         # Fingers and thumb move with the hand: their own curl stays, and
@@ -252,7 +282,7 @@ def person(d, rig):
     # had to bend at the elbow to get there. Each arm bone is stretched
     # along its length only, so the arms keep their thickness.
     size = (rb["neck_01"][1] - rb["foot_l"][1]) / (rig["neck_01"][1] - rig["foot_l"][1])
-    for s in "lr":
+    for s in ("" if exact else "lr"):
         for b, c in (("upperarm_" + s, "lowerarm_" + s), ("lowerarm_" + s, "hand_" + s)):
             if b in rb and c in rb:
                 a = rb[c] - rb[b]
@@ -304,7 +334,7 @@ def person(d, rig):
     # arms hung from the shoulder blades and bent forward at the elbow to
     # reach the grip. The arms, mesh and joints, move forward together.
     forward = {}
-    for s in "lr":
+    for s in ("" if exact else "lr"):
         u = "upperarm_" + s
         want = rig[u][2] - rig["neck_01"][2]
         have = new[u][2] - new["neck_01"][2]
@@ -355,8 +385,10 @@ def person(d, rig):
     # the shoulders forward and down. The mesh stays; only the pivots move,
     # to the rig's heights stretched to the person's back.
     stretch = (new["neck_01"][1] - new["pelvis"][1]) / (rig["neck_01"][1] - rig["pelvis"][1])
-    for b in ("spine_01", "spine_02", "spine_03"):
+    for b in (() if exact else ("spine_01", "spine_02", "spine_03")):
         new[b] = new["pelvis"] + (rig[b] - rig["pelvis"]) * stretch
+    if out is not None:
+        out.update({"rot": dict(rot), "from": dict(rb), "to": dict(new)})
     offsets = {b: (new[b] - rig[b]).tolist() for b in new if b in rig}
     height = float(max(s["positions"][:, 1].max() for s in surfaces))
     return surfaces, offsets, height

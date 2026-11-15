@@ -89,6 +89,12 @@ func _initialize() -> void:
 	_golfer = FreeGolfer.create(look)
 	_golfer.walk_in = false
 	scene.add_child(_golfer)
+	# GOLFER_OFF=arms,hands,twist,...: those helpers switched off, to see
+	# what each one changes.
+	for helper in OS.get_environment("GOLFER_OFF").split(",", false):
+		var node: Variant = _golfer.get("_" + helper)
+		if node is SkeletonModifier3D:
+			(node as SkeletonModifier3D).active = false
 	_player = _golfer.find_child("AnimationPlayer", true, false) as AnimationPlayer
 	_player.callback_mode_process = AnimationMixer.ANIMATION_CALLBACK_MODE_PROCESS_MANUAL
 	_cam = Camera3D.new()

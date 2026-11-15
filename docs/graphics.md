@@ -532,6 +532,13 @@ calls, 0.7 million triangles, 1,100 objects and 125 MB from the tee in
 Compatibility when the budget was set. Raise a limit only with a reason
 written here.
 
+2026-11-15: triangles went from 2.0 to 2.2 million. The default golfer is
+now the smoothed mesh Michael rigged on mixamo.com (about 27,000 triangles
+with his cap, up from 7,000), drawn in the main pass and each shadow
+cascade. The tee view of the round was already at 1.9 million and this took
+it just over 2.0. A hero golfer of that size is ordinary for a sports game,
+and the extra 0.2 million is about 5 to 6 golfers' worth.
+
 ## Download size
 
 `tools/size_report.py` runs after the CI export. It writes each build's

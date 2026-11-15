@@ -55,6 +55,12 @@ func set_ground(_height: Callable, _sink: float = 0.0) -> void:
 ## The player's stand bag for this shot (null with a caddie or the buggy),
 ## set before play(&"address") at a new ball: a rig can take its club out
 ## of it before walking in.
+## True when this shot's ball is on a tee (the teeing ground), set before
+## play(&"address") at a new ball: a rig can tee it up first.
+func set_teed(_teed: bool) -> void:
+	pass
+
+
 func set_bag(_bag: Node3D) -> void:
 	pass
 
