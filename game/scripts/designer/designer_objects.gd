@@ -122,6 +122,7 @@ static func add_obstacles(field: ObstacleField, o: PlacedObject, y: float, saved
 			# up and a high, open crown from about half height to 17 m.
 			field.add_cylinder(x, z, 0.26 * s, y - 1.0, y + 10.0 * s, ObstacleField.Kind.SOLID)
 			field.add_cylinder(x, z, 3.6 * s, y + 8.5 * s, y + 17.0 * s, ObstacleField.Kind.CANOPY)
+			field.mark_conifer()
 			return
 		"tree_broadleaf":
 			field.add_cylinder(x, z, 0.28 * s, y - 1.0, y + 3.5 * s, ObstacleField.Kind.SOLID)
@@ -150,6 +151,8 @@ static func add_obstacles(field: ObstacleField, o: PlacedObject, y: float, saved
 			if h >= 1.5:
 				field.add_cylinder(x, z, clampf(0.02 * h, 0.1, 0.45), y - 1.0, y + h * 0.4, ObstacleField.Kind.SOLID)
 				field.add_cylinder(x, z, 0.4 * w, y + h * 0.35, y + h * 0.97, ObstacleField.Kind.CANOPY)
+				if CourseObjects.plant_shape(o.id) == 2:
+					field.mark_conifer()
 			elif h >= 0.5:
 				field.add_cylinder(x, z, 0.4 * w, y - 0.5, y + h * 0.9, ObstacleField.Kind.CANOPY)
 		"solid":

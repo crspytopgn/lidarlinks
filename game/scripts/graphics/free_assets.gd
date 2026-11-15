@@ -168,11 +168,11 @@ static func megascans_dir() -> String:
 ## A texture from the Megascans pack's foliage/, or null. Mipmapped, and
 ## block-compressed like the free ones on the desktop; halved to 1K in
 ## Compatibility, which keeps them uncompressed.
-static func _load_megascans(file: String) -> Texture2D:
+static func _load_megascans(file: String, folder := "foliage/", max_size := 1024) -> Texture2D:
 	var dir := megascans_dir()
 	if dir.is_empty():
 		return null
-	var path := dir + "foliage/" + file
+	var path := dir + folder + file
 	if _vram.has(path):
 		return _vram[path]
 	if not FileAccess.file_exists(path):
@@ -180,8 +180,8 @@ static func _load_megascans(file: String) -> Texture2D:
 	var img := Image.load_from_file(path)
 	if img == null or img.is_empty():
 		return null
-	if not gpu_compress() and img.get_width() > 1024:
-		img.resize(1024, 1024 * img.get_height() / img.get_width(), Image.INTERPOLATE_LANCZOS)
+	if not gpu_compress() and img.get_width() > max_size:
+		img.resize(max_size, max_size * img.get_height() / img.get_width(), Image.INTERPOLATE_LANCZOS)
 	img.generate_mipmaps()
 	if gpu_compress():
 		img.compress(Image.COMPRESS_S3TC)
@@ -194,6 +194,13 @@ static func _load_megascans(file: String) -> Texture2D:
 ## or null without a pack.
 static func megascans_texture(file: String) -> Texture2D:
 	return _load_megascans(file) if not file.is_empty() else null
+
+
+## A texture anywhere in the pack (such as "debris/litter_leaves.png"), or
+## null without a pack. Compatibility keeps them to `compat_size`, as it
+## stores them uncompressed.
+static func megascans_pack_texture(file: String, compat_size := 512) -> Texture2D:
+	return _load_megascans(file, "", compat_size) if not file.is_empty() else null
 
 
 static func _load(file: String) -> Texture2D:
