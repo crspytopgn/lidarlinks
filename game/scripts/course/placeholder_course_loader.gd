@@ -16,6 +16,7 @@ const NAME := "Kettle Hollow"
 const EPIC := {
 	"res://assets/courses/red_spire.olc": "Red Spire",
 	"res://assets/courses/vermilion_ridge.olc": "Vermilion Ridge",
+	"res://assets/courses/glacier_crown.olc": "Glacier Crown",
 }
 
 static var _parsed: DesignedCourse

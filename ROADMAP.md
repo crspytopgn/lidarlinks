@@ -190,7 +190,8 @@ product lead builds it.
   - [x] Red Spire: a desert nine among red sandstone spires, hoodoos, buttes and an arch, with saguaros, barrel cacti and prickly pear, the real land to the horizon
   - [x] Red Spire mesas: tees and greens up on sheer-walled mesas with rock veneer
   - [x] Vermilion Ridge: a real 18-hole desert layout (OpenStreetMap, USGS lidar) dressed in our own epic scenery
-  - [ ] A snowy mountain course (snow-laden pines) and a Hawaiian volcanic coast course (palms, sea)
+  - [x] Glacier Crown: a real 18-hole Alpine layout in deep snow, snow-laden spruce woods, the Alps to the horizon
+  - [ ] A Hawaiian volcanic coast course (palms, sea)
 - [ ] Community add-on courses
   - [x] Suggest popular free courses with links to Links Corner, and add them from a downloaded `.zip` in the browser ([community-courses.md](docs/community-courses.md))
   - [x] Courses page in the main menu: add course files (.olc, .crz, .zip) on desktop and in the browser, delete your own, hide the game's, and Update a real course to rebuild it with the newest builder ([course-library.md](docs/course-library.md))

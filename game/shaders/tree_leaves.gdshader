@@ -63,6 +63,7 @@ uniform vec3 needle_light : source_color = vec3(0.16, 0.29, 0.12);
 
 global uniform vec2 wind_vector;
 global uniform float foliage_sway;
+global uniform float tree_snow;
 // Scanned trees in a MultiMesh draw in bands (TreeFactory.LITE_DISTANCE):
 // 0 every distance up to the impostors, 1 the full mesh up to
 // tree_lite_distance, 2 the lite mesh from there to the impostors.
@@ -300,6 +301,12 @@ void fragment() {
 	// Inner leaves sit in the crown's own shade.
 	col *= core ? (needles ? 1.0 : 0.62) : mix(inner_shade, 1.0, info.g * info.g);
 	col *= 1.0 - underside_shade * (1.0 - smoothstep(-0.75, 0.55, crown_up)) * (core ? 0.5 : 1.0);
+	// Snow on the crowns' upper faces (snow courses): lying in clumps, so
+	// some pads hold more than others.
+	if (tree_snow > 0.0 && !bake) {
+		float lie = smoothstep(0.05, 0.55, crown_up + (h - 0.5) * 0.5) * tree_snow;
+		col = mix(col, vec3(0.78, 0.81, 0.86) * (core ? 0.8 : 1.0), lie);
+	}
 	if (bake) {
 		ALBEDO = vec3(0.0);
 		// A pine's pads shade the pads below them far more than a broadleaf

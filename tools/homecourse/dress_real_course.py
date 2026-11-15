@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """Dresses a course built from the map (the designer's "Real course..."
-button) as an epic desert course: our own desert biome, sandstone
-formations, saguaros and small cacti, bare desert between the holes, and
-the real land for miles round it.
+button) as an epic course in our own scenery, and the real land for miles
+round it. Desert: sandstone formations, saguaros and small cacti, bare
+desert between the holes. Snow: deep snow between the holes, snow on the
+trees and pine forests on the slopes.
 
-    python3 tools/homecourse/dress_real_course.py IN.olc OUT.olc --name "Vermilion Ridge" [--cache DIR] [--preview out.png]
+    python3 tools/homecourse/dress_real_course.py IN.olc OUT.olc --name "Vermilion Ridge" [--biome desert|snow] [--cache DIR] [--preview out.png]
 
 The holes, greens, bunkers, water and ground stay exactly as mapped and
 measured (OpenStreetMap layout, national lidar). What changes is only the
@@ -91,6 +92,8 @@ def main():
     ap.add_argument("out")
     ap.add_argument("--name", required=True)
     ap.add_argument("--cache", default="/tmp/dem")
+    ap.add_argument("--biome", default="desert", choices=["desert", "snow"])
+    ap.add_argument("--pines", type=int, default=3500)
     ap.add_argument("--saguaros", type=int, default=650)
     ap.add_argument("--small", type=int, default=2600)
     ap.add_argument("--preview")
@@ -146,8 +149,11 @@ def main():
         if near_at(o["x"], o["z"]) > 55.0:
             continue  # gardens and streets
         o = dict(o)
-        o["id"] = "tree_broadleaf"  # desert trees round the greens, not pines
-        o["scale"] = round(min(o["scale"], 1.0) * 0.85, 2)
+        if args.biome == "desert":
+            o["id"] = "tree_broadleaf"  # desert trees round the greens, not pines
+            o["scale"] = round(min(o["scale"], 1.0) * 0.85, 2)
+        else:
+            o["id"] = "tree_pine"  # spruce and larch
         trees.append(o)
     print(f"trees: kept {len(trees)} of {len(d['objects'])}")
 
@@ -197,8 +203,9 @@ def main():
 
     rng = np.random.default_rng(2003)
     formations = []
+    snow = args.biome == "snow"
     edge = np.minimum.reduce([X - x0, x0 + w - X, Z - z0, z0 + hh - Z])
-    for kind, count, (s_lo, s_hi), target in FORMATIONS:
+    for kind, count, (s_lo, s_hi), target in ([] if snow else FORMATIONS):
         for _ in range(count):
             scale = rng.uniform(s_lo, s_hi)
             reach = ROCK_REACH[kind] * scale
@@ -241,6 +248,25 @@ def main():
     def cell_of(x, z):
         return int(round((z - z0) / cell)), int(round((x - x0) / cell))
 
+    pines = 0
+    tries = 0
+    while snow and pines < args.pines and tries < 400000:
+        # Spruce woods on the slopes between the holes: dense in stands (a
+        # slow noise), open glades between, thinning toward play.
+        tries += 1
+        x = rng.uniform(x0 + 4, x0 + w - 4)
+        z = rng.uniform(z0 + 4, z0 + hh - 4)
+        j, i = cell_of(x, z)
+        if blocked[j, i] or near[j, i] < 20.0:
+            continue
+        if rng.random() > (dens[j, i] - 0.25) * 2.2 or not clear(x, z, 4.5):
+            continue
+        objects.append(dict(id="tree_pine", x=round(x, 1), z=round(z, 1), yaw=round(rng.uniform(0, 360), 1), scale=round(rng.uniform(0.8, 1.35), 2)))
+        take(x, z)
+        pines += 1
+    if snow:
+        args.saguaros = 0
+        args.small = 0
     sag = 0
     tries = 0
     while sag < args.saguaros and tries < 300000:
@@ -282,7 +308,7 @@ def main():
             objects.append(dict(id="rock_boulder", x=round(bx, 1), z=round(bz, 1), yaw=round(rng.uniform(0, 360), 1), scale=round(rng.uniform(0.6, 2.2), 2)))
             boulders += 1
     d["objects"] = objects + trees
-    print(f"dressing: {len(formations)} formations {[f[0] for f in formations]}, {boulders} boulders, {sag} saguaros, {small} small cacti")
+    print(f"dressing: {pines} pines, {len(formations)} formations {[f[0] for f in formations]}, {boulders} boulders, {sag} saguaros, {small} small cacti")
 
     # --- The land to the horizon -------------------------------------------
     src = d["source"]
@@ -314,14 +340,16 @@ def main():
 
     # --- Name, biome, credits ----------------------------------------------
     d["name"] = args.name
-    d["biome"] = "desert"
+    d["biome"] = args.biome
     src.pop("photo", None)
+    d["buildings"] = []  # the town goes too
+    ground = [c.strip() for c in d.get("credits", "").split(". ") if c.strip().startswith(("Ground", "Lidar"))]
     d["author"] = "OpenLinks2003 (layout: OpenStreetMap contributors)"
     d["credits"] = (
         "Hole layout from OpenStreetMap, (c) OpenStreetMap contributors, ODbL 1.0 "
-        "(openstreetmap.org/copyright). Ground: USGS 3D Elevation Program lidar, public domain; "
-        "the land round it from the Terrain Tiles on AWS Open Data (Mapzen). Scenery (rock "
-        "formations, plants, desert) by OpenLinks2003. Not connected with or endorsed by any club.")
+        "(openstreetmap.org/copyright). " + ". ".join(ground).rstrip(".") + ". The land round it from the "
+        "Terrain Tiles on AWS Open Data (Mapzen). Scenery (rock, plants, snow, desert) by "
+        "OpenLinks2003. Not connected with or endorsed by any club.")
     blob = json.dumps(d, separators=(",", ":")).encode()
     with gzip.open(args.out, "wb", compresslevel=9) as f:
         f.write(blob)

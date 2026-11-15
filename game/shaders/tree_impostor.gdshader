@@ -28,6 +28,7 @@ const vec3 TRANSMIT_TINT = vec3(0.7, 1.1, 0.6);
 
 global uniform vec2 wind_vector;
 global uniform float foliage_sway;
+global uniform float tree_snow;
 #include "res://shaders/tree_lod.gdshaderinc"
 varying vec2 lod_span; // this instance's LOD span (tree_lod.gdshaderinc)
 
@@ -93,6 +94,12 @@ void fragment() {
 	}
 	// The tree's own leaf colour; the trunk at the bottom is left alone.
 	c.rgb *= mix(vec3(1.0), tint, smoothstep(0.75, 0.55, UV.y));
+	// Snow on the crown (snow courses), more toward the top, as on the full
+	// tree; a baked atlas never holds it (it is baked without).
+	if (tree_snow > 0.0) {
+		float lie = smoothstep(0.75, 0.35, UV.y) * (0.45 + 0.4 * fract(sin(dot(floor(uv * 90.0), vec2(12.9898, 78.233))) * 43758.5453)) * tree_snow;
+		c.rgb = mix(c.rgb, vec3(0.78, 0.81, 0.86), lie);
+	}
 	// Aerial perspective: far tree lines lose colour and lift towards the
 	// sky's blue, layer behind layer, so the distance reads as depth.
 	float far = smoothstep(60.0, 350.0, length(VERTEX)) * 0.6;
