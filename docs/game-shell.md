@@ -68,6 +68,30 @@ top. Click again to set power; the marker runs back down. Click a third time
 as it crosses the white snap line at the bottom. Early (above the line) pulls
 and hooks the ball left, late pushes and slices it right.
 
+Settings > Pace sets how brisk the meter is. Classic is Links 2003's own
+timing for every meter: a putt or chip starts at the bottom, 15 positions
+below the snap line, and creeps (3 to 5.5 s a putt, power click to snap).
+Quick, the default, keeps the full swing's timing but starts chip and putt
+meters on the snap line, climbs at a steady 2 frames a position (under 2 s
+to the top), turns 3 positions past the power click instead of 6 and comes
+back as fast until 8 positions above the line, then at the original's own
+short-putt pace (5 frames a position, eased) through the snap, so a putt
+takes 0.8 to 3 s and the snap is no harder to hit. A putt that stays out
+is followed by a 1 s pause instead of 2.5 s (Space or a click still goes
+on at once). The ball's physics are the same either way.
+
+In Broadcast and Tour the bar reads in distances. A putt's scale is feet on
+a level green; with Quick the putting meter is also sized to the putt
+(`GolfRound.PUTT_RANGES`: 30, 45 or 65% of the full putt meter's power, or
+all of it), the smallest whose top rolls twice the hole's distance, so the
+hole sits two thirds or so along (the roll grows as the square of the
+stroke) and a 10-footer is no longer a sliver in the first quarter of a 110
+ft meter (the original also had a long and a short putt meter). A full swing
+or chip labels its quarter marks with the carry in yards for this club and
+lie, on the flat with no wind, and reads the swing as "142 YD 80%" while it
+climbs (`GolfRound.carry_yards`, worked out a sample a frame). Classic Links
+keeps the bare meter.
+
 The yellow ring shows where a full swing would land (for putts, the hole
 distance). Holes run tee to cup, then on to the next. Out of bounds is
 stroke and distance. A hole is picked up at 10 strokes.

@@ -110,6 +110,13 @@ var green_speed := 1
 ## How the people playing swing: 0 the three-click meter, 1 Links 2003's
 ## PowerStroke mouse swing (MouseSwingControl). Space always uses the meter.
 var swing_method := 1
+## The pace of play. Quick (the default): the three-click chip and putt
+## meters start on the snap line and move briskly
+## (LinksPowerStroke.QUICK_CLIMB), the Broadcast and Tour putting meter is
+## sized to the putt, and a putt that stays out is followed by a short
+## pause. Classic: Links 2003's own meter timing and one putting meter.
+## The ball's physics and the snap's difficulty are the same either way.
+var quick_pace := true
 ## Links 2003's swing help for the mouse swing: once most of a player's
 ## strokes have had no sideways movement at all, strokes are nudged a few
 ## degrees off line (LinksMouse.Help).
@@ -354,6 +361,7 @@ static func _load_saved(path: String) -> GraphicsSettings:
 	s.green_firmness = clampi(int(cfg.get_value(GAME_SECTION, "green_firmness", s.green_firmness)), 0, 2)
 	s.green_speed = clampi(int(cfg.get_value(GAME_SECTION, "green_speed", s.green_speed)), 0, 2)
 	s.swing_method = clampi(int(cfg.get_value(GAME_SECTION, "swing_method", s.swing_method)), 0, 1)
+	s.quick_pace = bool(cfg.get_value(GAME_SECTION, "quick_pace", s.quick_pace))
 	s.swing_help = bool(cfg.get_value(GAME_SECTION, "swing_help", s.swing_help))
 	s.putting_grid = clampi(int(cfg.get_value(GAME_SECTION, "putting_grid", s.putting_grid)), 0, PUTTING_GRID_NAMES.size() - 1)
 	s.breakline = bool(cfg.get_value(GAME_SECTION, "breakline", s.breakline))
@@ -427,6 +435,7 @@ func save(path := PATH) -> void:
 	cfg.set_value(GAME_SECTION, "green_firmness", green_firmness)
 	cfg.set_value(GAME_SECTION, "green_speed", green_speed)
 	cfg.set_value(GAME_SECTION, "swing_method", swing_method)
+	cfg.set_value(GAME_SECTION, "quick_pace", quick_pace)
 	cfg.set_value(GAME_SECTION, "swing_help", swing_help)
 	cfg.set_value(GAME_SECTION, "putting_grid", putting_grid)
 	cfg.set_value(GAME_SECTION, "breakline", breakline)

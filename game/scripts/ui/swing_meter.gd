@@ -96,6 +96,43 @@ const TARGET := Color(0.95, 0.12, 0.1)
 ## and the hole's distance in feet (below 0 for none).
 var putt_feet := PackedFloat32Array()
 var hole_feet := -1.0
+## Quick pace for chips and putts (LinksPowerStroke.Run.quick); false is
+## Classic, the original's timing.
+var quick := true
+## A full swing's or chip's distance scale: the carry in yards, on the flat
+## with no wind, at meter values `yard_at` (rising, from above 0),
+## empty for none (GolfRound.carry_yards). The Broadcast and Tour bars
+## label their quarter marks with it and read the swing in yards.
+var yard_at := PackedFloat32Array()
+var yards := PackedFloat32Array()
+
+
+func set_yard_scale(at: PackedFloat32Array, yd: PackedFloat32Array) -> void:
+	if at == yard_at and yd == yards:
+		return
+	yard_at = at
+	yards = yd
+	queue_redraw()
+
+
+## Carry yards for meter value `v` by the scale (0 at the snap line and
+## below), or -1 with no scale.
+func yards_for_value(v: float) -> float:
+	if yards.is_empty() or yards.size() != yard_at.size():
+		return -1.0
+	var a := 0.0
+	var ya := 0.0
+	for i in yards.size():
+		if v <= yard_at[i]:
+			var t := 0.0 if yard_at[i] <= a else (v - a) / (yard_at[i] - a)
+			return lerpf(ya, yards[i], clampf(t, 0.0, 1.0))
+		a = yard_at[i]
+		ya = yards[i]
+	return yards[yards.size() - 1]
+
+
+func _reads_yards() -> bool:
+	return not putting() and not yards.is_empty() and yards.size() == yard_at.size()
 
 
 func set_putt_scale(feet: PackedFloat32Array, hole_ft: float) -> void:
@@ -168,7 +205,7 @@ func click() -> void:
 	match phase:
 		Phase.IDLE, Phase.DONE:
 			phase = Phase.BACKSWING
-			run = LinksPowerStroke.Run.new(mode)
+			run = LinksPowerStroke.Run.new(mode, quick)
 			value = run.value()
 			shown = run.smooth_value()
 			power = 0.0
@@ -425,8 +462,13 @@ func _draw_modern() -> void:
 			if big and m < 0.999:
 				draw_string(small, Vector2(x - 12.0, mid + h * 0.5 + 19.0), str(roundi(m * 100.0)), HORIZONTAL_ALIGNMENT_CENTER, 24.0, 9, Color(1, 1, 1, 0.45))
 	else:
+		var small := GlassTheme.font(500)
 		for quarter in [0.25, 0.5, 0.75, 1.0]:
 			draw_circle(Vector2(_modern_x(quarter), mid + h + 5.0), 1.6, Color(1, 1, 1, 0.45))
+			if _reads_yards():
+				# What each quarter of the swing carries with this club.
+				draw_string(small, Vector2(_modern_x(quarter) - 14.0, mid + h + 18.0), str(roundi(yards_for_value(quarter))),
+					HORIZONTAL_ALIGNMENT_CENTER, 28.0, 9, Color(1, 1, 1, 0.5))
 	draw_line(Vector2(snap, mid - h * 1.6), Vector2(snap, mid + h * 1.6), Color(1, 1, 1, 0.85), 2.0, true)
 	if target >= 0.0:
 		draw_circle(Vector2(_modern_x(target), mid - h - 6.0), 4.5, TARGET)
@@ -443,17 +485,37 @@ func _draw_modern() -> void:
 		var at := shown if phase == Phase.BACKSWING else power
 		draw_string(font, Vector2(MODERN_INSET + 44.0, top), "%d FT" % roundi(feet_for_value(at)), HORIZONTAL_ALIGNMENT_LEFT, -1, 15, GOLD if phase != Phase.BACKSWING else Color(1, 1, 1, 0.9))
 	elif phase == Phase.BACKSWING:
-		draw_string(font, Vector2(MODERN_INSET + 52.0, top), "%d%%" % roundi(shown * 100.0), HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color(1, 1, 1, 0.9))
+		draw_string(font, Vector2(MODERN_INSET + 52.0, top), _reading(shown), HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color(1, 1, 1, 0.9))
 	elif phase == Phase.DOWNSWING or phase == Phase.DONE:
-		draw_string(font, Vector2(MODERN_INSET + 52.0, top), "%d%%" % roundi(power * 100.0), HORIZONTAL_ALIGNMENT_LEFT, -1, 15, GOLD)
+		draw_string(font, Vector2(MODERN_INSET + 52.0, top), _reading(value_of_power()), HORIZONTAL_ALIGNMENT_LEFT, -1, 15, GOLD)
 	if phase == Phase.DONE:
 		var label := miss_text()
 		var colour := good() if accuracy == 0.0 else GOLD
 		draw_string(font, Vector2(0, top), label, HORIZONTAL_ALIGNMENT_RIGHT, size.x - MODERN_INSET, 15, colour)
 	elif phase == Phase.IDLE and putting() and hole_feet >= 0.0:
 		draw_string(font, Vector2(0, top), "HOLE %d FT" % roundi(hole_feet), HORIZONTAL_ALIGNMENT_RIGHT, size.x - MODERN_INSET, 12, Color(1, 1, 1, 0.6))
+	elif phase == Phase.IDLE and _reads_yards():
+		draw_string(font, Vector2(0, top), "FULL %d YD CARRY" % roundi(yards_for_value(1.0)), HORIZONTAL_ALIGNMENT_RIGHT, size.x - MODERN_INSET, 12, Color(1, 1, 1, 0.6))
 	elif phase == Phase.IDLE:
 		draw_string(font, Vector2(0, top), "CLICK TO PUTT" if putting() else "CLICK TO SWING", HORIZONTAL_ALIGNMENT_RIGHT, size.x - MODERN_INSET, 12, Color(1, 1, 1, 0.45))
+
+
+## The meter value the power click landed on (`power` is a share of full
+## power, which runs past the meter's value in the overswing).
+func value_of_power() -> float:
+	if run != null and run.power_pos != 0:
+		return run.value_of(run.power_pos)
+	return power
+
+
+## The bar's live reading of the swing: the carry in yards with a scale,
+## otherwise the percentage.
+func _reading(v: float) -> String:
+	if _reads_yards():
+		# The yards, and the share of the swing the caddie talks in.
+		var pct := v if phase == Phase.BACKSWING or mode != LinksPowerStroke.Mode.FULL else power
+		return "%d YD   %d%%" % [roundi(yards_for_value(v)), roundi(maxf(pct, 0.0) * 100.0)]
+	return "%d%%" % roundi((power if phase != Phase.BACKSWING else v) * 100.0)
 
 
 ## The putting meter's scale in feet on the level: ticks at round

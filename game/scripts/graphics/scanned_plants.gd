@@ -43,6 +43,8 @@ const FLORA := {
 	FreeAmbience.Setting.SEASIDE: {"dune": 0.6, "grass": 0.3, "flower": 0.1},
 	FreeAmbience.Setting.DESERT: {"dune": 0.4, "grass": 0.4, "wet": 0.2},
 }
+## How many plants a biome's beds grow against a temperate course's.
+const BIOME_DENSITY := {Biome.DESERT: 0.3, Biome.SNOW: 0.0}
 ## Warm places (FreeAmbience.is_warm) dry the ferns out of the open beds.
 const WARM_FERN := 0.3
 ## Under a tree crown (out to this many crown radii) the beds are ferns
@@ -84,6 +86,16 @@ func set_place(course: CourseData) -> void:
 	warm = FreeAmbience.is_warm(at)
 
 
+## The flora setting a course's biome grows, or `place_setting` (from where
+## the course is) for parkland.
+static func setting_for_biome(biome: String, place_setting: FreeAmbience.Setting) -> FreeAmbience.Setting:
+	if biome == Biome.DESERT:
+		return FreeAmbience.Setting.DESERT
+	if biome == Biome.TROPICAL:
+		return FreeAmbience.Setting.WOODLAND
+	return place_setting
+
+
 ## Grows the beds round `hole`'s tees and green, replacing the last hole's.
 func setup(hole: HoleData, grass_level: int) -> void:
 	for c in get_children():
@@ -94,6 +106,14 @@ func setup(hole: HoleData, grass_level: int) -> void:
 		return
 	var t := hole.terrain
 	_terrain = t
+	# A designed course set in a desert, the snow or the tropics (Biome)
+	# overrides what its place says: sparse dry bunch grass on the desert
+	# hardpan, nothing through snow, ferns in the tropics.
+	var biome := Biome.of(t)
+	var density: float = DENSITY[level] * float(BIOME_DENSITY.get(biome, 1.0))
+	if density <= 0.0:
+		return
+	setting = setting_for_biome(biome, setting)
 	var crowns := t.obstacles.canopies() if t.obstacles != null else PackedVector3Array()
 	var line := [Vector2(hole.tee.x, hole.tee.z), Vector2(hole.pin.x, hole.pin.z)]
 	var centres: Array[Vector3] = [hole.tee]
@@ -106,7 +126,7 @@ func setup(hole: HoleData, grass_level: int) -> void:
 	centres.append(hole.pin)
 	reach.append(GREEN_REACH)
 	for i in centres.size():
-		var spots := place(t, centres[i], reach[i], DENSITY[level], line, crowns, hole.number * 101 + i)
+		var spots := place(t, centres[i], reach[i], density, line, crowns, hole.number * 101 + i)
 		_grow(spots, centres[i], reach[i], hole.number * 31 + i)
 
 

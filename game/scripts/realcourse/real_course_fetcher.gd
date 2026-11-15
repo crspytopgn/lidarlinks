@@ -41,6 +41,10 @@ const LIGHT_MAX_TREES := 2500
 ## Milliseconds of work between drawn frames, so the progress keeps moving
 ## in the single-threaded browser build.
 const FRAME_BUDGET_MS := 60
+## Goes up whenever a build gives a better course (new detection, trees,
+## walls...): courses built before it offer "Update" on the Courses page.
+## Saved in each course's source as "builder" (RealCourseUpdate).
+const BUILDER_VERSION := 2
 
 var busy := false
 ## Use national lidar and aerial photos where they cover the course.
@@ -291,6 +295,9 @@ func _build(place: Dictionary) -> DesignedCourse:
 		if not more.holes.is_empty():
 			others.append(more)
 	builder.course_filter = names[0] if not names.is_empty() else ""
+	# What the Courses page needs to build it again with a newer builder.
+	for c: DesignedCourse in [course] + others:
+		RealCourseUpdate.stamp(c, place)
 	_last_summary = first_summary
 	_last_summary["ground"] = ground_name
 	if not lidar_sources.is_empty() and (lidar == null or lidar_gaps > 0):

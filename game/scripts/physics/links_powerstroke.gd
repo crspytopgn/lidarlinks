@@ -26,6 +26,20 @@ const FRAME_S := 1.0 / 60.0
 const MIN_POWER: Array[int] = [25, 16, 16, 16]
 ## An early snap waits until the marker comes down to here.
 const EARLY_SNAP := 30
+## Quick pace (Settings > Pace, the default) for chips and putts: the
+## original's chip and putt meters creep (three to six seconds a putt, a
+## second and a half of it below the snap line before the marker even
+## reaches it). Quick starts them on the snap line and climbs at a steady
+## QUICK_CLIMB frames a step (under two seconds to the top), turns
+## QUICK_TURN positions past the power click and comes back as fast until
+## QUICK_SLOW positions above the snap line, then at QUICK_SNAP frames a
+## step (eased as the original's), the original's own speed through
+## the snap on a short putt, so the snap is no harder to hit. Full swings
+## keep the original's timing; Classic keeps it for everything.
+const QUICK_CLIMB := 2
+const QUICK_TURN := 3
+const QUICK_SLOW := 8
+const QUICK_SNAP := 5
 ## The ease of the steps: the weight 70 at the middle of a run down to 42,
 ## repeating every 40 positions (the step's wait is inversely proportional).
 const EASE: Array[float] = [70.0, 69.9, 69.6, 69.2, 68.6, 67.9, 66.9, 65.8, 64.6, 63.3, 61.8,
@@ -97,6 +111,7 @@ static func chip_power(pos: int) -> float:
 ## One swing on the meter.
 class Run:
 	var mode := Mode.FULL
+	var quick := false  ## Quick pace (chips and putts only)
 	var pos := SNAP
 	var rising := true
 	var power_pos := 0  ## where power was set, 0 until then
@@ -109,10 +124,11 @@ class Run:
 	var _need := 1
 	var _carry := 0.0
 
-	func _init(p_mode := Mode.FULL) -> void:
+	func _init(p_mode := Mode.FULL, p_quick := false) -> void:
 		mode = p_mode
-		pos = SNAP if mode == Mode.FULL else 0
-		_need = maxi(LinksPowerStroke.climb_frames(mode, pos), 1)
+		quick = p_quick and mode != Mode.FULL
+		pos = SNAP if mode == Mode.FULL or quick else 0
+		_need = QUICK_CLIMB if quick else maxi(LinksPowerStroke.climb_frames(mode, pos), 1)
 
 	## How far up the meter: 0 at the snap line, 1 at full power (a chip's
 	## or putt's top), negative below the snap line.
@@ -187,7 +203,7 @@ class Run:
 		power_pos = p
 		_wait_power = false
 		if mode != Mode.FULL:
-			_stop = mini(p + 6, LAST)
+			_stop = mini(p + (QUICK_TURN if quick else 6), LAST)
 
 	func _step() -> void:
 		var before := pos
@@ -218,6 +234,9 @@ class Run:
 				snap_pos = 0
 				done = true
 				return
+		if quick:
+			_need = _quick_wait()
+			return
 		# The next step's wait, in whole frames; the fraction carries over.
 		var frames: int
 		var held := mode != Mode.FULL and power_pos != 0
@@ -234,3 +253,13 @@ class Run:
 		_need = int(wait)
 		_carry = wait - _need
 		_need = maxi(_need, 1)
+
+	## Quick pace's next step: steady up and most of the way down, then the
+	## original's pace (eased) through the last stretch and the snap.
+	func _quick_wait() -> int:
+		if rising or pos > SNAP + QUICK_SLOW:
+			return QUICK_CLIMB
+		var wait := QUICK_SNAP * 70.0 / (1.2 * LinksPowerStroke.ease_down(pos)) + _carry
+		var need := int(wait)
+		_carry = wait - need
+		return maxi(need, 1)

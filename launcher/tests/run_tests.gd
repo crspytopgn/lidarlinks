@@ -5,6 +5,7 @@ extends SceneTree
 
 const Paths := preload("res://scripts/paths.gd")
 const ReleaseFeed := preload("res://scripts/release_feed.gd")
+const Net := preload("res://scripts/net.gd")
 const Installer := preload("res://scripts/installer.gd")
 const DiscImage := preload("res://scripts/disc_image.gd")
 const DiscImport := preload("res://scripts/disc_import.gd")
@@ -61,6 +62,13 @@ func _test_release() -> void:
 	_check(ReleaseFeed.parse_release(null, "x").is_empty(), "release: no answer is empty")
 	var contents := [{"name": "game", "type": "dir", "sha": "g1"}, {"name": "launcher", "type": "dir", "sha": "t1"}]
 	_check(ReleaseFeed.launcher_tree(contents) == "t1" and ReleaseFeed.launcher_tree({}) == "", "release: the launcher's tree id on main")
+	_check(ReleaseFeed.needs_update("", r.commit) and not ReleaseFeed.needs_update(r.commit, r.commit), "release: a new build is told apart by commit")
+	_check(not ReleaseFeed.needs_update("abc", ""), "release: no release found isn't an update")
+	_check(ReleaseFeed.next_check_in(true, false) == ReleaseFeed.RECHECK_SECONDS and ReleaseFeed.next_check_in(true, true) == ReleaseFeed.RETRY_SECONDS and ReleaseFeed.next_check_in(false, false) == ReleaseFeed.RETRY_SECONDS, "release: recheck soon while it's being republished or offline")
+	_check(ReleaseFeed.next_check_in(true, false, 3) == ReleaseFeed.PENDING_SECONDS, "release: recheck sooner while newer changes are building")
+	var t := Time.get_unix_time_from_datetime_string("2026-11-01T13:00:00Z")
+	_check(ReleaseFeed.checked_text(t - 10, t) == "Checked just now" and ReleaseFeed.checked_text(t - 300, t) == "Checked 5 min ago" and ReleaseFeed.checked_text(0, t) == "", "release: when it last checked")
+	_check(Net.header(PackedStringArray(["Content-Type: x", "ETag: W/\"abc\""]), "etag") == "W/\"abc\"", "release: ETag header read for cheap rechecks")
 	_check(Paths.game_asset("linux") == "OpenLinks2003-Linux.tar.gz" and Paths.game_asset("windows") == "OpenLinks2003-Windows.zip", "release: asset names")
 
 
@@ -309,6 +317,7 @@ func _test_game_config() -> void:
 	c.window_size = Vector2i(1920, 1080)
 	c.master = 40
 	c.swing_method = 0
+	c.quick_pace = false
 	c.folder = "/games/links"
 	_check(c.save_to(path) == OK, "settings: saved")
 	cfg = ConfigFile.new()
@@ -319,7 +328,8 @@ func _test_game_config() -> void:
 	_check(cfg.get_value("graphics", "window_width") == 1920 and cfg.get_value("audio", "master") == 40, "settings: window size and volume")
 	_check(cfg.get_value("game", "folder") == "/games/links" and cfg.get_value("round", "course") == "keep me", "settings: game folder set, other sections kept")
 	var again := GameConfig.load_from(path) as GameConfig
-	_check(again.display_choice() == 2 and again.shown_look() == 4 and again.shown_quality() == 2 and again.swing_method == 0, "settings: read back")
+	_check(again.display_choice() == 2 and again.shown_look() == 4 and again.shown_quality() == 2 and again.swing_method == 0 \
+		and not again.quick_pace, "settings: read back")
 
 
 func _test_installer() -> void:

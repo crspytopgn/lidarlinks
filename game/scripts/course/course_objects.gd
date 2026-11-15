@@ -857,6 +857,8 @@ func _add_plant_obstacles(types: Array) -> void:
 				var crown := 0.35 if kind == 1 else 0.2
 				obstacles.add_cylinder(x, z, clampf(0.02 * h, 0.1, 0.45), y - 1.0, y + h * (crown + 0.05), ObstacleField.Kind.SOLID)
 				obstacles.add_cylinder(x, z, 0.4 * w, y + h * crown, y + h * 0.97, ObstacleField.Kind.CANOPY)
+				if kind == 2:
+					obstacles.mark_conifer()
 			3:
 				if h >= 0.8:
 					obstacles.add_cylinder(x, z, 0.4 * w, y - 0.5, y + h * 0.9, ObstacleField.Kind.CANOPY)

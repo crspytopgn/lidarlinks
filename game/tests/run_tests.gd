@@ -93,6 +93,7 @@ func _initialize() -> void:
 	_run("course_reader", _test_course_reader)
 	_run("course_designer", _test_course_designer)
 	_run("real_courses", _test_real_courses)
+	_run("course_library", _test_course_library)
 	# Nodes added here only get _ready() once the main loop runs, so the
 	# full round is played from _process().
 	# Fixed wind, so the shots (and what the camera sees) are the same every run.
@@ -191,6 +192,12 @@ func _test_course_reader() -> void:
 
 func _test_real_courses() -> void:
 	var tests: RefCounted = load("res://tests/realcourse_tests.gd").new()
+	for failure: String in tests.call("run_all"):
+		_check(false, failure)
+
+
+func _test_course_library() -> void:
+	var tests: RefCounted = load("res://tests/course_library_tests.gd").new()
 	for failure: String in tests.call("run_all"):
 		_check(false, failure)
 
@@ -687,7 +694,75 @@ func _test_swing_meter() -> void:
 	meter.set_putt_scale(PackedFloat32Array([0.0, 10.0, 30.0]), 20.0)
 	_check_near(meter.value_for_feet(20.0), 0.75, 1e-6, "the putt scale finds the hole's place on the meter")
 	_check_near(meter.feet_for_value(0.25), 5.0, 1e-6, "the putt scale reads feet back")
+	_test_quick_pace(meter, roll)
 	meter.free()
+
+
+## Quick pace: brisk chip and putt meters through the same snap, a putting
+## meter sized to the putt, and the full swing's carry scale.
+func _test_quick_pace(meter: SwingMeter, roll: PackedFloat32Array) -> void:
+	var timed := func(quick: bool, power_at: int) -> float:
+		var r := LinksPowerStroke.Run.new(LinksPowerStroke.Mode.PUTT, quick)
+		var t := 0.0
+		while not r.done and t < 20.0:
+			r.advance(0.004)
+			t += 0.004
+			if r.rising and r.pos == power_at and r.power_pos == 0:
+				r.click_power()
+			if not r.rising and r.pos == LinksPowerStroke.SNAP:
+				r.click_snap()
+		return t
+	var quick_run := LinksPowerStroke.Run.new(LinksPowerStroke.Mode.PUTT, true)
+	_check(quick_run.pos == LinksPowerStroke.SNAP, "a Quick putt starts on the snap line")
+	_check(LinksPowerStroke.Run.new(LinksPowerStroke.Mode.PUTT).pos == 0, "a Classic putt starts at the bottom")
+	_check(not LinksPowerStroke.Run.new(LinksPowerStroke.Mode.FULL, true).quick, "full swings keep the game's timing")
+	var classic_mid: float = timed.call(false, 41)
+	var quick_mid: float = timed.call(true, 41)
+	_check(classic_mid > 4.0 and quick_mid < 2.4, "a mid-meter putt: Classic %.2f s, Quick %.2f s" % [classic_mid, quick_mid])
+	var quick_short: float = timed.call(true, 24)
+	_check(quick_short < 1.5, "a short Quick putt is over in %.2f s" % quick_short)
+	# Through the snap, Quick moves no faster than Classic does on a short putt.
+	var through := func(quick: bool) -> int:
+		var r := LinksPowerStroke.Run.new(LinksPowerStroke.Mode.PUTT, quick)
+		while r.rising or r.pos > LinksPowerStroke.SNAP + 1:
+			r.advance(0.004)
+			if r.rising and r.pos == 22 and r.power_pos == 0:
+				r.click_power()
+		return r._need
+	_check(through.call(true) >= through.call(false) - 1, "the snap is as easy to hit in Quick (%d vs %d frames)" % [through.call(true), through.call(false)])
+	# The putting meter sized to the putt: about twice the hole on the level.
+	var full := PackedFloat32Array()
+	for i in 21:
+		full.append(100.0 * pow(float(i) / 20.0, 1.5))  # 100 ft at the top
+	_check_near(GolfRound.putt_range_for(full, 5.0), 0.3, 1e-6, "a 5-footer gets the shortest putting meter")
+	_check_near(GolfRound.putt_range_for(full, 14.0), 0.45, 1e-6, "a 14-footer the next")
+	_check_near(GolfRound.putt_range_for(full, 80.0), 1.0, 1e-6, "a long putt the full meter")
+	var putter: Club = null
+	var seven: Club = null
+	for c in Club.standard_set():
+		if c.is_putter:
+			putter = c
+		elif c.short_name == "7i":
+			seven = c
+	var short_roll := GolfRound.putt_roll_feet(StandardShotModel.new(), putter, Surface.Type.GREEN, 0.3)
+	_check(short_roll[20] < roll[20] * 0.6 and short_roll[20] > 0.0, "the short putting meter's top rolls less (%.1f of %.1f ft)" % [short_roll[20], roll[20]])
+	var read_off := GolfRound.rescale_roll(roll, 0.3)
+	var worst := 0.0
+	for i in range(1, 21):
+		worst = maxf(worst, absf(read_off[i] - short_roll[i]))
+	_check(worst < 0.15, "the short meter's scale read off the full one is within %.2f ft of simulating it" % worst)
+	# The full swing reads in carry yards.
+	meter.mode = LinksPowerStroke.Mode.FULL
+	meter.set_yard_scale(PackedFloat32Array([0.25, 0.5, 0.75, 1.0]), PackedFloat32Array([40.0, 80.0, 120.0, 160.0]))
+	_check_near(meter.yards_for_value(0.6), 96.0, 1e-4, "the swing meter reads carry yards between its marks")
+	_check_near(meter.yards_for_value(0.1), 16.0, 1e-4, "and from the snap line")
+	_check_near(meter.yards_for_value(-0.2), 0.0, 1e-6, "nothing below the snap line")
+	if seven != null:
+		var model := StandardShotModel.new()
+		var half := GolfRound.carry_yards(model, seven, Surface.Type.FAIRWAY, false, 0.5)
+		var whole := GolfRound.carry_yards(model, seven, Surface.Type.FAIRWAY, false, 1.0)
+		_check(whole > half and half > 10.0, "carry grows with the swing (%.0f, %.0f yd)" % [half, whole])
+	meter.set_yard_scale(PackedFloat32Array(), PackedFloat32Array())
 
 
 func _test_scorecard() -> void:
@@ -5444,6 +5519,41 @@ func _test_broadcast_pieces() -> void:
 	_check(FescueField.card_for(dressed, "water_edge", 10.0, 10.0)["uid"] == "b", "reeds by the water")
 	_check(FescueField.card_for(dressed, "heath", 1.0, 1.0).is_empty(), "no card for a role the pack lacks")
 	_check(FescueField.dress_cards([] as Array[Dictionary]).is_empty(), "no pack, no cards: the drawn fescue stays")
+	# The woodland floor (DebrisField): needles under conifers, leaves under
+	# the rest, never on the fairway, and less of it on a desert course.
+	var debris := MegascansDebris.parse('{"litter": {"leaves": {"albedo": "debris/l.png", "size_m": 2.5}, "needles": {"albedo": "debris/n.png"}},'
+		+ '"props": [{"uid": "a", "title": "Fallen Log", "kind": "log", "under": "any", "mesh": "debris/a.olmesh", "albedo": "debris/a.jpg"},'
+		+ '{"uid": "b", "title": "Mossy Log", "kind": "log", "under": "broadleaf", "mesh": "debris/b.olmesh", "albedo": "debris/b.jpg"},'
+		+ '{"uid": "c", "title": "Small Pine Cones", "kind": "cones", "under": "conifer", "mesh": "debris/c.olmesh", "albedo": "debris/c.jpg"},'
+		+ '{"uid": "d", "kind": "rock", "mesh": "x", "albedo": "y"}]}')
+	_check((debris["props"] as Array).size() == 3 and (debris["litter"] as Dictionary).size() == 2, "debris pack read, bad entries skipped")
+	_check(MegascansDebris.props_for("log", true, debris["props"]).size() == 1 and MegascansDebris.props_for("log", false, debris["props"]).size() == 2, "logs by the trees they lie under")
+	_check(MegascansDebris.parse("")["props"].is_empty(), "no pack, no debris")
+	var wood := ObstacleField.new()
+	wood.add_cylinder(0.0, 0.0, 0.3, -1.0, 9.0, ObstacleField.Kind.SOLID)
+	wood.add_cylinder(0.0, 0.0, 4.0, 8.0, 17.0, ObstacleField.Kind.CANOPY)
+	wood.mark_conifer()
+	wood.add_cylinder(40.0, 0.0, 4.0, 3.0, 10.0, ObstacleField.Kind.CANOPY)
+	_check(wood.canopy_conifers() == PackedByteArray([1, 0]), "crowns tagged conifer or broadleaf")
+	var floor_crowns := DebrisField.crowns_by_chunk(wood)
+	var under_pine: Vector4 = floor_crowns[Vector2i(0, 0)][0]
+	var under_oak: Vector4 = floor_crowns[Vector2i(1, 0)][0]
+	var lib := DebrisField.library(debris["props"], floor_crowns)
+	var deep := FlatTerrain.new(Surface.Type.DEEP_ROUGH)
+	var pine_floor := DebrisField.plan_chunk(deep, [under_pine], lib, 3, debris["litter"])
+	var oak_floor := DebrisField.plan_chunk(deep, [under_oak], lib, 3, debris["litter"])
+	var needles := (pine_floor["litter"] as Dictionary).get("needles", []).size() as int
+	var leaves := (oak_floor["litter"] as Dictionary).get("leaves", []).size() as int
+	_check(needles > 0 and needles >= (pine_floor["litter"] as Dictionary).get("leaves", []).size(), "needles carpet the ground under a conifer")
+	_check(leaves > 0 and leaves >= (oak_floor["litter"] as Dictionary).get("needles", []).size(), "leaves under a broadleaf tree")
+	_check(DebrisField.plan_chunk(deep, [under_pine], lib, 3, debris["litter"]) == pine_floor, "the woodland floor is the same every time")
+	var mown := DebrisField.plan_chunk(FlatTerrain.new(Surface.Type.FAIRWAY), [under_pine, under_oak], lib, 3, debris["litter"])
+	_check((mown["litter"] as Dictionary).is_empty() and (mown["props"] as Dictionary).is_empty(), "no debris on the fairway")
+	var dunes := CourseData.new()
+	dunes.course_name = "Desert Canyon"
+	_check(not DebrisField.climate_for(dunes)["moss"] and float(DebrisField.climate_for(dunes)["litter"]) < 0.5, "a desert course: little litter, no moss")
+	var dry_lib := DebrisField.library(debris["props"], floor_crowns, false)
+	_check((dry_lib["log:false"] as Array).all(func(p: Dictionary) -> bool: return not (p["title"] as String).contains("Moss")), "no mossy logs where moss doesn't grow")
 	# The pack's 3D plants (ScannedPlants): groups from their titles, the
 	# meshes from an .olplant, and the place picking what grows.
 	var plants3d := MegascansPlants.parse('{"plants": [{"uid": "f", "title": "Lady Fern", "kind": "fern", "height_m": 0.6, "variants": 4, "file": "plants/f"},'
@@ -5474,6 +5584,9 @@ func _test_broadcast_pieces() -> void:
 	bare.setup(null, 3)
 	_check(bare.instances == 0 and bare.get_child_count() == 0, "no hole or no pack, no 3D plants")
 	bare.free()
+	_check(ScannedPlants.setting_for_biome(Biome.DESERT, FreeAmbience.Setting.PARKLAND) == FreeAmbience.Setting.DESERT
+		and ScannedPlants.setting_for_biome(Biome.PARKLAND, FreeAmbience.Setting.SEASIDE) == FreeAmbience.Setting.SEASIDE
+		and float(ScannedPlants.BIOME_DENSITY.get(Biome.SNOW, 1.0)) == 0.0, "3D plants follow a designed course's biome")
 	# Scanned surfaces (private pack): known slots with a colour map only, and
 	# without a pack every material is the flat fallback.
 	var surf := ScannedSurfaces.parse('{"slots": {"path": {"albedo": "p.jpg", "normal": "pn.jpg", "size_m": 2.0},'

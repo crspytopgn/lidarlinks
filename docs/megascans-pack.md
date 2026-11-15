@@ -42,6 +42,42 @@ shape's cover (all played as deep rough). `CourseTerrain.cover_at(x, z)`
 returns it, so the foliage dresser can put heath plants on heath, reeds on
 wetland and marram on dunes (`MegascansCards.for_cover()`).
 
+## Woodland floor (debris)
+
+`tools/megascans/debris_pack.py MEGASCANS_DIR PACK_DIR` and then
+`godot --headless --path game -s tools/megascans/debris_meshes.gd -- PACK_DIR`
+bake the ground under tree lines into `PACK_DIR/debris/`:
+
+- `litter_leaves.png` and `litter_needles.png` (with `_n.jpg` normal maps):
+  2 x 2 atlases of 2.5 m litter patches cut from the Dry Fallen Leaves,
+  Fallen Leaves, Fallen Oak Leaves, Pine Forest Floor and Fallen Pine
+  Needles scans. Each patch has a ragged edge that follows the scan's
+  displacement, so the top leaves reach out furthest and the turf shows
+  through in gaps.
+- `<uid8>_<n>.olmesh` plus albedo (AO multiplied in, opacity as alpha)
+  and normal map per scanned prop: the Dead Leaves piles, Fallen Pine
+  Branches, Pine Wood Debris, Small Pine Cones (laid out as a little
+  scatter), dead oak and pine branches, seven logs and eight stumps (the
+  `PROPS` table names them). The Godot step reads the scans' FBX meshes
+  and cuts them to 200 to 4,000 triangles with Godot's own simplifier,
+  which keeps UV seams. Stumps are scaled down to 0.9 m tall at most and
+  logs to 0.7 m.
+- `debris.json` lists them, with each prop's kind and the trees it lies
+  under (conifer, broadleaf or any).
+
+`DebrisField` (read through `MegascansDebris`) puts them under every tree
+crown on the rough and deep rough, never on the fairway, green, tee, sand
+or water. Needles carpet the ground under conifers and leaves lie under
+broadleaf trees; course trees say which they are
+(`ObstacleField.mark_conifer`). Low grass draws the litter to 70 m, Medium
+adds the logs and stumps to 110 m, and High adds small pieces near the
+camera to 45 m. Each course uses only two or three types of each kind, so
+draw calls stay low. How much falls follows the course's kind of place
+(`FreeAmbience.setting_for_place`, from its real location when known): a
+parkland is kept tidy, a wood gets the most, a links less, and a desert
+little. Desert and warm courses get no mossy scans. All of it is visual
+only: the ball never meets a log.
+
 Tried and not used: Megascans turf, sand, path and dirt surfaces in place of
 the free ground set. Up close on a tee, the lawn scans looked mottled and
 clumpy, even with their low frequencies flattened and their colour matched,
@@ -144,7 +180,10 @@ What grows follows the course's place, as the ambience hears it
 on parkland, mostly ferns in woodland, marram and xeric grass on a links,
 dry grasses and rushes in the desert (the download has no cacti or
 succulents), fewer ferns where it is warm; ferns under tree crowns and
-reeds by water wherever those grow. Near the camera each plant is its
+reeds by water wherever those grow. A designed course's biome wins over its
+place (`ScannedPlants.setting_for_biome`, `BIOME_DENSITY`): a desert course
+grows the desert's plants at a third of the density, scattered on the
+hardpan, a tropical one the woodland's ferns, and a snow course none. Near the camera each plant is its
 near mesh, then the mid mesh, which dissolves into the plant cards
 (`shaders/scanned_plant.gdshader`, the trees' dithered cross-fade). Off at
 Low grass and on the web; Medium grows fewer plants and hands over sooner.
