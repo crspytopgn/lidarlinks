@@ -406,6 +406,7 @@ func start_round() -> void:
 	course = PracticeGround.new().load_course(PracticeGround.PATH) if round_setup.facility \
 			else AssetProviders.load_course(course_path)
 	round_setup.course_name = course.course_name
+	ScannedSurfaces.use_course(course)  # local cart paths and wood (private pack)
 	if round_setup.putting:
 		round_setup.trim_for_practice()
 	round_seed = wind_seed if wind_seed != 0 else (randi() & 0x7fffffff) | 1
