@@ -83,7 +83,7 @@ static func meshes(plant: Dictionary) -> Array:
 	var out := []
 	var dir := FreeAssets.megascans_dir()
 	var albedo := FreeAssets.megascans_texture(str(plant["file"]) + "_albedo.png", "foliage/", false, texture_size)
-	var normal := FreeAssets.megascans_texture(str(plant["file"]) + "_normal.png", "foliage/", true, texture_size) if plant.get("normal", true) else null
+	var normal := FreeAssets.megascans_texture(str(plant["file"]) + "_normal.png", "foliage/", false, texture_size) if plant.get("normal", true) else null
 	var levels := read(dir + "foliage/" + str(plant["file"]) + ".olplant") if not dir.is_empty() else []
 	if albedo != null and not levels.is_empty():
 		var mats := [material(albedo, normal, float(plant["height_m"]), 0), material(albedo, normal, float(plant["height_m"]), 1)]

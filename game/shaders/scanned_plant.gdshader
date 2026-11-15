@@ -29,6 +29,8 @@ uniform float ground_pull = 0.18;
 // Light through the leaves, against their colour.
 uniform float translucency = 0.55;
 uniform float saturation = 0.8;
+// How far the leaves' normals lean to straight up (see the fragment).
+uniform float up_lean = 0.5;
 
 global uniform vec2 wind_vector;
 global uniform float foliage_sway;
@@ -93,6 +95,12 @@ void fragment() {
 	float light = ground_shading(root_xz, length(VERTEX));
 	ALBEDO = albedo * shade_fill.a * light;
 	EMISSION = albedo * shade_fill.rgb;
+	// Lit half as the ground under it is: a clump's leaves face every way,
+	// and left to their own normals the ones turned from the sun go near
+	// black in Forward+, where photos show a clump softly lit by the sky.
+	vec3 sky_up = (VIEW_MATRIX * vec4(0.0, 1.0, 0.0, 0.0)).xyz;
+	// (Godot has already turned a back face's normal to the viewer.)
+	NORMAL = normalize(mix(NORMAL, sky_up, up_lean));
 	float tr = 0.5;
 	if (has_normal) {
 		vec4 n = texture(normal_tex, UV);
