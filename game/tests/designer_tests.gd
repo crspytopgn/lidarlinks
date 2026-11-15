@@ -25,7 +25,55 @@ func run_all() -> Array[String]:
 	_test_water_surface()
 	_test_splat_and_stakes()
 	_test_tee_pads()
+	_test_epic_courses()
 	return failures
+
+
+## The epic built-in courses load and play: a biome, the land round them,
+## rock formations and cacti that the ball hits, none of them on a tee,
+## fairway or green, and every pin reachable over open ground.
+func _test_epic_courses() -> void:
+	for path: String in PlaceholderCourseLoader.EPIC:
+		var name := str(PlaceholderCourseLoader.EPIC[path])
+		var designed := DesignedCourse.load_file(path)
+		check(designed != null, "%s loads" % name)
+		if designed == null:
+			continue
+		check(not designed.biome.is_empty(), "%s has a biome" % name)
+		var land := designed.landscape
+		check(not land.is_empty() and int(land.cols) * int(land.rows) == (land.heights as PackedFloat32Array).size(), "%s has its landscape" % name)
+		var course := DesignedCourseLoader.new().load_course(path)
+		check(course != null and course.holes.size() == 9 and course.landscape and course.biome == designed.biome, "%s plays nine holes" % name)
+		check(CourseFiles.display_name(path) == name + " (built in)", "%s is listed as built in" % name)
+		var terrain := DesignedTerrain.new(designed)
+		var rocks := 0
+		var plants := 0
+		for o in designed.objects:
+			if RockFormations.is_rock(o.id):
+				rocks += 1
+			elif DesertPlants.is_plant(o.id):
+				plants += 1
+			else:
+				continue
+			var s := terrain.surface_at(o.position.x, o.position.z)
+			check(not s in [Surface.Type.TEE, Surface.Type.FAIRWAY, Surface.Type.GREEN, Surface.Type.FRINGE, Surface.Type.SAND],
+				"%s: %s at (%.0f, %.0f) stands on %s" % [name, o.id, o.position.x, o.position.z, Surface.Type.keys()[s]])
+		if designed.biome == Biome.DESERT:
+			check(rocks >= 10 and plants >= 500, "%s has formations and cacti (%d, %d)" % [name, rocks, plants])
+		# The formations are solid: a ball flying into the first tower stops.
+		for o in designed.objects:
+			if o.id != "rock_spire":
+				continue
+			var y := terrain.height_at(o.position.x, o.position.z)
+			var c := Vector3(o.position.x, y + 10.0, o.position.z)
+			check(not terrain.obstacles.segment_hit(c + Vector3(60, 0, 0), c).is_empty(), "%s: a spire stops the ball" % name)
+			break
+		check(Biome.is_bare(designed.biome, Surface.Type.DEEP_ROUGH) == (designed.biome in [Biome.DESERT, Biome.SNOW]), "%s: bare ground follows the biome" % name)
+		var mesh := RockFormations.mesh_for(designed.objects.filter(func(o: PlacedObject) -> bool: return o.id == "rock_arch")[0]) if designed.biome == Biome.DESERT else null
+		check(mesh == null or mesh.get_faces().size() > 3000, "%s: the arch has a mesh" % name)
+		var visual := terrain.build_visual()
+		check(visual.get_node_or_null("Landscape") != null and visual.get_node_or_null("Apron") == null, "%s: the landscape replaces the apron" % name)
+		visual.free()
 
 
 ## Tee boxes are raised level pads with mown banks, and the ball plays the
@@ -390,6 +438,16 @@ func _test_paths() -> void:
 	var y := t.height_at(0, 60)
 	check(not t.obstacle_hit(Vector3(0, y + 3.0, 60), Vector3(0, y + 0.1, 60)).is_empty(), "a ball lands on the bridge deck")
 	check(t.obstacle_hit(Vector3(0, y + 3.0, 70), Vector3(0, y + 0.1, 70)).is_empty(), "and nowhere else")
+	var bridge := t._path_mesh(span)
+	var rails := bridge.mesh.surface_get_arrays(1)[Mesh.ARRAY_VERTEX] as PackedVector3Array if bridge.mesh.get_surface_count() == 2 else PackedVector3Array()
+	var top := -INF
+	for v in rails:
+		top = maxf(top, v.y)
+	var deck := -INF
+	for v in bridge.mesh.surface_get_arrays(0)[Mesh.ARRAY_VERTEX] as PackedVector3Array:
+		deck = maxf(deck, v.y)
+	check(not rails.is_empty() and absf(top - deck - (DesignedTerrain.RAIL_TOP + 0.05)) < 0.05, "a bridge has post-and-rail sides at railing height (%.2f m)" % (top - deck))
+	bridge.free()
 	var back := DesignedCourse.from_json(c.to_json())
 	check(back != null and back.paths.size() == 2, "paths are saved")
 	if back != null and back.paths.size() == 2:

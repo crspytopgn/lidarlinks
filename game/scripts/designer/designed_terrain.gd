@@ -299,12 +299,34 @@ func build_visual() -> Node3D:
 			inst.mesh = chunk_mesh(Vector2i(ci, cj))
 			inst.material_override = material()
 			root.add_child(inst)
-	root.add_child(build_apron())
+	if course.landscape.is_empty():
+		root.add_child(build_apron())
+	else:
+		root.add_child(Landscape.build(self))
 	root.add_child(build_paths())
 	root.add_child(build_water())
 	if TreeFactory.enabled() and hole_number > 0:
 		_add_distant_trees(root)
+	var rocks := RockFormations.build(self)
+	if rocks != null:
+		root.add_child(rocks)
+	var plants := DesertPlants.build(self)
+	if plants != null:
+		root.add_child(plants)
 	return root
+
+
+## The colour of `surface` (a Surface.Type) on this course: its biome's
+## (Biome.GROUND) or the parkland default.
+func surface_color(surface: int) -> Color:
+	return Biome.ground_color(course.biome, surface, COLORS[surface])
+
+
+## The terrain shader's texture weights for `surface` (bare ground keeps
+## the rough's, and the shader's surface_bare puts the sand texture under
+## its own colour).
+func surface_weights(surface: int) -> Vector2:
+	return Materials.terrain_weights(surface)
 
 
 ## The course's trees beyond the ones the round places for this hole
@@ -353,9 +375,9 @@ func material() -> ShaderMaterial:
 		for i in COLORS.size():
 			# Under the water line, the bank: darker rough rather than the
 			# map's blue, which would ring each pond.
-			var c: Color = COLORS[Surface.Type.ROUGH].darkened(0.35) if i == Surface.Type.WATER else COLORS[i]
+			var c: Color = surface_color(Surface.Type.ROUGH).darkened(0.35) if i == Surface.Type.WATER else surface_color(i)
 			cols.append(Vector3(c.r, c.g, c.b))
-			wts.append(Materials.terrain_weights(i))
+			wts.append(surface_weights(i))
 			mown.append(float(MOWN.get(i, 0.0)))
 			widths.append(float(STRIPE_METRES.get(i, 0.0)))
 			cut.append(Materials.terrain_cut(i))
@@ -375,6 +397,10 @@ func material() -> ShaderMaterial:
 		_material.set_shader_parameter("surface_cut", cut)
 		_material.set_shader_parameter("surface_weights", wts)
 		_material.set_shader_parameter("surface_mown", mown)
+		var bare := PackedFloat32Array()
+		for i in COLORS.size() + 2:
+			bare.append(1.0 if i < COLORS.size() and Biome.is_bare(course.biome, i) else 0.0)
+		_material.set_shader_parameter("surface_bare", bare)
 		_material.set_shader_parameter("has_splat", true)
 		_update_splat()
 	return _material
@@ -439,7 +465,7 @@ func _path_mesh(p: CoursePath) -> MeshInstance3D:
 	var g1 := height_at(last.x, last.y)
 	var verts := PackedVector3Array()
 	var uvs := PackedVector2Array()
-	var rail_verts := PackedVector3Array()
+	var edges: Array[PackedVector3Array] = [PackedVector3Array(), PackedVector3Array()]  ## a bridge's deck edges, left and right
 	for smp: Array in samples:
 		var c: Vector2 = smp[0]
 		var side: Vector2 = (smp[1] as Vector2).orthogonal() * p.width * 0.5
@@ -450,9 +476,8 @@ func _path_mesh(p: CoursePath) -> MeshInstance3D:
 			var y := p.deck_height(along, height_at(c.x, c.y), g0, g1)
 			verts.append(Vector3(l.x, y, l.y))
 			verts.append(Vector3(r.x, y, r.y))
-			for e: Vector2 in [l, r]:
-				rail_verts.append(Vector3(e.x, y, e.y))
-				rail_verts.append(Vector3(e.x, y + 1.0, e.y))
+			edges[0].append(Vector3(l.x, y, l.y))
+			edges[1].append(Vector3(r.x, y, r.y))
 		else:
 			verts.append(Vector3(l.x, height_at(l.x, l.y) + 0.05, l.y))
 			verts.append(Vector3(r.x, height_at(r.x, r.y) + 0.05, r.y))
@@ -482,30 +507,100 @@ func _path_mesh(p: CoursePath) -> MeshInstance3D:
 	arrays[Mesh.ARRAY_NORMAL] = normals
 	arrays[Mesh.ARRAY_TEX_UV] = uvs
 	arrays[Mesh.ARRAY_INDEX] = indices
-	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
-	mesh.surface_set_material(0, _path_material(p.bridge))
-	if p.bridge and rail_verts.size() >= 8:
-		# Two rails, each a strip of upright quads along one edge.
-		var rail_idx := PackedInt32Array()
-		var n := samples.size()
-		for side in 2:
-			for k in n - 1:
-				var a := 4 * k + 2 * side
-				var b := 4 * (k + 1) + 2 * side
-				rail_idx.append_array(PackedInt32Array([a, b, a + 1, a + 1, b, b + 1]))
-		var rail_normals := PackedVector3Array()
-		rail_normals.resize(rail_verts.size())
-		rail_normals.fill(Vector3.UP)
-		var rails := []
-		rails.resize(Mesh.ARRAY_MAX)
-		rails[Mesh.ARRAY_VERTEX] = rail_verts
-		rails[Mesh.ARRAY_NORMAL] = rail_normals
-		rails[Mesh.ARRAY_INDEX] = rail_idx
-		mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, rails)
-		mesh.surface_set_material(1, _path_material(true))
+	_add_surface(mesh, arrays)
+	# The UVs run 0 to 1 across and one unit per path width along, so a
+	# scanned surface (private pack) spans the width in metres both ways.
+	mesh.surface_set_material(0, ScannedSurfaces.uv_material("deck" if p.bridge else "path", p.width, _path_material(p.bridge), p.bridge))
+	if p.bridge and edges[0].size() >= 2:
+		mesh.surface_set_material(_add_railings(mesh, edges, p.width), ScannedSurfaces.uv_material("timber", p.width, _path_material(true)))
 	var inst := MeshInstance3D.new()
 	inst.mesh = mesh
 	return inst
+
+
+## A cart bridge's timber sides, as real ones are built: a deep fascia
+## board along each deck edge, a kerb rail to stop the wheels, posts about
+## every 2 m and a top and middle rail at 1.07 m (42 in) and 0.55 m.
+## Returns the new surface's index. UVs are metres / `uv_metres`, along the
+## length of each piece, so planks run along the rails and up the posts.
+const RAIL_TOP := 1.07
+const RAIL_MID := 0.55
+const POST_EVERY := 2  ## samples (CoursePath.STEP apart) between posts
+
+static func _add_railings(mesh: ArrayMesh, edges: Array[PackedVector3Array], uv_metres: float) -> int:
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	for side in 2:
+		var e: PackedVector3Array = edges[side]
+		var n := e.size()
+		var out := (Vector3(e[0].x, 0.0, e[0].z) - Vector3(edges[1 - side][0].x, 0.0, edges[1 - side][0].z)).normalized()
+		for k in n - 1:
+			var a := e[k]
+			var b := e[k + 1]
+			# Fascia: 0.3 m deep, flush with the deck's top.
+			_beam(st, a + out * 0.03 + Vector3.DOWN * 0.15, b + out * 0.03 + Vector3.DOWN * 0.15, 0.03, 0.15, uv_metres)
+			# Kerb rail along the deck edge, top and middle rails.
+			_beam(st, a - out * 0.06 + Vector3.UP * 0.08, b - out * 0.06 + Vector3.UP * 0.08, 0.05, 0.08, uv_metres)
+			_beam(st, a + Vector3.UP * (RAIL_TOP - 0.05), b + Vector3.UP * (RAIL_TOP - 0.05), 0.06, 0.05, uv_metres)
+			_beam(st, a + out * 0.01 + Vector3.UP * RAIL_MID, b + out * 0.01 + Vector3.UP * RAIL_MID, 0.025, 0.07, uv_metres)
+		for k in range(0, n, POST_EVERY):
+			_post(st, e[k] + out * 0.02, 0.06, RAIL_TOP + 0.05, uv_metres)
+		if (n - 1) % POST_EVERY != 0:
+			_post(st, e[n - 1] + out * 0.02, 0.06, RAIL_TOP + 0.05, uv_metres)
+	st.generate_tangents()
+	st.commit(mesh)
+	return mesh.get_surface_count() - 1
+
+
+## A square post `half` wide from `foot` (0.3 m below the deck) to `height`.
+static func _post(st: SurfaceTool, foot: Vector3, half: float, height: float, uv_metres: float) -> void:
+	var lo := foot + Vector3.DOWN * 0.3
+	var hi := foot + Vector3.UP * height
+	_box(st, (lo + hi) * 0.5, Vector3.UP * (hi.y - lo.y) * 0.5, Vector3.RIGHT * half, Vector3.BACK * half, uv_metres)
+
+
+## A beam from a to b (its centre line), `half_w` out to the sides and
+## `half_h` up and down.
+static func _beam(st: SurfaceTool, a: Vector3, b: Vector3, half_w: float, half_h: float, uv_metres: float) -> void:
+	var along := b - a
+	if along.length() < 0.001:
+		return
+	var side := Vector3(along.z, 0.0, -along.x).normalized()
+	var up := side.cross(along).normalized()
+	_box(st, (a + b) * 0.5, along * 0.5, side * half_w, up * half_h, uv_metres)
+
+
+## A box round `c` with half axes `l` (its length, which the grain
+## follows), `w` and `h`, all at right angles.
+static func _box(st: SurfaceTool, c: Vector3, l: Vector3, w: Vector3, h: Vector3, uv_metres: float) -> void:
+	# Each face: its normal and the two axes in its plane (u, v).
+	for f: Array in [[h, l, w], [-h, l, w], [w, l, h], [-w, l, h], [l, w, h], [-l, w, h]]:
+		var n: Vector3 = f[0]
+		var a: Vector3 = f[1]
+		var b: Vector3 = f[2]
+		var o := c + n
+		var corners := [o - a - b, o + a - b, o + a + b, o - a + b]
+		var ua := a.length() * 2.0 / uv_metres
+		var vb := b.length() * 2.0 / uv_metres
+		var uv := [Vector2(0, vb), Vector2(ua, vb), Vector2(ua, 0), Vector2(0, 0)]
+		# Godot's front faces wind clockwise seen from outside.
+		var order := [0, 2, 1, 0, 3, 2] if a.cross(b).dot(n) > 0.0 else [0, 1, 2, 0, 2, 3]
+		for k: int in order:
+			st.set_normal(n.normalized())
+			st.set_uv(uv[k])
+			st.add_vertex(corners[k])
+
+
+## Adds a surface, with tangents when a scanned surface (whose normal
+## map needs them) is in the pack.
+static func _add_surface(mesh: ArrayMesh, arrays: Array) -> void:
+	if ScannedSurfaces.slots().is_empty():
+		mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+		return
+	var st := SurfaceTool.new()
+	st.create_from_arrays(arrays)
+	st.generate_tangents()
+	st.commit(mesh)
 
 
 static var _path_mat: StandardMaterial3D
@@ -690,7 +785,7 @@ func build_apron() -> MeshInstance3D:
 	var verts := PackedVector3Array()
 	var colors := PackedColorArray()
 	var normals := PackedVector3Array()
-	var far_color: Color = COLORS[Surface.Type.OUT_OF_BOUNDS]
+	var far_color: Color = surface_color(Surface.Type.OUT_OF_BOUNDS)
 	for p in border:
 		var inner := p.move_toward(centre, 0.01)
 		var h := height_at(inner.x, inner.y)
@@ -713,7 +808,7 @@ func build_apron() -> MeshInstance3D:
 		_add_tri(indices, verts, a1, a1 + 1, a0 + 1)
 	var weights := PackedVector2Array()
 	weights.resize(verts.size())
-	weights.fill(Materials.terrain_weights(Surface.Type.OUT_OF_BOUNDS))
+	weights.fill(surface_weights(Surface.Type.OUT_OF_BOUNDS))
 	var arrays := []
 	arrays.resize(Mesh.ARRAY_MAX)
 	arrays[Mesh.ARRAY_VERTEX] = verts
@@ -1021,8 +1116,8 @@ func _vertex_surfaces(cells: Rect2i) -> void:
 	var palette: Array[Color] = []
 	var wts: Array[Vector2] = []
 	for s in COLORS.size():
-		palette.append(COLORS[s])
-		wts.append(Materials.terrain_weights(s))
+		palette.append(surface_color(s))
+		wts.append(surface_weights(s))
 	palette.append(FIRST_CUT_COLOR)
 	wts.append(Materials.terrain_weights(Surface.Type.ROUGH))
 	palette.append(COLLAR_COLOR)

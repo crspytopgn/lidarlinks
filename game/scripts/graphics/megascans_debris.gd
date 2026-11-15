@@ -106,4 +106,4 @@ static func build_mesh(d: Dictionary) -> ArrayMesh:
 
 
 static func texture(file: String) -> Texture2D:
-	return FreeAssets.megascans_pack_texture(file)
+	return FreeAssets.megascans_pack_texture(file, file.ends_with("_n.jpg"))

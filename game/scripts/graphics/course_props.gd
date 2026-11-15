@@ -152,6 +152,10 @@ func _build_tee(hole: HoleData, toward: Vector3) -> void:
 	var bench_at := tee_spot(t, hole.tee, toward, BENCH_SPOT)
 	var bench := instance("tee_bench")
 	if bench != null and bench_at != Vector3.INF:
+		# Scanned wood slats when the private pack has them.
+		var wood := ScannedSurfaces.triplanar_material("bench", null)
+		if wood != null:
+			bench.material_override = wood
 		bench.position = bench_at
 		# Seat facing across the tee, towards the line of play.
 		var right := _side_of(hole.tee, dir, bench_at)
