@@ -407,6 +407,7 @@ func start_round() -> void:
 	course = PracticeGround.new().load_course(PracticeGround.PATH) if round_setup.facility \
 			else AssetProviders.load_course(course_path)
 	round_setup.course_name = course.course_name
+	ScannedSurfaces.use_course(course)  # local cart paths and wood (private pack)
 	if round_setup.putting:
 		round_setup.trim_for_practice()
 	round_seed = wind_seed if wind_seed != 0 else (randi() & 0x7fffffff) | 1
@@ -685,6 +686,14 @@ func start_hole(index: int) -> void:
 	if broadcast and dressed and graphics != null and graphics.quality > GraphicsSettings.Quality.LOW:
 		# The course's furniture: tee sign, ball washer, bench, bunker rakes.
 		hole_root.add_child(CourseProps.build(hole, _first_leg(), CourseProps.RAKES_BY_QUALITY[graphics.quality], course.course_name))
+		# Photoscanned boulders on the banks and in the woods (private pack).
+		var rocks := RockField.build(hole, graphics.quality, RockField.setting_of(course))
+		if rocks != null:
+			hole_root.add_child(rocks)
+		# The course's field walls, where the map has them.
+		var walls := StoneWalls.build(hole)
+		if walls != null:
+			hole_root.add_child(walls)
 	if broadcast and dressed and course.tournament:
 		# Tournament dressing: gallery ropes, and a crowd at the tee and green.
 		var crowd := Gallery.CROWD_BY_QUALITY[graphics.quality] if graphics != null else 0
