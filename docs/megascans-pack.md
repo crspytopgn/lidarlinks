@@ -44,3 +44,23 @@ Tried and not used: Megascans turf, sand, path and dirt surfaces in place of
 the free ground set. Up close on a tee, the lawn scans looked mottled and
 clumpy, even with their low frequencies flattened and their colour matched,
 and from further back they looked no different.
+
+## Rocks (rocks/)
+
+`tools/megascans/rock_prep.py MEGASCANS PREP` picks 32 rock scans (beach,
+sandstone, mossy forest and upland boulders, sea cliffs, one huge layered
+boulder) and shrinks their maps to 2K. `tools/megascans/rock_pack.gd`
+(copied into game/tests/tmp/) then bakes each into `rocks/<id>.res`, an
+ArrayMesh with LODs at real size, base at y = 0. It also writes the three
+textures and `rocks/rocks.json` with `{id, title, size, kind}`.
+
+`RockField` (game/scripts/graphics/rock_field.gd) places them on each hole
+when the pack has them, at Medium quality and up, outside Classic Links.
+They go along pond and creek banks, and in small groups through the deep
+rough and woods, never within 7 m of mown turf, sand or a green. They're
+scenery only. The stone follows the course's place (FreeAmbience's setting):
+- links: beach boulders and sea-cliff outcrops;
+- desert: sandstone, three times as many;
+- woodland and parkland: mossy, lichened boulders and grey upland stone.
+
+`RockField.mesh(id)` and `material(id)` load one rock for other features.

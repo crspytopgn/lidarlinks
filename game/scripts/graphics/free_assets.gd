@@ -150,8 +150,8 @@ static var _vram := {}  ## path -> the block-compressed copy (desktop)
 
 ## The private Megascans pack (docs/megascans-pack.md): baked plant
 ## textures named like the free ones (foliage/fescue.png), which replace
-## them where present. Its turf scans were tried and looked no better than
-## the free ground set, so the ground isn't read from it. Never in the
+## them where present, and in ground/ the blade detail of a photoscanned
+## lawn for the mown turf (Materials.terrain). Never in the
 ## repository or the web build: the scans' licence lets them be used, not
 ## passed on. OL_MEGASCANS overrides the folder (the pack's root, holding
 ## foliage/).
@@ -165,14 +165,14 @@ static func megascans_dir() -> String:
 	return env.path_join("") if not env.is_empty() else MEGASCANS_DIR
 
 
-## A texture from the Megascans pack's foliage/, or null. Mipmapped, and
+## A texture from the Megascans pack's `folder` (foliage/ or ground/), or null. Mipmapped, and
 ## block-compressed like the free ones on the desktop; halved to 1K in
 ## Compatibility, which keeps them uncompressed.
-static func _load_megascans(file: String) -> Texture2D:
+static func _load_megascans(file: String, folder := "foliage/") -> Texture2D:
 	var dir := megascans_dir()
 	if dir.is_empty():
 		return null
-	var path := dir + "foliage/" + file
+	var path := dir + folder + file
 	if _vram.has(path):
 		return _vram[path]
 	if not FileAccess.file_exists(path):
@@ -190,10 +190,10 @@ static func _load_megascans(file: String) -> Texture2D:
 	return tex
 
 
-## A texture under the pack's foliage/ folder (such as "cards/x.png"),
-## or null without a pack.
-static func megascans_texture(file: String) -> Texture2D:
-	return _load_megascans(file) if not file.is_empty() else null
+## A texture under the pack's foliage/ folder (such as "cards/x.png"), or
+## another of its folders, or null without a pack.
+static func megascans_texture(file: String, folder := "foliage/") -> Texture2D:
+	return _load_megascans(file, folder) if not file.is_empty() else null
 
 
 static func _load(file: String) -> Texture2D:
