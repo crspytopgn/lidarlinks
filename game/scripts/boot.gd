@@ -513,10 +513,11 @@ func _on_tournament_play(chosen: RoundSetup) -> void:
 
 
 ## Every course the setup page offers after the placeholder: the game's
-## courses, those the player added (desktop), then the player's own designs.
+## courses, the other built-in courses, those the player added (desktop),
+## then the player's own designs.
 ## The setup and online pages leave out hidden ones (CourseLibrary.shown).
 func _all_courses() -> PackedStringArray:
-	return _course_paths + CourseLibrary.added_courses() + DesignedCourse.saved_paths()
+	return _course_paths + PackedStringArray(PlaceholderCourseLoader.EPIC.keys()) + CourseLibrary.added_courses() + DesignedCourse.saved_paths()
 
 
 # --- Courses page ---------------------------------------------------------------

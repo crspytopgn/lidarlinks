@@ -284,6 +284,7 @@ var _drive_to := -1  ## the ball the buggy is driving to
 var dynamic_resolution: DynamicResolution
 var grass: GrassField
 var fescue: FescueField  ## tall fescue on the deep rough, further out
+var plants: ScannedPlants  ## real scanned plants round the tee and green (private pack)
 
 var _trail_mesh := ImmediateMesh.new()
 ## Broadcast presentation pieces (GraphicsSettings.presentation).
@@ -490,6 +491,8 @@ func start_round() -> void:
 	card = scoring.cards[0]
 	scenery.set_backdrop(course.horizon, course.sky)
 	scenery.set_far_scenery(course)
+	# The real land round an epic course is drawn kilometres out.
+	camera.far = Landscape.CAMERA_FAR if course.landscape else 3000.0
 	if ambience != null:
 		ambience.queue_free()
 		ambience = null
@@ -719,6 +722,8 @@ func start_hole(index: int) -> void:
 		grass.setup(hole.terrain, graphics.grass)
 	if fescue.terrain != hole.terrain:
 		fescue.setup(hole.terrain, graphics.grass)
+	plants.set_place(course)
+	plants.setup(hole, graphics.grass)
 	if ambience != null:
 		ambience.start_hole(hole.tee)
 
@@ -3300,6 +3305,8 @@ func _build_world() -> void:
 	add_child(grass)
 	fescue = FescueField.new()
 	add_child(fescue)
+	plants = ScannedPlants.new()
+	add_child(plants)
 	post = PostProcess.new()
 	add_child(post)
 	dynamic_resolution = DynamicResolution.new()
@@ -3430,6 +3437,7 @@ func _apply_graphics() -> void:
 	RenderingServer.global_shader_parameter_set("foliage_sway", 1.0 if graphics.foliage_wind else 0.0)
 	RenderingServer.global_shader_parameter_set("cloud_shadow", CLOUD_SHADOW if graphics.cloud_shadows else 0.0)
 	TreeFactory.set_level(graphics.trees)
+	Landscape.detail = graphics.quality
 	GolferCloth.detail = graphics.quality
 	GolferFlex.detail = mini(graphics.quality, 2)
 	GolferSurface.face_detail = mini(graphics.quality, 2)
@@ -3439,6 +3447,7 @@ func _apply_graphics() -> void:
 	if grass.level != graphics.grass and hole != null:
 		grass.setup(hole.terrain, graphics.grass)
 		fescue.setup(hole.terrain, graphics.grass)
+		plants.setup(hole, graphics.grass)
 	broadcast = graphics.broadcast()
 	tour = broadcast and graphics.tour()
 	camera.broadcast = broadcast

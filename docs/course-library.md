@@ -11,7 +11,7 @@ Tests: `game/tests/course_library_tests.gd`.
 
 | Kind | Where it lives | Delete | Hide | Update |
 | --- | --- | --- | --- | --- |
-| Built in (Kettle Hollow) | `res://assets/courses/` | no | no | comes with each game update |
+| Built in (Kettle Hollow, Red Spire...) | `res://assets/courses/` | no | no | comes with each game update |
 | Your design | `user://courses/*.olc` | yes | no | not needed: designs are drawn with the newest look every time they load |
 | Real course | `user://courses/*.olc`, `source.kind = "openstreetmap"` | yes | no | yes |
 | Links 2003 | the player's game folder or picked discs | never | yes | no |

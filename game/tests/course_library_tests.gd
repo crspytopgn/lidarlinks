@@ -122,7 +122,7 @@ func _test_hiding() -> void:
 	CourseLibrary.set_hidden(p, true)
 	check(CourseLibrary.hidden_paths().count(p) == 1, "library: hidden once")
 	check(not CourseLibrary.shown(PackedStringArray([p, "/x/KEEP.crz"])).has(p), "library: hidden courses leave the lists")
-	var e: Dictionary = CourseLibrary.entries(PackedStringArray([p]))[1]
+	var e: Dictionary = CourseLibrary.entries(PackedStringArray([p]))[1 + PlaceholderCourseLoader.EPIC.size()]
 	check(e["hidden"] and e["hideable"] and not e["deletable"], "library: the player's game files are hidden, never deleted")
 	CourseLibrary.set_hidden(p, false)
 	check(CourseLibrary.shown(PackedStringArray([p])).has(p), "library: shown again")
@@ -173,5 +173,5 @@ func _test_panel() -> void:
 	panel._ready()
 	panel.open(PackedStringArray(["/games/links/Courses/PANEL.crz"]))
 	check(panel._list.get_child_count() == panel.entries().size(), "courses page: a row per course")
-	check(panel.entries().size() >= 2, "courses page: the built-in course and the game's")
+	check(panel.entries().size() >= 2 + PlaceholderCourseLoader.EPIC.size(), "courses page: the built-in courses and the game's")
 	panel.free()

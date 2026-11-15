@@ -34,6 +34,11 @@ static func entries(game_courses: PackedStringArray, web_added := PackedStringAr
 	out.append({"path": "", "name": PlaceholderCourseLoader.NAME, "kind": Kind.BUILT_IN, "holes": 9,
 		"deletable": false, "hideable": false, "updatable": false, "hidden": false,
 		"note": "Comes with the game and updates with it."})
+	for p: String in PlaceholderCourseLoader.EPIC:
+		var holes: Variant = read_header(p).get("holes", [])
+		out.append({"path": p, "name": str(PlaceholderCourseLoader.EPIC[p]), "kind": Kind.BUILT_IN,
+			"holes": (holes as Array).size() if holes is Array else 0, "deletable": false, "hideable": false,
+			"updatable": false, "hidden": false, "note": "Comes with the game and updates with it."})
 	var hidden := hidden_paths()
 	for p in game_courses:
 		var added := p.begins_with(ADDED_FOLDER) or web_added.has(p)

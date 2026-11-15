@@ -299,12 +299,34 @@ func build_visual() -> Node3D:
 			inst.mesh = chunk_mesh(Vector2i(ci, cj))
 			inst.material_override = material()
 			root.add_child(inst)
-	root.add_child(build_apron())
+	if course.landscape.is_empty():
+		root.add_child(build_apron())
+	else:
+		root.add_child(Landscape.build(self))
 	root.add_child(build_paths())
 	root.add_child(build_water())
 	if TreeFactory.enabled() and hole_number > 0:
 		_add_distant_trees(root)
+	var rocks := RockFormations.build(self)
+	if rocks != null:
+		root.add_child(rocks)
+	var plants := DesertPlants.build(self)
+	if plants != null:
+		root.add_child(plants)
 	return root
+
+
+## The colour of `surface` (a Surface.Type) on this course: its biome's
+## (Biome.GROUND) or the parkland default.
+func surface_color(surface: int) -> Color:
+	return Biome.ground_color(course.biome, surface, COLORS[surface])
+
+
+## The terrain shader's texture weights for `surface` (bare ground keeps
+## the rough's, and the shader's surface_bare puts the sand texture under
+## its own colour).
+func surface_weights(surface: int) -> Vector2:
+	return Materials.terrain_weights(surface)
 
 
 ## The course's trees beyond the ones the round places for this hole
@@ -353,9 +375,9 @@ func material() -> ShaderMaterial:
 		for i in COLORS.size():
 			# Under the water line, the bank: darker rough rather than the
 			# map's blue, which would ring each pond.
-			var c: Color = COLORS[Surface.Type.ROUGH].darkened(0.35) if i == Surface.Type.WATER else COLORS[i]
+			var c: Color = surface_color(Surface.Type.ROUGH).darkened(0.35) if i == Surface.Type.WATER else surface_color(i)
 			cols.append(Vector3(c.r, c.g, c.b))
-			wts.append(Materials.terrain_weights(i))
+			wts.append(surface_weights(i))
 			mown.append(float(MOWN.get(i, 0.0)))
 			widths.append(float(STRIPE_METRES.get(i, 0.0)))
 			cut.append(Materials.terrain_cut(i))
@@ -375,6 +397,10 @@ func material() -> ShaderMaterial:
 		_material.set_shader_parameter("surface_cut", cut)
 		_material.set_shader_parameter("surface_weights", wts)
 		_material.set_shader_parameter("surface_mown", mown)
+		var bare := PackedFloat32Array()
+		for i in COLORS.size() + 2:
+			bare.append(1.0 if i < COLORS.size() and Biome.is_bare(course.biome, i) else 0.0)
+		_material.set_shader_parameter("surface_bare", bare)
 		_material.set_shader_parameter("has_splat", true)
 		_update_splat()
 	return _material
@@ -759,7 +785,7 @@ func build_apron() -> MeshInstance3D:
 	var verts := PackedVector3Array()
 	var colors := PackedColorArray()
 	var normals := PackedVector3Array()
-	var far_color: Color = COLORS[Surface.Type.OUT_OF_BOUNDS]
+	var far_color: Color = surface_color(Surface.Type.OUT_OF_BOUNDS)
 	for p in border:
 		var inner := p.move_toward(centre, 0.01)
 		var h := height_at(inner.x, inner.y)
@@ -782,7 +808,7 @@ func build_apron() -> MeshInstance3D:
 		_add_tri(indices, verts, a1, a1 + 1, a0 + 1)
 	var weights := PackedVector2Array()
 	weights.resize(verts.size())
-	weights.fill(Materials.terrain_weights(Surface.Type.OUT_OF_BOUNDS))
+	weights.fill(surface_weights(Surface.Type.OUT_OF_BOUNDS))
 	var arrays := []
 	arrays.resize(Mesh.ARRAY_MAX)
 	arrays[Mesh.ARRAY_VERTEX] = verts
@@ -1090,8 +1116,8 @@ func _vertex_surfaces(cells: Rect2i) -> void:
 	var palette: Array[Color] = []
 	var wts: Array[Vector2] = []
 	for s in COLORS.size():
-		palette.append(COLORS[s])
-		wts.append(Materials.terrain_weights(s))
+		palette.append(surface_color(s))
+		wts.append(surface_weights(s))
 	palette.append(FIRST_CUT_COLOR)
 	wts.append(Materials.terrain_weights(Surface.Type.ROUGH))
 	palette.append(COLLAR_COLOR)

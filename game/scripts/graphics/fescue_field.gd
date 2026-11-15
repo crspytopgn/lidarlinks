@@ -188,6 +188,15 @@ static func crowns_by_chunk(field: ObstacleField) -> Dictionary:
 ## plants, a stand of one kind every few metres. Deterministic. One
 ## MultiMesh per atlas used (the fescue's first, if any).
 static func build_chunk(t: CourseTerrain, key: Vector2i, density: float, crowns := PackedVector3Array(), under_density := 0.0, cards := {}) -> Array[MultiMesh]:
+	# Sparse bunch grass and scrub in the desert, none through snow (Biome).
+	var biome := Biome.of(t)
+	var wild := Biome.wild_grass(biome)
+	if wild <= 0.0:
+		var none: Array[MultiMesh] = []
+		return none
+	density *= wild
+	under_density *= wild
+	var tint: Color = Biome.WILD_TINT.get(biome, Color(0, 0, 0, 0))
 	var rng := RandomNumberGenerator.new()
 	rng.seed = hash(key) + 77
 	_buf = PackedFloat32Array()
@@ -211,7 +220,9 @@ static func build_chunk(t: CourseTerrain, key: Vector2i, density: float, crowns 
 			continue
 		var h := lerpf(rng.randf_range(0.4, 0.75), lerpf(NATIVE_HEIGHT.x, NATIVE_HEIGHT.y, grow), native)
 		var c := t.ground_color_at(x, z)
-		if native > 0.0:
+		if tint.a > 0.0:
+			c = tint.lerp(native_colour(tone), 0.08)
+		elif native > 0.0:
 			c = c.lerp(native_colour(tone), native)
 		if not cards.is_empty():
 			var cover := t.cover_at(x, z)

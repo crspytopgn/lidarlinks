@@ -43,6 +43,17 @@ YARD = 0.9144
 # Map metres east (E) and south (S) of the patch's north-west corner. The
 # game's x runs west and z north (as for real courses), centred on CENTRE.
 CENTRE = (820.0, 560.0)
+# What the course is called and credits, and extra top-level fields for the
+# .olc (biome, landscape): other built-in courses reuse this builder
+# (tools/homecourse/build_epic_course.py) and set these.
+NAME = "Kettle Hollow"
+CREDITS = "Ground: Terrarium elevation tiles (Mapzen / AWS Open Data), from USGS 3DEP lidar (public domain)."
+EXTRA = {}
+# Metres of semi-rough either side of the fairway, beyond its half width.
+ROUGH_BAND = 30.0
+# The elevation (metres) the course's heights are measured from: its
+# lowest point, set by build().
+DATUM = 0.0
 
 
 def to_game(p):
@@ -259,7 +270,7 @@ def build(dem, mpp):
 
         # Rough: a band of semi-rough along the whole hole, beyond it deep rough.
         r_line = [h.at(s)[0] for s in np.linspace(0.0, h.length + gl * 0.4, 9)]
-        rw = (spec["fw"][0] + 30.0) if spec["fw"] is not None else 52.0
+        rw = (spec["fw"][0] + ROUGH_BAND) if spec["fw"] is not None else 22.0 + ROUGH_BAND
         widths = np.interp(np.linspace(0, 1, 9), [0, 0.2, 0.75, 1], [34.0, rw * 0.9, rw, gw + 30.0])
         shapes.append((ROUGH, geom.ribbon(r_line, widths, spec["seed"] * 19, wander=0.12, cap=0.95)))
 
@@ -384,7 +395,9 @@ def build(dem, mpp):
         w = 1.0 - geom.smoothstep(0.0, 22.0, sd)
         height[box] = np.minimum(here, here * (1 - w) + (low + 0.5) * w)
 
-    height -= height.min()
+    global DATUM
+    DATUM = float(height.min())
+    height -= DATUM
 
     # --- Pins: on a part of the green flat enough to hold a putt (at most 3 %
     # within 2.5 m, as greenkeepers cut them), 4.5 m or more from the edge
@@ -650,7 +663,7 @@ def write_course(path, holes, shapes, paths, objects, area, cols, rows, height):
     course = {
         "format": "openlinks-course",
         "version": 1,
-        "name": "Kettle Hollow",
+        "name": NAME,
         "author": "OpenLinks2003",
         "area": [float(a) for a in area],
         "cell": CELL,
@@ -661,9 +674,10 @@ def write_course(path, holes, shapes, paths, objects, area, cols, rows, height):
                     for o in objects],
         "paths": [{"points": flat(p), "width": 2.4, "bridge": False} for p in paths],
         "object_info": {},
-        "credits": "Ground: Terrarium elevation tiles (Mapzen / AWS Open Data), from USGS 3DEP lidar (public domain).",
+        "credits": CREDITS,
         "source": {"kind": "built-in", "lat": LAT, "lon": LON},
     }
+    course.update(EXTRA)
     # Gzipped (DesignedCourse.load_file reads either): the export packs
     # files as they are, and the JSON is mostly tree positions that shrink
     # to a third. mtime 0 keeps rebuilds byte-identical.
