@@ -85,6 +85,11 @@ const SWING_CLIPS: Array[StringName] = [&"backswing", &"swing", &"backswing_iron
 const BALL := Vector3(0.0, 0.0, -0.75)
 ## The left hand's bones, for the glove (with hand_l).
 const GLOVE_FINGERS := ["thumb", "index", "middle", "ring", "pinky"]
+## Clips with alternatives baked as name_2, name_3 (Michael's takes): one
+## is picked at random each time.
+const VARIED: Array[StringName] = [&"celebrate", &"fist_pump", &"slump", &"upset", &"post_shot", &"tee_up"]
+## Seconds he holds the finish before the after-shot reaction (post_shot).
+const FINISH_HOLD := 1.2
 const SHAFT_COLOURS := {"steel": Color(0.75, 0.76, 0.78), "graphite": Color(0.16, 0.17, 0.19), "black": Color(0.04, 0.04, 0.045)}
 
 var look: PlayerLook
@@ -134,6 +139,8 @@ var _cloth: GolferCloth
 ## Forearm and neck muscles working through the swing; none on spectators.
 var _flex: GolferFlex
 var _arms: GolferArms
+## This shot's ball is on a tee (set_teed): he tees it up before his setup.
+var _teed := false
 
 
 ## Null if the model or the look pack is missing, or the model has no
@@ -185,6 +192,7 @@ static func create(p_look: PlayerLook = null, p_texture_cap := 0) -> FreeGolfer:
 			golfer._putter.append(node)
 		elif node.name.begins_with("Iron"):
 			golfer._iron_meshes.append(node)
+	player.animation_finished.connect(golfer._on_clip_done)
 	golfer._show_putter(false)
 	golfer.apply_look(p_look if p_look != null else PlayerLook.new())
 	return golfer
@@ -606,6 +614,7 @@ func play(animation: StringName) -> void:
 		clip = StringName(String(animation) + "_iron")
 	if animation == &"address" and _keep_address(clip):
 		return
+	clip = _variant(clip)
 	_stop_walk()
 	if _look:
 		_look.track(null, 0.0)
@@ -697,6 +706,79 @@ func set_bag(bag: Node3D) -> void:
 	_bag = bag
 
 
+func set_teed(teed: bool) -> void:
+	_teed = teed
+
+
+## `clip` or one of its alternatives (clip_2, clip_3), at random.
+func _variant(clip: StringName) -> StringName:
+	if not clip in VARIED:
+		return clip
+	var options: Array[StringName] = [clip]
+	for n in [2, 3]:
+		var alt := StringName("%s_%d" % [clip, n])
+		if _player.has_animation(alt):
+			options.append(alt)
+	return options[_rng.randi() % options.size()]
+
+
+## After the swing's finish (held FINISH_HOLD), his reaction to the shot,
+## unless something else has started by then.
+func _on_clip_done(clip: StringName) -> void:
+	if not clip in [&"swing", &"swing_iron"] or not _player.has_animation(&"post_shot") or not is_inside_tree():
+		return
+	get_tree().create_timer(FINISH_HOLD).timeout.connect(func() -> void:
+		if is_instance_valid(self) and not _player.is_playing() and _player.assigned_animation == clip:
+			_play(_variant(&"post_shot"), REACT_BLEND))
+
+
+## Where a baked clip has him at `t` seconds: his hips over the ground and
+## the way he faces, in the model's parent frame (the clip's root motion
+## from the model at _rest, unturned).
+func _clip_spot(clip: StringName, t: float) -> Transform3D:
+	var anim := _player.get_animation(clip)
+	var pos := Vector3.ZERO
+	var rot := Quaternion.IDENTITY
+	for i in anim.get_track_count():
+		var path := String(anim.track_get_path(i))
+		if anim.track_get_type(i) == Animation.TYPE_POSITION_3D and path.ends_with(":Root"):
+			pos = anim.position_track_interpolate(i, t)
+		elif anim.track_get_type(i) == Animation.TYPE_ROTATION_3D and path.ends_with(":pelvis"):
+			rot = anim.rotation_track_interpolate(i, t)
+	var hips := pos + _skeleton.get_bone_rest(_skeleton.find_bone("pelvis")).origin
+	var ahead := Basis(rot) * Vector3.FORWARD
+	return Transform3D(Basis(Vector3.UP, atan2(-ahead.x, -ahead.z)), _rest + Vector3(hips.x, 0.0, hips.z) * _model.scale.x)
+
+
+## Queues on the walk: turning on the spot to where `clip` starts, then the
+## clip itself played where it was baked (it carries him), at full length
+## less the settle. `yaw` is which way he faces now. Returns where the clip
+## leaves him.
+func _routine(clip: StringName, yaw: float) -> Transform3D:
+	var start := _clip_spot(clip, 0.0)
+	_walk.tween_property(_model, "rotation:y", _near_yaw(yaw, start.basis.get_euler().y), WALK_SETTLE)
+	_walk.tween_callback(func() -> void:
+		_model.position = _rest
+		_model.rotation.y = 0.0
+		_play(clip, 0.0, 1.0))
+	var length := _player.get_animation(clip).length
+	_walk.tween_interval(length - WALK_SETTLE)
+	return _clip_spot(clip, length)
+
+
+## Queues on the walk: walking from `from` to `to` (positions and yaws).
+func _walk_between(from: Transform3D, to: Transform3D, pace: float) -> void:
+	var heading := to.origin - from.origin
+	heading.y = 0.0
+	var yaw := _near_yaw(from.basis.get_euler().y, atan2(-heading.x, -heading.z))
+	_walk.tween_callback(func() -> void:
+		_model.position = from.origin
+		_model.rotation.y = from.basis.get_euler().y
+		_play(&"walk", 0.0, pace))
+	_walk.tween_property(_model, "rotation:y", yaw, WALK_SETTLE)
+	_walk.tween_property(_model, "position", to.origin, heading.length() / _walk_speed(pace))
+
+
 func busy() -> bool:
 	return _busy
 
@@ -717,7 +799,38 @@ func _walk_in(clip: StringName) -> void:
 	var from := Vector3(0, 0, WALK_FROM)
 	var putt := clip == &"address_putt"
 	var last := 0.0  # which way he walks in (rotation.y, unwrapped)
-	if putt and _player.has_animation(&"read"):
+	if putt and _player.has_animation(&"pre_putt"):
+		# His own routine: crouched behind the ball reading the line, then
+		# in and over it (the clip carries him), into the putting address.
+		var start := _clip_spot(&"pre_putt", 0.0)
+		_model.position = start.origin
+		_model.rotation.y = start.basis.get_euler().y
+		_routine(&"pre_putt", _model.rotation.y)
+		_settle_into(clip)
+		return
+	elif not putt and _player.has_animation(&"setup"):
+		# The club from the bag, the ball teed up on the tee, then his own
+		# setup: in behind the ball and over it (the clips carry him).
+		var tee := _teed and _player.has_animation(&"tee_up")
+		var tee_clip := _variant(&"tee_up")
+		var first := _clip_spot(tee_clip if tee else &"setup", 0.0)
+		var yaw := first.basis.get_euler().y
+		if _pull_club(pace, first.origin - _rest):
+			yaw = _walk_yaw
+		else:
+			_model.position = first.origin
+			_model.rotation.y = yaw
+			_show_putter(_putting)
+		if tee:
+			var done := _routine(tee_clip, yaw)
+			var setup := _clip_spot(&"setup", 0.0)
+			_walk_between(done, setup, pace)
+			var heading := setup.origin - done.origin
+			yaw = _near_yaw(done.basis.get_euler().y, atan2(-heading.x, -heading.z))
+		_routine(&"setup", yaw)
+		_settle_into(clip)
+		return
+	elif putt and _player.has_animation(&"read"):
 		from = read_spot(_to_hole)
 		_model.position = _rest + from
 		_model.rotation.y = 0.0  # facing the line from the side
@@ -760,6 +873,16 @@ func _walk_in(clip: StringName) -> void:
 	_walk.tween_interval(WALK_SETTLE)
 
 
+## The end of a routine: into the address clip (or the one a club change
+## on the way asked for).
+func _settle_into(clip: StringName) -> void:
+	_walk_clip = clip
+	_walk.tween_callback(func() -> void:
+		if _player.has_animation(_walk_clip):
+			_play(_walk_clip, WALK_SETTLE))
+	_walk.tween_interval(WALK_SETTLE)
+
+
 ## Where a putt of `to_hole` metres is read from, in the rig's frame.
 static func read_spot(to_hole: float) -> Vector3:
 	return Vector3(-minf(READ_AHEAD, to_hole * READ_SHARE), 0.0, READ_SIDE)
@@ -774,7 +897,7 @@ func _walk_speed(pace: float) -> float:
 ## Stands the golfer at the bag and has him draw the club out of it
 ## (pull_club), then walk to the survey spot behind the ball. False (and
 ## nothing done) without a bag nearby or the clip.
-func _pull_club(pace: float) -> bool:
+func _pull_club(pace: float, dest := SURVEY_SPOT) -> bool:
 	if _bag == null or not is_instance_valid(_bag) or not _bag.visible or not _bag.is_inside_tree() \
 			or not _player.has_animation(&"pull_club"):
 		return false
@@ -792,7 +915,7 @@ func _pull_club(pace: float) -> bool:
 	_walk.tween_callback(func() -> void: _show_putter(_putting))
 	_walk.tween_interval(maxf(0.0, (_player.get_animation(&"pull_club").length - PULL_GRAB) / speed - WALK_SETTLE))
 	# Round to the survey spot, turning as he sets off.
-	var to := _rest + SURVEY_SPOT
+	var to := _rest + dest
 	var heading := to - at
 	heading.y = 0.0
 	var walk_yaw := _near_yaw(yaw, atan2(-heading.x, -heading.z))

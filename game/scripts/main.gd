@@ -3772,6 +3772,7 @@ func _place_golfer() -> void:
 	# The bag first: at a new ball the golfer takes his club out of it.
 	_place_stand_bag()
 	golfer.set_bag(stand_bag if stand_bag != null and stand_bag.visible else null)
+	golfer.set_teed(lie == Surface.Type.TEE)
 	golfer.play(&"address")
 
 

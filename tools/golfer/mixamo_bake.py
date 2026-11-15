@@ -83,14 +83,17 @@ def person_rig(rig, pack, name):
 
 def bake(glb, rig, turns, name, take_name, start, end, club="driver", loop=False, addr=None, pingpong=False):
     """`club` "stand": a take standing up (a reaction), turned to face the
-    target and set where the address stands, the driver kept in hand.
+    target and set where the address stands, the driver kept in hand
+    ("lead": in the lead hand).
     `addr`: the take's address frame, where the club is set in the hand
     and the take placed (default `start`), so that a backswing and the
     swing from its top share them. `pingpong`: the frames played forward
     then back, a loop with no jump (the waggle over the ball)."""
     addr = start if addr is None else addr
     bones, m_rots, m_poss = take(take_name)
-    stand = club == "stand"
+    # "lead": standing, the club carried in the lead hand (teeing up).
+    lead = club == "lead"
+    stand = club in ("stand", "lead")
     if stand:
         club = "driver"
     FACE = facing(bones, m_rots, m_poss, addr, stand)
@@ -161,7 +164,8 @@ def bake(glb, rig, turns, name, take_name, start, end, club="driver", loop=False
     club_dir = M.club_direction(glb, rig)
     length = float(np.linalg.norm(ball - ref_poss[cj]))
     rots0, root0 = posed(addr)
-    drive0 = rots0[hr].copy()
+    dj = hl if lead else hr  # the hand the shaft turns with
+    drive0 = rots0[dj].copy()
     club_local = drive0.T @ rots0[cj]
     for _ in range(3):
         _, p0 = hold(list(rots0), root0, drive0 @ club_local)
@@ -177,8 +181,18 @@ def bake(glb, rig, turns, name, take_name, start, end, club="driver", loop=False
     frames, drives = [], []
     for f in range(start, end + 1):
         rots, root = posed(f)
-        drives.append(rots[hr].copy())
+        drives.append(rots[dj].copy())
         frames.append((rots, root + slide))
+    if lead:
+        # Teeing up: the trail hand's lowest reach puts the ball on the
+        # tee, so that is where the ball is.
+        low = []
+        for rots, root in frames:
+            _, p = rig.world(rig.locals(rots), root)
+            low.append(p[hr])
+        k = int(np.argmin([q[1] for q in low]))
+        shift = np.array([ball[0] - low[k][0], 0.0, ball[2] - low[k][2]])
+        frames = [(rots, root + shift) for rots, root in frames]
     fixes = [np.eye(3)] * len(frames)
 
     def heads_hands():
@@ -280,6 +294,11 @@ def bake(glb, rig, turns, name, take_name, start, end, club="driver", loop=False
     times = [i / FPS for i in range(len(frames))]
     out = [rig.locals(r) for r, _ in frames]
     roots = [root for _, root in frames]
+    if not holding and len(frames) > 60:
+        # Reactions and routines at 15 keys a second (linear between them
+        # is smooth at that pace), keeping the game's download small.
+        keep = list(range(0, len(frames), 2)) + ([len(frames) - 1] if len(frames) % 2 == 0 else [])
+        times, out, roots = [times[i] for i in keep], [out[i] for i in keep], [roots[i] for i in keep]
     if loop:
         out, roots = out + out[:1], roots + roots[:1]
         # A single frame held: a still address two seconds long, so the
