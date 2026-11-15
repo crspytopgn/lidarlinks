@@ -18,7 +18,7 @@ uniform sampler2D detail_albedo : source_color, filter_linear_mipmap, repeat_ena
 uniform sampler2D detail_normal : filter_linear_mipmap, repeat_enable;
 uniform vec3 detail_mean = vec3(0.5);
 uniform float detail_metres = 6.0; // one tile of the photoscan
-uniform float detail_fade = 220.0; // metres: beyond, the strata alone
+uniform float detail_fade = 450.0; // metres: beyond, the strata alone
 
 varying vec3 world;
 varying vec3 wnormal;
@@ -44,7 +44,13 @@ void fragment() {
 			vec3 tex = texture(detail_albedo, ux).rgb * w.x + texture(detail_albedo, uy).rgb * w.y + texture(detail_albedo, uz).rgb * w.z;
 			// The photo's light and dark, not its colour: the strata set that.
 			float lum = dot(tex, vec3(0.3, 0.59, 0.11)) / max(dot(detail_mean, vec3(0.3, 0.59, 0.11)), 0.05);
-			c *= mix(1.0, clamp(lum, 0.4, 1.6), near * 0.85);
+			// A second, larger sampling breaks the tiling and adds the
+			// broader cracks and pocks of a real face; contrast raised so it
+			// reads in shade too, where the bumps don't.
+			vec3 big = texture(detail_albedo, ux * 0.27 + 0.31).rgb * w.x + texture(detail_albedo, uy * 0.27 + 0.31).rgb * w.y + texture(detail_albedo, uz * 0.27 + 0.31).rgb * w.z;
+			float lum2 = dot(big, vec3(0.3, 0.59, 0.11)) / max(dot(detail_mean, vec3(0.3, 0.59, 0.11)), 0.05);
+			lum = pow(clamp(lum, 0.3, 1.8), 1.35) * mix(1.0, clamp(lum2, 0.5, 1.5), 0.6);
+			c *= mix(1.0, clamp(lum, 0.3, 1.7), near * 0.9);
 			// The scan's bumps, in world space (whiteout blend; the meshes
 			// have no tangents).
 			vec3 tx = texture(detail_normal, ux).xyz * 2.0 - 1.0;
@@ -55,6 +61,9 @@ void fragment() {
 			tz = vec3(tz.xy + n.xy, abs(tz.z) * n.z);
 			vec3 wn = normalize(tx.zyx * w.x + ty.xzy * w.y + tz.xyz * w.z);
 			NORMAL = normalize(mix(NORMAL, (VIEW_MATRIX * vec4(wn, 0.0)).xyz, near * 0.8));
+			// Cracks and pockets hold shade even out of the sun.
+			float cavity = smoothstep(0.55, 0.98, dot(wn, n));
+			c *= mix(1.0, 0.45 + 0.55 * cavity, near * 0.7);
 		}
 	}
 	c *= cloud_light(world.xz);

@@ -46,45 +46,54 @@ RED_SPIRE = dict(
     centre=(1200.0, 1350.0),
     biome="desert",
     rough_band=12.0,
+    wander=0.24,
     holes=[
+        # Desert target golf, as real desert courses play: the grass starts
+        # after a carry over the desert from the tee ("carry", metres from
+        # the back tee), and dry washes cross some holes ("gaps").
         # 1: uphill toward the rock band, a spire behind the green.
-        dict(par=4, tee=(900, 1450), route=[], green=(1150, 1180), gsize=(30, 23),
+        dict(par=4, tee=(900, 1450), route=[], carry=150.0, green=(1150, 1180), gsize=(30, 23),
              fw=(33, 30, 24), bunkers=[("fw", 225, 19, 24, 10), ("gs", 290, 13, 7), ("gs", 70, 12, 6)],
              tilt=(2.2, 0.6), tier=None, seed=111),
         # 2: a par 5 bending round a hoodoo garden in its elbow.
-        dict(par=5, tee=(1180, 1130), route=[(1400, 1000)], green=(1560, 820), gsize=(33, 22),
+        # A wash across the fairway at the lay-up: carry it or stop short.
+        dict(par=5, tee=(1180, 1130), route=[(1400, 1000)], carry=140.0, gaps=[(320.0, 360.0)], green=(1560, 820), gsize=(33, 22),
              fw=(36, 31, 24), bunkers=[("fw", 240, -20, 26, 11), ("fw", 380, 17, 18, 9), ("gs", 280, 15, 7),
                                        ("gs", 80, 12, 6)],
              tilt=(1.8, -0.8), tier=(0.55, 0.4), seed=123),
         # 3: a par 3 into the foot of twin towers.
-        dict(par=3, tee=(1600, 770), route=[], green=(1765, 705), gsize=(27, 24),
+        dict(par=3, tee=(1600, 770), route=[], carry=140.0, green=(1765, 705), gsize=(27, 24),
              fw=None, bunkers=[("gs", 300, 14, 7), ("gs", 50, 12, 6), ("gs", 170, 9, 5)],
              tilt=(2.4, 0.4), tier=None, seed=137),
-        # 4: back down the valley, a butte along the right.
-        dict(par=4, tee=(1785, 765), route=[], green=(1705, 1145), gsize=(31, 22),
+        # 4: back down the valley, a butte along the right; a wash across
+        # the driving zone (lay up, or carry it 235 m).
+        dict(par=4, tee=(1785, 765), route=[], carry=130.0, gaps=[(200.0, 235.0)], green=(1705, 1145), gsize=(31, 22),
              fw=(34, 31, 24), bunkers=[("fw", 230, -18, 26, 11), ("gs", 300, 12, 6), ("gs", 60, 14, 7)],
              tilt=(1.9, 0.5), tier=None, seed=141),
-        # 5: short and downhill.
-        dict(par=4, tee=(1665, 1195), route=[], green=(1405, 1390), gsize=(27, 24),
+        # 5: short and downhill, drivable, with a hoodoo standing in the
+        # middle of the fairway 225 m out, on a strip of desert: play either
+        # side of it, over it, or short.
+        dict(par=4, tee=(1665, 1195), route=[], gaps=[(208.0, 242.0)], green=(1405, 1390), gsize=(27, 24),
              fw=(30, 27, 22), bunkers=[("fw", 190, 15, 22, 10), ("gs", 320, 12, 6), ("gs", 30, 13, 6)],
              tilt=(2.6, -0.5), tier=None, seed=153),
         # 6: the long par 5 across the open desert.
-        dict(par=5, tee=(1425, 1450), route=[(1380, 1720)], green=(1220, 1880), gsize=(34, 22),
+        dict(par=5, tee=(1425, 1450), route=[(1380, 1720)], carry=150.0, gaps=[(300.0, 345.0)], green=(1220, 1880), gsize=(34, 22),
              fw=(36, 32, 24), bunkers=[("fw", 255, 19, 30, 12), ("fw", 230, -21, 16, 9), ("fw", 390, -15, 20, 9),
                                        ("gs", 285, 16, 7), ("gs", 95, 13, 6)],
              tilt=(2.0, 0.9), tier=(0.5, 0.4), seed=167),
-        # 7: a par 3 over an oasis pool to a green framed by the arch.
+        # 7: the signature: a par 3 played through a natural arch, 75 m
+        # out from the tee, over an oasis pool.
         dict(par=3, tee=(1170, 1915), route=[], green=(1025, 1868), gsize=(28, 22),
              fw=None, bunkers=[("gs", 270, 13, 6), ("gs", 100, 14, 6)],
-             pond=((1095, 1895), 26, 13, 0.3),
+             pond=((1083, 1889), 24, 13, 0.3),
              tilt=(2.2, -0.6), tier=None, seed=171),
         # 8: dogleg home past a mesa.
-        dict(par=4, tee=(990, 1815), route=[], green=(690, 1560), gsize=(30, 23),
+        dict(par=4, tee=(990, 1815), route=[], carry=140.0, green=(690, 1560), gsize=(30, 23),
              fw=(34, 31, 24), bunkers=[("fw", 232, 18, 28, 11), ("fw", 245, -20, 20, 9), ("gs", 300, 12, 6),
                                        ("gs", 60, 15, 7)],
              tilt=(1.9, 0.5), tier=None, seed=183),
         # 9: back up to the clubhouse, a tower guarding the left.
-        dict(par=4, tee=(665, 1515), route=[], green=(845, 1245), gsize=(31, 24),
+        dict(par=4, tee=(665, 1515), route=[], carry=120.0, green=(845, 1245), gsize=(31, 24),
              fw=(33, 30, 23), bunkers=[("fw", 210, -18, 26, 11), ("gs", 280, 15, 7), ("gs", 70, 14, 7),
                                        ("gs", 0, 9, 5)],
              tilt=(1.7, -0.7), tier=(0.45, 0.4), seed=197),
@@ -106,8 +115,10 @@ RED_SPIRE = dict(
         ("rock_butte", 1905, 985, 15, 1.1),  # right of the 4th
         ("rock_hoodoo", 1600, 1330, 40, 1.0),  # left of the 5th
         ("rock_hoodoo", 1625, 1360, 200, 0.75),
+        ("rock_hoodoo", 1485, 1330, 30, 0.9),  # in the 5th fairway
         ("rock_spire", 1560, 1640, 300, 1.1),  # right of the 6th
-        ("rock_arch", 945, 1838, 105, 1.0),  # framing the 7th green
+        ("rock_arch", 1099, 1892, 72, 1.0),  # the 7th is played through it, over the pool
+        ("rock_spire", 950, 1835, 0, 1.0),  # behind the 7th green
         ("rock_butte", 760, 1780, 70, 1.25),  # a mesa off the 8th
         ("rock_spire", 700, 1330, 210, 1.3),  # left of the 9th
         ("rock_hoodoo", 735, 1300, 10, 0.9),
@@ -145,6 +156,8 @@ def configure(spec):
     hc.NAME = spec["name"]
     hc.CREDITS = spec["credits"]
     hc.ROUGH_BAND = spec["rough_band"]
+    hc.FW_WANDER = spec.get("wander", hc.FW_WANDER)
+    hc.ROUGH_WANDER = spec.get("wander", hc.ROUGH_WANDER) * 0.92
 
 
 def rocks_in_game(spec):
@@ -178,7 +191,8 @@ def desert_dressing(spec):
         blocked = np.zeros(X.shape, dtype=bool)
         for s, p in shapes:
             poly = geom.outline(p)
-            margin = 1.5 if s == hc.ROUGH else 6.0
+            # Tee pads have mown banks round them (TeePads).
+            margin = 3.0 if s == hc.ROUGH else (16.0 if s == hc.TEE else 10.0)
             lo = poly.min(0) - margin
             hi = poly.max(0) + margin
             m = (X >= lo[0]) & (X <= hi[0]) & (Z >= lo[1]) & (Z <= hi[1])

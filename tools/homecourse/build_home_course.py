@@ -51,6 +51,9 @@ CREDITS = "Ground: Terrarium elevation tiles (Mapzen / AWS Open Data), from USGS
 EXTRA = {}
 # Metres of semi-rough either side of the fairway, beyond its half width.
 ROUGH_BAND = 30.0
+# How much fairway and rough edges wander (desert courses: freer shapes).
+FW_WANDER = 0.13
+ROUGH_WANDER = 0.12
 # The elevation (metres) the course's heights are measured from: its
 # lowest point, set by build().
 DATUM = 0.0
@@ -182,6 +185,24 @@ class Hole:
         return a + d * (s - self.cum[i]), d
 
 
+def pieces(s0, s1, gaps):
+    """The stretches of [s0, s1] left after cutting out `gaps` ((from, to)
+    metres along the line), dropping slivers under 15 m."""
+    out = [(s0, s1)]
+    for g0, g1 in gaps:
+        nxt = []
+        for a, b in out:
+            if g1 <= a or g0 >= b:
+                nxt.append((a, b))
+                continue
+            if g0 - a >= 15.0:
+                nxt.append((a, g0))
+            if b - g1 >= 15.0:
+                nxt.append((g1, b))
+        out = nxt
+    return out
+
+
 def right_of(d):
     """Unit vector to the golfer's right when facing `d` (+x is left)."""
     return np.array([-d[1], d[0]])
@@ -255,12 +276,18 @@ def build(dem, mpp):
         if spec["fw"] is not None:
             w_land, w_mid, w_app = spec["fw"]
             start = 118.0 if h.par == 4 else 125.0
-            s_pts = np.linspace(start, front, 6)
-            line = [h.at(s)[0] for s in s_pts]
-            widths = np.interp(s_pts, [start, start + 40, 250, front - 50, front], [w_land * 0.75, w_land, w_mid, w_app * 1.1, w_app])
-            fw = geom.ribbon(line, widths, spec["seed"] * 3, wander=0.13, cap=0.7)
-            shapes.append((FAIRWAY, fw))
-            h.fairway = geom.outline(fw)
+            # Desert target golf: grass only after a carry from the tee,
+            # and broken by washes ("gaps") across the hole.
+            start = max(start, spec.get("carry", 0.0))
+            h.fairway = None
+            for k, (a, b) in enumerate(pieces(start, front, spec.get("gaps", []))):
+                s_pts = np.linspace(a, b, 6 if (a, b) == (start, front) else max(3, int((b - a) / 50.0) + 2))
+                line = [h.at(s)[0] for s in s_pts]
+                widths = np.interp(s_pts, [start, start + 40, 250, front - 50, front], [w_land * 0.75, w_land, w_mid, w_app * 1.1, w_app])
+                fw = geom.ribbon(line, widths, spec["seed"] * 3 + k * 17, wander=FW_WANDER, cap=0.7 if (a, b) == (start, front) else 0.3)
+                shapes.append((FAIRWAY, fw))
+                o = geom.outline(fw)
+                h.fairway = o if h.fairway is None else np.vstack([h.fairway, o])
         else:
             # Par 3s: a short apron of fairway grass in front of the green.
             p, d = h.at(front - 12.0)
@@ -269,10 +296,22 @@ def build(dem, mpp):
             h.fairway = geom.outline(apron)
 
         # Rough: a band of semi-rough along the whole hole, beyond it deep rough.
-        r_line = [h.at(s)[0] for s in np.linspace(0.0, h.length + gl * 0.4, 9)]
         rw = (spec["fw"][0] + ROUGH_BAND) if spec["fw"] is not None else 22.0 + ROUGH_BAND
-        widths = np.interp(np.linspace(0, 1, 9), [0, 0.2, 0.75, 1], [34.0, rw * 0.9, rw, gw + 30.0])
-        shapes.append((ROUGH, geom.ribbon(r_line, widths, spec["seed"] * 19, wander=0.12, cap=0.95)))
+        end = h.length + gl * 0.4
+        r_gaps = [(g0 + 5.0, g1 - 5.0) for g0, g1 in spec.get("gaps", [])]
+        if "carry" in spec:
+            # Grass round the tees, then desert to the carry.
+            r_gaps.append((TEE_STEPS[h.par][-1] + 12.0, spec["carry"] - 12.0))
+        for k, (a, b) in enumerate(pieces(0.0, end, r_gaps)):
+            n_pts = 9 if (a, b) == (0.0, end) else max(3, int((b - a) / 45.0) + 2)
+            s_pts = np.linspace(a, b, n_pts)
+            r_line = [h.at(s)[0] for s in s_pts]
+            frac = np.linspace(0, 1, 9) if n_pts == 9 and (a, b) == (0.0, end) else s_pts / end
+            widths = np.interp(frac, [0, 0.2, 0.75, 1], [34.0, rw * 0.9, rw, gw + 30.0])
+            # Square-ish ends where a carry or wash cuts the rough, so the
+            # rounded caps don't close the gap.
+            cap = 0.95 if (a, b) == (0.0, end) else 0.35
+            shapes.append((ROUGH, geom.ribbon(r_line, widths, spec["seed"] * 19 + k * 7, wander=ROUGH_WANDER, cap=cap)))
 
         # Bunkers.
         h.bunkers = []
