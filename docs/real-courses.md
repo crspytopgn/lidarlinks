@@ -62,6 +62,16 @@ web page, so the browser build uses them too. Where a service has gaps
 (under water, some buildings, past a border) the Terrain Tiles fill in,
 shifted to match. Under 25% coverage, it isn't used.
 
+Lidar services can stall on a request and drop it (in November 2026 the
+Environment Agency's did on about half of them). A chunk that never came was
+filled from the much coarser Terrain Tiles, so a whole square of the course
+came out lumpy, with steps of up to 12 m where it met the lidar. Each lidar
+request now gives up after 45 s, and failed downloads (no answer, 5xx, 408,
+429) are asked for again up to four rounds, as are the Terrain Tiles, photos
+and land cover. If any lidar ground is still missing, or the lidar failed
+altogether, the designer's status line says so and suggests building again
+later.
+
 | Where | Service | Ground | Surface (for trees) | Licence |
 | --- | --- | --- | --- | --- |
 | England | Environment Agency lidar composite, WCS 2.0 | 1 m DTM | 1 m first-return DSM | Open Government Licence v3.0 |

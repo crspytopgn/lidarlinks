@@ -1214,8 +1214,18 @@ func _on_real_built(c: DesignedCourse, summary: Dictionary) -> void:
 		int(summary.get("areas", 0)), int(summary.get("trees", 0)),
 		_filled_note(summary),
 		(", ground every %.1f m" % float(summary.get("metres_per_pixel", 0))) if summary.has("metres_per_pixel") else "",
-		("Saved; polish it here, then play it." if saved else "Save it to keep it.") +
+		_lidar_note(summary) + ("Saved; polish it here, then play it." if saved else "Save it to keep it.") +
 		(" Also saved: %s (Open)." % ", ".join(others.map(func(o: DesignedCourse) -> String: return o.course_name)) if not others.is_empty() else "")])
+
+
+## Warns when the lidar service didn't send all of the ground, so coarse
+## heights there aren't taken for the lidar's (RealCourseFetcher summary).
+static func _lidar_note(summary: Dictionary) -> String:
+	if summary.has("lidar_failed") and not str(summary["lidar_failed"]).is_empty():
+		return "The lidar (%s) didn't answer, so the ground is coarse: build it again later for the fine ground. " % summary["lidar_failed"]
+	if int(summary.get("lidar_gaps", 0)) > 0:
+		return "Part of the lidar didn't arrive, so some of the ground is coarse: build it again later for the fine ground. "
+	return ""
 
 
 ## Says how many greens, tees, fairways and bunkers the map lacked were

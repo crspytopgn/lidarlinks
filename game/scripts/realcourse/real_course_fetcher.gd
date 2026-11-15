@@ -26,6 +26,13 @@ const USER_AGENT := "OpenLinks2003 course importer (+https://github.com/crspytop
 ## Metres searched round a place that isn't itself a mapped golf course.
 const POINT_RADIUS := 1500.0
 const PARALLEL := 6  ## downloads at once
+## Rounds of tries for the ground heights: failed downloads are asked for
+## again, after RETRY_WAIT seconds (longer each round).
+const TRIES := 4
+const RETRY_WAIT := 2.0
+## Seconds a lidar request may take: a good answer takes a few seconds, and
+## a stalled one isn't worth two minutes when it can be asked for again.
+const LIDAR_TIMEOUT := 45.0
 const MAX_DETAILS := 40  ## close-ups of greens fetched at most
 ## Phones and tablets in the browser have far less memory (an iPad's Safari
 ## drops the page's graphics when it runs short, leaving a black screen),
@@ -154,7 +161,7 @@ func _build(place: Dictionary) -> DesignedCourse:
 	var gb := builder.geo_box()
 	var tiles := TerrainTiles.for_box(gb[0], gb[1], gb[2], gb[3])
 	var urls := tiles.urls()
-	var answers := await _fetch_all(urls, "Fetching the ground heights")
+	var answers := await _fetch_all(urls, "Fetching the ground heights", TRIES)
 	if _cancelled:
 		return null
 	for i in urls.size():
@@ -170,6 +177,7 @@ func _build(place: Dictionary) -> DesignedCourse:
 
 	# National lidar: the first service that covers the course.
 	var lidar: NationalLidar = null
+	var lidar_gaps := 0  ## lidar ground chunks that never arrived
 	var lidar_sources := NationalLidar.sources_for(lat, lon) if use_lidar else ([] as Array[Dictionary])
 	for src in lidar_sources:
 		lidar = NationalLidar.new(src, gb)
@@ -179,9 +187,18 @@ func _build(place: Dictionary) -> DesignedCourse:
 		if lidar.has_dsm():
 			for c in lidar.chunks:
 				lidar_urls.append(lidar.url(c, true))
-		var got := await _fetch_all(lidar_urls, "Fetching " + str(src["name"]))
+		# Lidar services can stall on a request for minutes and then drop
+		# it (the Environment Agency's did on half of them in Nov 2026), so
+		# a shorter wait and a few tries: a chunk that never came was
+		# filled from the coarse tiles, and the ground there came out
+		# lumpy and wrong.
+		var got := await _fetch_all(lidar_urls, "Fetching " + str(src["name"]), TRIES, LIDAR_TIMEOUT)
 		if _cancelled:
 			return null
+		var dtm_missing := 0
+		for i in lidar.chunks.size():
+			if got[i][0] != 200:
+				dtm_missing += 1
 		for i in got.size():
 			if got[i][0] == 200:
 				if i % 4 == 0:
@@ -190,6 +207,7 @@ func _build(place: Dictionary) -> DesignedCourse:
 				lidar.add(lidar.chunks[k], got[i][1], i >= lidar.chunks.size())
 				got[i] = [0, PackedByteArray()]  # free the download
 				await _breathe()
+		lidar_gaps = dtm_missing
 		if lidar.coverage() >= 0.25:
 			height = lidar.ground_at
 			ground_name = src["name"]
@@ -212,7 +230,7 @@ func _build(place: Dictionary) -> DesignedCourse:
 	for psrc in photo_sources:
 		var photos := AerialPhotos.new(psrc, gb)
 		var purls := photos.urls()
-		var pgot := await _fetch_all(purls, "Fetching the aerial photo (%s)" % psrc["name"])
+		var pgot := await _fetch_all(purls, "Fetching the aerial photo (%s)" % psrc["name"], TRIES)
 		if _cancelled:
 			return null
 		for i in purls.size():
@@ -241,7 +259,7 @@ func _build(place: Dictionary) -> DesignedCourse:
 	var cover: Image = null
 	if use_land_cover:
 		var land := LandCover.new(gb)
-		var lgot := await _fetch_all(PackedStringArray([land.url()]), "Fetching the land cover")
+		var lgot := await _fetch_all(PackedStringArray([land.url()]), "Fetching the land cover", TRIES)
 		if _cancelled:
 			return null
 		await _step("Reading the land cover...")
@@ -275,6 +293,10 @@ func _build(place: Dictionary) -> DesignedCourse:
 	builder.course_filter = names[0] if not names.is_empty() else ""
 	_last_summary = first_summary
 	_last_summary["ground"] = ground_name
+	if not lidar_sources.is_empty() and (lidar == null or lidar_gaps > 0):
+		# Say so, rather than leave coarse ground looking like the lidar's.
+		_last_summary["lidar_failed"] = str(lidar_sources[0]["name"]) if lidar == null else ""
+		_last_summary["lidar_gaps"] = lidar_gaps
 	_last_summary["lidar_trees"] = builder.lidar_trees.size()
 	_last_summary["photo_trees"] = builder.photo_trees.size()
 	if photo != null:
@@ -391,26 +413,50 @@ func _overpass(query: String) -> Dictionary:
 
 
 ## Fetches every URL, PARALLEL at a time; [[code, bytes], ...] in order.
-func _fetch_all(urls: PackedStringArray, label: String) -> Array:
+## Over `tries` rounds, the ones that failed (no answer, or a server error
+## or rate limit) are asked for again; `timeout` is seconds per request.
+func _fetch_all(urls: PackedStringArray, label: String, tries := 1, timeout := 120.0) -> Array:
 	var out: Array = []
 	out.resize(urls.size())
-	var next := 0
-	var running := 0
-	var done := [0]
-	while (next < urls.size() and not _cancelled) or running > 0:
-		while running < PARALLEL and next < urls.size() and not _cancelled:
-			var i := next
-			next += 1
-			running += 1
-			_fetch_into(urls[i], out, i, done)
-		await get_tree().process_frame
-		running = (next - done[0])
-		progress.emit("%s (%d of %d)..." % [label, done[0], urls.size()])
+	var todo := PackedInt32Array()
+	for i in urls.size():
+		todo.append(i)
+	for round in tries:
+		if round > 0:
+			todo = retry_list(out)
+			if todo.is_empty() or _cancelled:
+				break
+			progress.emit("%s: asking again for %d of %d..." % [label, todo.size(), urls.size()])
+			await get_tree().create_timer(RETRY_WAIT * round).timeout
+		var next := 0
+		var running := 0
+		var done := [0]
+		while (next < todo.size() and not _cancelled) or running > 0:
+			while running < PARALLEL and next < todo.size() and not _cancelled:
+				var i := todo[next]
+				next += 1
+				running += 1
+				_fetch_into(urls[i], out, i, done, timeout)
+			await get_tree().process_frame
+			running = (next - done[0])
+			progress.emit("%s (%d of %d)..." % [label, done[0], todo.size()])
 	return out
 
 
-func _fetch_into(url: String, out: Array, i: int, done: Array) -> void:
-	out[i] = await _http_get(url)
+## The indices of the answers in `out` worth asking for again: none came,
+## or the server was busy or failed (5xx, 408, 429). A 4xx says the
+## request itself is wrong, and asking again won't change it.
+static func retry_list(out: Array) -> PackedInt32Array:
+	var again := PackedInt32Array()
+	for i in out.size():
+		var code := int(out[i][0]) if out[i] is Array and not (out[i] as Array).is_empty() else 0
+		if code == 0 or code >= 500 or code == 408 or code == 429:
+			again.append(i)
+	return again
+
+
+func _fetch_into(url: String, out: Array, i: int, done: Array, timeout := 120.0) -> void:
+	out[i] = await _request(url, HTTPClient.METHOD_GET, "", [], timeout)
 	done[0] += 1
 
 
@@ -419,9 +465,9 @@ func _http_get(url: String) -> Array:
 
 
 ## [status code (0 on failure), body bytes].
-func _request(url: String, method: int, body: String, headers: Array) -> Array:
+func _request(url: String, method: int, body: String, headers: Array, timeout := 120.0) -> Array:
 	var req := HTTPRequest.new()
-	req.timeout = 120.0
+	req.timeout = timeout
 	if not OS.has_feature("web"):
 		req.use_threads = true
 		headers = headers + ["User-Agent: " + USER_AGENT]
