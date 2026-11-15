@@ -16,6 +16,8 @@ const SEARCH_RADIUS := 1500.0  ## metres round the picked point with no boundary
 ## full (West Essex, in Epping Forest, has about 25,000 crowns; at 6000 its
 ## woods beyond the holes were bare grass).
 const MAX_TREES := 30000
+## Metres from a hole's line within which every lidar crown is planted.
+const FULL_WOOD_REACH := 150.0
 const LAND_TREE_CLEAR := 25.0  ## metres from a hole's line kept free of land-cover trees
 const NEAR_CELL := 8.0  ## metres, for spacing checks between trees
 const WOOD_SPACING := 9.0  ## metres between trees in a wood
@@ -66,6 +68,7 @@ var _footprints: Array[Dictionary] = []  ## {"ring", "tags"}: building outlines 
 var surface := Callable()
 ## True when the ground heights are lidar (fine enough to see a ditch).
 var lidar_ground := false
+var _region := ""  ## ScannedSurfaces region of the course, for buildings
 
 ## Extra trees found by the fetcher, planted after the mapped ones: from
 ## the lidar canopy height ({"lat", "lon", "height"}), and from the aerial
@@ -635,6 +638,7 @@ const BUILDING_HEIGHTS := {
 ## (surface minus ground) where it covers them, else as tagged or typical
 ## for their kind, with pitched roofs on houses and other small buildings.
 func _add_buildings(c: DesignedCourse, height: Callable) -> void:
+	_region = ScannedSurfaces.region_for(Vector2(frame.lat0, frame.lon0), -1)
 	for f in _footprints:
 		var ring: PackedVector2Array = f["ring"]
 		if ring.size() >= 4 and ring[0].is_equal_approx(ring[ring.size() - 1]):
@@ -648,14 +652,14 @@ func _add_buildings(c: DesignedCourse, height: Callable) -> void:
 				break
 		if not inside:
 			continue
-		var b := building_from(ring, f["tags"], _lidar_heights(ring, height))
+		var b := building_from(ring, f["tags"], _lidar_heights(ring, height), _region)
 		if b.is_valid():
 			c.buildings.append(b)
 
 
 ## A building from its outline, OSM tags and lidar heights above the ground
 ## at points inside it (sorted, possibly empty).
-static func building_from(ring: PackedVector2Array, t: Dictionary, lidar: PackedFloat32Array) -> CourseBuilding:
+static func building_from(ring: PackedVector2Array, t: Dictionary, lidar: PackedFloat32Array, region := "") -> CourseBuilding:
 	var b := CourseBuilding.new(ring)
 	var tag := str(t.get("building", "yes"))
 	var size := absf(b.area())
@@ -667,6 +671,8 @@ static func building_from(ring: PackedVector2Array, t: Dictionary, lidar: Packed
 		kind = "shed" if size < 30.0 else ("house" if size < 220.0 else "other")
 	b.kind = kind
 	var hb: Array = BUILDING_HEIGHTS.get(kind, BUILDING_HEIGHTS["other"])
+	if region == "us" and kind == "house":
+		hb = [4.0, 7.2]  # American suburbs: one and two storeys, lower pitch
 	var eave: float = hb[0]
 	var ridge: float = hb[1]
 	var levels := str(t.get("building:levels", ""))
@@ -869,8 +875,27 @@ func _add_trees(c: DesignedCourse) -> void:
 		var p := frame.to_local(t["lat"], t["lon"])
 		found.append({"p": p, "h": t["height"], "leaf": str(t.get("leaf", "")), "d": _hole_distance(p, c.holes)})
 	found.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return a["d"] < b["d"])
-	for t in found:
+	# Every crown near the holes. Farther off, when there are more crowns
+	# than room for them, a share of them evenly (grown a little to fill
+	# the gaps), so the woods reach the edge of the area rather than
+	# stopping in a ring round the holes (Hilversum has 40,000).
+	var near := 0
+	while near < found.size() and found[near]["d"] <= FULL_WOOD_REACH:
+		near += 1
+	for i in near:
+		var t: Dictionary = found[i]
 		_plant(c, t["p"], t["leaf"] if not str(t["leaf"]).is_empty() else _leaf_at(t["p"]), t["h"], clear, 3.0)
+	var room := max_trees - c.objects.size()
+	var far := found.size() - near
+	# Every k-th crown by distance, so the ones kept spread evenly out to
+	# the edge of the area.
+	var k := 1.0 if far <= room or room <= 0 else float(far) / room * 1.05
+	var grow := clampf(sqrt(k), 1.0, 1.35)
+	var next := float(near)
+	while int(next) < found.size():
+		var t: Dictionary = found[int(next)]
+		_plant(c, t["p"], t["leaf"] if not str(t["leaf"]).is_empty() else _leaf_at(t["p"]), t["h"] * grow, clear, 3.0)
+		next += k
 	if not lidar_trees.is_empty():
 		return
 	for p in photo_trees:

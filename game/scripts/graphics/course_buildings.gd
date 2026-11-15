@@ -21,6 +21,22 @@ const WALLS := [
 ## Roof colours: slate, clay tile, weathered concrete tile.
 const ROOF_COLOURS := [Color(0.20, 0.21, 0.23), Color(0.40, 0.21, 0.15), Color(0.33, 0.25, 0.21), Color(0.28, 0.27, 0.27)]
 ## UV2.x per kind: 0 no windows, 1 house windows, 2 big windows (clubhouse, blocks).
+## Walls, roofs and whether houses are sided, by region
+## (ScannedSurfaces.region): British brick and render under slate and clay;
+## European render and brick under terracotta and anthracite tiles;
+## American clapboard and brick under asphalt shingles; stucco under clay
+## tiles in deserts and the tropics.
+const PALETTES := {
+	"uk": [WALLS, ROOF_COLOURS, false],
+	"europe": [[Color(0.74, 0.70, 0.62), Color(0.70, 0.62, 0.50), Color(0.50, 0.30, 0.22), Color(0.66, 0.66, 0.63), Color(0.72, 0.64, 0.48)],
+		[Color(0.46, 0.22, 0.14), Color(0.22, 0.22, 0.24), Color(0.40, 0.24, 0.18)], false],
+	"us": [[Color(0.76, 0.76, 0.73), Color(0.66, 0.64, 0.58), Color(0.58, 0.60, 0.60), Color(0.70, 0.64, 0.52), Color(0.50, 0.30, 0.23), Color(0.48, 0.52, 0.54)],
+		[Color(0.22, 0.22, 0.23), Color(0.30, 0.27, 0.24), Color(0.26, 0.26, 0.27)], true],
+	"desert": [[Color(0.74, 0.62, 0.48), Color(0.78, 0.70, 0.58), Color(0.68, 0.54, 0.40)],
+		[Color(0.52, 0.28, 0.18), Color(0.58, 0.36, 0.24)], false],
+	"tropical": [[Color(0.80, 0.78, 0.72), Color(0.76, 0.68, 0.56), Color(0.70, 0.74, 0.70)],
+		[Color(0.50, 0.26, 0.17), Color(0.30, 0.32, 0.33)], false],
+}
 const WINDOWS := {"house": 1.0, "bungalow": 1.0, "clubhouse": 2.0, "block": 2.0, "other": 1.0, "shed": 0.0, "barn": 0.0}
 
 static var _material: ShaderMaterial
@@ -78,23 +94,29 @@ static func _hash(b: CourseBuilding) -> int:
 
 ## Each building's colours: neighbours on a street share them more often
 ## than not, as estates are built in one brick.
-static func colours(b: CourseBuilding) -> Array[Color]:
+static func colours(b: CourseBuilding, region := "") -> Array[Color]:
 	var h := _hash(b)
 	var cell := absi(int(floor(b.points[0].x / 80.0)) * 31 + int(floor(b.points[0].y / 80.0)) * 17)
-	var wall: Color = WALLS[(cell if h % 3 != 0 else h) % WALLS.size()]
-	var roof: Color = ROOF_COLOURS[(cell + (h % 2 if h % 4 == 0 else 0)) % ROOF_COLOURS.size()]
+	var palette: Array = PALETTES.get(region, PALETTES["europe"])
+	var walls: Array = palette[0]
+	var roofs: Array = palette[1]
+	var wall: Color = walls[(cell if h % 3 != 0 else h) % walls.size()]
+	var roof: Color = roofs[(cell + (h % 2 if h % 4 == 0 else 0)) % roofs.size()]
 	if b.kind == "barn":
-		wall = Color(0.30, 0.24, 0.19)  # weatherboarding
+		wall = Color(0.30, 0.24, 0.19) if region != "us" else Color(0.45, 0.16, 0.12)  # weatherboarding, or a red barn
 		roof = Color(0.26, 0.27, 0.27)
 	elif b.kind == "shed":
 		wall = Color(0.42, 0.34, 0.26) if h % 2 == 0 else wall
 	var shade := 0.92 + float(h % 17) / 100.0
-	return [wall * shade, roof * (0.94 + float(h % 11) / 100.0)]
+	wall = wall * shade
+	# Alpha below 1 asks the shader for clapboard siding.
+	wall.a = 0.5 if bool(palette[2]) and b.kind in ["house", "bungalow", "clubhouse"] and h % 5 != 0 else 1.0
+	return [wall, roof * (0.94 + float(h % 11) / 100.0)]
 
 
 static func add_building(st: SurfaceTool, b: CourseBuilding, terrain: CourseTerrain) -> void:
 	var y0 := base_height(b, terrain)
-	var cols := colours(b)
+	var cols := colours(b, ScannedSurfaces.region)
 	var win: float = WINDOWS.get(b.kind, 1.0)
 	var pts := b.points
 	if b.area() < 0.0:

@@ -353,7 +353,8 @@ func _add_distant_trees(root: Node3D) -> void:
 		if species < 0:
 			continue
 		var h := TreeFactory.natural_height(species, p.x, p.y) * o.scale
-		trees.append_array(PackedFloat32Array([p.x, height_at(p.x, p.y), p.y, h, species]))
+		var code := species if DesignedCourse.near_hole(dh, p, DesignedCourse.FULL_TREE_REACH) else species + TreeFactory.FAR_ONLY
+		trees.append_array(PackedFloat32Array([p.x, height_at(p.x, p.y), p.y, h, code]))
 	for batch: Dictionary in TreeFactory.batches(trees, 160.0):
 		# They stand at least HOLE_REACH from the tees and the line of play,
 		# so their shadows seldom reach the ground the player looks at, and
