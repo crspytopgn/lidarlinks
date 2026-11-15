@@ -97,6 +97,11 @@ bridges are weathered grey boards (Planks023A) by default, brown treated
 boards (Planks011) in the US and dark hardwood (Planks037A) in the tropics.
 `OL_SURFACE_REGION=us` forces a region, to look at its scans.
 
+A bridge's sides are built as real cart bridges are, in every build: a
+0.3 m fascia board along each deck edge, a kerb rail, posts every 2 m and a
+top and middle rail at 1.07 m (42 in) and 0.55 m
+(`DesignedTerrain._add_railings`), in the `timber` scan or the flat brown.
+
 The download's 881 "surfaces" are ground: asphalt, roads, soil, gravel and
 sand. It has no planks, timber, brick, cobbles or stone walls (the only
 wood is two oak end-grain scans and indoor parquet), so the wood slots are
