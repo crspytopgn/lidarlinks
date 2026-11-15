@@ -22,6 +22,7 @@ func run_all() -> Array[String]:
 	_test_detector()
 	_test_megascans_cards()
 	_test_stone_walls()
+	_test_retries()
 	return failures
 
 
@@ -711,3 +712,18 @@ func _test_stone_walls() -> void:
 	var none: Array[PackedVector2Array] = []
 	check(StoneWalls.from_lines(none, t) == null, "no walls, no mesh")
 	check(RockField.place(t, Vector3.ZERO, Vector3(0, 0, 300), 1.0, 5).is_empty(), "no rocks off the course's rough")
+
+
+## A lidar or tile download that stalls or meets a busy server is asked for
+## again: one that never came was filled from the coarse tiles, and the
+## ground there came out lumpy (West Essex, Nov 2026). The player is told
+## when the lidar still didn't all arrive.
+func _test_retries() -> void:
+	var out := [[200, PackedByteArray()], [0, PackedByteArray()], [503, PackedByteArray()], [404, PackedByteArray()], [429, PackedByteArray()], null]
+	var again := RealCourseFetcher.retry_list(out)
+	check(again == PackedInt32Array([1, 2, 4, 5]), "stalled, 5xx, 429 and missing downloads are asked for again, not 200 or 404 (%s)" % again)
+	check(RealCourseFetcher.TRIES >= 3, "ground heights get several tries")
+	check(RealCourseFetcher.LIDAR_TIMEOUT < 120.0, "a stalled lidar request is given up on sooner than two minutes")
+	check(CourseDesigner._lidar_note({}).is_empty(), "no lidar note when it all came")
+	check(not CourseDesigner._lidar_note({"lidar_gaps": 1, "lidar_failed": ""}).is_empty(), "a note when part of the lidar is missing")
+	check(not CourseDesigner._lidar_note({"lidar_gaps": 2, "lidar_failed": "EA"}).is_empty(), "a note when the lidar failed")
