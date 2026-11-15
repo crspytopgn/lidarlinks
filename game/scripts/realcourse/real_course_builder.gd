@@ -263,8 +263,11 @@ func _read(elements: Array) -> void:
 		elif natural == "water" or t.has("water") or str(t.get("landuse", "")) in ["reservoir", "basin"]:
 			if closed:
 				_add_poly(e, {"surface": Surface.Type.WATER})
-		elif natural in ["scrub", "heath"] and closed:
-			_add_poly(e, {"surface": Surface.Type.DEEP_ROUGH})
+		elif natural in ["scrub", "heath", "wetland", "dune"] and closed:
+			# Played as deep rough; the cover says what grows there.
+			_add_poly(e, {"surface": Surface.Type.DEEP_ROUGH, "cover": natural})
+		elif natural == "grassland" and closed:
+			_add_poly(e, {"surface": Surface.Type.DEEP_ROUGH, "cover": "meadow"})
 		elif (natural == "wood" or str(t.get("landuse", "")) == "forest") and closed:
 			_add_poly(e, {"wood": true, "leaf": str(t.get("leaf_type", ""))})
 		elif t.has("building") and closed:
@@ -494,7 +497,9 @@ func _add_shapes(c: DesignedCourse) -> void:
 		else:
 			pts = simplify_ring(d["ring"], TOLERANCE.get(surface, 0.5))
 		if pts.size() >= 3:
-			c.shapes.append(CourseShape.new(surface, pts))
+			var shape := CourseShape.new(surface, pts)
+			shape.cover = str(d.get("cover", ""))
+			c.shapes.append(shape)
 	for s in _streams:
 		var line: PackedVector2Array = s["line"]
 		for piece in _split_line(simplify_line(line, 0.8), STREAM_PIECE):

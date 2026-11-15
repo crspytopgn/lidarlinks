@@ -386,8 +386,9 @@ void fragment() {
 		vec3 n = w_grass * two_scale(grass_normal, uv_g).rgb + w_rough * two_scale(rough_normal, uv).rgb
 			+ w_sand * two_scale(sand_normal, uv).rgb;
 		n = n * 2.0 - 1.0;
-		// The textures lie flat on the ground: u along +x, v along +z.
-		vec3 tilt = (VIEW_MATRIX * vec4(n.x, 0.0, n.y, 0.0)).xyz;
+		// The textures lie flat on the ground: u along +x, v along +z. The
+		// maps are OpenGL style (green points up the image, toward -v).
+		vec3 tilt = (VIEW_MATRIX * vec4(n.x, 0.0, -n.y, 0.0)).xyz;
 		NORMAL = normalize(NORMAL + tilt * strength);
 	} else {
 		col *= 1.0 + fine * grain * close_up;
