@@ -287,6 +287,7 @@ var _drive_to := -1  ## the ball the buggy is driving to
 var dynamic_resolution: DynamicResolution
 var grass: GrassField
 var fescue: FescueField  ## tall fescue on the deep rough, further out
+var debris: DebrisField  ## litter, logs and stumps under tree lines (private pack)
 var plants: ScannedPlants  ## real scanned plants round the tee and green (private pack)
 
 var _trail_mesh := ImmediateMesh.new()
@@ -734,6 +735,8 @@ func start_hole(index: int) -> void:
 		grass.setup(hole.terrain, graphics.grass)
 	if fescue.terrain != hole.terrain:
 		fescue.setup(hole.terrain, graphics.grass)
+	if debris.terrain != hole.terrain:
+		debris.setup(hole.terrain, graphics.grass, course)
 	plants.set_place(course)
 	plants.setup(hole, graphics.grass)
 	if ambience != null:
@@ -1087,6 +1090,7 @@ func _process(delta: float) -> void:
 	_step_yard_scale()
 	grass.update_around(camera.global_position)
 	fescue.update_around(camera.global_position)
+	debris.update_around(camera.global_position)
 	_update_ball_size()
 	if broadcast:
 		var playing := _replaying or state == State.FLIGHT
@@ -3324,6 +3328,8 @@ func _build_world() -> void:
 	add_child(grass)
 	fescue = FescueField.new()
 	add_child(fescue)
+	debris = DebrisField.new()
+	add_child(debris)
 	plants = ScannedPlants.new()
 	add_child(plants)
 	post = PostProcess.new()
@@ -3466,6 +3472,7 @@ func _apply_graphics() -> void:
 	if grass.level != graphics.grass and hole != null:
 		grass.setup(hole.terrain, graphics.grass)
 		fescue.setup(hole.terrain, graphics.grass)
+		debris.setup(hole.terrain, graphics.grass, course)
 		plants.setup(hole, graphics.grass)
 	broadcast = graphics.broadcast()
 	tour = broadcast and graphics.tour()

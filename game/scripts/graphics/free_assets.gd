@@ -206,6 +206,13 @@ static func megascans_texture(file: String, folder := "foliage/", normal := fals
 	return _load_megascans(file, folder, normal, max_size) if not file.is_empty() else null
 
 
+## A texture anywhere in the pack (such as "debris/litter_leaves.png"), or
+## null without a pack. Compatibility keeps them to `compat_size`, as it
+## stores them uncompressed.
+static func megascans_pack_texture(file: String, normal := false, compat_size := 512) -> Texture2D:
+	return _load_megascans(file, "", normal, 0 if gpu_compress() else compat_size) if not file.is_empty() else null
+
+
 static func _load(file: String) -> Texture2D:
 	var scan := _load_megascans(file)
 	if scan != null:

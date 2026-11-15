@@ -13,6 +13,9 @@ course with no hand placement. It is visual only: physics never reads it.
   straw, using the same noise, so the field and its tufts agree.
 - **Reeds:** tall tufts on the bank within 2.5 m of water.
 - **Understory:** taller, shaded brush under and around tree crowns.
+- **Woodland floor** (`DebrisField`, private Megascans pack only): leaf
+  or needle litter, leaf piles, twigs, cones, logs and stumps under tree
+  crowns, by tree type and the course's region (docs/megascans-pack.md).
 
 ## The plan
 

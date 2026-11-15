@@ -11,6 +11,10 @@ const CYLINDER_FLOATS := 6  ## x, z, radius, y0, y1, kind
 const BOX_FLOATS := 16  ## centre, three axes, half sizes, kind
 
 var _cylinders := PackedFloat32Array()
+## Per CANOPY cylinder, in order: 1 for a conifer's crown (its needles
+## carpet the ground beneath), else 0. Scenery only (DebrisField); the
+## physics never reads it.
+var _conifer := PackedByteArray()
 var _boxes := PackedFloat32Array()
 var _origin := Vector2.ZERO
 var _cols := 0
@@ -24,6 +28,14 @@ var _cell_items := PackedInt32Array()
 ## An upright cylinder: centre (x, z), radius, from y0 up to y1.
 func add_cylinder(x: float, z: float, radius: float, y0: float, y1: float, kind: int) -> void:
 	_cylinders.append_array(PackedFloat32Array([x, z, radius, y0, y1, kind]))
+	if kind == Kind.CANOPY:
+		_conifer.append(0)
+
+
+## Marks the crown just added as a conifer's (scenery only, see _conifer).
+func mark_conifer() -> void:
+	if not _conifer.is_empty():
+		_conifer[_conifer.size() - 1] = 1
 
 
 ## A box: centre, orthonormal axes (the columns of `axes`) and the half size
@@ -41,6 +53,11 @@ func canopies() -> PackedVector3Array:
 		if int(_cylinders[o + 5]) == Kind.CANOPY:
 			out.append(Vector3(_cylinders[o], _cylinders[o + 1], _cylinders[o + 2]))
 	return out
+
+
+## Per crown of canopies(), in the same order: whether it is a conifer's.
+func canopy_conifers() -> PackedByteArray:
+	return _conifer
 
 
 @warning_ignore("integer_division")

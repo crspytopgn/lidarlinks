@@ -5519,6 +5519,41 @@ func _test_broadcast_pieces() -> void:
 	_check(FescueField.card_for(dressed, "water_edge", 10.0, 10.0)["uid"] == "b", "reeds by the water")
 	_check(FescueField.card_for(dressed, "heath", 1.0, 1.0).is_empty(), "no card for a role the pack lacks")
 	_check(FescueField.dress_cards([] as Array[Dictionary]).is_empty(), "no pack, no cards: the drawn fescue stays")
+	# The woodland floor (DebrisField): needles under conifers, leaves under
+	# the rest, never on the fairway, and less of it on a desert course.
+	var debris := MegascansDebris.parse('{"litter": {"leaves": {"albedo": "debris/l.png", "size_m": 2.5}, "needles": {"albedo": "debris/n.png"}},'
+		+ '"props": [{"uid": "a", "title": "Fallen Log", "kind": "log", "under": "any", "mesh": "debris/a.olmesh", "albedo": "debris/a.jpg"},'
+		+ '{"uid": "b", "title": "Mossy Log", "kind": "log", "under": "broadleaf", "mesh": "debris/b.olmesh", "albedo": "debris/b.jpg"},'
+		+ '{"uid": "c", "title": "Small Pine Cones", "kind": "cones", "under": "conifer", "mesh": "debris/c.olmesh", "albedo": "debris/c.jpg"},'
+		+ '{"uid": "d", "kind": "rock", "mesh": "x", "albedo": "y"}]}')
+	_check((debris["props"] as Array).size() == 3 and (debris["litter"] as Dictionary).size() == 2, "debris pack read, bad entries skipped")
+	_check(MegascansDebris.props_for("log", true, debris["props"]).size() == 1 and MegascansDebris.props_for("log", false, debris["props"]).size() == 2, "logs by the trees they lie under")
+	_check(MegascansDebris.parse("")["props"].is_empty(), "no pack, no debris")
+	var wood := ObstacleField.new()
+	wood.add_cylinder(0.0, 0.0, 0.3, -1.0, 9.0, ObstacleField.Kind.SOLID)
+	wood.add_cylinder(0.0, 0.0, 4.0, 8.0, 17.0, ObstacleField.Kind.CANOPY)
+	wood.mark_conifer()
+	wood.add_cylinder(40.0, 0.0, 4.0, 3.0, 10.0, ObstacleField.Kind.CANOPY)
+	_check(wood.canopy_conifers() == PackedByteArray([1, 0]), "crowns tagged conifer or broadleaf")
+	var floor_crowns := DebrisField.crowns_by_chunk(wood)
+	var under_pine: Vector4 = floor_crowns[Vector2i(0, 0)][0]
+	var under_oak: Vector4 = floor_crowns[Vector2i(1, 0)][0]
+	var lib := DebrisField.library(debris["props"], floor_crowns)
+	var deep := FlatTerrain.new(Surface.Type.DEEP_ROUGH)
+	var pine_floor := DebrisField.plan_chunk(deep, [under_pine], lib, 3, debris["litter"])
+	var oak_floor := DebrisField.plan_chunk(deep, [under_oak], lib, 3, debris["litter"])
+	var needles := (pine_floor["litter"] as Dictionary).get("needles", []).size() as int
+	var leaves := (oak_floor["litter"] as Dictionary).get("leaves", []).size() as int
+	_check(needles > 0 and needles >= (pine_floor["litter"] as Dictionary).get("leaves", []).size(), "needles carpet the ground under a conifer")
+	_check(leaves > 0 and leaves >= (oak_floor["litter"] as Dictionary).get("needles", []).size(), "leaves under a broadleaf tree")
+	_check(DebrisField.plan_chunk(deep, [under_pine], lib, 3, debris["litter"]) == pine_floor, "the woodland floor is the same every time")
+	var mown := DebrisField.plan_chunk(FlatTerrain.new(Surface.Type.FAIRWAY), [under_pine, under_oak], lib, 3, debris["litter"])
+	_check((mown["litter"] as Dictionary).is_empty() and (mown["props"] as Dictionary).is_empty(), "no debris on the fairway")
+	var dunes := CourseData.new()
+	dunes.course_name = "Desert Canyon"
+	_check(not DebrisField.climate_for(dunes)["moss"] and float(DebrisField.climate_for(dunes)["litter"]) < 0.5, "a desert course: little litter, no moss")
+	var dry_lib := DebrisField.library(debris["props"], floor_crowns, false)
+	_check((dry_lib["log:false"] as Array).all(func(p: Dictionary) -> bool: return not (p["title"] as String).contains("Moss")), "no mossy logs where moss doesn't grow")
 	# The pack's 3D plants (ScannedPlants): groups from their titles, the
 	# meshes from an .olplant, and the place picking what grows.
 	var plants3d := MegascansPlants.parse('{"plants": [{"uid": "f", "title": "Lady Fern", "kind": "fern", "height_m": 0.6, "variants": 4, "file": "plants/f"},'
