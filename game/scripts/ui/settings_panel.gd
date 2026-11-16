@@ -126,8 +126,8 @@ func _ready() -> void:
 		# the browser's memory, so they are a choice, used from the next start.
 		_disc_sounds = _row(grid, "Sounds", ["Light", "Full disc sounds (about 100 MB, next start)"])
 	_swing = _row(grid, "Swing", ["Three-click meter", "Mouse swing (PowerStroke)"])
-	_pace = _row(grid, "Pace", ["Quick", "Classic (Links 2003 meter timing)"])
-	_pace.tooltip_text = "Quick: the 3-click chip and putt meters start on the white line and move briskly, the Broadcast and Tour putting meter is sized to each putt, and less waiting after a putt. The ball's physics and the timing at the white line are the same either way."
+	_pace = _row(grid, "Pace", ["Quick", "Classic (meter timing, full routines)"])
+	_pace.tooltip_text = "Quick: the 3-click chip and putt meters start on the white line and move briskly, the Broadcast and Tour putting meter is sized to each putt, the golfer steps straight up to the ball instead of the full pre-shot routine (club from the bag, tee up, putt read), computer golfers play without waiting it out, and shorter pauses after each shot and over the hole flyover. The ball's physics and the timing at the white line are the same either way."
 	_swing_help = _row(grid, "Swing help", ["Off", "On"])
 	_ball_size = _row(grid, "Ball size", ["Bigger far away (Links)", "True size (42.67 mm)"])
 	_skill = _row(grid, "Swing skill", SKILL_NAMES)

@@ -26,6 +26,9 @@ const RESULT_PAUSE := 2.5
 ## Quick pace's pause after a putt that stays out (Space or a click still
 ## goes on at once): the ball has stopped, the next putt is all there is.
 const QUICK_PUTT_PAUSE := 1.0
+## Quick pace: the pause after a full shot or chip comes to rest (Classic
+## keeps RESULT_PAUSE). A click still skips it.
+const QUICK_RESULT_PAUSE := 1.4
 ## Seconds into the flight the swing meter stays up to show the swing.
 const METER_LINGER_S := 1.5
 ## A putt missed from inside this many metres (8 ft) gets a slump.
@@ -896,6 +899,8 @@ func play_shot(power: float, accuracy: float, monitor: OpenConnect.Launch = null
 	var club := clubs[club_index]
 	_quiet_advice()
 	players[current].shots += 1
+	# The player's mouse brought the club down to the ball: it is struck now.
+	var struck := golfer != null and not club.is_putter and golfer.at_impact()
 	if golfer:
 		golfer.set_shot(club, _flat_distance(ball_at, hole.pin), power)
 		golfer.play(&"putt" if club.is_putter else &"swing")
@@ -903,7 +908,7 @@ func play_shot(power: float, accuracy: float, monitor: OpenConnect.Launch = null
 	if gallery != null and is_instance_valid(gallery):
 		gallery.watch(ball)
 	_strike_sound = {"club": club, "lie": lie, "power": power}
-	_launch_wait = (golfer.putt_impact_delay() if club.is_putter else golfer.impact_delay()) if golfer else 0.0
+	_launch_wait = (golfer.putt_impact_delay() if club.is_putter else golfer.impact_delay()) if golfer and not struck else 0.0
 	if _launch_wait <= 0.0:
 		sounds.play_detail(&"hit", _strike_sound)
 	shot_from = ball_at
@@ -1068,6 +1073,8 @@ func _process(delta: float) -> void:
 			State.AIM:
 				if not hud.hand_over.visible:
 					_process_aim(delta)
+			State.SWING:
+				_follow_swing()
 			State.FLIGHT:
 				_process_flight(delta)
 			State.SHOT_RESULT:
@@ -1714,7 +1721,39 @@ func _on_mouse_stroke_cancelled() -> void:
 			golfer.play(&"address")
 
 
+## The golfer's club goes where the player's swing has it, frame by frame:
+## up with the meter's rise (held at the top while it comes back down), or
+## with the mouse back and through, so the ball is struck as the mouse
+## brings the club to it. Putts keep their own stroke.
+var _swing_top := 0.0
+
+
+func _follow_swing() -> void:
+	if golfer == null or clubs[club_index].is_putter:
+		return
+	var ms := hud.mouse_swing
+	if ms.club != null:
+		var c := ms.club
+		var ball_line: float = c.meter.ball_line
+		var h := c.club_height() - ball_line
+		var top: float = c.meter.height - 10.0 - ball_line
+		if c.phase == LinksMouse.Phase.BACKSWING:
+			_swing_top = maxf(_swing_top, h)
+			if h > 0.5:
+				golfer.follow_backswing(h / top)
+		elif c.phase == LinksMouse.Phase.DOWNSWING and _swing_top > 0.5:
+			golfer.follow_downswing(1.0 - clampf(h / _swing_top, 0.0, 1.0))
+		return
+	match hud.meter.phase:
+		SwingMeter.Phase.BACKSWING:
+			_swing_top = maxf(_swing_top, hud.meter.shown)
+			golfer.follow_backswing(hud.meter.shown)
+		SwingMeter.Phase.DOWNSWING:
+			golfer.follow_backswing(_swing_top)  # at the top until the snap click
+
+
 func _on_backswing_started() -> void:
+	_swing_top = 0.0
 	_quiet_advice()
 	if golfer and not clubs[club_index].is_putter:
 		golfer.play(&"backswing")
@@ -2333,8 +2372,8 @@ func _complete_flight() -> void:
 	hud.mouse_swing.reset()
 	state = State.SHOT_RESULT
 	result_timer = RESULT_PAUSE
-	if graphics.quick_pace and clubs[club_index].is_putter:
-		result_timer = QUICK_PUTT_PAUSE
+	if graphics.quick_pace:
+		result_timer = QUICK_PUTT_PAUSE if clubs[club_index].is_putter else QUICK_RESULT_PAUSE
 	if _can_mulligan():
 		hud.hint.text = HINT_WAIT + "    U: mulligan"
 		result_timer = RESULT_PAUSE * 2.0
@@ -3499,6 +3538,7 @@ func _apply_graphics() -> void:
 		hud.overlay.show_pip(false)
 		camera.end_flyover()
 	hud.meter.quick = graphics.quick_pace
+	camera.quick = graphics.quick_pace
 	_putt_scale_from = Vector3.INF  # the putt meter's size goes with the pace
 	_yard_key = []
 	if hole != null and state == State.AIM:
@@ -3881,6 +3921,11 @@ func _place_golfer() -> void:
 	_place_stand_bag()
 	golfer.set_bag(stand_bag if stand_bag != null and stand_bag.visible else null)
 	golfer.set_teed(lie == Surface.Type.TEE)
+	# Quick pace: straight over the ball, as in Links 2003. The full routine
+	# (club from the bag, tee up, setup, putt read) ran 10 to 20 s a shot,
+	# for the player and for every computer golfer, who waited it out.
+	if golfer is FreeGolfer:
+		(golfer as FreeGolfer).walk_in = not graphics.quick_pace
 	golfer.play(&"address")
 
 
