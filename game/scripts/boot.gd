@@ -670,8 +670,9 @@ func _launch(chosen: RoundSetup, course_index: int) -> void:
 		return
 	_close_setup()
 	var path := _setup_paths[course_index - 1]
-	if _web != null and not path.begins_with("user://"):
-		# In the browser the course is copied into memory only when chosen.
+	if _web != null and from_picked_files(path, _stored):
+		# In the browser a course from the player's own files is copied into
+		# memory only when chosen.
 		_busy = true
 		_bar.visible = true
 		_status.text = "Loading %s..." % CourseFiles.display_name(path)
@@ -685,6 +686,14 @@ func _launch(chosen: RoundSetup, course_index: int) -> void:
 	chosen.course_path = path
 	GolfRound.chosen_course = path
 	_start()
+
+
+## Whether a course is one of the player's picked game files (copied into
+## memory before the round in the browser). The built-in courses (res://)
+## and the player's designs (user://) are already there, and need no game
+## files at all.
+static func from_picked_files(path: String, stored: Dictionary) -> bool:
+	return not path.begins_with("res://") and not path.begins_with("user://") and stored.has(path)
 
 
 ## The picked files that belong to a course: the course itself and any

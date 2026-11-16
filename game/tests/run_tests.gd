@@ -5058,6 +5058,13 @@ func _test_menu_resume() -> void:
 	_check(boot_script.primary_button(["Play now", "Career", "Players"]) == 0, "menu: Enter plays, not Players")
 	_check(boot_script.primary_button(["Load disc images...", "Players", "Play a round"]) == 2, "menu: focus skips Players")
 	_check(boot_script.primary_button(["Players", "Settings"]) == -1, "menu: no play button, no focus")
+	# Built-in courses play in the browser without the player's game files.
+	for epic: String in PlaceholderCourseLoader.EPIC:
+		_check(not boot_script.from_picked_files(epic, {}), "web: built-in %s needs no game files" % epic)
+		_check(not boot_script.from_picked_files(epic, {"Courses/Cabo.crz": "h"}), "web: built-in %s isn't copied" % epic)
+		_check(FileAccess.file_exists(epic), "web: built-in %s is packed" % epic)
+	_check(boot_script.from_picked_files("Courses/Cabo.crz", {"Courses/Cabo.crz": "h"}), "web: picked course is copied")
+	_check(not boot_script.from_picked_files("user://courses/mine.olc", {}), "web: designs need no copy")
 	_check(boot._setup_paths.size() >= 2 and boot._setup_paths[1] == key, "menu: the setup list is filled for resuming")
 	s.course_key = "Courses/GONE.crz"
 	SavedRound.save(s, {"hole": 0})
