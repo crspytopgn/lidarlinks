@@ -7,8 +7,11 @@ sizes, then model it to match at 100% scale. Michael's standing rule is to
 cross-reference real golf constantly, so check new props against photos
 the same way before they go in.
 
-All of them are built in code by `tools/props/build_props.py` (CC0, no
-makers' names or logos) into `game/assets/props/`:
+Most of them are built in code by `tools/props/build_props.py` (CC0, no
+makers' names or logos) into `game/assets/props/`. Where an artist's model
+on Sketchfab is clearly better and open-licensed, it sits in
+`game/assets/props/sketchfab/` under the same name and `CourseProps.mesh()`
+uses it instead (see [Sketchfab models](#sketchfab-models) below):
 
 ```bash
 pip install numpy scikit-image fast-simplification
@@ -37,7 +40,7 @@ side-by-side shots for each pass are kept in the project files
 | Spherical tee marker (`tee_marker.glb`) | 127 mm ball with a moulded band, sunk about 12 mm into the turf | A maker's spherical plastic tee marker ([Par Aide](https://www.paraide.com/products/tee-area/markers/spherical-plastic-tee-marker/)) | Both tee markers, 5.5 m apart (`GolfRound._add_tee_markers`) |
 | Ball washer ensemble (`ball_washer.glb`) | 1.28 m to the top of the knob; washer about 0.17 m across; bin 0.34 m across with its lid at 0.62 m; ring base 0.5 m | A maker's tee ensemble ([Par Aide](https://www.paraide.com/products/tee-area/ball-washer/master-ensemble-with-trash-mate-single-unit/)). Scaled from the washer, which takes a 42.7 mm ball | Beside each tee |
 | Tee sign (`tee_sign.glb`) | 75 mm square post 1.74 m tall; arched panel 0.46 x 0.72 m, its foot 0.7 m up, gold rim | A maker's cast hole sign ([Par Aide](https://www.paraide.com/products/fusioncast/fusioncast-tee-sign/)), scaled from its post | By the front of each tee, with the hole number, par and yards in raised gold lettering (Label3D) |
-| Bench (`tee_bench.glb`) | 1.54 m (5 ft) long, seat 0.45 m up, back 0.97 m, arms 0.66 m | A maker's recycled-plastic back bench ([Par Aide](https://www.paraide.com/products/tee-area/benches/back-bench/)) | Behind the washer at each tee |
+| Bench (`tee_bench.glb`) | 1.54 m (5 ft) long, seat 0.45 m up, back 0.97 m, arms 0.66 m | A maker's recycled-plastic back bench ([Par Aide](https://www.paraide.com/products/tee-area/benches/back-bench/)) | Fallback for the Sketchfab teak bench |
 | Bunker rake (`bunker_rake.glb`) | 64 cm (25 in) head with tapered ends, 1.37 m (54 in) handle with a grip | The maker's 25 in head and 54 in handle ([Par Aide](https://paraide.com/products/bunkers/bunker-rakes/accuform-ace-ii-with-25-inch-head)) | One per bunker near the hole's line, at its edge on the side facing the play, handle out over the grass |
 | Fairway yardage plate (`yardage_plate.glb`) | 0.3 x 0.2 m white plate with a gold rim, flush in the turf, gold number | A maker's in-ground yardage plate ([Par Aide](https://www.paraide.com/products/fusioncast/fusioncast-fairway-yardage/)) | On the line of the hole, 100, 150 and 200 yards from the pin, where that is fairway, read from the tee side |
 | Yardage pole (`yardage_pole.glb`) | 38 mm (1.5 in) pole about 2 m tall, black and white bands, flush socket | A maker's vinyl-covered fairway pole ([Par Aide](https://www.paraide.com/products/course-markings/marker-stakes/fairway-and-hazard-poles/)) | At 150 yards, a metre into the rough at the right edge of the fairway (or the left) |
@@ -80,3 +83,32 @@ type.
 The clubs were checked against makers' figures and the rules rather than
 side by side with photos: the photo sites rate-limited the build machine
 that day. Compare them with photos when one is next to hand.
+
+## Sketchfab models
+
+`tools/sketchfab/fetch.py` downloads the models listed in
+`tools/sketchfab/models.json` through the Sketchfab API and optimises them
+with `process.mjs` (gltf-transform and meshoptimizer: parts baked into one
+mesh, simplified to a triangle budget, 1024 px JPEG textures, metal/rough
+materials, scaled to real size and stood on the ground). It needs your own
+API token in `SKETCHFAB_TOKEN`; never commit one.
+
+```bash
+cd tools/sketchfab && npm install && cd -
+SKETCHFAB_TOKEN=... python3 tools/sketchfab/fetch.py            # all of them
+```
+
+Only CC0 and CC BY models go in this public repo, credited in
+`game/assets/props/sketchfab/CREDITS.md`; `fetch.py` refuses one whose
+licence has changed. Models under the Sketchfab Standard licence, or NC/ND,
+belong in the private local pack instead.
+
+| Model | Real size | Reference | Where |
+|---|---|---|---|
+| Teak bench (`tee_bench.glb`, TheMadraver, CC BY) | 2.37 m (8 ft) long, seat 0.44 m up, back 1.06 m | Lutyens-style teak benches, as clubs put on their tees: 8 ft version 2.4 m long, about 1.0 m back | Behind the washer at each tee |
+| Cart bag (`cart_bag.glb`, mikethornley, CC BY) | Bag about 0.95 m, driver's head 1.25 m up, 0.40 m wide | Cart bags are 35 to 37 in tall | On the back of the buggy (`GolfBag.new(true)`); the caddie keeps the staff bag |
+
+The Sketchfab catalogue was searched (2026-11-16) for flagsticks, tee
+markers, ball washers, bunker rakes, signs, tee pegs and clubs: the free
+open-licensed ones were toy-like or lower quality than the code-built
+props, so those stay as they are.

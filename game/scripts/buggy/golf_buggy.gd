@@ -186,10 +186,12 @@ func set_bags(count: int) -> void:
 		b.queue_free()
 	_bags.clear()
 	for i in count:
-		var bag := GolfBag.new()
+		var bag := GolfBag.new(true)
 		var x := 0.0 if count == 1 else (-BAG_APART if i == 0 else BAG_APART)
-		bag.position = Vector3(x, 0.71 - BODY_PIVOT, 1.0)
-		bag.rotation = Vector3(deg_to_rad(14.0), PI, 0.0)  # top forward, on the rack
+		# Far enough back, and upright enough, that the clubs stand up behind
+		# the roof's back edge as on a real cart, not through the roof.
+		bag.position = Vector3(x, 0.71 - BODY_PIVOT, 1.1)
+		bag.rotation = Vector3(deg_to_rad(8.0), PI, 0.0)  # top a little forward, on the rack
 		_chassis.add_child(bag)
 		_bags.append(bag)
 

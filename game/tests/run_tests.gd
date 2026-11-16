@@ -1827,7 +1827,8 @@ func _test_props_real_size() -> void:
 		"tee_marker": [Vector3(0.127, 0.115, 0.127), 0.01],
 		"ball_washer": [Vector3(0.5, 1.28, 0.5), 0.03],
 		"tee_sign": [Vector3(0.71, 1.74, 0.08), 0.03],
-		"tee_bench": [Vector3(1.54, 0.97, 0.63), 0.04],
+		"tee_bench": [Vector3(2.37, 1.06, 0.74), 0.04],  # the Sketchfab teak bench
+		"cart_bag": [Vector3(0.4, 1.25, 0.65), 0.03],
 		"bunker_rake": [Vector3(0.64, 0.06, 1.42), 0.02],
 		"yardage_plate": [Vector3(0.304, 0.034, 0.204), 0.01],
 		"yardage_pole": [Vector3(0.09, 2.04, 0.09), 0.02],

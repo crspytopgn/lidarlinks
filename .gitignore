@@ -52,3 +52,6 @@ tools/audio/.cache/
 
 # The learned colour grade lookups must import losslessly (docs/colour-grade.md)
 !game/grade/*.png.import
+
+# Textures Godot extracts from the Sketchfab glbs on import
+game/assets/props/sketchfab/*.jpg

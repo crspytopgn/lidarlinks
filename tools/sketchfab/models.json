@@ -1,0 +1,19 @@
+{
+  "_comment": "Sketchfab models the game uses, fetched and optimised by fetch.py. Only CC0 / CC BY models go here (they ship in the public repo, credited in game/assets/props/sketchfab/CREDITS.md). Anything under the Sketchfab Standard licence or NC/ND goes in the private pack instead. fit: the axis and real length in metres the model is scaled to.",
+  "models": {
+    "tee_bench": {
+      "uid": "e53ad46c604c44e59a98bad27041cb19",
+      "title": "Wooden Park Bench", "author": "TheMadraver",
+      "licence": "CC BY 4.0",
+      "why": "A weathered teak bench as clubs put on their tees. Scaled so the seat is 0.44 m up (it is then a 2.37 m, eight-foot bench with a 1.06 m back, as Lutyens-style teak benches are).",
+      "opts": {"tris": 3000, "tex": 1024, "fit": {"axis": "x", "metres": 2.37}}
+    },
+    "cart_bag": {
+      "uid": "12113d34eca34f619dfcafaf9ae36a2a",
+      "title": "Golf Bag", "author": "mikethornley",
+      "licence": "CC BY 4.0",
+      "why": "A cart bag with a full set, as golfers strap on a buggy. 0.95 m bag, the driver's head 1.25 m up; club heads turned to chrome.",
+      "opts": {"tris": 26000, "error": 0.0005, "tex": 1024, "fit": {"axis": "y", "metres": 1.25}, "chrome": ["metal"]}
+    }
+  }
+}

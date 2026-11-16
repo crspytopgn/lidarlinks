@@ -14,6 +14,9 @@ extends Node3D
 ## quality. Every piece is one shared mesh with a draw call per material.
 
 const DIR := "res://assets/props/"
+## Artist-made models from Sketchfab (CC BY, tools/sketchfab/), used in
+## place of the code-built prop of the same name when present.
+const SKETCHFAB_DIR := "res://assets/props/sketchfab/"
 ## Where the tee furniture stands, on the side away from a right-handed
 ## golfer at address (metres along the line of the hole from the tee, and
 ## across it): the sign by the front of the tee, then the washer, then the
@@ -73,7 +76,9 @@ static func mesh(prop: String) -> Mesh:
 	if _meshes.has(prop):
 		return _meshes[prop]
 	var m: Mesh = null
-	var path := DIR + prop + ".glb"
+	var path := SKETCHFAB_DIR + prop + ".glb"
+	if not ResourceLoader.exists(path):
+		path = DIR + prop + ".glb"
 	if ResourceLoader.exists(path):
 		var scene := load(path) as PackedScene
 		if scene != null:
@@ -86,6 +91,11 @@ static func mesh(prop: String) -> Mesh:
 			node.free()
 	_meshes[prop] = m
 	return m
+
+
+## True when `prop` comes from a Sketchfab model, which brings its own textures.
+static func is_textured(prop: String) -> bool:
+	return ResourceLoader.exists(SKETCHFAB_DIR + prop + ".glb")
 
 
 static func instance(prop: String, shadows := true) -> MeshInstance3D:
@@ -152,8 +162,9 @@ func _build_tee(hole: HoleData, toward: Vector3) -> void:
 	var bench_at := tee_spot(t, hole.tee, toward, BENCH_SPOT)
 	var bench := instance("tee_bench")
 	if bench != null and bench_at != Vector3.INF:
-		# Scanned wood slats when the private pack has them.
-		var wood := ScannedSurfaces.triplanar_material("bench", null)
+		# Scanned wood slats when the private pack has them, unless the
+		# bench is the textured teak model.
+		var wood: Material = null if is_textured("tee_bench") else ScannedSurfaces.triplanar_material("bench", null)
 		if wood != null:
 			bench.material_override = wood
 		bench.position = bench_at
