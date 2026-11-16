@@ -712,6 +712,13 @@ func _test_quick_pace(meter: SwingMeter, roll: PackedFloat32Array) -> void:
 			if not r.rising and r.pos == LinksPowerStroke.SNAP:
 				r.click_snap()
 		return t
+	var cam := RoundCamera.new()
+	cam._fly_length = 400.0
+	var slow_fly := cam._fly_seconds()
+	cam.quick = true
+	_check(cam._fly_seconds() < slow_fly and cam._fly_seconds() >= 2.5,
+			"a Quick hole flyover is shorter (%.1f s, was %.1f s)" % [cam._fly_seconds(), slow_fly])
+	cam.free()
 	var quick_run := LinksPowerStroke.Run.new(LinksPowerStroke.Mode.PUTT, true)
 	_check(quick_run.pos == LinksPowerStroke.SNAP, "a Quick putt starts on the snap line")
 	_check(LinksPowerStroke.Run.new(LinksPowerStroke.Mode.PUTT).pos == 0, "a Classic putt starts at the bottom")

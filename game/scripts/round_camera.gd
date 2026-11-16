@@ -37,6 +37,8 @@ const LANDING_UP := 4.0
 const LANDING_CUT_LEFT := 2.2  ## seconds before the first landing
 const KEEP_ABOVE_GROUND := 1.0
 
+## Quick pace (GraphicsSettings.quick_pace): a shorter hole flyover.
+var quick := false
 var terrain: CourseTerrain
 var _look := Vector3.ZERO
 var _look_now := Vector3.ZERO
@@ -79,6 +81,9 @@ var _operator_pan := 0.0  ## 0 resting to 1 panning, eased so the drift never ju
 const FLYOVER_SPEED := 55.0  ## metres per second along the path
 const FLYOVER_MIN_S := 4.5
 const FLYOVER_MAX_S := 9.0
+## Quick pace: the hole flyover at this share of its time (a click still
+## ends it).
+const QUICK_FLYOVER := 0.6
 const FLYOVER_UP := 38.0
 
 
@@ -291,7 +296,8 @@ func flyover_progress() -> float:
 
 
 func _fly_seconds() -> float:
-	return clampf(_fly_length / FLYOVER_SPEED, FLYOVER_MIN_S, FLYOVER_MAX_S)
+	var s := clampf(_fly_length / FLYOVER_SPEED, FLYOVER_MIN_S, FLYOVER_MAX_S)
+	return s * QUICK_FLYOVER if quick else s
 
 
 func _update_flyover(delta: float) -> void:

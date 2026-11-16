@@ -26,6 +26,9 @@ const RESULT_PAUSE := 2.5
 ## Quick pace's pause after a putt that stays out (Space or a click still
 ## goes on at once): the ball has stopped, the next putt is all there is.
 const QUICK_PUTT_PAUSE := 1.0
+## Quick pace: the pause after a full shot or chip comes to rest (Classic
+## keeps RESULT_PAUSE). A click still skips it.
+const QUICK_RESULT_PAUSE := 1.4
 ## Seconds into the flight the swing meter stays up to show the swing.
 const METER_LINGER_S := 1.5
 ## A putt missed from inside this many metres (8 ft) gets a slump.
@@ -2333,8 +2336,8 @@ func _complete_flight() -> void:
 	hud.mouse_swing.reset()
 	state = State.SHOT_RESULT
 	result_timer = RESULT_PAUSE
-	if graphics.quick_pace and clubs[club_index].is_putter:
-		result_timer = QUICK_PUTT_PAUSE
+	if graphics.quick_pace:
+		result_timer = QUICK_PUTT_PAUSE if clubs[club_index].is_putter else QUICK_RESULT_PAUSE
 	if _can_mulligan():
 		hud.hint.text = HINT_WAIT + "    U: mulligan"
 		result_timer = RESULT_PAUSE * 2.0
@@ -3499,6 +3502,7 @@ func _apply_graphics() -> void:
 		hud.overlay.show_pip(false)
 		camera.end_flyover()
 	hud.meter.quick = graphics.quick_pace
+	camera.quick = graphics.quick_pace
 	_putt_scale_from = Vector3.INF  # the putt meter's size goes with the pace
 	_yard_key = []
 	if hole != null and state == State.AIM:
@@ -3881,6 +3885,11 @@ func _place_golfer() -> void:
 	_place_stand_bag()
 	golfer.set_bag(stand_bag if stand_bag != null and stand_bag.visible else null)
 	golfer.set_teed(lie == Surface.Type.TEE)
+	# Quick pace: straight over the ball, as in Links 2003. The full routine
+	# (club from the bag, tee up, setup, putt read) ran 10 to 20 s a shot,
+	# for the player and for every computer golfer, who waited it out.
+	if golfer is FreeGolfer:
+		(golfer as FreeGolfer).walk_in = not graphics.quick_pace
 	golfer.play(&"address")
 
 
