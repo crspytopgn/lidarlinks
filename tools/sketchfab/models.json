@@ -6,14 +6,14 @@
       "title": "Wooden Park Bench", "author": "TheMadraver",
       "licence": "CC BY 4.0",
       "why": "A weathered teak bench as clubs put on their tees. Scaled so the seat is 0.44 m up (it is then a 2.37 m, eight-foot bench with a 1.06 m back, as Lutyens-style teak benches are).",
-      "opts": {"tris": 3000, "tex": 1024, "fit": {"axis": "x", "metres": 2.37}}
+      "opts": {"tris": 3000, "tex": 768, "fit": {"axis": "x", "metres": 2.37}}
     },
     "cart_bag": {
       "uid": "12113d34eca34f619dfcafaf9ae36a2a",
       "title": "Golf Bag", "author": "mikethornley",
       "licence": "CC BY 4.0",
       "why": "A cart bag with a full set, as golfers strap on a buggy. 0.95 m bag, the driver's head 1.25 m up; club heads turned to chrome.",
-      "opts": {"tris": 26000, "error": 0.0005, "tex": 1024, "fit": {"axis": "y", "metres": 1.25}, "chrome": ["metal"]}
+      "opts": {"tris": 14000, "error": 0.001, "tex": 512, "fit": {"axis": "y", "metres": 1.25}, "chrome": ["metal"], "drop": ["straps"]}
     }
   }
 }

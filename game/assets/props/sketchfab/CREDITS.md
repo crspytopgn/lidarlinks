@@ -3,8 +3,8 @@
 Artist-made models from [Sketchfab](https://sketchfab.com), used in place of
 the code-built props of the same name. Each is used under its licence and
 was changed for the game by `tools/sketchfab/fetch.py` (scaled to real size,
-parts merged into one mesh, simplified, textures cut to 1024 px, materials
-converted to metal/roughness; the bag's club heads turned to steel).
+parts merged into one mesh, simplified, textures cut to 512 to 768 px, materials
+converted to metal/roughness; the bag's club heads turned to steel and its loose shoulder strap left off).
 
 | File | Model | Author | Licence |
 | --- | --- | --- | --- |

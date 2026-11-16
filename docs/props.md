@@ -89,7 +89,7 @@ that day. Compare them with photos when one is next to hand.
 `tools/sketchfab/fetch.py` downloads the models listed in
 `tools/sketchfab/models.json` through the Sketchfab API and optimises them
 with `process.mjs` (gltf-transform and meshoptimizer: parts baked into one
-mesh, simplified to a triangle budget, 1024 px JPEG textures, metal/rough
+mesh, simplified to a triangle budget, small JPEG textures (size budget in CI), metal/rough
 materials, scaled to real size and stood on the ground). It needs your own
 API token in `SKETCHFAB_TOKEN`; never commit one.
 
@@ -106,7 +106,7 @@ belong in the private local pack instead.
 | Model | Real size | Reference | Where |
 |---|---|---|---|
 | Teak bench (`tee_bench.glb`, TheMadraver, CC BY) | 2.37 m (8 ft) long, seat 0.44 m up, back 1.06 m | Lutyens-style teak benches, as clubs put on their tees: 8 ft version 2.4 m long, about 1.0 m back | Behind the washer at each tee |
-| Cart bag (`cart_bag.glb`, mikethornley, CC BY) | Bag about 0.95 m, driver's head 1.25 m up, 0.40 m wide | Cart bags are 35 to 37 in tall | On the back of the buggy (`GolfBag.new(true)`); the caddie keeps the staff bag |
+| Cart bag (`cart_bag.glb`, mikethornley, CC BY; 15k triangles, shoulder strap left off) | Bag about 0.95 m, driver's head 1.25 m up, 0.40 m wide | Cart bags are 35 to 37 in tall | On the back of the buggy (`GolfBag.new(true)`); the caddie keeps the staff bag |
 
 The Sketchfab catalogue was searched (2026-11-16) for flagsticks, tee
 markers, ball washers, bunker rakes, signs, tee pegs and clubs: the free
