@@ -76,3 +76,21 @@ func busy() -> bool:
 ## and swing wait for it.
 func walking() -> bool:
 	return false
+
+
+## The player's input drives the swing: `f` is how far back the club is,
+## 0 at address to 1 at the top. Called every frame of the backswing, so
+## the golfer's club goes where the meter or the mouse puts it.
+func follow_backswing(_f: float) -> void:
+	pass
+
+
+## The input drives the downswing: `f` is 0 at the top to 1 at impact.
+func follow_downswing(_f: float) -> void:
+	pass
+
+
+## True when the input has brought the club down to the ball: the next
+## play(&"swing") carries on from impact and the ball leaves at once.
+func at_impact() -> bool:
+	return false

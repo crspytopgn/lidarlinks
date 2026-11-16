@@ -899,6 +899,8 @@ func play_shot(power: float, accuracy: float, monitor: OpenConnect.Launch = null
 	var club := clubs[club_index]
 	_quiet_advice()
 	players[current].shots += 1
+	# The player's mouse brought the club down to the ball: it is struck now.
+	var struck := golfer != null and not club.is_putter and golfer.at_impact()
 	if golfer:
 		golfer.set_shot(club, _flat_distance(ball_at, hole.pin), power)
 		golfer.play(&"putt" if club.is_putter else &"swing")
@@ -906,7 +908,7 @@ func play_shot(power: float, accuracy: float, monitor: OpenConnect.Launch = null
 	if gallery != null and is_instance_valid(gallery):
 		gallery.watch(ball)
 	_strike_sound = {"club": club, "lie": lie, "power": power}
-	_launch_wait = (golfer.putt_impact_delay() if club.is_putter else golfer.impact_delay()) if golfer else 0.0
+	_launch_wait = (golfer.putt_impact_delay() if club.is_putter else golfer.impact_delay()) if golfer and not struck else 0.0
 	if _launch_wait <= 0.0:
 		sounds.play_detail(&"hit", _strike_sound)
 	shot_from = ball_at
@@ -1071,6 +1073,8 @@ func _process(delta: float) -> void:
 			State.AIM:
 				if not hud.hand_over.visible:
 					_process_aim(delta)
+			State.SWING:
+				_follow_swing()
 			State.FLIGHT:
 				_process_flight(delta)
 			State.SHOT_RESULT:
@@ -1717,7 +1721,39 @@ func _on_mouse_stroke_cancelled() -> void:
 			golfer.play(&"address")
 
 
+## The golfer's club goes where the player's swing has it, frame by frame:
+## up with the meter's rise (held at the top while it comes back down), or
+## with the mouse back and through, so the ball is struck as the mouse
+## brings the club to it. Putts keep their own stroke.
+var _swing_top := 0.0
+
+
+func _follow_swing() -> void:
+	if golfer == null or clubs[club_index].is_putter:
+		return
+	var ms := hud.mouse_swing
+	if ms.club != null:
+		var c := ms.club
+		var ball_line: float = c.meter.ball_line
+		var h := c.club_height() - ball_line
+		var top: float = c.meter.height - 10.0 - ball_line
+		if c.phase == LinksMouse.Phase.BACKSWING:
+			_swing_top = maxf(_swing_top, h)
+			if h > 0.5:
+				golfer.follow_backswing(h / top)
+		elif c.phase == LinksMouse.Phase.DOWNSWING and _swing_top > 0.5:
+			golfer.follow_downswing(1.0 - clampf(h / _swing_top, 0.0, 1.0))
+		return
+	match hud.meter.phase:
+		SwingMeter.Phase.BACKSWING:
+			_swing_top = maxf(_swing_top, hud.meter.shown)
+			golfer.follow_backswing(hud.meter.shown)
+		SwingMeter.Phase.DOWNSWING:
+			golfer.follow_backswing(_swing_top)  # at the top until the snap click
+
+
 func _on_backswing_started() -> void:
+	_swing_top = 0.0
 	_quiet_advice()
 	if golfer and not clubs[club_index].is_putter:
 		golfer.play(&"backswing")

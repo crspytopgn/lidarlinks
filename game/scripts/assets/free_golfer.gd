@@ -92,7 +92,15 @@ const VARIED: Array[StringName] = [&"celebrate", &"fist_pump", &"slump", &"upset
 const FINISH_HOLD := 1.2
 const SHAFT_COLOURS := {"steel": Color(0.75, 0.76, 0.78), "graphite": Color(0.16, 0.17, 0.19), "black": Color(0.04, 0.04, 0.045)}
 
+## Downswings driven by the input reach impact this far into it (the
+## swing clip is followed from the top up to here).
+const IMPACT_NEAR := 0.97
+
 var look: PlayerLook
+## The swing clip the player's input is driving (follow_backswing,
+## follow_downswing), or empty.
+var _following := &""
+var _follow_f := 0.0
 ## False to settle into address on the spot (the player creator's preview).
 var walk_in := true
 ## Largest texture side for this golfer's look (0: the pack's own). The
@@ -608,6 +616,15 @@ func play(animation: StringName) -> void:
 		&"backswing", &"swing":
 			_putting = false
 	var clip := animation
+	# The input brought the club down to the ball: on from impact, at his
+	# tempo, rather than from the top again.
+	if animation == &"swing" and at_impact():
+		_following = &""
+		_speed = tempo
+		_player.play(_player.assigned_animation, 0.0, tempo)
+		_player.seek(SWING_IMPACT, true)
+		return
+	_following = &""
 	if animation == &"address" and _putting:
 		clip = &"address_putt"
 	elif _iron and not _putting and animation in IRON_CLIPS and _player.has_animation(StringName(String(animation) + "_iron")):
@@ -653,6 +670,46 @@ func _keep_address(clip: StringName) -> bool:
 ## round it to aim (the rig itself circles the ball).
 func _ball_spot() -> Vector3:
 	return (global_transform if is_inside_tree() else transform) * BALL
+
+
+func follow_backswing(f: float) -> void:
+	_follow_clip(&"backswing", clampf(f, 0.0, 1.0))
+
+
+func follow_downswing(f: float) -> void:
+	_follow_clip(&"swing", clampf(f, 0.0, 1.0))
+
+
+func at_impact() -> bool:
+	return _following != &"" and String(_following).begins_with("swing") and _follow_f >= IMPACT_NEAR
+
+
+## Holds `animation` (its iron take for an iron) at share `f` of the way
+## to the top (the backswing) or to impact (the swing), blending in when
+## the clip changes.
+func _follow_clip(animation: StringName, f: float) -> void:
+	var clip := animation
+	if _iron and _player.has_animation(StringName(String(animation) + "_iron")):
+		clip = StringName(String(animation) + "_iron")
+	if not _player.has_animation(clip):
+		return
+	var length := _player.get_animation(clip).length
+	var t := f * (SWING_IMPACT if animation == &"swing" else length)
+	if _following != clip:
+		_stop_walk()
+		if _look:
+			_look.track(null, 0.0)
+		_putting = false
+		_show_putter(false)
+		_speed = 1.0
+		_player.play(clip, BLEND_TIME * 0.5, 1.0)
+		if _hands:
+			_hands.follow(clip, BLEND_TIME * 0.5)
+		_following = clip
+	elif not _player.is_playing():
+		_player.play(clip, 0.0, 1.0)
+	_follow_f = f
+	_player.seek(minf(t, length - 0.02), true)
 
 
 func impact_delay() -> float:
