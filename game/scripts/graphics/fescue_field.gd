@@ -102,8 +102,12 @@ const SWARD_UID := "_sward"
 const SWARD_DENSITY := [0.0, 5.0, 8.0, 11.0]
 const SWARD_RADIUS := [0.0, 12.0, 18.0, 24.0]
 const SWARD_CHUNK := 8.0
-const SWARD_HEIGHT := Vector2(0.18, 0.34)
+const SWARD_HEIGHT := Vector2(0.17, 0.36)
 const SWARD_GROUND_PULL := 0.9
+const SWARD_GROUND_PULL_FORWARD := 0.6
+## The sward's colour cast on Forward+ (shaders/fescue.gdshader warmth):
+## cooler than the fescue's dry warm cast, as fresh grass is.
+const SWARD_FORWARD_WARMTH := Vector3(0.97, 1.02, 0.95)
 const SWARD_COMPAT_BRIGHTNESS := 0.95
 ## The ground normal's x and z, times this and the tuft's height, are the
 ## card's up axis x and z (see build_chunk and shaders/fescue.gdshader).
@@ -255,12 +259,15 @@ static func build_sward_chunk(t: CourseTerrain, key: Vector2i, density: float) -
 	var rng := RandomNumberGenerator.new()
 	rng.seed = hash(key) + 9137
 	_card_bufs = {}
+	# One card per grid cell, but jittered across two cells: a tight grid
+	# lined up into faint rows across the slope from the player's height,
+	# and pure random scatter left bare patches between clumps.
 	var side := maxi(1, roundi(SWARD_CHUNK * sqrt(density)))
 	var cell := SWARD_CHUNK / side
 	var origin := Vector2(key) * SWARD_CHUNK
 	for i in side * side:
-		var x := origin.x + (i % side + rng.randf()) * cell
-		var z := origin.y + (floorf(float(i) / side) + rng.randf()) * cell
+		var x := origin.x + (i % side + rng.randf_range(-0.5, 1.5)) * cell
+		var z := origin.y + (floorf(float(i) / side) + rng.randf_range(-0.5, 1.5)) * cell
 		var yaw := rng.randf() * TAU
 		var size := rng.randf()
 		var pick := rng.randf()
@@ -273,7 +280,7 @@ static func build_sward_chunk(t: CourseTerrain, key: Vector2i, density: float) -
 		if native > 0.0:
 			c = c.lerp(native_colour(pick), native * GrassField.NATIVE_BLEND)
 		# Wider than tall: a patch of sward, not a tuft.
-		_put(t, x, z, yaw, h * rng.randf_range(2.0, 2.8), h, c, pick, -0.01, SWARD_UID)
+		_put(t, x, z, yaw, h * rng.randf_range(2.0, 2.9), h, c, pick, -0.01, SWARD_UID)
 	var rows: Array = _card_bufs.get(SWARD_UID, [])
 	_card_bufs = {}
 	if rows.is_empty():
@@ -543,11 +550,17 @@ static func _card_mesh(uid: String, cards: Dictionary) -> ArrayMesh:
 	if tex != null:
 		var mat := material().duplicate() as ShaderMaterial
 		mat.set_shader_parameter("atlas", tex)
-		mat.set_shader_parameter("ground_pull", MEADOW_GROUND_PULL if uid == MEADOW_UID else SWARD_GROUND_PULL if uid == SWARD_UID else CARD_GROUND_PULL)
+		mat.set_shader_parameter("ground_pull", MEADOW_GROUND_PULL if uid == MEADOW_UID else CARD_GROUND_PULL)
 		if uid == SWARD_UID:
 			# Right up to the camera: it is the near rough.
 			mat.set_shader_parameter("near_start", 0.0)
 			mat.set_shader_parameter("near_end", 0.01)
+			# Forward+ lights the turf texture olive, and a carpet pulled
+			# that far towards it read olive too: keep more of the atlas's
+			# fresh green there.
+			mat.set_shader_parameter("ground_pull", SWARD_GROUND_PULL_FORWARD if GraphicsSettings.is_forward_plus() else SWARD_GROUND_PULL)
+			if GraphicsSettings.is_forward_plus():
+				mat.set_shader_parameter("warmth", SWARD_FORWARD_WARMTH)
 			# Not the fescue's lift: a carpet this dense read acid lime.
 			mat.set_shader_parameter("brightness", 1.0 if GraphicsSettings.is_forward_plus() else SWARD_COMPAT_BRIGHTNESS)
 		if uid == MEADOW_UID:
