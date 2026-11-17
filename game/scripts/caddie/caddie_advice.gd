@@ -112,6 +112,16 @@ static func reap() -> void:
 			_running.erase(id)
 
 
+## Waits for every plan still running on a worker thread. Called when the
+## round leaves the tree and before the tests quit: a task nobody waits for
+## keeps Godot from exiting (it hung the CI test run for six hours).
+static func wait_all() -> void:
+	for id: int in _running.keys():
+		WorkerThreadPool.wait_for_task_completion(id)
+		(_running[id] as CaddieAdvice)._task = -1
+	_running.clear()
+
+
 ## Plans to the end on the calling thread, or waits for the worker thread
 ## when step_background() already started one, so the plan is never
 ## stepped from two threads at once.

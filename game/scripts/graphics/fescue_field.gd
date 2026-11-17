@@ -24,6 +24,8 @@ const BUILD_BUDGET_MS := 2.5
 ## freed: broadcast cameras go back and forth between the tee, the landing
 ## area and the green, and rebuilding each was most of the stutter.
 const SPARE_MAX := 160
+## Light chunks (such as the meadow plants') still built a few a frame.
+const BUILDS_PER_FRAME := 2
 ## Per Grass level (Off, Low, Medium, High): tufts per square metre of deep
 ## rough, and how far out they grow.
 const DENSITY := [0.0, 0.4, 0.6, 0.8]

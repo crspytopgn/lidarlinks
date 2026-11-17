@@ -82,6 +82,9 @@ func _run() -> void:
 		_base[k] = g.get(k)
 	var lines := PackedStringArray()
 	lines.append("OpenLinks2003 benchmark: %s, %s, %s, window %s, look %s" % [OS.get_name(), RenderingServer.get_video_adapter_name(), RenderingServer.get_current_rendering_method(), get_window().size, GraphicsSettings.LOOK_NAMES[g.look]])
+	for line in scene_breakdown(_game):
+		print(line)
+		lines.append(line)
 	lines.append("case | gpu ms | cpu ms | frame ms | fps | 3D scale | draws")
 	var base_gpu := 0.0
 	for c: Array in CASES:
@@ -170,3 +173,81 @@ func _play(seconds: float) -> PackedStringArray:
 	for line in out:
 		print(line)
 	return out
+
+
+## What the scene is made of, grouped by the script that owns each piece
+## (the nearest ancestor with a script): visible meshes, their surfaces
+## (draw calls before culling), instances, triangles drawn and how many cast
+## sun shadows, plus how many distinct materials there are (each a shader
+## the renderer compiles the first time it's seen). Hardware-independent,
+## so cloud runs show the same costs a phone would pay.
+static func scene_breakdown(root: Node) -> PackedStringArray:
+	var groups := {}
+	var mats := {}
+	var shaders := {}
+	var stack: Array[Node] = [root]
+	while not stack.is_empty():
+		var n: Node = stack.pop_back()
+		for c in n.get_children():
+			stack.append(c)
+		if not n is GeometryInstance3D or not (n as Node3D).is_visible_in_tree():
+			continue
+		var gi := n as GeometryInstance3D
+		var mesh: Mesh = null
+		var count := 1
+		if gi is MeshInstance3D:
+			mesh = (gi as MeshInstance3D).mesh
+		elif gi is MultiMeshInstance3D and (gi as MultiMeshInstance3D).multimesh != null:
+			var mm := (gi as MultiMeshInstance3D).multimesh
+			mesh = mm.mesh
+			count = mm.visible_instance_count if mm.visible_instance_count >= 0 else mm.instance_count
+		if mesh == null or count == 0:
+			continue
+		var owner_name := _owner_name(gi, root)
+		var row: Array = groups.get(owner_name, [0, 0, 0, 0.0, 0, 0])
+		var tris := 0
+		for s in mesh.get_surface_count():
+			var arrays_len := 0
+			if mesh is ArrayMesh:
+				var a := (mesh as ArrayMesh).surface_get_array_index_len(s)
+				arrays_len = a if a > 0 else (mesh as ArrayMesh).surface_get_array_len(s)
+			tris += arrays_len / 3
+			var m: Material = gi.material_override if gi.material_override != null else mesh.surface_get_material(s)
+			if gi is MeshInstance3D and (gi as MeshInstance3D).get_surface_override_material(s) != null:
+				m = (gi as MeshInstance3D).get_surface_override_material(s)
+			if m != null:
+				mats[m.get_rid()] = true
+				if m is ShaderMaterial and (m as ShaderMaterial).shader != null:
+					shaders[(m as ShaderMaterial).shader.get_rid()] = true
+		row[0] += 1
+		row[1] += mesh.get_surface_count()
+		row[2] += count
+		row[3] += float(tris) * count
+		if gi.cast_shadow != GeometryInstance3D.SHADOW_CASTING_SETTING_OFF:
+			row[4] += mesh.get_surface_count()
+		if gi.visibility_range_end > 0.0:
+			row[5] += 1
+		groups[owner_name] = row
+	var keys := groups.keys()
+	keys.sort_custom(func(a: String, b: String) -> bool: return groups[a][1] > groups[b][1])
+	var out := PackedStringArray()
+	out.append("scene by owner | nodes | surfaces | instances | k tris | shadow surfaces | with visibility range")
+	for k: String in keys:
+		var r: Array = groups[k]
+		out.append("%s | %d | %d | %d | %.0f | %d | %d" % [k, r[0], r[1], r[2], r[3] / 1000.0, r[4], r[5]])
+	out.append("distinct materials %d, shaders %d" % [mats.size(), shaders.size()])
+	return out
+
+
+static func _owner_name(n: Node, root: Node) -> String:
+	var p := n
+	var below := n  ## the child of `root` on the way up
+	while p != null and p != root:
+		var s: Script = p.get_script()
+		if s != null:
+			var g := s.get_global_name()
+			return String(g) if g != &"" else s.resource_path.get_file()
+		below = p
+		p = p.get_parent()
+	# Built straight into the round: name the piece it hangs from.
+	return "%s/%s" % [root.name, below.name.rstrip("0123456789@")]

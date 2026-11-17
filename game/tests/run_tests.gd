@@ -149,9 +149,11 @@ func _process(_delta: float) -> bool:
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(PlayerProfiles.path))
 	if _failures > 0:
 		print("%d check(s) failed" % _failures)
+		CaddieAdvice.wait_all()
 		quit(1)
 	else:
 		print("GODOT TESTS PASSED")
+		CaddieAdvice.wait_all()
 		quit(0)
 	return true
 

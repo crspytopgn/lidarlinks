@@ -374,6 +374,12 @@ var online: OnlineRound
 var _incoming: ShotRecord = null
 
 
+func _exit_tree() -> void:
+	# Shot reads still planning on worker threads (CaddieAdvice) must end
+	# before the game can quit.
+	CaddieAdvice.wait_all()
+
+
 func _ready() -> void:
 	AssetProviders.ensure_defaults()
 	shot_model = AssetProviders.shot_model
