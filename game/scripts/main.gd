@@ -714,6 +714,7 @@ func start_hole(index: int) -> void:
 		node.rotation_degrees.y = o.yaw_deg
 		node.scale = Vector3.ONE * o.scale
 		hole_root.add_child(node)
+	TreeFactory.batch_impostors(hole_root)
 	var on_range := _on_range()
 	if practice != null:
 		practice_cups = PracticeCups.new()

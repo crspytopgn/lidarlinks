@@ -2179,6 +2179,21 @@ func _test_trees() -> void:
 	var tree := lib.instantiate("tree_broadleaf")
 	_check(tree != null and tree.has_meta("tree_variant") and tree.get_node_or_null("Full") != null, "3D tree when on")
 	_check(lib.instantiate("rock") == null, "other ids still unknown")
+	# A hole's trees share one MultiMesh of impostor cards.
+	var hole := Node3D.new()
+	for k in 3:
+		var t := lib.instantiate("tree_pine")
+		t.position = Vector3(k * 10.0, 0, 5.0)
+		hole.add_child(t)
+	var cards := TreeFactory.batch_impostors(hole)
+	_check(cards != null and (cards as MultiMeshInstance3D).multimesh.instance_count == 3, "a hole's tree cards are one batch")
+	var single := 0
+	for t in hole.get_children():
+		if t.has_meta("tree_variant") and (t.get_node_or_null("Impostor") != null or not t.has_meta("impostor_batched")):
+			single += 1
+	_check(single == 0, "and no tree keeps a card of its own")
+	_check(TreeFactory.batch_impostors(hole) == null, "batched only once")
+	hole.free()
 	TreeFactory.level = 0
 	classic.free()
 	tree.free()

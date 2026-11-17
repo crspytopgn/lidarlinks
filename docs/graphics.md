@@ -318,7 +318,14 @@ Ultra and use a notch lighter soft-shadow filter.
   rows that are only ever impostors (`TreeFactory.FAR_ONLY`), and behind
   them a dark, unlit band (`_wood_floor`) so no sky shows under the
   crowns. Impostors darken towards their base, as the crown shades its
-  trunk. The pond bed is dark silt rather than the map's blue.
+  trunk. The hole's own trees (one node each, from the object library)
+  share one MultiMesh of impostor cards (`TreeFactory.batch_impostors`),
+  not a card node each: 97 draws at the tee of Kettle Hollow became one.
+  The woods are batched in 80 m cells (`DesignedTerrain.DISTANT_TREE_CELL`):
+  a cell's node is drawn whole while any of it is near enough for 3D
+  trees, so 160 m cells drew the full or lite mesh of trees long since
+  turned to cards (0.32M of the tee view's 1.21M triangles; now 0.89M in
+  all). The pond bed is dark silt rather than the map's blue.
 - **Greens, collars and tees** (`terrain.gdshader`, `Materials.terrain_cut`,
   2026-11-04, checked against Geograph photos of real greens): a green
   reads about a tenth lighter than the ground round it and is one even,
