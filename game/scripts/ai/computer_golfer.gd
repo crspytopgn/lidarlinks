@@ -14,6 +14,14 @@ extends RefCounted
 ## frames (step) and the web build never stalls; finish() runs it all at once.
 
 const MIN_POWER := 0.12  ## softest full swing it plans
+## A Chip within this straight-line distance of a foot above the hole, unless
+## the ball is in sand: the game's own rule (main.gd's _auto_club uses is_chip).
+const CHIP_RANGE_M := 30.48
+## The softest Chip: the chip meter's snap line (LinksPowerStroke.chip_power).
+const MIN_CHIP_POWER := 0.07
+## A capped chip (chip_top) looks at clubs up to the most lofted whose top
+## goes this many times the distance.
+const CHIP_ROOM := 1.15
 const PUTT_TRIES := 8
 ## Putts are paced to stop this far past the cup: from dying it in (no
 ## aggression) to charging it.
@@ -54,6 +62,11 @@ var form := 1.0
 ## Recent holes: up after birdies, down after bogeys (end_hole).
 var momentum := 0.0
 
+## The most power a Chip may take, in the chip's own units (its power is
+## LinksPowerStroke.chip_power / 100, not a share of the club): a person's
+## chip meter tops out at about 0.35, so the caddie plans within it.
+var chip_top := INF
+
 ## The chosen shot, valid once planning is done.
 var club_index := 0
 var power := 1.0
@@ -72,6 +85,9 @@ var _from := Vector3.ZERO
 var _lie: int = Surface.Type.FAIRWAY
 var _wind := Vector3.ZERO
 var _teed_up := false
+## The shot is a Chip (is_chip): its power is in the chip's own units, and
+## the flights are planned as one.
+var _chip := false
 var _jobs: Array[Callable] = []
 ## A job waiting in _simulate for the next step(), and when this step ends.
 var _suspended := false
@@ -177,6 +193,7 @@ func plan(model: ShotModel, clubs: Array[Club], hole: HoleData, from: Vector3, l
 	_candidates.clear()
 	_best_putt = null
 	_teed_up = lie == Surface.Type.TEE
+	_chip = is_chip(from, hole.pin, lie)
 	var to_pin := _flat(from, hole.pin)
 	if lie == Surface.Type.GREEN or (lie == Surface.Type.FRINGE and to_pin < 15.0):
 		var putter := clubs.size() - 1
@@ -189,11 +206,22 @@ func plan(model: ShotModel, clubs: Array[Club], hole: HoleData, from: Vector3, l
 		_jobs.append(_job_putt.bind(c, 0))
 		return
 	var reach_max := _reach(0)
+	var chip_from := 0
+	for i in range(clubs.size() - 1, -1, -1):
+		if not clubs[i].is_putter and _chip_reach(i) >= to_pin * CHIP_ROOM:
+			chip_from = i
+			break
 	for i in clubs.size():
 		if clubs[i].is_putter:
 			continue
 		var reach := _reach(i)
 		var lofted := i >= clubs.size() - 3  # the wedges are always worth a look
+		# A chip held under the chip meter's top (the caddie's, for a
+		# person) may need a longer club to run it up: a sand wedge's whole
+		# chip meter carries and rolls about 20 m. Up to the most lofted club
+		# whose top gets there with room, as a caddie would choose.
+		if _chip and chip_top < _strength() and i >= chip_from:
+			lofted = true
 		if not lofted and (to_pin < reach * 0.3 or reach < 0.4 * minf(to_pin, reach_max)):
 			continue
 		_jobs.append(_job_club.bind(i, 0.0, false))
@@ -280,7 +308,8 @@ func _job_club(i: int, offset_deg: float, safe: bool, past_m := 0.0) -> void:
 		if line.length() > 0.5:
 			target += line.normalized() * past_m
 	var to_target := _flat(_from, target)
-	var top := _strength()
+	var top := _top()
+	var low := MIN_CHIP_POWER if _chip else MIN_POWER
 	var c := Candidate.new()
 	c.club = i
 	c.sure = past_m > 0.0
@@ -288,7 +317,11 @@ func _job_club(i: int, offset_deg: float, safe: bool, past_m := 0.0) -> void:
 	c.aim_deg = _heading(_from, target) + offset_deg
 	c.power = top
 	if at_pin:
-		c.power = clampf(top * to_target / reach, MIN_POWER, top)
+		c.power = clampf(top * to_target / reach, low, top)
+		if _chip:
+			# A chip's power isn't a share of the club's: its full swing is
+			# the club's rating in the same units.
+			c.power = clampf(to_target / reach * _rating(i) / 100.0, low, top)
 	var r := await _simulate(c.club, c.power, c.aim_deg, c.accuracy)
 	var best_r := r
 	var best_power := c.power
@@ -306,7 +339,7 @@ func _job_club(i: int, offset_deg: float, safe: bool, past_m := 0.0) -> void:
 			if attempt > 0:
 				break
 		elif progress > 1.0:
-			c.power = clampf(c.power * minf(to_target / progress, 3.0), MIN_POWER, top)
+			c.power = clampf(c.power * minf(to_target / progress, 3.0), low, top)
 		else:
 			c.power = minf(c.power * 2.0, top)
 		r = await _simulate(c.club, c.power, c.aim_deg, c.accuracy)
@@ -318,7 +351,7 @@ func _job_club(i: int, offset_deg: float, safe: bool, past_m := 0.0) -> void:
 	if at_pin and offset_deg == 0.0 and _flat(_from, _hole.pin) < SHORT_GAME_M and _left(best_r) > SHORT_GAME_SCAN_FROM_M:
 		var base := best_power
 		for f: float in SHORT_GAME_POWER_SCAN:
-			var p := clampf(base * f, MIN_POWER, top)
+			var p := clampf(base * f, low, top)
 			var t := await _simulate(c.club, p, best_aim, c.accuracy)
 			if _value(t) < _value(best_r):
 				best_r = t
@@ -382,7 +415,7 @@ func _job_risk(c: Candidate) -> void:
 	misses += _value(await _simulate(c.club, c.power, c.aim_deg + aim, c.accuracy - acc))
 	misses += _value(await _simulate(c.club, c.power, c.aim_deg - aim, c.accuracy + acc))
 	misses += _value(await _simulate(c.club, c.power * (1.0 - pw), c.aim_deg, c.accuracy))
-	misses += _value(await _simulate(c.club, minf(c.power * (1.0 + pw), 1.0), c.aim_deg, c.accuracy))
+	misses += _value(await _simulate(c.club, minf(c.power * (1.0 + pw), minf(1.0, chip_top) if _chip else 1.0), c.aim_deg, c.accuracy))
 	var weight := 1.25 - pro.aggression  # each miss against the plan itself
 	c.score = (c.nominal + weight * misses) / (1.0 + 4.0 * weight)
 
@@ -473,6 +506,34 @@ func _strength() -> float:
 	return skill.links_strength if _model is LinksShotModel else skill.strength
 
 
+## About how far a chip at chip_top goes with club `i`, carry and roll on
+## the flat: a full chip meter is about 0.6 of the club's distance at that
+## power (distance falls away faster than the power).
+func _chip_reach(i: int) -> float:
+	return _clubs[i].total_m * Surface.lie_power(_lie) * minf(chip_top, _strength()) * 0.6
+
+
+## The most power it plans this shot with.
+func _top() -> float:
+	return minf(_strength(), chip_top) if _chip else _strength()
+
+
+## The club's full swing in the game's power units (100 without Links
+## 2003's physics, where every power is a share of the club).
+func _rating(i: int) -> float:
+	return LinksShotModel.club_rating(_clubs[i]) if _model is LinksShotModel else 100.0
+
+
+## Whether a shot from `from` on `lie` is a Chip: the game's own rule, a
+## Chip within 100 ft of a foot above the hole unless the ball is in sand,
+## and never a putt.
+static func is_chip(from: Vector3, pin: Vector3, lie: int) -> bool:
+	var to_pin := Vector2(from.x - pin.x, from.z - pin.z).length()
+	if lie == Surface.Type.GREEN or (lie == Surface.Type.FRINGE and to_pin < 15.0):
+		return false
+	return lie != Surface.Type.SAND and from.distance_to(pin + Vector3(0, 0.3048, 0)) < CHIP_RANGE_M
+
+
 ## The middle of the green: where the hole's pin positions average out.
 func _green_centre() -> Vector3:
 	if _hole.pins.size() < 2:
@@ -502,6 +563,11 @@ func _simulate(club: int, p: float, aim: float, accuracy := 0.0) -> ShotResult:
 	if _model is LinksShotModel:
 		(_model as LinksShotModel).computer = true  # plan without the human miss model
 		(_model as LinksShotModel).computer_ratings = null  # nor the computer's own
+		# A chip as the real shot will be played: its power in the chip's
+		# units. The flag was whatever the last shot left (a plan for a chip
+		# after a full approach read its power as a share of the wedge's 80,
+		# so the real chip, at 100, flew a quarter further than planned).
+		(_model as LinksShotModel).chip = _chip and not _clubs[club].is_putter
 	var start := _model.launch(_clubs[club], p, accuracy, aim, _lie, _from)
 	return _model.simulate(start, _hole.terrain, _hole.pin, _wind)
 

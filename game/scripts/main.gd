@@ -18,7 +18,7 @@ const YARDS_PER_METRE := 1.0936
 const FEET_PER_METRE := 3.2808
 const MAX_STROKES := 10  ## pick up after this many on a hole
 const FEET_IN_SAND := 0.03  ## metres a golfer works his feet into a bunker
-const CHIP_RANGE_M := 30.48  ## the game picks a Chip within 100 ft of the hole
+const CHIP_RANGE_M := ComputerGolfer.CHIP_RANGE_M  ## the game picks a Chip within 100 ft of the hole
 const CLOUD_SHADOW := 0.32  ## how much light a passing cloud's shadow takes
 const AIM_RATE_DEG := 25.0  ## per second, holding left or right
 const PUTT_AIM_RATE_DEG := 6.0
@@ -2156,12 +2156,12 @@ func _caddie_read() -> void:
 		_quiet_advice()
 		if (broadcast or tour) and opponents[shooter] == null and state == State.AIM and practice == null:
 			_advice = CaddieAdvice.new()
-			_advice.start(shot_model, clubs, hole, ball_at, lie, wind.velocity(), graphics.skill)
+			_advice.start(shot_model, clubs, hole, ball_at, lie, wind.velocity(), graphics.skill, _putt_range)
 		return
 	if opponents[shooter] != null or state != State.AIM:
 		caddie.step_aside()
 		return
-	caddie.advise(shot_model, clubs, hole, ball_at, lie, wind.velocity(), graphics.skill, _aim_dir())
+	caddie.advise(shot_model, clubs, hole, ball_at, lie, wind.velocity(), graphics.skill, _aim_dir(), _putt_range)
 
 
 ## The swing has started, or the shot isn't the player's: the read goes.
@@ -3331,7 +3331,7 @@ func _auto_club() -> void:
 		return
 	# The game's own rule: a Chip within 100 ft (straight line, to a foot
 	# above the hole) unless the ball is in sand.
-	_chip = lie != Surface.Type.SAND and ball_at.distance_to(hole.pin + Vector3(0, 0.3048, 0)) < CHIP_RANGE_M
+	_chip = ComputerGolfer.is_chip(ball_at, hole.pin, lie)
 	var power := shot_model.lie_power(lie)
 	var target := hole.aim_point(ball_at, clubs[0].total_m * shot_model.reach_scale(clubs[0]) * power)
 	club_index = 0
