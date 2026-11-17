@@ -83,7 +83,7 @@ cloud_shadow={
 "type": "float",
 "value": 0.0
 }
-weather_shadow={
+ground_sun_shadow={
 "type": "float",
 "value": 1.0
 }

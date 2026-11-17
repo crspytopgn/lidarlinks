@@ -3526,6 +3526,7 @@ func _apply_graphics() -> void:
 	camera.fov = graphics.fov
 	camera.attributes = _camera_attributes()
 	RenderingServer.global_shader_parameter_set("foliage_sway", 1.0 if graphics.foliage_wind else 0.0)
+	# Under a soft overcast the whole sky is cloud: no moving patches of shade.
 	RenderingServer.global_shader_parameter_set("cloud_shadow", CLOUD_SHADOW if _cloud_shadows_on() else 0.0)
 	TreeFactory.set_level(graphics.trees)
 	Landscape.detail = graphics.quality
@@ -3615,6 +3616,8 @@ func _show_weather() -> void:
 ## Cloud shadows: the setting, or a day of broken cloud (cumulus over a
 ## sunny course; a full deck casts none).
 func _cloud_shadows_on() -> bool:
+	if graphics.time_of_day == GraphicsSettings.TimeOfDay.OVERCAST:
+		return false
 	if graphics.cloud_shadows:
 		return true
 	return weather != null and weather.cloud > 0.3 and Scenery.overcast_of(weather.cloud) < 0.7

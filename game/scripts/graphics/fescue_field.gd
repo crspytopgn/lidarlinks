@@ -68,6 +68,27 @@ const REED_DENSITY := 2.5
 const REED_REACH := 2.5
 const REED_HEIGHT := Vector2(1.1, 1.9)
 const REED_COLOUR := Color(0.42, 0.5, 0.26)
+## Meadow plants (the drawn meadow atlas, tools/grass/meadow_atlas.py,
+## public): broad-leaved rosettes, daisies, buttercups and yarrow among
+## the long grass, as in real rough and the Godot forest scenes Michael
+## pointed to (2026-11-17), so a hillside reads as living ground rather
+## than one even fur. Plants per square metre of deep rough per
+## the Grass level (Off, Low, Medium, High) out to MEADOW_RADIUS m from
+## the camera, in MEADOW_CHUNK m chunks, in patches MEADOW_SCALE m across (more where the
+## noise is high), their card height range (m; the plants fill the lower
+## part of the card), how much they take the ground's colour, and the
+## share of each atlas cell (daisies, buttercups, rosette, yarrow).
+const MEADOW_UID := "_meadow"
+const MEADOW_DENSITY := [0.0, 0.5, 0.9, 1.3]
+const MEADOW_RADIUS := [0.0, 45.0, 65.0, 85.0]
+const MEADOW_CHUNK := 16.0
+const MEADOW_SCALE := 18.0
+const MEADOW_HEIGHT := Vector2(0.55, 0.95)
+const MEADOW_GROUND_PULL := 0.3
+const MEADOW_CELLS := [0.25, 0.17, 0.36, 0.22]
+## Where meadow plants start to grow in from the camera (m): nearer than the
+## fescue (shaders/fescue.gdshader near_start, near_end).
+const MEADOW_NEAR := Vector2(5.0, 14.0)
 ## The ground normal's x and z, times this and the tuft's height, are the
 ## card's up axis x and z (see build_chunk and shaders/fescue.gdshader).
 const NORMAL_LEAN := 0.01
@@ -80,6 +101,7 @@ var terrain: CourseTerrain
 var level := 0
 var _chunks := {}  ## Vector2i -> Node3D of MultiMeshInstance3Ds (null for an empty chunk)
 var _crowns := {}  ## Vector2i chunk -> PackedVector3Array of crowns centred in it
+var _meadow := {}  ## Vector2i meadow chunk -> MultiMeshInstance3D (null for an empty chunk)
 
 static var _mesh: ArrayMesh
 static var _mat: ShaderMaterial
@@ -108,6 +130,10 @@ func setup(t: CourseTerrain, grass_level: int) -> void:
 		if node != null:
 			node.queue_free()
 	_chunks.clear()
+	for node in _meadow.values():
+		if node != null:
+			node.queue_free()
+	_meadow.clear()
 	_crowns = crowns_by_chunk(t.obstacles if t != null else null)
 	dress = dress_cards(MegascansCards.cards())
 	var r: float = RADIUS[level]
@@ -152,6 +178,78 @@ func update_around(eye: Vector3) -> void:
 				node.add_child(inst)
 			add_child(node)
 		_chunks[key] = node
+	_update_meadow(here)
+
+
+## The meadow plants' chunks round the camera at `here` (x, z): dropped
+## past MEADOW_RADIUS, built nearest first, a couple a frame.
+func _update_meadow(here: Vector2) -> void:
+	var r: float = MEADOW_RADIUS[level]
+	if r <= 0.0 or not meadow_available():
+		return
+	for key: Vector2i in _meadow.keys():
+		if ((Vector2(key) + Vector2(0.5, 0.5)) * MEADOW_CHUNK).distance_to(here) > r + MEADOW_CHUNK:
+			var node: Node = _meadow[key]
+			if node != null:
+				node.queue_free()
+			_meadow.erase(key)
+	var wanted: Array[Vector2i] = []
+	var reach := ceili(r / MEADOW_CHUNK)
+	var at := Vector2i(floori(here.x / MEADOW_CHUNK), floori(here.y / MEADOW_CHUNK))
+	for dz in range(-reach, reach + 1):
+		for dx in range(-reach, reach + 1):
+			var key := at + Vector2i(dx, dz)
+			if not _meadow.has(key) and ((Vector2(key) + Vector2(0.5, 0.5)) * MEADOW_CHUNK).distance_to(here) < r + MEADOW_CHUNK * 0.71:
+				wanted.append(key)
+	wanted.sort_custom(func(a: Vector2i, b: Vector2i) -> bool:
+		return (Vector2(a) * MEADOW_CHUNK).distance_squared_to(here) < (Vector2(b) * MEADOW_CHUNK).distance_squared_to(here))
+	if _card_mats.has(MEADOW_UID):
+		# The plants sink away towards the edge of their ring.
+		var m: ShaderMaterial = _card_mats[MEADOW_UID]
+		m.set_shader_parameter("far_start", r * 0.7)
+		m.set_shader_parameter("far_end", r)
+	for i in mini(BUILDS_PER_FRAME, wanted.size()):
+		var mm := build_meadow_chunk(terrain, wanted[i], MEADOW_DENSITY[level])
+		var inst: MultiMeshInstance3D = null
+		if mm != null:
+			inst = MultiMeshInstance3D.new()
+			inst.multimesh = mm
+			inst.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			add_child(inst)
+		_meadow[wanted[i]] = inst
+
+
+## Meadow plants for one MEADOW_CHUNK square: on the deep rough, in soft
+## patches; null where none grow (or the biome has no wild grass).
+static func build_meadow_chunk(t: CourseTerrain, key: Vector2i, density: float) -> MultiMesh:
+	var wild := Biome.wild_grass(Biome.of(t))
+	if wild <= 0.0 or not meadow_available():
+		return null
+	var rng := RandomNumberGenerator.new()
+	rng.seed = hash(key) + 4211
+	_buf = PackedFloat32Array()
+	_card_bufs = {}
+	var origin := Vector2(key) * MEADOW_CHUNK
+	for i in roundi(MEADOW_CHUNK * MEADOW_CHUNK * density * wild):
+		var x := origin.x + rng.randf() * MEADOW_CHUNK
+		var z := origin.y + rng.randf() * MEADOW_CHUNK
+		var yaw := rng.randf() * TAU
+		var keep := rng.randf()
+		var which := rng.randf()
+		var phase := rng.randf()
+		var h := rng.randf_range(MEADOW_HEIGHT.x, MEADOW_HEIGHT.y)
+		if t.surface_at(x, z) != Surface.Type.DEEP_ROUGH:
+			continue
+		var patch := _value_noise(Vector2(x + 911.0, z - 377.0) / MEADOW_SCALE)
+		if keep > smoothstep(0.2, 0.65, patch):
+			continue
+		_put(t, x, z, yaw, h * rng.randf_range(0.9, 1.2), h, t.ground_color_at(x, z), meadow_pick(which, phase), -0.02, MEADOW_UID)
+	var rows: Array = _card_bufs.get(MEADOW_UID, [])
+	_card_bufs = {}
+	if rows.is_empty():
+		return null
+	var mesh := _card_mesh(MEADOW_UID, {})
+	return _multimesh(PackedFloat32Array(rows), mesh) if mesh != null else null
 
 
 func chunk_count() -> int:
@@ -338,10 +436,30 @@ static func card_for(cards: Dictionary, role: String, x: float, z: float) -> Dic
 	return list[absi(hash([stand, role])) % list.size()]
 
 
+## True when the drawn meadow atlas is there.
+static func meadow_available() -> bool:
+	return FreeAssets.tree_texture("meadow.png") != null
+
+
+## The instance pick (shaders/fescue.gdshader: the atlas cell is
+## floor(fract(pick * 4) * 4), the sway phase the pick itself) for a
+## meadow plant: the cell chosen by `which` (0 to 1) by MEADOW_CELLS'
+## shares, and `phase` (0 to 1) spreading the sway.
+static func meadow_pick(which: float, phase: float) -> float:
+	var cell := 0
+	var acc := 0.0
+	for k in MEADOW_CELLS.size():
+		acc += MEADOW_CELLS[k]
+		cell = k
+		if which < acc:
+			break
+	return (floorf(phase * 4.0) + (cell + 0.5) / 4.0) / 4.0
+
+
 static func _card_mesh(uid: String, cards: Dictionary) -> ArrayMesh:
 	if _card_meshes.has(uid):
 		return _card_meshes[uid]
-	var tex: Texture2D = null
+	var tex: Texture2D = FreeAssets.tree_texture("meadow.png") if uid == MEADOW_UID else null
 	for list: Array in cards.values():
 		for c: Dictionary in list:
 			if c["uid"] == uid:
@@ -353,7 +471,11 @@ static func _card_mesh(uid: String, cards: Dictionary) -> ArrayMesh:
 	if tex != null:
 		var mat := material().duplicate() as ShaderMaterial
 		mat.set_shader_parameter("atlas", tex)
-		mat.set_shader_parameter("ground_pull", CARD_GROUND_PULL)
+		mat.set_shader_parameter("ground_pull", MEADOW_GROUND_PULL if uid == MEADOW_UID else CARD_GROUND_PULL)
+		if uid == MEADOW_UID:
+			# Knee-high at most: they can come in nearer than the fescue.
+			mat.set_shader_parameter("near_start", MEADOW_NEAR.x)
+			mat.set_shader_parameter("near_end", MEADOW_NEAR.y)
 		_card_mats[uid] = mat
 		mesh = tuft_mesh()
 		mesh.surface_set_material(0, mat)
