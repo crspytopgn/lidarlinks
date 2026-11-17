@@ -213,6 +213,7 @@ func _ask_for_files(problem := "") -> void:
 	_status.text = text if problem.is_empty() else problem + "\n\n" + text
 	_set_buttons([
 		["Play now", _play_placeholders],
+		["Play a round", _setup_placeholders],
 		["Load disc images...", _pick.bind(false)],
 		["Load a game folder...", _pick.bind(true)],
 		["Tour event", _open_tour_event],
@@ -341,7 +342,18 @@ Saved round: %s." % SavedRound.describe()
 		_open_tournament()
 
 
+## Play now: straight onto Kettle Hollow's first tee with your last
+## round's settings. It opened the full setup form (a dozen choices) before,
+## which 2K25's one-press quick play made feel slow (2K25 quality pass).
+## "Play a round" keeps the form.
 func _play_placeholders() -> void:
+	_course_paths = PackedStringArray()
+	_open_setup()
+	if _setup.visible:
+		_setup._on_start()
+
+
+func _setup_placeholders() -> void:
 	_course_paths = PackedStringArray()
 	_open_setup()
 
@@ -741,10 +753,12 @@ func _on_progress(file_name: String, done: int, total: int) -> void:
 # --- Desktop ----------------------------------------------------------------
 
 func _show_desktop_choice() -> void:
-	_status.text = ("Kettle Hollow is ready. For the real Links 2003 courses, choose the folder of your "
-		+ "installed game (or one extracted with tools/cdimage/cdimage.py install).")
+	# No developer paths on the front page (2K25 quality pass): the folder
+	# picker and docs/ explain the extracted-disc route.
+	_status.text = "Kettle Hollow is ready. Add your Links 2003 game folder to play the original courses too."
 	_set_buttons([
 		["Play now", _play_placeholders],
+		["Play a round", _setup_placeholders],
 		["Choose game folder...", _choose_folder],
 		["Tour event", _open_tour_event],
 		["Career", _open_career],

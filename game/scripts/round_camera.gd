@@ -24,7 +24,12 @@ const BROADCAST_AIM_BACK := 3.3
 const BROADCAST_AIM_UP := 1.15
 const AIM_LOOK_AHEAD := 70.0
 const AIM_LOOK_UP := 2.0
-const AIM_MAX_LIFT := 4.0  ## the aim camera climbs (and steps back) at most this far to see over a rise
+## The aim camera climbs (and steps back) at most this far to see over a
+## rise. It was 4 m: on a blind tee shot (Kettle Hollow's 1st) the very first
+## view of a round became a high, toy-like look down on the golfer, where TV
+## golf and 2K25 keep the camera low behind him and leave a blind shot blind
+## (the HUD says BLIND and the aim marker shows the target).
+const AIM_MAX_LIFT := 1.5
 const AIM_FRAME_FOV := 50.0  ## framing over a rise assumes at most this vertical field of view
 const PUTT_LOOK_AHEAD := 6.0
 ## Shots that carry further than this get the landing view.
@@ -148,7 +153,8 @@ func _aim_over_rise(ball: Vector3, dir: Vector3, start: Vector3, target: Vector3
 	var half := deg_to_rad(minf(fov, AIM_FRAME_FOV)) * 0.5
 	var feet := ball + Vector3.UP * 0.1
 	var pos := start
-	for lift in range(1, int(AIM_MAX_LIFT) + 1):
+	for step in range(1, 4):
+		var lift := AIM_MAX_LIFT * step / 3.0
 		pos = _above_ground(start - dir * lift + Vector3.UP * lift)
 		if sight_clear(terrain, pos, target):
 			break

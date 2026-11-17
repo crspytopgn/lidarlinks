@@ -849,6 +849,21 @@ static func _path_material(bridge: bool) -> StandardMaterial3D:
 		# as a bright line across the view from the tee).
 		_path_mat.albedo_color = Color(0.36, 0.35, 0.33)
 		_path_mat.roughness = 0.95
+		# With the free textures: the scanned concrete's wear, cracks and
+		# stains, darkened to old tarmac, and its relief. A flat colour read
+		# as a grey slab laid on the grass (2K25 quality pass).
+		var tex := FreeAssets.ground("path", "albedo") if FreeAssets.has_grounds() else null
+		if tex != null:
+			_path_mat.albedo_texture = tex
+			_path_mat.albedo_color = Color(0.5, 0.49, 0.47)
+			var nrm := FreeAssets.ground("path", "normal")
+			if nrm != null:
+				_path_mat.normal_enabled = true
+				_path_mat.normal_texture = nrm
+				_path_mat.normal_scale = 0.8
+			# The UVs run 0 to 1 across the path and one unit per path width
+			# along it: a 2:1 texture spans the width once.
+			_path_mat.uv1_scale = Vector3(1.0, 0.5, 1.0)
 	return _path_mat
 
 

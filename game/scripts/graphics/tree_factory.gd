@@ -894,8 +894,11 @@ static func _scan_material(mat: ShaderMaterial, tree: String, part: String, bake
 		mat.set_shader_parameter("has_texture", true)
 		# The scans' trunks run up into their crowns: shade them from where
 		# the leaves begin.
-		mat.set_shader_parameter("shade_from", 3.0)
-		mat.set_shader_parameter("shade_to", 8.0)
+		# From the ground up, as under any broad crown the trunk stands in
+		# the canopy's shade: lit fully below 3 m, the trunks read as pale
+		# posts under the trees (2K25 quality pass).
+		mat.set_shader_parameter("shade_from", 0.5)
+		mat.set_shader_parameter("shade_to", 5.0)
 		return
 	mat.shader = LEAF_SHADER
 	var maps := ScannedTree.leaf_textures(tree)

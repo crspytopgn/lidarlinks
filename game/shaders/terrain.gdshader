@@ -347,6 +347,13 @@ void fragment() {
 	// Close-cut turf is one even sward: a green has none of the fairway's
 	// wide light and dark patches (they read as blotches), a tee few.
 	vec3 col = base * (1.0 + patches * variation * 2.0 * (1.0 - 0.75 * cut));
+	// Uncut ground also wanders in hue over a hundred metres or so: lusher,
+	// bluer green in the damp hollows and drainage lines, drier and
+	// yellower on the tops, as on any real course from the tee. One even
+	// tone over the big hills read as a smooth painted plain (2K25 quality
+	// pass, 2026-11-17).
+	float lush = smoothstep(0.3, 0.7, fbm(p * 0.011 + vec2(17.3, 4.1)));
+	col *= mix(vec3(1.0), mix(vec3(1.07, 1.01, 0.84), vec3(0.88, 1.03, 0.95), lush), (1.0 - cut) * 0.85);
 	// Golden native drifts on the deep rough (FescueField.native_at, same
 	// noise): the ground under the drift's long grass goes straw too, so a
 	// drift reads as one field of seed heads rather than tufts on lawn.

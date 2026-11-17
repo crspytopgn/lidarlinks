@@ -21,7 +21,9 @@ float mow_sheen(vec2 along, vec3 from_eye) {
 	float facing = dot(v.xz / level, normalize(along));
 	// A faint pattern stays even across the stripes (cut height and colour
 	// differ a little), and the sheen grows as the view lowers.
-	return (0.2 + 1.4 * facing) * mix(0.6, 1.0, level);
+	// (1.4 before the 2K25 quality pass: the bands read as painted-on
+	// stripes, far bolder than TV golf or 2K25 show them.)
+	return (0.2 + 0.9 * facing) * mix(0.6, 1.0, level);
 }
 
 // The mowing line where stripes are bands of a coordinate `u` interpolated

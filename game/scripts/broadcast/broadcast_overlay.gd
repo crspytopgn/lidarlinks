@@ -441,7 +441,9 @@ func _draw_shot_card() -> void:
 	var a := _slide(_card_t, SHOT_CARD_S)
 	var w := 250.0
 	var x := lerpf(size.x + 10.0, size.x - w - 16.0, a)
-	var y := 176.0 if not pip.visible else 404.0
+	# Below the wind dial and the spin ball (HUD _place_spin, 174 to 286),
+	# which it covered at 176 while the next shot was being aimed.
+	var y := 300.0 if not pip.visible else 404.0
 	var rows := [
 		["CARRY", _card.get("carry", "")],
 		["ROLL", _card.get("roll", "")],

@@ -29,6 +29,14 @@ const PHOTO_CURVE := 0.6
 ## next to 2K25's strong sun and dark shade. 1 = none.
 const COMPAT_FINISH_CONTRAST := 1.2
 
+## The broadcast finish in Photoreal (post_process.gdshader punch_*):
+## green shift, black point, gamma and saturation, per renderer. Fitted by
+## eye and by measurement against PGA Tour 2K25 screenshots (quality pass,
+## 2026-11-17). Compatibility already gets COMPAT_FINISH_CONTRAST, so it
+## takes a lighter black point.
+const PUNCH_FORWARD := [0.035, 0.06, 1.06, 1.08]
+const PUNCH_COMPAT := [0.035, 0.03, 1.05, 1.06]
+
 ## Heat shimmer at 1080p, in pixels, for a 50 degree lens and a high sun
 ## (Photoreal only). A long lens magnifies it (RoundCamera.lens_factor).
 const SHIMMER_PIXELS := 2.2
@@ -81,6 +89,11 @@ func apply(s: GraphicsSettings) -> void:
 	var g: Array = PHOTO_NEUTRAL if photo and s.grade == GraphicsSettings.Grade.NEUTRAL else GRADES[s.grade]
 	_mat.set_shader_parameter("curve", PHOTO_CURVE if photo else 0.0)
 	_mat.set_shader_parameter("finish_contrast", COMPAT_FINISH_CONTRAST if photo and not GraphicsSettings.is_forward_plus() else 1.0)
+	var punch: Array = (PUNCH_FORWARD if GraphicsSettings.is_forward_plus() else PUNCH_COMPAT) if photo else [0.0, 0.0, 1.0, 1.0]
+	_mat.set_shader_parameter("punch_green", punch[0])
+	_mat.set_shader_parameter("punch_black", punch[1])
+	_mat.set_shader_parameter("punch_gamma", punch[2])
+	_mat.set_shader_parameter("punch_sat", punch[3])
 	_mat.set_shader_parameter("sharpen", GraphicsSettings.SHARPEN_LEVELS[s.sharpen])
 	_mat.set_shader_parameter("exposure", g[0])
 	_mat.set_shader_parameter("contrast", g[1])
