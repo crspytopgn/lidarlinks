@@ -52,6 +52,8 @@ tools/audio/.cache/
 
 # The learned colour grade lookups must import losslessly (docs/colour-grade.md)
 !game/grade/*.png.import
+# The committed scanned-tree textures (tools/trees/scan_tree.py --atlas) need mipmaps
+!game/assets/trees/textures/*.import
 
 # Textures Godot extracts from the Sketchfab glbs on import
 game/assets/props/sketchfab/*.jpg

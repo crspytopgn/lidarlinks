@@ -48,10 +48,27 @@ SPECS = {
     "jacaranda": dict(asset="jacaranda_tree", node=0, leaves={2: 0}, bark={1: 0, 0: 1}, cards=12000),
     "island_01": dict(asset="island_tree_01", node=0, leaves={1: 0}, bark={0: 0, 2: 1}, cards=6000),
     "island_02": dict(asset="island_tree_02", node=0, leaves={1: 0}, bark={0: 0, 2: 1}, cards=5000),
+    # PlantCatalog's "Realistic HD Northern red oak (35/138)" on Sketchfab
+    # (CC BY 4.0, a 17.7 m old summer oak; download the glTF into
+    # SRC/red_oak/). Every one of its 100,000 leaves is a quad of its own:
+    # far too many cards, so the leaves are gathered into clusters
+    # (leaf_clusters) drawn from an atlas of real leaf sprays rendered from
+    # the model itself (--atlas). Its 600,000 twig triangles mostly go.
+    "red_oak": dict(asset="red_oak", file="scene.gltf", node="all", leaves={1: 0, 2: 0, 3: 0},
+                    bark={0: 0, 4: 1, 5: 1}, cards=7000, clusters=0.55,
+                    # Its roots reach 1.7 m under its own ground (y 0).
+                    ground=0.0,
+                    # Written with the atlas: {file: (material, map, size)}.
+                    textures={"trunk.jpg": (0, "baseColorTexture", (256, 2048)),
+                              "trunk_normal.jpg": (0, "normalTexture", (256, 2048)),
+                              "bark.jpg": (4, "baseColorTexture", (128, 1024))}),
 }
 # Bark pieces (separate tubes) shorter than this (m) are dropped first.
-MIN_PIECE = {"jacaranda": 3.0}
-BARK_TRIANGLES = {"fir_a": 6000, "fir_b": 4500, "fir_c": 4500, "jacaranda": 7000, "island_01": 4000, "island_02": 3000}
+MIN_PIECE = {"jacaranda": 3.0, "red_oak": 0.7}
+# Leaf-spray sprites in a cluster atlas: columns x rows.
+ATLAS = (4, 2)
+ATLAS_SPRITE = 512
+BARK_TRIANGLES = {"red_oak": 14000, "fir_a": 6000, "fir_b": 4500, "fir_c": 4500, "jacaranda": 7000, "island_01": 4000, "island_02": 3000}
 
 CT = {5120: np.int8, 5121: np.uint8, 5122: np.int16, 5123: np.uint16, 5125: np.uint32, 5126: np.float32}
 NC = {"SCALAR": 1, "VEC2": 2, "VEC3": 3, "VEC4": 4}
@@ -161,6 +178,216 @@ def needle_cards(pos, tri, rng, cell=0.36):
     return {key: np.concatenate([o[key] for o in out]) for key in out[0]}
 
 
+def primitives(g, spec):
+    """(primitive, 4x4 world matrix) of the spec's node, or of every node
+    with a mesh when its node is "all" (the Sketchfab exports nest their
+    meshes under Z-up converting nodes)."""
+    if spec["node"] != "all":
+        node = g["nodes"][spec["node"]]
+        for prim in g["meshes"][node["mesh"]]["primitives"]:
+            yield prim, np.eye(4)
+        return
+
+    def local(n):
+        if "matrix" in n:
+            return np.array(n["matrix"], np.float64).reshape(4, 4).T
+        m = np.eye(4)
+        if "rotation" in n:
+            x, y, z, w = n["rotation"]
+            m[:3, :3] = [[1 - 2 * (y * y + z * z), 2 * (x * y - z * w), 2 * (x * z + y * w)],
+                         [2 * (x * y + z * w), 1 - 2 * (x * x + z * z), 2 * (y * z - x * w)],
+                         [2 * (x * z - y * w), 2 * (y * z + x * w), 1 - 2 * (x * x + y * y)]]
+        if "scale" in n:
+            m[:3, :3] = m[:3, :3] * np.array(n["scale"])
+        if "translation" in n:
+            m[:3, 3] = n["translation"]
+        return m
+
+    stack = [(i, np.eye(4)) for i in g["scenes"][g.get("scene", 0)]["nodes"]]
+    while stack:
+        i, parent = stack.pop()
+        n = g["nodes"][i]
+        world = parent @ local(n)
+        if "mesh" in n:
+            for prim in g["meshes"][n["mesh"]]["primitives"]:
+                yield prim, world
+        stack.extend((c, world) for c in n.get("children", []))
+
+
+def _leaf_quads(leaves):
+    """Every leaf quad of a clustered scan: centres (n, 3) and, per leaf,
+    its corner points, corner uvs and material."""
+    pts, uvs, mats = [], [], []
+    for pos, uv, tri, mat in leaves:
+        # Each leaf is its own 4-vertex quad (two triangles).
+        n = len(pos) // 4
+        pts.append(pos[: n * 4].reshape(n, 4, 3))
+        uvs.append(uv[: n * 4].reshape(n, 4, 2))
+        mats.append(np.full(n, mat))
+    pts, uvs, mats = np.concatenate(pts), np.concatenate(uvs), np.concatenate(mats)
+    return pts.mean(axis=1), pts, uvs, mats
+
+
+def _cells(centres, cell):
+    key = np.floor(centres / cell).astype(np.int64)
+    _, inv, counts = np.unique(key, axis=0, return_inverse=True, return_counts=True)
+    inv = inv.reshape(-1)
+    n = counts.size
+    mean = np.zeros((n, 3))
+    np.add.at(mean, inv, centres)
+    mean /= counts[:, None]
+    d = centres - mean[inv]
+    cov = np.zeros((n, 3, 3))
+    np.add.at(cov, inv, d[:, :, None] * d[:, None, :])
+    cov /= counts[:, None, None]
+    w, vec = np.linalg.eigh(cov)  # ascending
+    return inv, counts, mean, vec
+
+
+def leaf_clusters(leaves, cell, rng):
+    """One card per `cell` of leaves, laid in the plane the leaves there
+    fill (PCA), carrying one of the atlas's leaf sprays (cluster_atlas). A
+    spray sprite spans a square of 1.5 cells, so neighbouring cards overlap
+    as the leaves themselves do."""
+    centres, _, _, _ = _leaf_quads(leaves)
+    inv, counts, mean, vec = _cells(centres, cell)
+    ok = counts >= 3
+    half = cell * 0.75 * np.clip(np.sqrt(counts / 20.0), 0.7, 1.15)
+    major, minor = vec[:, :, 2], vec[:, :, 1]
+    k = int(ok.sum())
+    cols, rows = ATLAS
+    pick = rng.integers(0, cols * rows, k)
+    lo = np.stack([(pick % cols) / cols, (pick // cols) / rows], axis=1)
+    hi = lo + np.array([1.0 / cols, 1.0 / rows])
+    # Mirrored at random (the uv box flipped) for more variety.
+    flip = rng.random(k) < 0.5
+    lo[flip, 0], hi[flip, 0] = hi[flip, 0].copy(), lo[flip, 0].copy()
+    return dict(centre=mean[ok], u=minor[ok] * half[ok, None], v=major[ok] * half[ok, None], lo=lo, hi=hi,
+                slot=np.zeros(k, np.uint8))
+
+
+def cluster_atlas(name, leaves, cell, g, src_dir, out_dir):
+    """Renders the leaf-spray atlas from the scan's own leaves: for a few
+    well-filled cells, every leaf there projected onto the cell's plane and
+    painted with its own photo texture, back to front. Writes
+    scan_<name>_leaves.jpg (colour) and scan_<name>_leaves_alpha.png."""
+    from PIL import Image
+
+    centres, pts, uvs, mats = _leaf_quads(leaves)
+    inv, counts, mean, vec = _cells(centres, cell)
+    tex = {}
+    for m in set(mats.tolist()):
+        img = g["images"][g["textures"][g["materials"][m]["pbrMetallicRoughness"]["baseColorTexture"]["index"]]["source"]]
+        tex[m] = Image.open(os.path.join(src_dir, img["uri"])).convert("RGBA")
+    cols, rows = ATLAS
+    size = ATLAS_SPRITE
+    atlas = Image.new("RGBA", (cols * size, rows * size), (0, 0, 0, 0))
+    # Well-filled cells, spread through the crown.
+    order = np.argsort(counts)
+    cand = order[int(len(order) * 0.86): int(len(order) * 0.99)]
+    picks = cand[np.linspace(0, len(cand) - 1, cols * rows).astype(int)]
+    span = cell * 0.75 * 2.0
+    for s, c in enumerate(picks):
+        major, minor, normal = vec[c, :, 2], vec[c, :, 1], vec[c, :, 0]
+        sel = np.nonzero(inv == c)[0]
+        # Back to front along the cell's normal.
+        sel = sel[np.argsort((centres[sel] - mean[c]) @ normal)]
+        sprite = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+        for i in sel:
+            # The leaf drawn whole and face on (projected, most leaves
+            # would be edge-on slivers), where it hangs and turned the way
+            # its stem points across the plane.
+            img = tex[mats[i]]
+            w, h = img.size
+            uv = uvs[i]
+            su = np.sign(uv[:, 0] - uv[:, 0].mean())
+            sv = np.sign(uv[:, 1] - uv[:, 1].mean())
+            if np.any(su == 0) or np.any(sv == 0):
+                continue
+            u3 = (pts[i][su > 0].mean(axis=0) - pts[i][su < 0].mean(axis=0)) * 0.5
+            v3 = (pts[i][sv > 0].mean(axis=0) - pts[i][sv < 0].mean(axis=0)) * 0.5
+            v2 = np.array([v3 @ minor, v3 @ major])
+            lv = np.linalg.norm(v3)
+            if np.linalg.norm(v2) < 1e-6 or lv < 1e-6:
+                continue
+            leaf_n = np.cross(u3, v3)
+            facing = abs(leaf_n @ normal) / max(np.linalg.norm(leaf_n), 1e-9)
+            v2 = v2 / np.linalg.norm(v2) * lv * (0.75 + 0.25 * np.linalg.norm(v2) / lv)
+            side = 1.0 if (np.array([u3 @ minor, u3 @ major]) @ np.array([v2[1], -v2[0]])) >= 0 else -1.0
+            u2 = np.array([v2[1], -v2[0]]) / lv * np.linalg.norm(u3) * side * (0.6 + 0.4 * facing)
+            c2 = np.array([(centres[i] - mean[c]) @ minor, (centres[i] - mean[c]) @ major])
+            dst = ((c2 + su[:, None] * u2 + sv[:, None] * v2) / span + 0.5) * size
+            u0 = uv[:, 0].min()
+            src = np.stack([(uv[:, 0] - np.floor(u0)) * w, uv[:, 1] * h], axis=1)
+            # Affine from sprite pixels to texture pixels (corners 0, 1, 2).
+            a = np.concatenate([dst[:3], np.ones((3, 1))], axis=1)
+            if abs(np.linalg.det(a)) < 1e-6:
+                continue
+            coef = np.linalg.solve(a, src[:3])  # 3 x 2
+            leaf = img.transform((size, size), Image.AFFINE, tuple(coef[:, 0]) + tuple(coef[:, 1]),
+                                 resample=Image.BILINEAR)
+            # Only inside the leaf's own quad.
+            mask = Image.new("L", (size, size), 0)
+            from PIL import ImageDraw
+            order_q = np.argsort(np.arctan2(dst[:, 1] - dst[:, 1].mean(), dst[:, 0] - dst[:, 0].mean()))
+            ImageDraw.Draw(mask).polygon([tuple(dst[j]) for j in order_q], fill=255)
+            r, gg, b, al = leaf.split()
+            from PIL import ImageChops
+            # Leaves further back a little darker: the spray's own depth.
+            depth = float((centres[i] - mean[c]) @ normal) / cell + 0.5
+            shade = int(255 * np.clip(0.72 + 0.28 * depth, 0.6, 1.0))
+            leaf = Image.merge("RGBA", [ch.point(lambda x, k=shade: x * k // 255) for ch in (r, gg, b)] + [ImageChops.multiply(al, mask)])
+            sprite.alpha_composite(leaf)
+        atlas.paste(sprite, ((s % cols) * size, (s // cols) * size))
+    os.makedirs(out_dir, exist_ok=True)
+    rgb = Image.new("RGB", atlas.size, (60, 72, 40))
+    # Colour bled out under the transparent parts, so mipmaps don't darken
+    # the leaf edges.
+    bleed = atlas.resize((atlas.width // 16, atlas.height // 16), Image.BOX).resize(atlas.size, Image.BILINEAR)
+    rgb.paste(bleed.convert("RGB"))
+    rgb.paste(atlas.convert("RGB"), mask=atlas.split()[3])
+    rgb.resize((rgb.width // 2, rgb.height // 2), Image.LANCZOS).save(os.path.join(out_dir, f"scan_{name}_leaves.jpg"), quality=88)
+    atlas.split()[3].resize((rgb.width // 2, rgb.height // 2), Image.LANCZOS).save(os.path.join(out_dir, f"scan_{name}_leaves_alpha.png"), optimize=True)
+    write_import(os.path.join(out_dir, f"scan_{name}_leaves.jpg"))
+    write_import(os.path.join(out_dir, f"scan_{name}_leaves_alpha.png"))
+    print(f"{name}: leaf atlas from {len(picks)} cells")
+
+
+# Godot import settings for the committed textures (as
+# tools/fetch_free_assets.py writes for the fetched ones): mipmapped, the
+# opacity lossless. Committed with them.
+TEXTURE_IMPORT = """[remap]
+
+importer="texture"
+type="CompressedTexture2D"
+
+[params]
+
+compress/mode={mode}
+compress/lossy_quality=0.85
+mipmaps/generate=true
+"""
+
+
+def write_import(path):
+    with open(path + ".import", "w") as f:
+        f.write(TEXTURE_IMPORT.format(mode=0 if path.endswith(".png") else 1))
+
+
+def scan_textures(name, spec, g, src_dir, out_dir):
+    """The bark textures of a scan whose textures are committed (not
+    fetched by tools/fetch_free_assets.py), as scan_<name>_<file>."""
+    from PIL import Image
+
+    for file, (mat, key, size) in spec.get("textures", {}).items():
+        m = g["materials"][mat]
+        ref = m.get(key) or m["pbrMetallicRoughness"][key]
+        img = g["images"][g["textures"][ref["index"]]["source"]]
+        im = Image.open(os.path.join(src_dir, img["uri"])).convert("RGB").resize(size, Image.LANCZOS)
+        im.save(os.path.join(out_dir, f"scan_{name}_{file}"), quality=85)
+        write_import(os.path.join(out_dir, f"scan_{name}_{file}"))
+
+
 def thin(cards, count, rng):
     n = len(cards["centre"])
     keep = min(1.0, count / n)
@@ -210,27 +437,35 @@ def cylinder_uv(pos):
     return np.stack([ang * 2.0, pos[:, 1] / 1.5], axis=1).astype(np.float32)
 
 
-def build(name, src, out_dir):
+def build(name, src, out_dir, atlas_dir=None):
     spec = SPECS[name]
-    g, acc = load_gltf(os.path.join(src, spec["asset"], spec["asset"] + ".gltf"))
-    node = g["nodes"][spec["node"]]
+    g, acc = load_gltf(os.path.join(src, spec["asset"], spec.get("file", spec["asset"] + ".gltf")))
     rng = np.random.default_rng(7)
     bark_parts, cards = [], []
-    for prim in g["meshes"][node["mesh"]]["primitives"]:
+    leaves = []
+    for prim, xf in primitives(g, spec):
         mat = prim["material"]
         at = prim["attributes"]
-        pos = acc(at["POSITION"]).astype(np.float32)
+        pos = acc(at["POSITION"]).astype(np.float64) @ xf[:3, :3].T + xf[:3, 3]
+        pos = pos.astype(np.float32)
         tri = acc(prim["indices"]).reshape(-1, 3).astype(np.int64)
-        if mat in spec["leaves"] and spec.get("needles"):
+        if mat in spec["leaves"] and spec.get("clusters"):
+            leaves.append((pos, acc(at["TEXCOORD_0"]).astype(np.float64), tri, mat))
+        elif mat in spec["leaves"] and spec.get("needles"):
             cards.append(needle_cards(pos.astype(np.float64), tri, rng))
         elif mat in spec["leaves"]:
             uv = acc(at["TEXCOORD_0"]).astype(np.float64)
             cards.append(leaf_cards(pos.astype(np.float64), uv, tri, spec["leaves"][mat], rng))
         elif mat in spec["bark"]:
-            nrm = acc(at["NORMAL"]).astype(np.float32)
+            nrm = (acc(at["NORMAL"]).astype(np.float64) @ xf[:3, :3].T).astype(np.float32)
             uv = acc(at["TEXCOORD_0"]).astype(np.float32) if "TEXCOORD_0" in at else cylinder_uv(pos)
             tex = np.full(len(pos), spec["bark"][mat], np.int8)
             bark_parts.append((pos, nrm, uv, tex, tri))
+    if leaves:
+        cards.append(leaf_clusters(leaves, spec["clusters"], rng))
+        if atlas_dir:
+            cluster_atlas(name, leaves, spec["clusters"], g, os.path.join(src, spec["asset"]), atlas_dir)
+            scan_textures(name, spec, g, os.path.join(src, spec["asset"]), atlas_dir)
     cards = {k: np.concatenate([c[k] for c in cards]) for k in cards[0]}
     cards = thin(cards, spec["cards"], rng)
     # Bark: merged, then decimated.
@@ -240,15 +475,20 @@ def build(name, src, out_dir):
         pos.append(p); nrm.append(n_); uv.append(u); tex.append(t); tri.append(f + off)
         off += len(p)
     pos, nrm, uv, tex, tri = (np.concatenate(x) for x in (pos, nrm, uv, tex, tri))
+    if "ground" in spec:
+        # Roots modelled under the scan's ground would stand in the air.
+        tri = tri[pos[tri][:, :, 1].max(axis=1) > spec["ground"] - 0.25]
     full_bark = (pos, nrm, uv, tex, tri)
     pos, nrm, uv, tex, tri = decimate(pos, nrm, uv, tex, tri, BARK_TRIANGLES[name], MIN_PIECE.get(name, 0.4))
     # The lite bark (the tree between TreeFactory's lite and impostor
     # distances, unshadowed): a tenth of the triangles, only the limbs.
     tall = float(np.ptp(full_bark[0][:, 1]))
     lite = decimate(*full_bark, BARK_TRIANGLES[name] // 10, min(MIN_PIECE.get(name, 0.4) * 6.0, 6.0, tall * 0.3))
-    # The tree stands at the origin: its trunk foot (lowest bark) centred.
-    foot = pos[pos[:, 1] < pos[:, 1].min() + 0.3]
-    shift = np.array([foot[:, 0].mean(), pos[:, 1].min(), foot[:, 2].mean()], np.float32)
+    # The tree stands at the origin: its trunk foot (lowest bark, or where
+    # the trunk meets the scan's own ground) centred.
+    ground = spec.get("ground", float(pos[:, 1].min()))
+    foot = pos[np.abs(pos[:, 1] - ground - 0.15) < 0.15]
+    shift = np.array([foot[:, 0].mean(), ground, foot[:, 2].mean()], np.float32)
     pos = pos - shift
     cards["centre"] = cards["centre"] - shift
     cc = cards["centre"]
@@ -297,9 +537,11 @@ def main():
     ap.add_argument("names", nargs="*", default=list(SPECS))
     ap.add_argument("--src", required=True, help="folder of Poly Haven glTF downloads, one subfolder per asset")
     ap.add_argument("--out", default=os.path.join(here, "..", "..", "game", "assets", "trees"))
+    ap.add_argument("--atlas", help="for the clustered trees, also write their leaf atlas and textures here "
+                    "(game/assets/trees/textures)")
     args = ap.parse_args()
     for name in args.names:
-        build(name, args.src, args.out)
+        build(name, args.src, args.out, args.atlas)
 
 
 if __name__ == "__main__":

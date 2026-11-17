@@ -680,6 +680,11 @@ def place_trees(holes, shapes, X, Z, height, area):
         j, i = cell(x, z)
         occupied[j, i] = len(taken)
 
+    # Trees grow in groves, not as evenly spaced singles: a grove's trees
+    # stand with their crowns touching (4 m apart), the big old ones in the
+    # middle and younger, smaller ones round its edge, mostly of one kind;
+    # here and there a lone specimen tree stands out in the open. Spaced
+    # singles of one size on open grass read as a nursery, not a course.
     tries = 0
     while len(objects) < 3600 and tries < 300000:
         tries += 1
@@ -689,44 +694,74 @@ def place_trees(holes, shapes, X, Z, height, area):
         d = dens[j, i]
         if blocked[j, i] or d < 0.12 or rng.random() > (d - 0.05) * 1.5:
             continue
-        if not clear(x, z, 5.5 if d > 0.3 else 8.0):
+        if not clear(x, z, 8.0):
             continue
         kind = "tree_pine" if pine_zone[j, i] else "tree_broadleaf"
-        objects.append((kind, x, z, rng.uniform(0, 360), rng.uniform(0.85, 1.35)))
-        take(x, z)
+        if rng.random() < 0.18:
+            # A specimen tree: big and alone.
+            objects.append((kind, x, z, rng.uniform(0, 360), rng.uniform(1.2, 1.55)))
+            take(x, z)
+            continue
+        size = int(min(14, 3 + d * 12 * rng.uniform(0.5, 1.3)))
+        reach = 5.0 + 1.6 * math.sqrt(size)
+        placed = 0
+        for _ in range(size * 6):
+            if placed >= size or len(objects) >= 3600:
+                break
+            a = rng.uniform(0, math.tau)
+            r = reach * math.sqrt(rng.random()) if placed else 0.0
+            px, pz = x + math.cos(a) * r, z + math.sin(a) * r
+            if not (x0 + 4 < px < x0 + w - 4 and z0 + 4 < pz < z0 + hh - 4):
+                continue
+            pj, pi = cell(px, pz)
+            if blocked[pj, pi] or not clear(px, pz, 4.0):
+                continue
+            k = kind if rng.random() > 0.12 else ("tree_broadleaf" if kind == "tree_pine" else "tree_pine")
+            edge_t = r / reach
+            sc = rng.uniform(1.05, 1.45) * (1.0 - 0.45 * edge_t) + rng.uniform(-0.08, 0.08)
+            objects.append((k, px, pz, rng.uniform(0, 360), round(max(0.5, sc), 3)))
+            take(px, pz)
+            placed += 1
     # Deep woods away from the holes: batched and drawn as impostors from a
     # distance by the game (beyond DesignedCourse.HOLE_REACH of a hole), so
     # they can stand close, as real woodland does, for little cost.
     tries = 0
     deep = 0
-    while deep < 4200 and tries < 400000:
+    while deep < 6500 and tries < 600000:
         tries += 1
         x = rng.uniform(x0 + 4, x0 + w - 4)
         z = rng.uniform(z0 + 4, z0 + hh - 4)
         j, i = cell(x, z)
-        if near[j, i] < 110.0 or blocked[j, i] or dens[j, i] < 0.18:
+        # From 75 m off a hole's line: the round draws per hole only the
+        # trees within DesignedCourse.HOLE_REACH (60 m), so woods filling
+        # the ground between holes cost little, and open farmland between
+        # them read as a course laid out in fields.
+        if near[j, i] < 75.0 or blocked[j, i] or dens[j, i] < 0.08:
             continue
-        if not clear(x, z, 5.0):
+        if not clear(x, z, 4.5):
             continue
         kind = "tree_pine" if pine_zone[j, i] else "tree_broadleaf"
-        objects.append((kind, x, z, rng.uniform(0, 360), rng.uniform(0.9, 1.4)))
+        objects.append((kind, x, z, rng.uniform(0, 360), rng.uniform(0.7, 1.45)))
         take(x, z)
         deep += 1
     trees = len(taken)
     tries = 0
     count = 0
-    while count < 500 and tries < 40000:
+    # Undergrowth: shrubs in drifts along the woods' edges (where the light
+    # gets in), so a wood meets the rough as a soft skirt of scrub rather
+    # than bare trunks standing on grass.
+    while count < 1400 and tries < 120000:
         tries += 1
         tx, tz = taken[rng.integers(trees)]
         a = rng.uniform(0, math.tau)
-        r = rng.uniform(5.0, 10.0)
+        r = rng.uniform(3.0, 8.0)
         x, z = tx + math.cos(a) * r, tz + math.sin(a) * r
         if not (x0 + 2 < x < x0 + w - 2 and z0 + 2 < z < z0 + hh - 2):
             continue
         j, i = cell(x, z)
-        if blocked[j, i] or not clear(x, z, 4.0):
+        if blocked[j, i] or not clear(x, z, 2.5):
             continue
-        objects.append(("bush", x, z, rng.uniform(0, 360), rng.uniform(0.6, 1.1)))
+        objects.append(("bush", x, z, rng.uniform(0, 360), rng.uniform(0.5, 1.3)))
         take(x, z)
         count += 1
     return objects

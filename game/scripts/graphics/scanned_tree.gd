@@ -13,6 +13,10 @@ extends RefCounted
 ## 1 branches).
 
 const DIR := "res://assets/trees/"
+## Textures of the scans that aren't on Poly Haven (PlantCatalog's red
+## oak, CC BY: credits in that folder), committed with the trees and
+## written by scan_tree.py --atlas.
+const TEXTURE_DIR := "res://assets/trees/textures/"
 ## Leaf cards in a lite mesh (see build).
 const LITE_CARDS := 1000.0
 
@@ -21,7 +25,7 @@ const ASSETS := {
 	"fir_a": "fir_tree_01",
 	"fir_b": "fir_tree_01",
 	"fir_c": "fir_tree_01",
-	"jacaranda": "jacaranda_tree",
+	"red_oak": "red_oak",
 	"island_01": "island_tree_01",
 	"island_02": "island_tree_02",
 }
@@ -42,7 +46,14 @@ static func available(name: String) -> bool:
 
 ## A texture of the tree's asset: "trunk.jpg", "trunk_normal.jpg", "bark.jpg".
 static func texture(name: String, file: String) -> Texture2D:
-	return FreeAssets.tree_texture("scan_%s_%s" % [ASSETS[name], file])
+	return _texture("scan_%s_%s" % [ASSETS[name], file])
+
+
+## A committed texture (TEXTURE_DIR) or else a fetched one (FreeAssets).
+static func _texture(file: String) -> Texture2D:
+	if ResourceLoader.exists(TEXTURE_DIR + file):
+		return load(TEXTURE_DIR + file) as Texture2D
+	return FreeAssets.tree_texture(file)
 
 
 ## [colour, opacity] of the leaves (the firs use the shared twig maps).
@@ -55,8 +66,8 @@ static func leaf_textures(name: String) -> Array[Texture2D]:
 		col = FreeAssets.tree_texture("twig_albedo.jpg")
 		alpha = FreeAssets.tree_texture("twig_opacity.png")
 	else:
-		col = FreeAssets.tree_texture("scan_%s_leaves.jpg" % asset)
-		alpha = FreeAssets.tree_texture("scan_%s_leaves_alpha.png" % asset)
+		col = _texture("scan_%s_leaves.jpg" % asset)
+		alpha = _texture("scan_%s_leaves_alpha.png" % asset)
 	if col != null and alpha != null:
 		out = [col, alpha]
 	return out
