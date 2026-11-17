@@ -324,6 +324,19 @@ def make_meadow(out_dir):
         f.write(TEXTURE_IMPORT.format(mode=1, limit=512, mipmaps="true"))
 
 
+def make_sward(out_dir):
+    """The sward atlas (tools/grass/sward_atlas.py): dense short rough for
+    right by the camera. Drawn, so it needs only Pillow."""
+    out = os.path.join(out_dir, "sward.png")
+    if not os.path.exists(out):
+        sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "grass"))
+        import sward_atlas  # noqa: E402 - needs Pillow, so only imported here
+        print("  sward: drawing the grass atlas")
+        sward_atlas.build(out)
+    with open(out + ".import", "w") as f:
+        f.write(TEXTURE_IMPORT.format(mode=1, limit=512, mipmaps="true"))
+
+
 def fetch_twigs(out_dir):
     """The photoscanned fir sprigs for the conifers' needle cards."""
     paths = {name: os.path.join(out_dir, name) for name in TWIG_MAPS}
@@ -399,6 +412,10 @@ def main():
         make_meadow(out_dir=args.out)
     except Exception as e:  # noqa: BLE001 - Pillow missing: no meadow plants
         print(f"WARNING: no meadow atlas: {e}")
+    try:
+        make_sward(out_dir=args.out)
+    except Exception as e:  # noqa: BLE001 - Pillow missing: 3D blades only
+        print(f"WARNING: no sward atlas: {e}")
     try:
         credits.append(fetch_twigs(args.out))
     except Exception as e:  # noqa: BLE001

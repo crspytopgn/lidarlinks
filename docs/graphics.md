@@ -115,6 +115,12 @@ Ultra and use a notch lighter soft-shadow filter.
   broad-leaved rosettes and yarrow drawn by `tools/grass/meadow_atlas.py`,
   grown in soft patches on the deep rough within `MEADOW_RADIUS` of the
   camera, nearer in than the fescue.
+- **Sward** (`FescueField`, all renderers): a carpet of drawn grass cards
+  (`tools/grass/sward_atlas.py`, a couple of hundred fine blades a card)
+  on the deep rough within `SWARD_RADIUS` of the camera, under
+  GrassField's 3D blades, so the near long grass is a mat rather than
+  sparse spikes on the ground texture. Not on the plain rough, where short
+  crossed cards read as stars from the player's height.
 - **Upscaler**: FSR 1 or FSR 2 on Forward+. **Dynamic resolution**
   (`DynamicResolution`) lowers the 3D resolution, down to half, when frames
   miss 30 or 60 fps and raises it again when there's room.

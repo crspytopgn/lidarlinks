@@ -89,6 +89,22 @@ const MEADOW_CELLS := [0.25, 0.17, 0.36, 0.22]
 ## Where meadow plants start to grow in from the camera (m): nearer than the
 ## fescue (shaders/fescue.gdshader near_start, near_end).
 const MEADOW_NEAR := Vector2(5.0, 14.0)
+## Sward: a low carpet of drawn grass cards (tools/grass/sward_atlas.py,
+## a couple of hundred fine blades a card) on the deep rough right
+## round the camera, under GrassField's 3D blades. Those are a dozen a tuft,
+## so on their own the near rough read as sparse dark spikes on the ground
+## texture; real rough close up is a mat where you see grass, not soil. Per
+## Grass level: cards per square metre and the ring's radius (m), in
+## SWARD_CHUNK m chunks; card heights (m), and how much a card takes the
+## ground's colour. Not on the plain rough: from the player's height, short
+## crossed cards there read as green stars on the ground.
+const SWARD_UID := "_sward"
+const SWARD_DENSITY := [0.0, 5.0, 8.0, 11.0]
+const SWARD_RADIUS := [0.0, 12.0, 18.0, 24.0]
+const SWARD_CHUNK := 8.0
+const SWARD_HEIGHT := Vector2(0.18, 0.34)
+const SWARD_GROUND_PULL := 0.9
+const SWARD_COMPAT_BRIGHTNESS := 0.95
 ## The ground normal's x and z, times this and the tuft's height, are the
 ## card's up axis x and z (see build_chunk and shaders/fescue.gdshader).
 const NORMAL_LEAN := 0.01
@@ -102,6 +118,7 @@ var level := 0
 var _chunks := {}  ## Vector2i -> Node3D of MultiMeshInstance3Ds (null for an empty chunk)
 var _crowns := {}  ## Vector2i chunk -> PackedVector3Array of crowns centred in it
 var _meadow := {}  ## Vector2i meadow chunk -> MultiMeshInstance3D (null for an empty chunk)
+var _sward := {}  ## Vector2i sward chunk -> MultiMeshInstance3D (null for an empty chunk)
 
 static var _mesh: ArrayMesh
 static var _mat: ShaderMaterial
@@ -130,10 +147,11 @@ func setup(t: CourseTerrain, grass_level: int) -> void:
 		if node != null:
 			node.queue_free()
 	_chunks.clear()
-	for node in _meadow.values():
-		if node != null:
-			node.queue_free()
-	_meadow.clear()
+	for ring: Dictionary in [_meadow, _sward]:
+		for node in ring.values():
+			if node != null:
+				node.queue_free()
+		ring.clear()
 	_crowns = crowns_by_chunk(t.obstacles if t != null else null)
 	dress = dress_cards(MegascansCards.cards())
 	var r: float = RADIUS[level]
@@ -181,42 +199,87 @@ func update_around(eye: Vector3) -> void:
 	_update_meadow(here)
 
 
-## The meadow plants' chunks round the camera at `here` (x, z): dropped
-## past MEADOW_RADIUS, built nearest first, a couple a frame.
+## The meadow plants' and the sward's chunks round the camera at `here`
+## (x, z): each ring's chunks dropped past its radius, built nearest
+## first, a couple a frame.
 func _update_meadow(here: Vector2) -> void:
-	var r: float = MEADOW_RADIUS[level]
-	if r <= 0.0 or not meadow_available():
+	if meadow_available():
+		_update_ring(_meadow, MEADOW_UID, MEADOW_CHUNK, MEADOW_RADIUS[level], here,
+			func(key: Vector2i) -> MultiMesh: return build_meadow_chunk(terrain, key, MEADOW_DENSITY[level]))
+	if sward_available():
+		_update_ring(_sward, SWARD_UID, SWARD_CHUNK, SWARD_RADIUS[level], here,
+			func(key: Vector2i) -> MultiMesh: return build_sward_chunk(terrain, key, SWARD_DENSITY[level]))
+
+
+func _update_ring(ring: Dictionary, uid: String, size: float, r: float, here: Vector2, build: Callable) -> void:
+	if r <= 0.0:
 		return
-	for key: Vector2i in _meadow.keys():
-		if ((Vector2(key) + Vector2(0.5, 0.5)) * MEADOW_CHUNK).distance_to(here) > r + MEADOW_CHUNK:
-			var node: Node = _meadow[key]
+	for key: Vector2i in ring.keys():
+		if ((Vector2(key) + Vector2(0.5, 0.5)) * size).distance_to(here) > r + size:
+			var node: Node = ring[key]
 			if node != null:
 				node.queue_free()
-			_meadow.erase(key)
+			ring.erase(key)
 	var wanted: Array[Vector2i] = []
-	var reach := ceili(r / MEADOW_CHUNK)
-	var at := Vector2i(floori(here.x / MEADOW_CHUNK), floori(here.y / MEADOW_CHUNK))
+	var reach := ceili(r / size)
+	var at := Vector2i(floori(here.x / size), floori(here.y / size))
 	for dz in range(-reach, reach + 1):
 		for dx in range(-reach, reach + 1):
 			var key := at + Vector2i(dx, dz)
-			if not _meadow.has(key) and ((Vector2(key) + Vector2(0.5, 0.5)) * MEADOW_CHUNK).distance_to(here) < r + MEADOW_CHUNK * 0.71:
+			if not ring.has(key) and ((Vector2(key) + Vector2(0.5, 0.5)) * size).distance_to(here) < r + size * 0.71:
 				wanted.append(key)
 	wanted.sort_custom(func(a: Vector2i, b: Vector2i) -> bool:
-		return (Vector2(a) * MEADOW_CHUNK).distance_squared_to(here) < (Vector2(b) * MEADOW_CHUNK).distance_squared_to(here))
-	if _card_mats.has(MEADOW_UID):
-		# The plants sink away towards the edge of their ring.
-		var m: ShaderMaterial = _card_mats[MEADOW_UID]
-		m.set_shader_parameter("far_start", r * 0.7)
+		return (Vector2(a) * size).distance_squared_to(here) < (Vector2(b) * size).distance_squared_to(here))
+	if _card_mats.has(uid):
+		# The cards sink away towards the edge of their ring.
+		var m: ShaderMaterial = _card_mats[uid]
+		m.set_shader_parameter("far_start", r * 0.6)
 		m.set_shader_parameter("far_end", r)
 	for i in mini(BUILDS_PER_FRAME, wanted.size()):
-		var mm := build_meadow_chunk(terrain, wanted[i], MEADOW_DENSITY[level])
+		var mm: MultiMesh = build.call(wanted[i])
 		var inst: MultiMeshInstance3D = null
 		if mm != null:
 			inst = MultiMeshInstance3D.new()
 			inst.multimesh = mm
 			inst.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 			add_child(inst)
-		_meadow[wanted[i]] = inst
+		ring[wanted[i]] = inst
+
+
+## Sward cards for one SWARD_CHUNK square: an even carpet on the deep
+## rough; null where none grow.
+static func build_sward_chunk(t: CourseTerrain, key: Vector2i, density: float) -> MultiMesh:
+	var biome := Biome.of(t)
+	if Biome.wild_grass(biome) <= 0.0 or not sward_available():
+		return null
+	var rng := RandomNumberGenerator.new()
+	rng.seed = hash(key) + 9137
+	_card_bufs = {}
+	var side := maxi(1, roundi(SWARD_CHUNK * sqrt(density)))
+	var cell := SWARD_CHUNK / side
+	var origin := Vector2(key) * SWARD_CHUNK
+	for i in side * side:
+		var x := origin.x + (i % side + rng.randf()) * cell
+		var z := origin.y + (floorf(float(i) / side) + rng.randf()) * cell
+		var yaw := rng.randf() * TAU
+		var size := rng.randf()
+		var pick := rng.randf()
+		var surface := t.surface_at(x, z)
+		if surface != Surface.Type.DEEP_ROUGH or Biome.is_bare(biome, surface):
+			continue
+		var h := lerpf(SWARD_HEIGHT.x, SWARD_HEIGHT.y, size)
+		var c := t.ground_color_at(x, z)
+		var native := native_at(x, z, t.normal_at(x, z).y)
+		if native > 0.0:
+			c = c.lerp(native_colour(pick), native * GrassField.NATIVE_BLEND)
+		# Wider than tall: a patch of sward, not a tuft.
+		_put(t, x, z, yaw, h * rng.randf_range(2.0, 2.8), h, c, pick, -0.01, SWARD_UID)
+	var rows: Array = _card_bufs.get(SWARD_UID, [])
+	_card_bufs = {}
+	if rows.is_empty():
+		return null
+	var mesh := _card_mesh(SWARD_UID, {})
+	return _multimesh(PackedFloat32Array(rows), mesh) if mesh != null else null
 
 
 ## Meadow plants for one MEADOW_CHUNK square: on the deep rough, in soft
@@ -436,6 +499,11 @@ static func card_for(cards: Dictionary, role: String, x: float, z: float) -> Dic
 	return list[absi(hash([stand, role])) % list.size()]
 
 
+## True when the drawn sward atlas is there.
+static func sward_available() -> bool:
+	return FreeAssets.tree_texture("sward.png") != null
+
+
 ## True when the drawn meadow atlas is there.
 static func meadow_available() -> bool:
 	return FreeAssets.tree_texture("meadow.png") != null
@@ -459,7 +527,11 @@ static func meadow_pick(which: float, phase: float) -> float:
 static func _card_mesh(uid: String, cards: Dictionary) -> ArrayMesh:
 	if _card_meshes.has(uid):
 		return _card_meshes[uid]
-	var tex: Texture2D = FreeAssets.tree_texture("meadow.png") if uid == MEADOW_UID else null
+	var tex: Texture2D = null
+	if uid == MEADOW_UID:
+		tex = FreeAssets.tree_texture("meadow.png")
+	elif uid == SWARD_UID:
+		tex = FreeAssets.tree_texture("sward.png")
 	for list: Array in cards.values():
 		for c: Dictionary in list:
 			if c["uid"] == uid:
@@ -471,7 +543,13 @@ static func _card_mesh(uid: String, cards: Dictionary) -> ArrayMesh:
 	if tex != null:
 		var mat := material().duplicate() as ShaderMaterial
 		mat.set_shader_parameter("atlas", tex)
-		mat.set_shader_parameter("ground_pull", MEADOW_GROUND_PULL if uid == MEADOW_UID else CARD_GROUND_PULL)
+		mat.set_shader_parameter("ground_pull", MEADOW_GROUND_PULL if uid == MEADOW_UID else SWARD_GROUND_PULL if uid == SWARD_UID else CARD_GROUND_PULL)
+		if uid == SWARD_UID:
+			# Right up to the camera: it is the near rough.
+			mat.set_shader_parameter("near_start", 0.0)
+			mat.set_shader_parameter("near_end", 0.01)
+			# Not the fescue's lift: a carpet this dense read acid lime.
+			mat.set_shader_parameter("brightness", 1.0 if GraphicsSettings.is_forward_plus() else SWARD_COMPAT_BRIGHTNESS)
 		if uid == MEADOW_UID:
 			# Knee-high at most: they can come in nearer than the fescue.
 			mat.set_shader_parameter("near_start", MEADOW_NEAR.x)
