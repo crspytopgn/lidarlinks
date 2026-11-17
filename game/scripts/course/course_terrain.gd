@@ -25,6 +25,13 @@ func height_at(_x: float, _z: float) -> float:
 	return 0.0
 
 
+## A height no lower than height_at() anywhere in the rect from (x0, z0) to
+## (x1, z1), or INF when the terrain can't tell. The Links flight uses it to
+## skip its search for the ground on a step that is clearly above it.
+func max_height_in(_x0: float, _z0: float, _x1: float, _z1: float) -> float:
+	return INF
+
+
 ## A Surface.Type value.
 func surface_at(_x: float, _z: float) -> int:
 	return Surface.Type.FAIRWAY

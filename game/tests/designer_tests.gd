@@ -16,6 +16,7 @@ func run_all() -> Array[String]:
 	_test_save_round_trip()
 	_test_sculpt()
 	_test_ground_lods()
+	_test_height_bounds()
 	_test_edit_surfaces()
 	_test_trees()
 	_test_loader()
@@ -351,6 +352,54 @@ func _test_sculpt() -> void:
 	check(absf(t.height_at(10, 10) - 0.5) < 0.01, "flatten levels the centre")
 	c.sculpt("raise", Vector2(0, 0), 5.0, 1000.0)
 	check(c.base_height(0, 0) <= DesignedCourse.MAX_HEIGHT, "heights stay in range")
+
+
+## max_height_in() never under-reads the ground (tee pads and fresh sculpting
+## included), and the Links flight's ground search answers the same with it
+## as without it.
+func _test_height_bounds() -> void:
+	# Its own copy: the sculpting below must not reach the shared built-in course.
+	var t := DesignedTerrain.new(DesignedCourse.load_file(PlaceholderCourseLoader.FILE))
+	var c := t.course
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 7
+	var a := c.area
+	var tee := c.holes[0].tees[0]
+	t.update_heights(c.sculpt("raise", tee + Vector2(30, 0), 20.0, 3.0))
+	var low := 0
+	for k in 400:
+		# Half round the first tee (its pad and the fresh hill), half anywhere.
+		var p := tee + Vector2(rng.randf_range(-40, 40), rng.randf_range(-40, 40)) if k % 2 == 0 \
+				else a.position + Vector2(rng.randf() * a.size.x, rng.randf() * a.size.y)
+		var q := p + Vector2(rng.randf_range(-3, 3), rng.randf_range(-3, 3))
+		var top := t.max_height_in(minf(p.x, q.x), minf(p.y, q.y), maxf(p.x, q.x), maxf(p.y, q.y))
+		for s in 9:
+			var x := p.lerp(q, s / 8.0)
+			if t.height_at(x.x, x.y) > top:
+				low += 1
+	check(low == 0, "the height bound is never under the ground (%d under)" % low)
+	var g := LinksGround.TerrainGround.new(t)
+	var plain := _PlainGround.new(t)
+	var differ := 0
+	var skipped := 0
+	for k in 400:
+		var p := tee + Vector2(rng.randf_range(-60, 60), rng.randf_range(-60, 60))
+		var base := t.height_at(p.x, p.y)
+		var from := LinksGround._to_game(Vector3(p.x, base + rng.randf_range(-0.5, 4.0), p.y))
+		var to := from + Vector3(rng.randf_range(-3, 3), rng.randf_range(-3, 3), rng.randf_range(-3, 1))
+		var with := LinksGround._ground_crossing(g, from, to)
+		if with != LinksGround._ground_crossing(plain, from, to):
+			differ += 1
+		if minf(from.z, to.z) > g.max_height(from.x, from.y, to.x, to.y) + LinksGround.CLEAR_MARGIN:
+			skipped += 1
+	check(differ == 0, "the ground search answers the same with the bound (%d differ)" % differ)
+	check(skipped > 50, "and the bound lets it skip steps clear of the ground (%d)" % skipped)
+
+
+## TerrainGround without its height bound.
+class _PlainGround extends LinksGround.TerrainGround:
+	func max_height(_x0: float, _y0: float, _x1: float, _y1: float) -> float:
+		return INF
 
 
 ## Far ground gets coarser detail levels (DesignedTerrain.refine_lods):

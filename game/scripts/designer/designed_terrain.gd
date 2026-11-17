@@ -100,6 +100,10 @@ var course: DesignedCourse
 
 var _h := PackedFloat32Array()  ## heights after the shapes, on the course grid
 var _g := PackedFloat32Array()  ## the same before the tee pads
+## The highest height in each HEIGHT_TILE square of grid cells (a tee pad's
+## own triangles included), for max_height_in(). Kept up to date by _derive().
+var _tile_max := PackedFloat32Array()
+var _tiles_w := 0
 var _pads := TeePads.new()
 var _img: Image  ## surface raster (R8 holds the Surface.Type)
 var _surf := PackedByteArray()
@@ -124,6 +128,8 @@ var _hole_tees: Array[PackedVector2Array] = []  ## and its tees
 const APPROACH_REACH := 45.0
 var _owner := PackedByteArray()
 var _path_surface: LinksGround.Params
+var _path_bounds: Array[Rect2] = []
+var _all_paths := Rect2()
 var _owner_cols := 0
 
 
@@ -192,9 +198,24 @@ func update_surfaces(area: Rect2) -> void:
 	_invalidate(cells)
 
 
-## After placing or removing trees and other objects.
+## Each path's bounds, and all of them together, for links_surface_at():
+## worked out once rather than on every step of a rolling ball.
+func _cache_path_bounds() -> void:
+	_path_bounds.clear()
+	_all_paths = Rect2()
+	var first := true
+	for path in course.paths:
+		var r := path.bounds()
+		_path_bounds.append(r)
+		if not path.bridge:
+			_all_paths = r if first else _all_paths.merge(r)
+			first = false
+
+
+## After placing or removing trees and other objects (and paths).
 func update_objects() -> void:
 	_tree_rows = PackedFloat32Array()
+	_cache_path_bounds()
 	obstacles = ObstacleField.new()
 	for o in course.objects:
 		DesignerObjects.add_obstacles(obstacles, o, height_at(o.position.x, o.position.z), course.object_info)
@@ -222,6 +243,70 @@ func height_at(x: float, z: float) -> float:
 			return y
 	var k := j * course.cols + i
 	return lerpf(lerpf(_h[k], _h[k + 1], fu), lerpf(_h[k + course.cols], _h[k + course.cols + 1], fu), fv)
+
+
+## Grid cells to a side of a max_height_in() tile.
+const HEIGHT_TILE := 8
+
+
+func max_height_in(x0: float, z0: float, x1: float, z1: float) -> float:
+	if _tiles_w == 0:
+		return INF
+	var a := course.area
+	var e := 0.001
+	var top := course.cols - 1.001
+	var side := course.rows - 1.001
+	var i0 := int(clampf((x0 - e - a.position.x) / DesignedCourse.CELL, 0.0, top)) / HEIGHT_TILE
+	var i1 := int(clampf((x1 + e - a.position.x) / DesignedCourse.CELL, 0.0, top)) / HEIGHT_TILE
+	var j0 := int(clampf((z0 - e - a.position.y) / DesignedCourse.CELL, 0.0, side)) / HEIGHT_TILE
+	var j1 := int(clampf((z1 + e - a.position.y) / DesignedCourse.CELL, 0.0, side)) / HEIGHT_TILE
+	var m := -INF
+	for tj in range(j0, j1 + 1):
+		for ti in range(i0, i1 + 1):
+			m = maxf(m, _tile_max[tj * _tiles_w + ti])
+	return m
+
+
+## Recomputes the max_height_in() tiles that hold a grid point in `cells`.
+func _update_height_tiles(cells: Rect2i) -> void:
+	var cols := course.cols
+	var rows := course.rows
+	var tw := ceili((cols - 1) / float(HEIGHT_TILE))
+	var th := ceili((rows - 1) / float(HEIGHT_TILE))
+	var t0 := Vector2i(maxi(cells.position.x - 1, 0) / HEIGHT_TILE, maxi(cells.position.y - 1, 0) / HEIGHT_TILE)
+	var t1 := Vector2i(mini(cells.end.x - 1, cols - 2) / HEIGHT_TILE, mini(cells.end.y - 1, rows - 2) / HEIGHT_TILE)
+	if _tile_max.size() != tw * th or _tiles_w != tw:
+		_tile_max.resize(tw * th)
+		_tiles_w = tw
+		t0 = Vector2i.ZERO
+		t1 = Vector2i(tw - 1, th - 1)
+	# A pad plays its own triangles: no higher than its highest corner (and a
+	# hair more, for the triangle test's tolerance at the edges).
+	var pad_top := PackedFloat32Array()
+	if not _pads.cell_pad.is_empty():
+		for pad in _pads.pads:
+			var top := -INF
+			for y in pad.heights:
+				top = maxf(top, y)
+			pad_top.append(top + 0.01)
+	for tj in range(t0.y, t1.y + 1):
+		for ti in range(t0.x, t1.x + 1):
+			var ci0 := ti * HEIGHT_TILE
+			var cj0 := tj * HEIGHT_TILE
+			var ci1 := mini(ci0 + HEIGHT_TILE, cols - 1)
+			var cj1 := mini(cj0 + HEIGHT_TILE, rows - 1)
+			var m := -INF
+			for j in range(cj0, cj1 + 1):
+				var row := j * cols
+				for i in range(ci0, ci1 + 1):
+					m = maxf(m, _h[row + i])
+			if not pad_top.is_empty():
+				for j in range(cj0, cj1):
+					for i in range(ci0, ci1):
+						var k := _pads.cell_pad[j * (cols - 1) + i]
+						if k > 0:
+							m = maxf(m, pad_top[k - 1])
+			_tile_max[tj * tw + ti] = m
 
 
 func surface_at(x: float, z: float) -> int:
@@ -259,8 +344,13 @@ func free_drop_at(x: float, z: float) -> bool:
 ## path class), not as on the fairway its raster code plays as otherwise.
 func links_surface_at(x: float, z: float) -> LinksGround.Params:
 	var p := Vector2(x, z)
-	for path in course.paths:
-		if not path.bridge and path.bounds().has_point(p) and path.distance_to(p) <= path.width * 0.5:
+	if _path_bounds.size() != course.paths.size():
+		_cache_path_bounds()
+	if not _all_paths.has_point(p):
+		return null
+	for k in course.paths.size():
+		var path := course.paths[k]
+		if not path.bridge and _path_bounds[k].has_point(p) and path.distance_to(p) <= path.width * 0.5:
 			if _path_surface == null:
 				_path_surface = LinksGround.surface_for_class(LinksGround.PATH)
 			return _path_surface
@@ -1126,6 +1216,7 @@ func _derive(cells: Rect2i) -> void:
 			_shape_heights(s, cells, TeePads.REACH, func(h: float, d: float) -> float:
 				return TeePads.profile(h, d, level))
 	_pads.rebuild(course, _g, _h, cells)
+	_update_height_tiles(cells)
 
 
 ## Applies `f(height, signed distance)` to the samples inside the shape (or
