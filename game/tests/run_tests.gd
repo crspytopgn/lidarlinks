@@ -1698,6 +1698,43 @@ func _test_caddie() -> void:
 	advice.finish()
 	print("  green: " + advice.text)
 	_check(advice.text.begins_with("20 feet"), "putt read gives the length (%s)" % advice.text)
+	# Quick pace's putting meter, sized to the putt: the caddie's number is
+	# the meter's, not the full putt meter's (it sent putts well short).
+	advice.start(model, clubs, hole, Vector3.ZERO, Surface.Type.GREEN, Vector3.ZERO, 0, 0.25)
+	advice.finish()
+	_check_near(advice.meter, clampf(advice.power / 0.25, 0.0, 1.0), 1e-6, "putt read on the putting meter's scale")
+	_check(advice.text.contains("about %d%% power" % roundi(advice.meter * 100.0)), "putt read says the meter's power (%s)" % advice.text)
+	# A chip: the caddie's number is the chip meter's, whose power comes from
+	# its own table (to about 35% of a full swing at the top), and swinging it
+	# gets there.
+	_check(ComputerGolfer.is_chip(Vector3.ZERO, Vector3(0, 0, 25.0), Surface.Type.FAIRWAY), "a chip inside 100 ft")
+	_check(not ComputerGolfer.is_chip(Vector3.ZERO, Vector3(0, 0, 25.0), Surface.Type.SAND), "no chip from sand")
+	_check(not ComputerGolfer.is_chip(Vector3.ZERO, Vector3(0, 0, 35.0), Surface.Type.FAIRWAY), "no chip past 100 ft")
+	_check_near(CaddieAdvice.meter_value(CaddieAdvice.chip_top(), false, true), 1.0, 1e-6, "chip meter top")
+	_check_near(CaddieAdvice.meter_value(0.07, false, true), 0.0, 1e-6, "chip meter snap line")
+	_check_near(CaddieAdvice.meter_value(0.62, false, false), 0.62, 1e-6, "full swing meter reads its power")
+	hole.terrain = FlatTerrain.new(Surface.Type.FAIRWAY)
+	for to_pin: float in [12.0, 22.0, 29.0]:
+		hole.pin = Vector3(0.0, 0.0, to_pin)
+		advice.start(model, clubs, hole, Vector3.ZERO, Surface.Type.FAIRWAY, Vector3.ZERO, 0)
+		advice.finish()
+		print("  chip %d m: %s" % [roundi(to_pin), advice.text])
+		var chip_club := clubs[advice.club_index]
+		_check(not chip_club.is_putter and advice.power <= CaddieAdvice.chip_top() + 1e-6, "a chip within the chip meter (%.3f)" % advice.power)
+		var said := roundi(advice.meter * 100.0)
+		_check(advice.text.contains("about %d%% power" % said) or (said >= 97 and advice.text.contains("full swing")), "chip read says the chip meter's power (%s)" % advice.text)
+		# The player's chip at that meter reading (main.gd's _on_swing_finished)
+		# goes as far as the plan's power (no cup in the way to stop either),
+		# and gets there.
+		var at := LinksPowerStroke.SNAP + roundi(advice.meter * (LinksPowerStroke.LAST - LinksPowerStroke.SNAP))
+		var chip_power := LinksPowerStroke.chip_power(at) / 100.0
+		var away := Vector3(0.0, 0.0, 1000.0)
+		var played := model.simulate(model.launch(chip_club, chip_power, 0.0, advice.aim_deg, Surface.Type.FAIRWAY, Vector3.ZERO), hole.terrain, away, Vector3.ZERO).rest
+		var planned := model.simulate(model.launch(chip_club, advice.power, 0.0, advice.aim_deg, Surface.Type.FAIRWAY, Vector3.ZERO), hole.terrain, away, Vector3.ZERO).rest
+		# Within half a step of the meter (about 0.65 chip units at the top).
+		_check(played.distance_to(planned) < 0.6, "the chip meter reading the caddie calls plays its plan (%.2f m apart)" % played.distance_to(planned))
+		# Never short (the planner may pace one to hold the cup: no cup here).
+		_check(played.z > 0.9 * to_pin and played.z < 1.4 * to_pin, "the chip the caddie calls gets to the pin (%.1f m for %d m)" % [played.z, roundi(to_pin)])
 
 	_check(GolfBag.shared_mesh().get_surface_count() == 5, "bag is one mesh of five materials")
 	_check(GolfBag.simple_mesh().get_surface_count() == 3, "simple bag is one mesh of three materials")

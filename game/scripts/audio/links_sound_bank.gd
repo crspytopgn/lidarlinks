@@ -17,6 +17,18 @@ const EVENTS := {
 	&"splash": "Splash",
 }
 
+## The bank's bounce for each surface the ball first lands on (its events
+## 16 to 26, docs/formats/ssf.md); anything else bounces as the fairway.
+const LAND_EVENTS := {
+	Surface.Type.TEE: "Ball Bounce Fairway",
+	Surface.Type.FAIRWAY: "Ball Bounce Fairway",
+	Surface.Type.FRINGE: "Ball Bounce Green",
+	Surface.Type.GREEN: "Ball Bounce Green",
+	Surface.Type.ROUGH: "Ball Bounce Rough",
+	Surface.Type.DEEP_ROUGH: "Ball Bounce Rough",
+	Surface.Type.SAND: "Ball Bounce Sand",
+}
+
 ## Crowd events: each picks a random one of these tournament-bank events
 ## (docs/formats/ssf.md#the-tournament-bank) that has waves.
 const CROWD_EVENTS := {
@@ -110,7 +122,14 @@ func play(event: StringName) -> void:
 
 func _play_event(event: StringName, gain_db: float, detail: Dictionary) -> void:
 	var stream: AudioStreamWAV = null
-	if EVENTS.has(event):
+	if event == &"land":
+		var surface := int(detail.get("surface", Surface.Type.FAIRWAY))
+		if surface == Surface.Type.WATER:
+			return  # the splash plays when the shot ends
+		stream = _bank.random_stream(LAND_EVENTS.get(surface, EVENTS[event]))
+		if stream == null:
+			stream = _bank.random_stream(EVENTS[event])
+	elif EVENTS.has(event):
 		stream = _bank.random_stream(EVENTS[event])
 	elif CROWD_EVENTS.has(event):
 		stream = _crowd_stream(event)

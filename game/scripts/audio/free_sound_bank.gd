@@ -20,6 +20,7 @@ const STEMS := {
 	&"lie_rough": "lie_rough",
 	&"lie_sand": "lie_sand",
 	&"land_grass": "land_grass",
+	&"land_fairway": "land_fairway",
 	&"land_green": "land_green",
 	&"land_sand": "land_sand",
 	&"cup": "cup",
@@ -36,7 +37,7 @@ const STEMS := {
 
 ## Level of each sound in the mix (dB), and how far its pitch may wander.
 const VOLUME_DB := {
-	&"putt": -4.0, &"lie_rough": -5.0, &"lie_sand": -3.0, &"land_grass": -10.0, &"land_green": -12.0,
+	&"putt": -4.0, &"lie_rough": -5.0, &"lie_sand": -3.0, &"land_grass": -10.0, &"land_fairway": -10.0, &"land_green": -12.0,
 	&"land_sand": -9.0, &"cup": -3.0, &"splash": -4.0, &"applause": -6.0, &"crowd_tee": -9.0,
 	&"crowd_cheer": -5.0, &"crowd_roar": -3.0, &"crowd_groan": -6.0, &"crowd_ooh": -6.0,
 	&"footsteps": -14.0, &"club": -12.0,
@@ -117,6 +118,9 @@ func _play_event(event: StringName, detail: Dictionary) -> void:
 					_play(&"land_green", gain)
 				Surface.Type.WATER:
 					pass  # the splash plays when the shot ends
+				Surface.Type.FAIRWAY, Surface.Type.TEE:
+					# Short, firm turf: a thump, without the long grass's swish.
+					_play(&"land_fairway", gain)
 				_:
 					_play(&"land_grass", gain)
 		_:

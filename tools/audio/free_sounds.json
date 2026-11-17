@@ -881,6 +881,38 @@
    "peak": -3
   },
   {
+   "name": "land_fairway_1",
+   "layers": [
+    {
+     "src": 711443,
+     "t": 0.4,
+     "af": "lowpass=f=3500,lowpass=f=3500",
+     "onset": 0.0506
+    }
+   ],
+   "peak": -3
+  },
+  {
+   "name": "land_fairway_2",
+   "layers": [
+    {
+     "src": 711443,
+     "t": 0.45,
+     "rate": 1.08,
+     "af": "lowpass=f=3000",
+     "onset": 0.0506
+    },
+    {
+     "src": 711443,
+     "t": 0.3,
+     "db": -16,
+     "af": "highpass=f=2500",
+     "onset": 0.0506
+    }
+   ],
+   "peak": -3
+  },
+  {
    "name": "land_green_1",
    "layers": [
     {
