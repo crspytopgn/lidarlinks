@@ -168,10 +168,10 @@ void fragment() {
 		c = max(g * (l / max(dot(g, W), 1e-4)), vec3(0.0));
 	}
 	if (punch_green > 0.0) {
-		// Yellow-greens (hue near 68 degrees) turn greener; greys, skin,
+		// Yellow-greens (hue near 72 degrees, 47 to 97) turn greener; greys, skin,
 		// sand and sky are left alone.
 		vec3 h = rgb2hsv(c);
-		float w = clamp(1.0 - abs(h.x - 0.19) / 0.09, 0.0, 1.0) * clamp(h.y * 3.0, 0.0, 1.0);
+		float w = clamp(1.0 - abs(h.x - 0.2) / 0.07, 0.0, 1.0) * clamp(h.y * 3.0, 0.0, 1.0);
 		h.x += punch_green * w;
 		c = hsv2rgb(h);
 	}

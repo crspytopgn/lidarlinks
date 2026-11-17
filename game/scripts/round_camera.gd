@@ -110,13 +110,15 @@ func aim(ball: Vector3, dir: Vector3, putting: bool, reach := 0.0) -> void:
 		if reach > AIM_LOOK_AHEAD and terrain != null:
 			var far := ball + dir * reach
 			var target := Vector3(far.x, _ground(far) + 1.0, far.z)
-			if not sight_clear(terrain, pos, target):
-				_aim_over_rise(ball, dir, pos, target)
+			if not sight_clear(terrain, pos, target) and _aim_over_rise(ball, dir, pos, target):
 				return
 		# A long lens from further back puts the ball near the bottom edge:
-		# pitch down until it sits 85% of the way there.
+		# pitch down until it sits 60% of the way there (85% put the ball
+		# and the golfer's shoes under the swing meter and caddie line, and
+		# half the frame was sky; 2K25's tee view holds the horizon about
+		# 40% down).
 		var half := deg_to_rad(minf(fov, AIM_FRAME_FOV)) * 0.5
-		var pitch := _angle_below(pos, ball) - half * 0.85
+		var pitch := _angle_below(pos, ball) - half * 0.6
 		if pitch > _angle_below(pos, _look):
 			var flat := Vector3(dir.x, 0.0, dir.z).normalized()
 			_look = pos + flat * AIM_LOOK_AHEAD + Vector3.DOWN * tan(pitch) * AIM_LOOK_AHEAD
@@ -149,15 +151,22 @@ func look_from(pos: Vector3, look: Vector3) -> void:
 ## and ball at address, so the camera only climbs a little (and steps back
 ## as it climbs) and pitches down to keep them in the lower part of the
 ## frame; over a big rise the target can still be out of sight.
-func _aim_over_rise(ball: Vector3, dir: Vector3, start: Vector3, target: Vector3) -> void:
+func _aim_over_rise(ball: Vector3, dir: Vector3, start: Vector3, target: Vector3) -> bool:
 	var half := deg_to_rad(minf(fov, AIM_FRAME_FOV)) * 0.5
 	var feet := ball + Vector3.UP * 0.1
 	var pos := start
+	var cleared := false
 	for step in range(1, 4):
 		var lift := AIM_MAX_LIFT * step / 3.0
 		pos = _above_ground(start - dir * lift + Vector3.UP * lift)
 		if sight_clear(terrain, pos, target):
+			cleared = true
 			break
+	# Truly blind (a crest no small lift sees over): keep the usual low
+	# view down the line, as TV and 2K25 do, rather than climbing and
+	# pitching down on to the golfer.
+	if not cleared:
+		return false
 	var down_to_target := _angle_below(pos, target)
 	var down_to_feet := _angle_below(pos, feet)
 	# The feet sit 60% of the way to the bottom edge; the target shows above
@@ -169,10 +178,11 @@ func _aim_over_rise(ball: Vector3, dir: Vector3, start: Vector3, target: Vector3
 	_aim_pos = pos
 	_aim_look = _look
 	if flying():
-		return
+		return true
 	position = pos
 	_look_now = _look
 	look_at(_look_now)
+	return true
 
 
 ## Angle below the horizontal from `from` to `to`, radians.
