@@ -54,7 +54,7 @@ static func draw(normals: Dictionary, seed_value := 0) -> RoundWeather:
 	# Mist on still mornings; it thins as the wind gets up.
 	if rng.randf() < float(normals.get("fog", 0.1)) and w.wind_mps < 6.0:
 		w.fog = rng.randf_range(0.35, 1.0)
-		w.cloud = maxf(w.cloud, 0.5)
+		w.cloud = maxf(w.cloud, 0.75)  # a grey sky over the mist, never a blue one
 	elif w.rain != Rain.NONE:
 		w.fog = 0.3 if w.rain == Rain.RAIN else 0.2
 	return w
@@ -81,6 +81,7 @@ static func from_live(current: Dictionary) -> RoundWeather:
 		w.rain = Rain.DRIZZLE if mm < 0.5 else Rain.RAIN
 	if code == 45 or code == 48:
 		w.fog = 0.8
+		w.cloud = maxf(w.cloud, 0.75)
 	elif current.has("visibility"):
 		# Under 5 km the air reads misty; under 1 km it is fog.
 		w.fog = clampf(1.0 - (float(current.visibility) - 1000.0) / 4000.0, 0.0, 1.0)

@@ -610,6 +610,8 @@ func _apply_weather_light() -> void:
 	sun.light_color = _sun_color
 	environment.ambient_light_energy = _ambient_energy
 	sun.light_angular_distance = _sun_angle
+	sun.shadow_opacity = 1.0
+	RenderingServer.global_shader_parameter_set("weather_shadow", 1.0)
 	if not _photo:
 		return
 	var picked := backdrop != null and backdrop.chosen and backdrop.has_sky
@@ -631,3 +633,6 @@ func _apply_weather_light() -> void:
 		environment.ambient_light_energy *= 1.0 + (0.55 - 0.2 * _weather_rain) * w
 		if GraphicsSettings.is_forward_plus():
 			sun.light_angular_distance = maxf(sun.light_angular_distance, 9.0 * w)
+		# Compatibility can't soften shadows, so a weak sun's are faded.
+		sun.shadow_opacity = 1.0 - 0.85 * w
+		RenderingServer.global_shader_parameter_set("weather_shadow", 1.0 - 0.85 * w)

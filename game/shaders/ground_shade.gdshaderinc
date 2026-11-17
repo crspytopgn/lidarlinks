@@ -10,6 +10,9 @@ global uniform float ground_shade_near;
 // drifted by cloud_offset metres with the wind.
 global uniform float cloud_shadow;
 global uniform vec2 cloud_offset;
+// How much the baked sun shadows show (1 in sun; less under a cloud deck,
+// where the sun is too weak to cast them: Scenery.set_weather).
+global uniform float weather_shadow;
 // Sky light in the shade where the renderer has none (Compatibility, set
 // by Scenery._update_shade_fill): rgb is added as emission, a share of the
 // unshaded albedo, and a scales the albedo the sun and flat fill light, so
@@ -60,6 +63,6 @@ float ground_shading(vec2 p, float dist) {
 	// a metre or two across, the dappled shade of TV golf and GSPro.
 	float fleck = smoothstep(0.58, 0.78, cloud_noise(p * 0.75) * 0.6 + cloud_noise(p * 2.1 + vec2(5.3, 2.9)) * 0.4);
 	float baked = mix(s.r, 1.0, fleck * 0.65);
-	float sun = mix(1.0, baked, edge * smoothstep(ground_shade_near * 0.8, ground_shade_near, dist));
+	float sun = mix(1.0, baked, edge * smoothstep(ground_shade_near * 0.8, ground_shade_near, dist) * weather_shadow);
 	return clouds * sun * mix(1.0, s.g, edge);
 }
