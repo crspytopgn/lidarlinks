@@ -35,6 +35,8 @@ var overlay: BroadcastOverlay
 var aim_reticle: AimReticle
 var tour: TourGraphics
 var broadcast := false
+## BIRDIE, EAGLE, CHIP-IN, PURE: the big word for a good moment.
+var badge: ScoreBadge
 
 var _message_time := 0.0
 
@@ -52,6 +54,9 @@ func _ready() -> void:
 	_place(message, Control.PRESET_CENTER_TOP, Rect2(-400, 70, 800, 90))
 	message.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	add_child(message)
+
+	badge = ScoreBadge.new()
+	add_child(badge)
 
 	sound_caption = _label(20)
 	sound_caption.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER

@@ -698,11 +698,28 @@ func _test_swing_meter() -> void:
 	_check_near(meter.value_for_feet(20.0), 0.75, 1e-6, "the putt scale finds the hole's place on the meter")
 	_check_near(meter.feet_for_value(0.25), 5.0, 1e-6, "the putt scale reads feet back")
 	_test_quick_pace(meter, roll)
+	_test_good_moments()
 	meter.free()
 
 
 ## Quick pace: brisk chip and putt meters through the same snap, a putting
 ## meter sized to the putt, and the full swing's carry scale.
+func _test_good_moments() -> void:
+	_check(ScoreBadge.for_score(3, 4)[0] == "Birdie" and ScoreBadge.for_score(3, 5)[0] == "Eagle"
+			and ScoreBadge.for_score(1, 3)[0] == "Hole in one" and ScoreBadge.for_score(4, 4).is_empty(),
+			"the hole-out badge names birdies, eagles and aces, nothing for par")
+	_check(ScoreBadge.look_at_time(-1.0).y == 0.0 and ScoreBadge.look_at_time(0.5).y == 1.0
+			and ScoreBadge.look_at_time(ScoreBadge.POP_S + ScoreBadge.HOLD_S + ScoreBadge.FADE_S).y == 0.0,
+			"the badge pops in, holds and fades away")
+	_check(GolfRound.is_pure_strike(0.95, 0.0, false, false, false), "a full swing on the snap line is pure")
+	_check(not GolfRound.is_pure_strike(0.95, 0.2, false, false, false) and not GolfRound.is_pure_strike(0.6, 0.0, false, false, false)
+			and not GolfRound.is_pure_strike(1.0, 0.0, true, false, false) and not GolfRound.is_pure_strike(1.0, 0.0, false, false, true),
+			"a miss-hit, a half swing, a putt or a computer's shot is not")
+	_check(GolfRound.crowd_should_build(1.5, 140.0, false) and not GolfRound.crowd_should_build(12.0, 140.0, false)
+			and GolfRound.crowd_should_build(0.8, 9.0, true) and not GolfRound.crowd_should_build(0.8, 3.0, true),
+			"the gallery wills in approaches near the pin and long putts, not tap-ins")
+
+
 func _test_quick_pace(meter: SwingMeter, roll: PackedFloat32Array) -> void:
 	var timed := func(quick: bool, power_at: int) -> float:
 		var r := LinksPowerStroke.Run.new(LinksPowerStroke.Mode.PUTT, quick)
