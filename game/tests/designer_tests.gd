@@ -15,6 +15,7 @@ func run_all() -> Array[String]:
 	_test_starter_surfaces()
 	_test_save_round_trip()
 	_test_sculpt()
+	_test_ground_lods()
 	_test_edit_surfaces()
 	_test_trees()
 	_test_loader()
@@ -299,7 +300,8 @@ func _test_starter_surfaces() -> void:
 	check(not t.first_cut_at(beyond.x, beyond.y) and not t.first_cut_at(f.x, f.y), "first cut only in a band at the fairway's edge")
 	var visual := t.build_visual()
 	var n := t.chunk_count()
-	check(visual.get_child_count() == n.x * n.y + 3, "a mesh per chunk, the apron, the paths and the water")
+	# Plus the node that works out the far ground's levels (refine_lods).
+	check(visual.get_child_count() == n.x * n.y + 4 and visual.get_node_or_null("LodRefiner") != null, "a mesh per chunk, the apron, the paths, the water and the far levels' worker")
 	var water := visual.get_child(visual.get_child_count() - 1)
 	check(water.find_children("*", "MeshInstance3D", false, false).size() == 1, "one pond mesh")
 	check(water.get_node_or_null("Stakes") != null, "and its hazard stakes")
@@ -349,6 +351,59 @@ func _test_sculpt() -> void:
 	check(absf(t.height_at(10, 10) - 0.5) < 0.01, "flatten levels the centre")
 	c.sculpt("raise", Vector2(0, 0), 5.0, 1000.0)
 	check(c.base_height(0, 0) <= DesignedCourse.MAX_HEIGHT, "heights stay in range")
+
+
+## Far ground gets coarser detail levels (DesignedTerrain.refine_lods):
+## flat, plain ground switches almost at once, a hill only when its error
+## is tiny on screen, painted ground keeps its detail, and skirts hang
+## between chunks but not off the course's edge.
+func _test_ground_lods() -> void:
+	var c := DesignedCourse.blank(Vector2(300, 300))
+	var t := DesignedTerrain.new(c)
+	t.update_heights(c.sculpt("raise", Vector2(0, 0), 60.0, 6.0))
+	var n := t.chunk_count()
+	for j in n.y:
+		for i in n.x:
+			t.chunk_mesh(Vector2i(i, j))
+	check(not t.refine_lods(0.0) or n.x * n.y == 1, "levels are worked out a little at a time")
+	t.refine_lods(1e9)
+	var flat: PackedFloat32Array = t.lod_keys.get(Vector2i(0, 0), PackedFloat32Array())
+	check(flat.size() == DesignedTerrain.LOD_STEPS.size(), "flat ground gets every level: %s" % flat)
+	check(flat.size() > 0 and flat[0] < 0.01, "and switches as soon as it is a pixel off: %s" % flat)
+	var hill: PackedFloat32Array = t.lod_keys.get(t.chunk_count() / 2, PackedFloat32Array())
+	check(hill.size() > 0 and hill[-1] > flat[-1], "a hill switches later than flat ground: %s" % hill)
+	for k: Vector2i in t.lod_keys:
+		var keys: PackedFloat32Array = t.lod_keys[k]
+		for q in range(1, keys.size()):
+			check(keys[q] > keys[q - 1], "each level switches farther out than the last")
+	# Skirts: an inner chunk's edge has them, the course's edge doesn't.
+	var corner := t.chunk_mesh(Vector2i(0, 0))
+	var arrays := corner.surface_get_arrays(0)
+	var lowest := INF
+	for v: Vector3 in arrays[Mesh.ARRAY_VERTEX]:
+		lowest = minf(lowest, v.y)
+	check(lowest < -DesignedTerrain.SKIRT_DROP, "skirts hang below the ground")
+	var verts: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+	var idx: PackedInt32Array = arrays[Mesh.ARRAY_INDEX]
+	var on_edge := 0
+	for q in idx.size():
+		var v := verts[idx[q]]
+		# Skirt vertices on the course's edge, other than the corners of
+		# the inner sides' skirts.
+		var side := DesignedTerrain.CHUNK * DesignedCourse.CELL
+		var o := c.area.position
+		if v.y < -1.0 and (v.x < o.x + 0.01 and v.z > o.y + 0.01 and v.z < o.y + side - 0.01 or v.z < o.y + 0.01 and v.x > o.x + 0.01 and v.x < o.x + side - 0.01):
+			on_edge += 1
+	check(on_edge == 0, "no skirt hangs off the course's edge: %d" % on_edge)
+	# Painted ground (a bunker in the corner chunk) keeps its detail until
+	# the coarser cells are far smaller than a pixel.
+	var bunker := CourseShape.oval(Surface.Type.SAND, c.area.position + Vector2(30, 30), Vector2(6, 6))
+	c.shapes.append(bunker)
+	t.update_surfaces(bunker.bounds())
+	t.chunk_mesh(Vector2i(0, 0))
+	t.refine_lods(1e9)
+	var painted: PackedFloat32Array = t.lod_keys.get(Vector2i(0, 0), PackedFloat32Array())
+	check(painted.size() > 0 and painted[0] >= DesignedCourse.CELL * DesignedTerrain.LOD_ATTRIBUTE_SHARE * 2.0 - 0.01, "painted ground switches only far out: %s" % painted)
 
 
 func _test_edit_surfaces() -> void:

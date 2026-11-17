@@ -7,6 +7,9 @@ extends Node
 ## change on a new hole, so they aren't cases. The GPU and CPU time
 ## per frame of each case go to the log and user://benchmark.txt, then the
 ## game quits. Each case changes one thing from the device's own look.
+## Before the cases it lists what the scene is made of (scene_breakdown);
+## `--scene-only` stops after that and the device's own look, `--play-only`
+## skips the cases, and `--no-vsync` times the play without v-sync.
 
 const WARM := 1.5
 const MEASURE := 3.0
@@ -73,6 +76,11 @@ func _run() -> void:
 		await tree.process_frame
 	_game.camera.end_flyover()
 	_game.hud.hand_over.close()
+	# The far ground's detail levels are worked out over the first frames.
+	waited = 0.0
+	while waited < 180.0 and tree.get_node_count_in_group("lod_refiner") > 0:
+		await tree.process_frame
+		waited += get_process_delta_time()
 	DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_DISABLED)
 	var vp := get_viewport().get_viewport_rid()
 	RenderingServer.viewport_set_measure_render_time(vp, true)
@@ -85,9 +93,11 @@ func _run() -> void:
 	for line in scene_breakdown(_game):
 		print(line)
 		lines.append(line)
-	lines.append("case | gpu ms | cpu ms | frame ms | fps | 3D scale | draws")
+	var only_default := OS.get_cmdline_user_args().has("--scene-only")
+	lines.append("case | gpu ms | cpu ms | frame ms | fps | 3D scale | draws | k prims")
 	var base_gpu := 0.0
-	for c: Array in CASES:
+	var args := OS.get_cmdline_user_args()
+	for c: Array in [] if args.has("--play-only") else CASES:
 		var change: Dictionary = c[1]
 		for k: String in KEYS:
 			g.set(k, _base[k])
@@ -108,6 +118,7 @@ func _run() -> void:
 		var cpu := 0.0
 		var frames := 0
 		var draws := 0.0
+		var prims := 0.0
 		t = 0.0
 		while t < MEASURE:
 			await tree.process_frame
@@ -115,14 +126,18 @@ func _run() -> void:
 			gpu += RenderingServer.viewport_get_measured_render_time_gpu(vp)
 			cpu += RenderingServer.viewport_get_measured_render_time_cpu(vp) + RenderingServer.get_frame_setup_time_cpu()
 			draws += Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME)
+			prims += Performance.get_monitor(Performance.RENDER_TOTAL_PRIMITIVES_IN_FRAME)
 			frames += 1
 		frames = maxi(frames, 1)
 		gpu /= frames
 		if c == CASES[0]:
 			base_gpu = gpu
-		var line := "%s | %.2f (%+.2f) | %.2f | %.2f | %.0f | %.2f | %.0f" % [c[0], gpu, gpu - base_gpu, cpu / frames, 1000.0 * t / frames, frames / t, get_viewport().scaling_3d_scale, draws / frames]
+		var line := "%s | %.2f (%+.2f) | %.2f | %.2f | %.0f | %.2f | %.0f | %.0f" % [c[0], gpu, gpu - base_gpu, cpu / frames, 1000.0 * t / frames, frames / t, get_viewport().scaling_3d_scale, draws / frames, prims / frames / 1000.0]
 		print(line)
 		lines.append(line)
+		if only_default:
+			tree.quit()
+			return
 	GraphicsSettings.ignore_pixel_budget = false
 	for k: String in KEYS:
 		g.set(k, _base[k])
@@ -138,7 +153,8 @@ func _run() -> void:
 
 func _play(seconds: float) -> PackedStringArray:
 	var tree := get_tree()
-	DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_ENABLED)
+	# `--no-vsync`: a virtual display (the cloud's) has no refresh to wait for.
+	DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_DISABLED if OS.get_cmdline_user_args().has("--no-vsync") else DisplayServer.VSYNC_ENABLED)
 	var out := PackedStringArray()
 	var times: Array[float] = []
 	var spikes: Array = []  ## [ms, state, process ms, draws, time]
@@ -241,13 +257,14 @@ static func scene_breakdown(root: Node) -> PackedStringArray:
 
 static func _owner_name(n: Node, root: Node) -> String:
 	var p := n
-	var below := n  ## the child of `root` on the way up
+	var path: Array[String] = []  ## names on the way up, nearest first
 	while p != null and p != root:
 		var s: Script = p.get_script()
-		if s != null:
+		if s != null and p != n.get_parent() or s != null and p == n:
 			var g := s.get_global_name()
 			return String(g) if g != &"" else s.resource_path.get_file()
-		below = p
+		path.push_front(String(p.name).rstrip("0123456789@"))
 		p = p.get_parent()
-	# Built straight into the round: name the piece it hangs from.
-	return "%s/%s" % [root.name, below.name.rstrip("0123456789@")]
+	# Built straight into the round: name the two pieces it hangs from.
+	return "/".join(path.slice(0, 3))
+

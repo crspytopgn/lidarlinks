@@ -603,8 +603,17 @@ func apply_display(viewport: Viewport) -> void:
 				viewport.scaling_3d_mode = Viewport.SCALING_3D_MODE_FSR2
 		viewport.fsr_sharpness = 0.3
 	viewport.scaling_3d_scale = scale
+	viewport.mesh_lod_threshold = MESH_LOD_PIXELS[quality]
 	RenderingServer.directional_shadow_atlas_set_size(shadow_atlas_size(), true)
 	RenderingServer.directional_soft_shadow_filter_set_quality(soft_shadow_quality())
+
+
+## Per quality: how many pixels a mesh's shape may be off on screen before
+## the renderer draws a coarser level of it (the ground's far levels,
+## DesignedTerrain.refine_lods, and imported models' own). Low and Medium
+## accept a little more, as their screens are small and detail is cut
+## anyway; High and Ultra keep Godot's one pixel.
+const MESH_LOD_PIXELS := [3.0, 2.0, 1.0, 1.0]
 
 
 ## The frame rate dynamic resolution keeps to, or 0 for off.

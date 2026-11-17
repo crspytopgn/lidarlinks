@@ -104,6 +104,22 @@ Ultra and use a notch lighter soft-shadow filter.
   global `sky_tint`). The baked ground shade follows the sun, since it is
   baked at each hole's start after the sun has moved. Classic lighting
   keeps Links 2003's fixed afternoon sun.
+- **Far ground detail levels** (`DesignedTerrain.refine_lods`): each 64 m
+  chunk of a designed or built-in course gets three coarser levels (every
+  2nd, 4th and 8th height sample) that the renderer swaps in by distance
+  (Godot's mesh LOD). A level is used only once its largest height error is
+  under `GraphicsSettings.MESH_LOD_PIXELS` on screen (one pixel on High and
+  Ultra, two on Medium, three on Low); where a chunk's colours, surface
+  weights or mowing stripes vary, it counts as half its cell, so painted
+  ground stays sharp. Skirts hang under chunk edges inside the course so a
+  neighbour at another level never opens a crack. The levels are worked out
+  1.5 ms a frame after the course loads (`LodRefiner`), so loading is no
+  slower. On Kettle Hollow 421 of 456 chunks get all three levels.
+- **Benchmark** (`-- --benchmark`): also lists what the scene is made of by
+  owner (nodes, surfaces, instances, triangles, shadow casters), the
+  primitives drawn per case, and takes `--scene-only`, `--play-only` and
+  `--no-vsync`. In the cloud, time the play phase with `--headless`:
+  software GL makes every frame of ball flight look like a second.
 - **Upscaler**: FSR 1 or FSR 2 on Forward+. **Dynamic resolution**
   (`DynamicResolution`) lowers the 3D resolution, down to half, when frames
   miss 30 or 60 fps and raises it again when there's room.
