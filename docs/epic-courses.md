@@ -166,8 +166,11 @@ glitter on a moving swell, hazed like the land; the pond water's shader took
 the course's fog and drew the far sea as a grey wall) at sea level over the land (Landscape.sea_level: a map-built course's
 heights are measured from `source.base_height`), reaching past the far
 plane so the horizon is the sea's. The palm (`palm_coconut`, DesertPlants)
-is built from numbers like the cacti: a ringed, leaning trunk and a crown of
-arching, drooping fronds.
+is a real model: four palms taken out of Next Spring's CC BY "Realistic Palm
+Tree 2" pack (`palm_coconut_0` to `_3` in `tools/sketchfab/models.json`, cut
+out by node with process.mjs's `keep`), scaled to `palm_height` plus the
+crown so the obstacles still match. The numbers-built palm (a ringed, leaning
+trunk and a crown of arching fronds) is the fallback when a model is missing.
 The land beyond the course is the Kohala coast's old lava under golden
 fountain grass, greening up the mountain. Bare lava and desert hardpan get
 their own finish in terrain.gdshader (`bare_style`): black, rusty, rough

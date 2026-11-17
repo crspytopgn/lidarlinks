@@ -6,7 +6,9 @@
 //   node process.mjs IN.glb OUT.glb '{"tris":8000,"tex":1024,"fit":{"axis":"x","metres":1.83},"yaw":90,"drop":["name substring"]}'
 // More options: "dropMaterials" (parts whose material name has one of these
 // substrings), "alphaTex" (size cap for the cut-out png textures),
-// "footCentre" (stand it on the middle of its lowest 3 %, not its bounds).
+// "footCentre" (stand it on the middle of its lowest 3 %, not its bounds),
+// "keep" (regexes: only nodes whose "node/mesh" name matches one, to take
+// one plant out of a pack).
 import { NodeIO, Document } from '@gltf-transform/core';
 import { ALL_EXTENSIONS } from '@gltf-transform/extensions';
 import { metalRough, simplify, weld, prune, dedup, textureCompress, flatten, join, transformPrimitive, getBounds } from '@gltf-transform/functions';
@@ -27,7 +29,9 @@ const merged = doc.createMesh('prop');
 for (const node of root.listNodes()) {
 	const mesh = node.getMesh();
 	if (!mesh) continue;
-	if ((o.drop || []).some((d) => (node.getName() + '/' + mesh.getName()).includes(d))) { node.setMesh(null); continue; }
+	const full = node.getName() + '/' + mesh.getName();
+	if ((o.drop || []).some((d) => full.includes(d))) { node.setMesh(null); continue; }
+	if (o.keep && !o.keep.some((k) => new RegExp(k).test(full))) { node.setMesh(null); continue; }
 	const m = node.getWorldMatrix();
 	for (const prim of mesh.listPrimitives()) {
 		// Parts by material name: fine spines and the like that vanish at
