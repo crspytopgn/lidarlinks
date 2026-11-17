@@ -162,6 +162,10 @@ static func simulate_shot(start: BallState, terrain: CourseTerrain, has_cup := f
 	var t := 0.0
 	var step := 0
 	var landed := false
+	# The ground under the end of the last rolling step, reused by the next.
+	var ahead_at := Vector3(INF, INF, INF)
+	var ahead_normal := Vector3.UP
+	var ahead_surface := -1
 	r.add_sample(0.0, s.position)
 
 	var n0 := terrain.normal_at(s.position.x, s.position.z)
@@ -259,8 +263,10 @@ static func simulate_shot(start: BallState, terrain: CourseTerrain, has_cup := f
 		else:
 			var pos := s.position
 			var v := s.velocity
-			var n := terrain.normal_at(pos.x, pos.z)
-			var here := terrain.surface_at(pos.x, pos.z)
+			# Where the last step ended, its normal and surface are known.
+			var known := pos == ahead_at
+			var n := ahead_normal if known else terrain.normal_at(pos.x, pos.z)
+			var here := ahead_surface if known and ahead_surface >= 0 else terrain.surface_at(pos.x, pos.z)
 			var g := Vector3(0.0, -GRAVITY, 0.0)
 			var slope := (g - n * g.dot(n)) * (5.0 / 7.0)
 			var resist := Surface.rolling_resistance(here) * GRAVITY * n.y
@@ -287,6 +293,9 @@ static func simulate_shot(start: BallState, terrain: CourseTerrain, has_cup := f
 				step += 1
 				continue
 			var nn := terrain.normal_at(npos.x, npos.z)
+			ahead_at = npos
+			ahead_normal = nn
+			ahead_surface = -1
 			nv -= nn * nv.dot(nn)
 			t += DT
 			step += 1
@@ -309,6 +318,7 @@ static func simulate_shot(start: BallState, terrain: CourseTerrain, has_cup := f
 			if has_cup and nv.length() < MAX_HOLING_SPEED and _segment_distance_xz(pos, npos, cup) < CUP_RADIUS:
 				return _finish(r, ShotResult.Outcome.HOLED, cup, t, landed, start, terrain)
 			var surf := terrain.surface_at(npos.x, npos.z)
+			ahead_surface = surf
 			if surf == Surface.Type.WATER:
 				return _finish(r, ShotResult.Outcome.WATER, npos, t, landed, start, terrain)
 			if surf == Surface.Type.OUT_OF_BOUNDS:

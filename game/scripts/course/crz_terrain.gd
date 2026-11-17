@@ -87,6 +87,7 @@ var _cols := 0
 var _rows := 0
 var _cell_start := PackedInt32Array()
 var _cell_items := PackedInt32Array()
+var _cell_max := PackedFloat32Array()  ## highest corner of any triangle in each cell, or 0
 var _last := -1
 var _mesh: ArrayMesh
 var _mesh_photo := false
@@ -109,6 +110,9 @@ func finalize() -> void:
 	_cols = int((hi.x - lo.x) / CELL) + 1
 	_rows = int((hi.y - lo.y) / CELL) + 1
 	var tri_count := triangles.size() / 3
+	# Off the triangles the height is 0, so no cell is lower than that.
+	_cell_max.resize(_cols * _rows)
+	_cell_max.fill(0.0)
 	# Two passes: count the triangles touching each cell, then fill.
 	var counts := PackedInt32Array()
 	counts.resize(_cols * _rows + 1)
@@ -127,8 +131,10 @@ func finalize() -> void:
 		spans[4 * t + 1] = c1
 		spans[4 * t + 2] = r0
 		spans[4 * t + 3] = r1
+		var top := maxf(a.y, maxf(b.y, c.y))
 		for r in range(r0, r1 + 1):
 			for col in range(c0, c1 + 1):
+				_cell_max[r * _cols + col] = maxf(_cell_max[r * _cols + col], top)
 				counts[r * _cols + col + 1] += 1
 	for i in range(1, counts.size()):
 		counts[i] += counts[i - 1]
@@ -185,6 +191,18 @@ func _height_in(t: int, x: float, z: float) -> float:
 	if u < EPS or v < EPS or w < EPS:
 		return INF
 	return u * a.y + v * b.y + w * c.y
+
+
+## Looked up a metre wider than asked, as a triangle can answer a hair outside
+## its own cells, and a centimetre higher for the same rounding.
+func max_height_in(x0: float, z0: float, x1: float, z1: float) -> float:
+	if _cols == 0:
+		return INF
+	var m := 0.0
+	for r in range(_row(z0 - 1.0), _row(z1 + 1.0) + 1):
+		for col in range(_col(x0 - 1.0), _col(x1 + 1.0) + 1):
+			m = maxf(m, _cell_max[r * _cols + col])
+	return m + 0.01
 
 
 func height_at(x: float, z: float) -> float:

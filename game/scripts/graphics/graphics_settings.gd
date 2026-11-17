@@ -493,7 +493,13 @@ static func is_forward_plus() -> bool:
 ## baked ground shade carries the far trees' shadows.
 func shadow_distance() -> float:
 	var d: float = [150.0, 250.0, 400.0, 600.0][quality]
-	return minf(d, 200.0) if OS.has_feature("web") else d
+	# Built-in graphics, like the browser, keep the sun's shadow map to the
+	# near course (the baked ground shade carries the far trees' shadows):
+	# sun shadows were a fifth of an M4's frame, and the four splits then
+	# cover less ground each, so near shadows get sharper, not worse.
+	if OS.has_feature("web"):
+		return minf(d, 200.0)
+	return minf(d, 250.0) if integrated_gpu() else d
 
 
 ## Built-in graphics: Apple's M chips, Intel and AMD laptop graphics. They
@@ -605,8 +611,17 @@ func apply_display(viewport: Viewport) -> void:
 				viewport.scaling_3d_mode = Viewport.SCALING_3D_MODE_FSR2
 		viewport.fsr_sharpness = 0.3
 	viewport.scaling_3d_scale = scale
+	viewport.mesh_lod_threshold = MESH_LOD_PIXELS[quality]
 	RenderingServer.directional_shadow_atlas_set_size(shadow_atlas_size(), true)
 	RenderingServer.directional_soft_shadow_filter_set_quality(soft_shadow_quality())
+
+
+## Per quality: how many pixels a mesh's shape may be off on screen before
+## the renderer draws a coarser level of it (the ground's far levels,
+## DesignedTerrain.refine_lods, and imported models' own). Low and Medium
+## accept a little more, as their screens are small and detail is cut
+## anyway; High and Ultra keep Godot's one pixel.
+const MESH_LOD_PIXELS := [3.0, 2.0, 1.0, 1.0]
 
 
 ## The frame rate dynamic resolution keeps to, or 0 for off.

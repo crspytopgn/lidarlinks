@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <limits>
 
 #include "olcore/ball_physics.hpp"
 #include "olcore/links_flight.hpp"
@@ -119,6 +120,13 @@ class LinksGround {
   virtual double height(double x, double y) const = 0;
   virtual Vec3 normal(double x, double y) const = 0;  // unit, z > 0
   virtual LinksSurface surface(double x, double y) const = 0;
+  // A height no lower than height() anywhere in the rect between (x0, y0)
+  // and (x1, y1), or infinity when the ground can't tell. Lets the flight
+  // skip its search for the ground on a step clearly above it.
+  virtual double max_height(double /*x0*/, double /*y0*/, double /*x1*/,
+                            double /*y1*/) const {
+    return std::numeric_limits<double>::infinity();
+  }
 };
 
 // Resolves a landing in place. `n` is the ground normal at the contact

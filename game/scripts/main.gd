@@ -381,10 +381,17 @@ var online: OnlineRound
 var _incoming: ShotRecord = null
 
 
+func _exit_tree() -> void:
+	# Shot reads still planning on worker threads (CaddieAdvice) must end
+	# before the game can quit.
+	CaddieAdvice.wait_all()
+
+
 func _ready() -> void:
 	AssetProviders.ensure_defaults()
 	shot_model = AssetProviders.shot_model
 	clubs = Club.standard_set()
+	FrameBenchmark.prepare()
 	graphics = GraphicsSettings.load_saved()
 	Glass.allow_blur = graphics.quality != GraphicsSettings.Quality.LOW
 	GlassTheme.install()
@@ -554,6 +561,7 @@ func start_round() -> void:
 		record.green_firmness = versus.green_firmness
 		record.green_speed = versus.green_speed
 	LinksGround.set_greens(record.green_firmness, record.green_speed)
+	_putt_scales.clear()
 	record.course_hash = RoundRecord.file_hash(course_path)
 	record.course_file = course_path.get_file()
 	hud.scorecard.visible = false
@@ -2153,7 +2161,7 @@ func _quiet_advice() -> void:
 func _step_advice() -> void:
 	if _advice == null or advice_note == null or not advice_note.text_empty():
 		return
-	if _advice.step(Caddie.PLAN_BUDGET_MS):
+	if _advice.step_background(Caddie.PLAN_BUDGET_MS):
 		advice_note.say(_advice.text)
 
 
@@ -3520,6 +3528,7 @@ func _apply_graphics() -> void:
 	# settings apply from the next round.
 	if record == null:
 		LinksGround.set_greens(graphics.green_firmness, graphics.green_speed)
+		_putt_scales.clear()
 	scenery.apply(graphics)
 	post.apply(graphics)
 	dynamic_resolution.setup(get_viewport(), graphics)
@@ -4624,7 +4633,13 @@ func _update_putt_scale() -> void:
 		hud.meter.set_putt_scale(hud.meter.putt_feet, hole_ft)
 		return
 	_putt_scale_from = ball_at
-	var full := putt_roll_feet(shot_model, clubs[club_index], lie)
+	# 21 putts on a level green: the same wherever the ball is, so worked
+	# out once per putter, lie and green speed (it stalled every arrival on
+	# the green).
+	var key := "%d|%s|%d" % [shot_model.get_instance_id(), clubs[club_index].short_name, lie]
+	if not _putt_scales.has(key):
+		_putt_scales[key] = putt_roll_feet(shot_model, clubs[club_index], lie)
+	var full: PackedFloat32Array = _putt_scales[key]
 	_putt_range = putt_range_for(full, hole_ft) if graphics.quick_pace else 1.0
 	hud.meter.set_putt_scale(rescale_roll(full, _putt_range), hole_ft)
 
@@ -4667,6 +4682,9 @@ static func rescale_roll(full_feet: PackedFloat32Array, share: float) -> PackedF
 		var j := mini(int(x), n - 1)
 		out.append(lerpf(full_feet[j], full_feet[j + 1], x - j))
 	return out
+
+
+var _putt_scales := {}  ## see _update_putt_scale()
 
 
 ## Feet a putt rolls on a level green for meter values 0, 1/20 ... 1 of a

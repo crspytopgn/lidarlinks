@@ -121,6 +121,34 @@ Ultra and use a notch lighter soft-shadow filter.
   GrassField's 3D blades, so the near long grass is a mat rather than
   sparse spikes on the ground texture. Not on the plain rough, where short
   crossed cards read as stars from the player's height.
+- **Far ground detail levels** (`DesignedTerrain.refine_lods`): each 64 m
+  chunk of a designed or built-in course gets three coarser levels (every
+  2nd, 4th and 8th height sample) that the renderer swaps in by distance
+  (Godot's mesh LOD). A level is used only once its largest height error is
+  under `GraphicsSettings.MESH_LOD_PIXELS` on screen (one pixel on High and
+  Ultra, two on Medium, three on Low); where a chunk's colours, surface
+  weights or mowing stripes vary, it counts as half its cell, so painted
+  ground stays sharp. Skirts hang under chunk edges inside the course so a
+  neighbour at another level never opens a crack. The levels are worked out
+  1.5 ms a frame after the course loads (`LodRefiner`), so loading is no
+  slower. On Kettle Hollow 421 of 456 chunks get all three levels.
+- **Ground sun shadows only where they can fall**
+  (`DesignedTerrain.casts_sun_shadow`): a heightfield shades itself only
+  where it falls away more steeply than the sun is high, so chunks gentler
+  than that skip the sun's shadow pass, rechecked as the sun moves. In the
+  afternoon on Kettle Hollow 52 of 456 chunks still cast; draw calls at the
+  tee fell from 851 to 743 on the web renderer.
+- **3D grass far level** (`GrassField.tuft_mesh`): beyond a couple of metres
+  each blade is one triangle from root to tip instead of three (the bow it
+  loses is a millimetre). With the ground's levels and shadows, the tee view
+  on the web renderer went from 1.73M to 1.21M primitives.
+- **Hole changes**: the course's trees are listed once per course
+  (`DesignedTerrain._tree_rows`), so a new hole only sorts them by distance.
+- **Benchmark** (`-- --benchmark`): also lists what the scene is made of by
+  owner (nodes, surfaces, instances, triangles, shadow casters), the
+  primitives drawn per case, and takes `--scene-only`, `--play-only` and
+  `--no-vsync`. In the cloud, time the play phase with `--headless`:
+  software GL makes every frame of ball flight look like a second.
 - **Upscaler**: FSR 1 or FSR 2 on Forward+. **Dynamic resolution**
   (`DynamicResolution`) lowers the 3D resolution, down to half, when frames
   miss 30 or 60 fps and raises it again when there's room.
@@ -596,11 +624,24 @@ defaults).
 placeholder round, holds the first tee and draws it with one feature
 changed at a time (`FrameBenchmark.CASES`), v-sync off. GPU and CPU
 milliseconds per frame for each case go to the log and
-`user://benchmark.txt`, then the game quits.
+`user://benchmark.txt`, then the game quits. Add `--look=natural` (or
+another look) to start from that preset instead of the saved settings.
 
 On Forward+ (desktop) the free textures, imported as lossy WebP for a
 small download, are block-compressed (BC1/BC3) as they load
 (`FreeAssets.gpu_compress`), since WebP is stored uncompressed in video
 memory. At the Ultra tee view this cut Forward+ video memory from 1027 to
-881 MB. Compatibility keeps them as they are, so its CI budget still
-stands for the browser.
+881 MB. Only the editor build has the compressor, so exported games skip
+it (players' builds still use the larger figure); importing the textures
+VRAM-compressed for desktop exports would be the real fix. Compatibility
+keeps them as they are, so its CI budget still stands for the browser.
+
+The benchmark ends with 90 seconds of automatic play (shots, flights,
+camera moves, the next hole) with v-sync on, and reports frame-time
+percentiles and the worst frames. Averages hide hitches: on 2026-11-15 the
+round averaged 7 ms a frame in the cloud but had 229 frames over 33 ms.
+They came from building the tall grass (FescueField, over 20 ms a 32 m
+chunk; now built a few milliseconds a frame, and kept when the camera
+leaves), the shot read (CaddieAdvice, now on a worker thread where there
+are threads) and the putting meter's scale (now worked out once per
+putter, lie and green speed). After: 15 frames over 33 ms, p99 17 ms.

@@ -86,7 +86,16 @@ bool hit_obstacles(const StepContext& c, const LinksBall& old, LinksBall& b);
 
 // Straight path p -> q: fraction where the centre first meets the ground,
 // or a negative number if it stays above.
+// Feet a step must clear the highest ground under it by to skip the samples
+// below (rounding room).
+constexpr double kClearMargin = 0.01;
+
 double ground_crossing(const LinksGround& g, Vec3 p, Vec3 q) {
+  // Wholly above the highest ground under it: every sample would be above
+  // the ground, so the answer is the same without them.
+  if (std::min(p.z, q.z) > g.max_height(p.x, p.y, q.x, q.y) + kClearMargin) {
+    return -1;
+  }
   auto f = [&](double t) {
     Vec3 x = p + (q - p) * t;
     return x.z - g.height(x.x, x.y);

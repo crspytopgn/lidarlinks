@@ -100,6 +100,10 @@ var course: DesignedCourse
 
 var _h := PackedFloat32Array()  ## heights after the shapes, on the course grid
 var _g := PackedFloat32Array()  ## the same before the tee pads
+## The highest height in each HEIGHT_TILE square of grid cells (a tee pad's
+## own triangles included), for max_height_in(). Kept up to date by _derive().
+var _tile_max := PackedFloat32Array()
+var _tiles_w := 0
 var _pads := TeePads.new()
 var _img: Image  ## surface raster (R8 holds the Surface.Type)
 var _surf := PackedByteArray()
@@ -124,6 +128,8 @@ var _hole_tees: Array[PackedVector2Array] = []  ## and its tees
 const APPROACH_REACH := 45.0
 var _owner := PackedByteArray()
 var _path_surface: LinksGround.Params
+var _path_bounds: Array[Rect2] = []
+var _all_paths := Rect2()
 var _owner_cols := 0
 
 
@@ -134,6 +140,7 @@ func _init(p_course: DesignedCourse) -> void:
 
 ## Everything from scratch: after loading, or a change to the course area.
 func rebuild() -> void:
+	_tree_rows = PackedFloat32Array()
 	_sw = int(ceil(course.area.size.x / RES))
 	_sh = int(ceil(course.area.size.y / RES))
 	_img = Image.create_empty(_sw, _sh, false, Image.FORMAT_R8)
@@ -160,6 +167,7 @@ func rebuild() -> void:
 
 ## After sculpting: `cells` is the rect of height samples that changed.
 func update_heights(cells: Rect2i) -> void:
+	_tree_rows = PackedFloat32Array()
 	var r := cells.grow(int(ceil(TeePads.REACH / DesignedCourse.CELL)) + 1).intersection(Rect2i(0, 0, course.cols, course.rows))
 	# A pond's water line follows its bank, and a tee pad its mean height,
 	# so a change near either redoes the whole shape.
@@ -190,8 +198,24 @@ func update_surfaces(area: Rect2) -> void:
 	_invalidate(cells)
 
 
-## After placing or removing trees and other objects.
+## Each path's bounds, and all of them together, for links_surface_at():
+## worked out once rather than on every step of a rolling ball.
+func _cache_path_bounds() -> void:
+	_path_bounds.clear()
+	_all_paths = Rect2()
+	var first := true
+	for path in course.paths:
+		var r := path.bounds()
+		_path_bounds.append(r)
+		if not path.bridge:
+			_all_paths = r if first else _all_paths.merge(r)
+			first = false
+
+
+## After placing or removing trees and other objects (and paths).
 func update_objects() -> void:
+	_tree_rows = PackedFloat32Array()
+	_cache_path_bounds()
 	obstacles = ObstacleField.new()
 	for o in course.objects:
 		DesignerObjects.add_obstacles(obstacles, o, height_at(o.position.x, o.position.z), course.object_info)
@@ -219,6 +243,70 @@ func height_at(x: float, z: float) -> float:
 			return y
 	var k := j * course.cols + i
 	return lerpf(lerpf(_h[k], _h[k + 1], fu), lerpf(_h[k + course.cols], _h[k + course.cols + 1], fu), fv)
+
+
+## Grid cells to a side of a max_height_in() tile.
+const HEIGHT_TILE := 8
+
+
+func max_height_in(x0: float, z0: float, x1: float, z1: float) -> float:
+	if _tiles_w == 0:
+		return INF
+	var a := course.area
+	var e := 0.001
+	var top := course.cols - 1.001
+	var side := course.rows - 1.001
+	var i0 := int(clampf((x0 - e - a.position.x) / DesignedCourse.CELL, 0.0, top)) / HEIGHT_TILE
+	var i1 := int(clampf((x1 + e - a.position.x) / DesignedCourse.CELL, 0.0, top)) / HEIGHT_TILE
+	var j0 := int(clampf((z0 - e - a.position.y) / DesignedCourse.CELL, 0.0, side)) / HEIGHT_TILE
+	var j1 := int(clampf((z1 + e - a.position.y) / DesignedCourse.CELL, 0.0, side)) / HEIGHT_TILE
+	var m := -INF
+	for tj in range(j0, j1 + 1):
+		for ti in range(i0, i1 + 1):
+			m = maxf(m, _tile_max[tj * _tiles_w + ti])
+	return m
+
+
+## Recomputes the max_height_in() tiles that hold a grid point in `cells`.
+func _update_height_tiles(cells: Rect2i) -> void:
+	var cols := course.cols
+	var rows := course.rows
+	var tw := ceili((cols - 1) / float(HEIGHT_TILE))
+	var th := ceili((rows - 1) / float(HEIGHT_TILE))
+	var t0 := Vector2i(maxi(cells.position.x - 1, 0) / HEIGHT_TILE, maxi(cells.position.y - 1, 0) / HEIGHT_TILE)
+	var t1 := Vector2i(mini(cells.end.x - 1, cols - 2) / HEIGHT_TILE, mini(cells.end.y - 1, rows - 2) / HEIGHT_TILE)
+	if _tile_max.size() != tw * th or _tiles_w != tw:
+		_tile_max.resize(tw * th)
+		_tiles_w = tw
+		t0 = Vector2i.ZERO
+		t1 = Vector2i(tw - 1, th - 1)
+	# A pad plays its own triangles: no higher than its highest corner (and a
+	# hair more, for the triangle test's tolerance at the edges).
+	var pad_top := PackedFloat32Array()
+	if not _pads.cell_pad.is_empty():
+		for pad in _pads.pads:
+			var top := -INF
+			for y in pad.heights:
+				top = maxf(top, y)
+			pad_top.append(top + 0.01)
+	for tj in range(t0.y, t1.y + 1):
+		for ti in range(t0.x, t1.x + 1):
+			var ci0 := ti * HEIGHT_TILE
+			var cj0 := tj * HEIGHT_TILE
+			var ci1 := mini(ci0 + HEIGHT_TILE, cols - 1)
+			var cj1 := mini(cj0 + HEIGHT_TILE, rows - 1)
+			var m := -INF
+			for j in range(cj0, cj1 + 1):
+				var row := j * cols
+				for i in range(ci0, ci1 + 1):
+					m = maxf(m, _h[row + i])
+			if not pad_top.is_empty():
+				for j in range(cj0, cj1):
+					for i in range(ci0, ci1):
+						var k := _pads.cell_pad[j * (cols - 1) + i]
+						if k > 0:
+							m = maxf(m, pad_top[k - 1])
+			_tile_max[tj * tw + ti] = m
 
 
 func surface_at(x: float, z: float) -> int:
@@ -256,8 +344,13 @@ func free_drop_at(x: float, z: float) -> bool:
 ## path class), not as on the fairway its raster code plays as otherwise.
 func links_surface_at(x: float, z: float) -> LinksGround.Params:
 	var p := Vector2(x, z)
-	for path in course.paths:
-		if not path.bridge and path.bounds().has_point(p) and path.distance_to(p) <= path.width * 0.5:
+	if _path_bounds.size() != course.paths.size():
+		_cache_path_bounds()
+	if not _all_paths.has_point(p):
+		return null
+	for k in course.paths.size():
+		var path := course.paths[k]
+		if not path.bridge and _path_bounds[k].has_point(p) and path.distance_to(p) <= path.width * 0.5:
 			if _path_surface == null:
 				_path_surface = LinksGround.surface_for_class(LinksGround.PATH)
 			return _path_surface
@@ -300,7 +393,10 @@ func build_visual() -> Node3D:
 			var inst := MeshInstance3D.new()
 			inst.mesh = chunk_mesh(Vector2i(ci, cj))
 			inst.material_override = material()
+			inst.set_meta("chunk", Vector2i(ci, cj))
 			root.add_child(inst)
+	if not _lod_queue.is_empty() or not steepness.is_empty():
+		root.add_child(LodRefiner.new(self, root))
 	if course.landscape.is_empty():
 		root.add_child(build_apron())
 	else:
@@ -339,11 +435,36 @@ func _add_distant_trees(root: Node3D) -> void:
 	var dh := course.played_hole(hole_number)
 	if dh == null:
 		return
+	if _tree_rows.is_empty():
+		_tree_rows = _course_tree_rows()
 	var trees := PackedFloat32Array()
-	for o in course.objects:
-		var p := Vector2(o.position.x, o.position.z)
-		if DesignedCourse.near_hole(dh, p):
+	var near := DesignedCourse.HOLE_REACH * DesignedCourse.HOLE_REACH
+	var full := DesignedCourse.FULL_TREE_REACH * DesignedCourse.FULL_TREE_REACH
+	for k in range(0, _tree_rows.size(), 5):
+		var d := DesignedCourse.hole_distance_squared(dh, Vector2(_tree_rows[k], _tree_rows[k + 2]))
+		if d <= near:
 			continue
+		var species := _tree_rows[k + 4]
+		trees.append_array(PackedFloat32Array([_tree_rows[k], _tree_rows[k + 1], _tree_rows[k + 2], _tree_rows[k + 3], species if d <= full else species + TreeFactory.FAR_ONLY]))
+	for batch: Dictionary in TreeFactory.batches(trees, 160.0):
+		# They stand at least HOLE_REACH from the tees and the line of play,
+		# so their shadows seldom reach the ground the player looks at, and
+		# drawing them again for the sun is most of what woods cost.
+		var node := TreeFactory.batch_node(batch, false)
+		node.name = "DistantTrees"
+		root.add_child(node)
+
+
+## Every tree of the course as [x, ground height, z, height, species], the
+## same for every hole, so a new hole only sorts them by distance (it was a
+## 60 ms stall at each hole change on Kettle Hollow's 7,700 trees).
+## Emptied when the ground or the objects change.
+var _tree_rows := PackedFloat32Array()
+
+
+func _course_tree_rows() -> PackedFloat32Array:
+	var out := PackedFloat32Array()
+	for o in course.objects:
 		var species := -1
 		match o.id:
 			"tree_pine":
@@ -352,16 +473,10 @@ func _add_distant_trees(root: Node3D) -> void:
 				species = TreeFactory.Species.BROADLEAF
 		if species < 0:
 			continue
+		var p := Vector2(o.position.x, o.position.z)
 		var h := TreeFactory.natural_height(species, p.x, p.y) * o.scale
-		var code := species if DesignedCourse.near_hole(dh, p, DesignedCourse.FULL_TREE_REACH) else species + TreeFactory.FAR_ONLY
-		trees.append_array(PackedFloat32Array([p.x, height_at(p.x, p.y), p.y, h, code]))
-	for batch: Dictionary in TreeFactory.batches(trees, 160.0):
-		# They stand at least HOLE_REACH from the tees and the line of play,
-		# so their shadows seldom reach the ground the player looks at, and
-		# drawing them again for the sun is most of what woods cost.
-		var node := TreeFactory.batch_node(batch, false)
-		node.name = "DistantTrees"
-		root.add_child(node)
+		out.append_array(PackedFloat32Array([p.x, height_at(p.x, p.y), p.y, h, species]))
+	return out
 
 
 ## The ground's material: the shared terrain shader with this course's
@@ -897,6 +1012,8 @@ func _invalidate(cells: Rect2i) -> void:
 		var r := Rect2i(c * CHUNK, Vector2i.ONE * (CHUNK + 1))
 		if r.intersects(g):
 			_meshes.erase(c)
+			lod_keys.erase(c)
+			steepness.erase(c)
 
 
 ## Paints the surface raster inside `px` (raster cells).
@@ -1099,6 +1216,7 @@ func _derive(cells: Rect2i) -> void:
 			_shape_heights(s, cells, TeePads.REACH, func(h: float, d: float) -> float:
 				return TeePads.profile(h, d, level))
 	_pads.rebuild(course, _g, _h, cells)
+	_update_height_tiles(cells)
 
 
 ## Applies `f(height, signed distance)` to the samples inside the shape (or
@@ -1228,9 +1346,11 @@ func _build_chunk(c: Vector2i) -> ArrayMesh:
 	var indices := PackedInt32Array()
 	indices.resize((nx - 1) * (nz - 1) * 6)
 	var n := 0
+	var has_pad := false
 	for j in nz - 1:
 		for i in nx - 1:
 			if _pads.pad_at_cell(cols, i0 + i, j0 + j) != null:
+				has_pad = true
 				continue  # drawn by its tee pad's insert below
 			var a := j * nx + i
 			var b := a + 1
@@ -1248,6 +1368,7 @@ func _build_chunk(c: Vector2i) -> ArrayMesh:
 	var uvs := _stripe_uvs(i0, j0, nx, nz) if not _across.is_empty() else PackedVector2Array()
 	# Packed arrays are passed by value, so the pads' part comes back to be joined on.
 	var extra := _pad_parts(Rect2i(i0, j0, nx - 1, nz - 1), verts.size())
+	var grid := nx * nz
 	verts.append_array(extra[0])
 	normals.append_array(extra[1])
 	colors.append_array(extra[2])
@@ -1255,6 +1376,29 @@ func _build_chunk(c: Vector2i) -> ArrayMesh:
 	palette.append_array(extra[4])
 	uvs.append_array(extra[5])
 	indices.append_array(extra[6])
+	# A skirt hangs from the chunk's edges inside the course, so where a
+	# neighbour is drawn at a coarser level (refine_lods) the gap between
+	# them shows ground, not sky. It hangs well below the deepest a level
+	# can be off; under a heightfield it is never seen otherwise.
+	var low := INF
+	var high := -INF
+	for v in grid:
+		low = minf(low, verts[v].y)
+		high = maxf(high, verts[v].y)
+	var drop := maxf(SKIRT_DROP, high - low) + SKIRT_MIN
+	var n_chunks := chunk_count()
+	var sides := [c.y > 0, c.y < n_chunks.y - 1, c.x > 0, c.x < n_chunks.x - 1]
+	var skirt := verts.size()
+	for k in _ring(nx, nz):
+		verts.append(verts[k] - Vector3(0.0, drop, 0.0))
+		normals.append(normals[k])
+		colors.append(colors[k])
+		weights.append(weights[k])
+		for ch in 4:
+			palette.append(palette[k * 4 + ch])
+		if not uvs.is_empty():
+			uvs.append(uvs[k])
+	indices.append_array(_skirt_indices(_positions(nx, 1), _positions(nz, 1), nx, nz, skirt, sides))
 	var arrays := []
 	arrays.resize(Mesh.ARRAY_MAX)
 	arrays[Mesh.ARRAY_VERTEX] = verts
@@ -1266,9 +1410,359 @@ func _build_chunk(c: Vector2i) -> ArrayMesh:
 		arrays[Mesh.ARRAY_TEX_UV] = uvs
 	arrays[Mesh.ARRAY_INDEX] = indices
 	var mesh := ArrayMesh.new()
-	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays, [], {},
-		Mesh.ARRAY_CUSTOM_RGBA_FLOAT << Mesh.ARRAY_FORMAT_CUSTOM0_SHIFT)
+	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays, [], {}, ARRAY_FLAGS)
+	if LOD_ENABLED and not has_pad:
+		_lod_queue[c] = {key = c, mesh = mesh, arrays = arrays, nx = nx, nz = nz, grid = grid, skirt = skirt, sides = sides, pads = extra[6]}
 	return mesh
+
+
+## Milliseconds a frame spent giving the ground its far detail levels.
+const LOD_BUDGET_MS := 1.5
+
+
+## Steps refine_lods() each frame until every chunk has its levels.
+class LodRefiner extends Node:
+	var terrain: DesignedTerrain
+	var ground: Node3D  ## the chunks' parent (build_visual's root)
+	var sun: DirectionalLight3D
+	var _sun_tan := -1.0
+	var _known := 0  ## steepness entries when the casters were last set
+
+	func _init(t: DesignedTerrain, root: Node3D) -> void:
+		terrain = t
+		ground = root
+		name = "LodRefiner"
+		if not t._lod_queue.is_empty():
+			add_to_group("lod_refiner")
+
+	func _process(_delta: float) -> void:
+		if is_in_group("lod_refiner") and terrain.refine_lods(LOD_BUDGET_MS):
+			remove_from_group("lod_refiner")
+		_update_casters()
+
+	## Ground that can't shade itself at the sun's height casts no sun
+	## shadow (see SHADOW_SLOPE_MARGIN): most of a parkland course in the
+	## afternoon, which was most of the shadow pass's draws.
+	func _update_casters() -> void:
+		if sun == null or not is_instance_valid(sun):
+			sun = null
+			for l: Node in get_tree().root.find_children("*", "DirectionalLight3D", true, false):
+				if (l as DirectionalLight3D).shadow_enabled:
+					sun = l
+					break
+			if sun == null:
+				return
+		var up := sun.global_transform.basis.z.y  # sin of the sun's height
+		var height := clampf(up, 0.0, 1.0)
+		var t := height / maxf(sqrt(1.0 - height * height), 1e-3)
+		if absf(t - _sun_tan) < 0.005 and terrain.steepness.size() == _known:
+			return
+		_sun_tan = t
+		_known = terrain.steepness.size()
+		for inst in ground.get_children():
+			if not inst is MeshInstance3D or not inst.has_meta("chunk"):
+				continue
+			var steep: float = terrain.steepness.get(inst.get_meta("chunk"), INF)
+			(inst as MeshInstance3D).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON if DesignedTerrain.casts_sun_shadow(steep, t) else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+
+
+## A heightfield only shades itself (or anything standing on it) where it
+## falls away from the sun more steeply than the sun is high, so a chunk
+## whose steepest slope (rise over run) is below the sun's (with this
+## margin) needs no sun shadow pass. Its own slopes still darken by N.L.
+const SHADOW_SLOPE_MARGIN := 0.8
+
+
+static func casts_sun_shadow(steep: float, sun_tan: float) -> bool:
+	return steep >= sun_tan * SHADOW_SLOPE_MARGIN
+
+
+const ARRAY_FLAGS := Mesh.ARRAY_CUSTOM_RGBA_FLOAT << Mesh.ARRAY_FORMAT_CUSTOM0_SHIFT
+## Chunks built but not yet given their coarser levels: Vector2i -> what
+## refine_lods() needs.
+var _lod_queue := {}
+## Each refined chunk's steepest slope (rise over run, over a 2 m cell):
+## Vector2i -> float. Chunks not in it always cast sun shadows.
+var steepness := {}
+
+
+## The steepest slope among the chunk's grid cells (rise over run).
+static func _steepest(verts: PackedVector3Array, nx: int, nz: int) -> float:
+	var out := 0.0
+	var inv := 1.0 / DesignedCourse.CELL
+	for j in nz - 1:
+		var row := j * nx
+		for i in nx - 1:
+			var h := verts[row + i].y
+			var gx := (verts[row + i + 1].y - h) * inv
+			var gz := (verts[row + nx + i].y - h) * inv
+			out = maxf(out, sqrt(gx * gx + gz * gz))
+	return out
+
+
+## The switch errors (m) of each chunk's coarser levels, finest first, once
+## refine_lods() has given it them: Vector2i -> PackedFloat32Array.
+var lod_keys := {}
+
+
+## Gives built chunks their coarser detail levels for far ground, for about
+## `budget_ms` a call (at least one chunk), so a course loads no slower:
+## measuring a chunk takes a few milliseconds of script. Called each frame
+## by the terrain's node (build_visual). True when none are left.
+func refine_lods(budget_ms: float) -> bool:
+	var start := Time.get_ticks_usec()
+	while not _lod_queue.is_empty():
+		var c: Vector2i = _lod_queue.keys()[0]
+		var job: Dictionary = _lod_queue[c]
+		_lod_queue.erase(c)
+		if _meshes.get(c) == job.mesh:  # not rebuilt since
+			_add_lods(job)
+		if Time.get_ticks_usec() - start > budget_ms * 1000.0:
+			break
+	return _lod_queue.is_empty()
+
+
+func _add_lods(job: Dictionary) -> void:
+	var arrays: Array = job.arrays
+	var nx: int = job.nx
+	var nz: int = job.nz
+	var grid: int = job.grid
+	var verts: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+	var uvs: PackedVector2Array = arrays[Mesh.ARRAY_TEX_UV] if arrays[Mesh.ARRAY_TEX_UV] != null else PackedVector2Array()
+	var colors: PackedColorArray = arrays[Mesh.ARRAY_COLOR]
+	var weights: PackedVector2Array = arrays[Mesh.ARRAY_TEX_UV2]
+	var palette: PackedFloat32Array = arrays[Mesh.ARRAY_CUSTOM0]
+	steepness[job.key] = _steepest(verts, nx, nz)
+	var steps := _lod_errors(verts.slice(0, grid), colors.slice(0, grid), weights.slice(0, grid), palette.slice(0, grid * 4), uvs.slice(0, grid), nx, nz)
+	if steps.is_empty():
+		return
+	var lods := {}
+	var last_key := 0.0
+	for st: Array in steps:
+		var step: int = st[0]
+		var key := maxf(float(st[1]), last_key * 1.01 + 0.001)
+		last_key = key
+		var xs := _positions(nx, step)
+		var zs := _positions(nz, step)
+		var lod := _grid_indices(xs, zs, nx)
+		lod.append_array(job.pads)
+		lod.append_array(_skirt_indices(xs, zs, nx, nz, job.skirt, job.sides))
+		lods[key] = lod
+	lod_keys[job.key] = PackedFloat32Array(lods.keys())
+	var mesh: ArrayMesh = job.mesh
+	mesh.clear_surfaces()
+	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays, [], lods, ARRAY_FLAGS)
+
+
+## Coarser detail levels for far ground (each a coarser index list over the
+## same vertices, which the renderer picks by distance: Godot's mesh LOD).
+## A level is kept only where it can't be told apart once the renderer
+## switches to it: it switches when the level's largest height error
+## (metres) is under about a pixel on screen (mesh_lod_threshold, raised
+## a little on the low tiers), and where the chunk's colours, surface
+## weights or mowing stripes vary at all, the error counts as a fraction
+## of the coarser cell instead, so painted detail stays sharp until it is
+## far smaller than a pixel. Returns [[step, error], ...], finest first.
+const LOD_ENABLED := true
+const LOD_STEPS := [2, 4, 8]
+## Below this, two vertices' colours, weights or stripe UVs count as the same.
+const LOD_ATTRIBUTE_TOLERANCE := 0.01
+## Where they vary, the error a level counts is this share of its cell.
+const LOD_ATTRIBUTE_SHARE := 0.5
+## How far a skirt hangs below the chunk's lowest point (m): at least
+## SKIRT_DROP, or the chunk's whole rise if more, plus SKIRT_MIN.
+const SKIRT_DROP := 4.0
+const SKIRT_MIN := 0.3
+## Per side (first row, last row, first column, last column): which
+## winding of a skirt quad faces out of the chunk.
+const SKIRT_WINDING := [true, false, false, true]
+
+
+func _lod_errors(verts: PackedVector3Array, colors: PackedColorArray, weights: PackedVector2Array, palette: PackedFloat32Array, uvs: PackedVector2Array, nx: int, nz: int) -> Array:
+	var out := []
+	var plain := _uniform(colors, weights, palette)
+	var hs := PackedFloat32Array()
+	hs.resize(nx * nz)
+	var low := INF
+	var high := -INF
+	for v in nx * nz:
+		var y := verts[v].y
+		hs[v] = y
+		low = minf(low, y)
+		high = maxf(high, y)
+	var us := PackedFloat32Array()
+	var vs := PackedFloat32Array()
+	if plain and not uvs.is_empty():
+		us.resize(nx * nz)
+		vs.resize(nx * nz)
+		for v in nx * nz:
+			us[v] = uvs[v].x
+			vs[v] = uvs[v].y
+	# Each level's triangles are made of the next finer level's (the same
+	# diagonals), so its error is at most its error at the finer level's
+	# vertices plus the finer level's own error: a quarter of the work of
+	# measuring every vertex. Chunks cut short at the course's edge are
+	# measured at every vertex.
+	var nested := (nx - 1) % LOD_STEPS[-1] == 0 and (nz - 1) % LOD_STEPS[-1] == 0
+	var finer := 1
+	var finer_err := 0.0
+	var finer_uv := 0.0
+	for step: int in LOD_STEPS:
+		if step >= nx - 1 or step >= nz - 1:
+			break
+		var share := step * DesignedCourse.CELL * LOD_ATTRIBUTE_SHARE
+		if not plain and high - low <= share:
+			# Painted ground: the cell share counts, and no height error
+			# can be larger than the chunk's whole rise.
+			out.append([step, share])
+			finer = step
+			finer_err = high - low
+			continue
+		var at := finer if nested else 1
+		var err := finer_err + _level_error(hs, nx, nz, step, at)
+		var uv_err := 0.0
+		if not us.is_empty():
+			uv_err = finer_uv + maxf(_level_error(us, nx, nz, step, at), _level_error(vs, nx, nz, step, at))
+		if not plain or uv_err > LOD_ATTRIBUTE_TOLERANCE:
+			err = maxf(err, share)
+		out.append([step, err])
+		finer = step
+		finer_err = err
+		finer_uv = uv_err
+	return out
+
+
+## The largest difference between `values` (one per grid vertex) and the
+## level of `step` drawn over them, looked at on the vertices every `at`.
+static func _level_error(values: PackedFloat32Array, nx: int, nz: int, step: int, at: int) -> float:
+	var xs := _positions(nx, step)
+	var zs := _positions(nz, step)
+	var err := 0.0
+	for l in zs.size() - 1:
+		var z0 := zs[l]
+		var z1 := zs[l + 1]
+		var dz := 1.0 / (z1 - z0)
+		for k in xs.size() - 1:
+			var x0 := xs[k]
+			var x1 := xs[k + 1]
+			var dx := 1.0 / (x1 - x0)
+			var ha := values[z0 * nx + x0]
+			var hb := values[z0 * nx + x1]
+			var hc := values[z1 * nx + x0]
+			var hd := values[z1 * nx + x1]
+			for j in range(z0, z1 + 1, at):
+				var fz := (j - z0) * dz
+				var row := j * nx
+				for i in range(x0, x1 + 1, at):
+					var fx := (i - x0) * dx
+					var h := ha + (hb - ha) * fx + (hc - ha) * fz if fx + fz <= 1.0 else hd + (hc - hd) * (1.0 - fx) + (hb - hd) * (1.0 - fz)
+					var e := absf(h - values[row + i])
+					if e > err:
+						err = e
+	return err
+
+
+## True when every vertex of the chunk has the same colour, surface weights
+## and surface colour (open rough and the land round the course).
+static func _uniform(colors: PackedColorArray, weights: PackedVector2Array, palette: PackedFloat32Array) -> bool:
+	var t := LOD_ATTRIBUTE_TOLERANCE
+	var c0 := colors[0]
+	var w0 := weights[0]
+	for v in colors.size():
+		var c := colors[v]
+		if absf(c.r - c0.r) > t or absf(c.g - c0.g) > t or absf(c.b - c0.b) > t:
+			return false
+		var w := weights[v]
+		if absf(w.x - w0.x) > t or absf(w.y - w0.y) > t:
+			return false
+		for ch in 3:
+			if absf(palette[v * 4 + ch] - palette[ch]) > t:
+				return false
+	return true
+
+
+## Grid positions 0, step, 2 step... along a side of `n` vertices, always
+## ending on the last.
+static func _positions(n: int, step: int) -> PackedInt32Array:
+	var out := PackedInt32Array()
+	var i := 0
+	while i < n - 1:
+		out.append(i)
+		i += step
+	out.append(n - 1)
+	return out
+
+
+## The grid's triangles over the vertices at columns `xs` and rows `zs`
+## (no tee pad cells: chunks with pads have no coarser levels).
+static func _grid_indices(xs: PackedInt32Array, zs: PackedInt32Array, nx: int) -> PackedInt32Array:
+	var out := PackedInt32Array()
+	out.resize((xs.size() - 1) * (zs.size() - 1) * 6)
+	var n := 0
+	for l in zs.size() - 1:
+		for k in xs.size() - 1:
+			var a := zs[l] * nx + xs[k]
+			var b := zs[l] * nx + xs[k + 1]
+			var c := zs[l + 1] * nx + xs[k]
+			var d := zs[l + 1] * nx + xs[k + 1]
+			out[n] = a
+			out[n + 1] = b
+			out[n + 2] = c
+			out[n + 3] = b
+			out[n + 4] = d
+			out[n + 5] = c
+			n += 6
+	return out
+
+
+## The grid vertices round the chunk's edge, in the order their skirt
+## vertices are added: the first row, the last row, the first column, the
+## last column (corners twice).
+static func _ring(nx: int, nz: int) -> PackedInt32Array:
+	var out := PackedInt32Array()
+	for i in nx:
+		out.append(i)
+	for i in nx:
+		out.append((nz - 1) * nx + i)
+	for j in nz:
+		out.append(j * nx)
+	for j in nz:
+		out.append(j * nx + nx - 1)
+	return out
+
+
+## Skirt quads under the edge vertices at `xs` and `zs`, facing out of the
+## chunk, on the `wanted` sides (_ring's order; none on the course's edge). `base` is the first skirt vertex (_ring's
+## order).
+static func _skirt_indices(xs: PackedInt32Array, zs: PackedInt32Array, nx: int, nz: int, base: int, wanted: Array) -> PackedInt32Array:
+	var out := PackedInt32Array()
+	var side_out := SKIRT_WINDING
+	var sides := [
+		[xs, 0, func(i: int) -> int: return i, base],
+		[xs, 0, func(i: int) -> int: return (nz - 1) * nx + i, base + nx],
+		[zs, 0, func(j: int) -> int: return j * nx, base + 2 * nx],
+		[zs, 0, func(j: int) -> int: return j * nx + nx - 1, base + 2 * nx + nz],
+	]
+	for side_index in sides.size():
+		if not wanted[side_index]:
+			continue
+		var side: Array = sides[side_index]
+		var at: PackedInt32Array = side[0]
+		var top: Callable = side[2]
+		var low: int = side[3]
+		for k in at.size() - 1:
+			var p := at[k]
+			var q := at[k + 1]
+			var t0: int = top.call(p)
+			var t1: int = top.call(q)
+			var b0 := low + p
+			var b1 := low + q
+			# Facing out of the chunk: a gap is seen from the neighbour's side.
+			if side_out[side_index]:
+				out.append_array([t0, b0, t1, t1, b0, b1])
+			else:
+				out.append_array([t0, t1, b0, t1, b1, b0])
+	return out
 
 
 ## The tee pad triangles whose middles fall in the chunk's `cells`, with

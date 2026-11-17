@@ -241,6 +241,14 @@ func _test_terrain() -> void:
 	check(terrain.surface_at(5.0 * f, -25.0 * f) == Surface.Type.SAND, "sand from the ground class")
 	check(terrain.surface_at(50.0, 50.0) == Surface.Type.OUT_OF_BOUNDS, "off the course is out of bounds")
 	check(terrain.normal_at(15.0 * f, -15.0 * f).y > 0.9, "normal points up")
+	var under := 0
+	for k in 200:
+		var x := float(k % 20) * 2.0 * f - 5.0 * f
+		var z := -float(k / 20) * 4.0 * f + 5.0 * f
+		if terrain.height_at(x, z) > terrain.max_height_in(x - 0.5, z - 0.5, x + 0.5, z + 0.5):
+			under += 1
+	check(under == 0, "the height bound is never under the ground (%d under)" % under)
+	check(terrain.max_height_in(10.0 * f, -20.0 * f, 11.0 * f, -19.0 * f) < 30.0 * f, "and is a real bound, not INF")
 	# Both triangles must face up once wound for Godot.
 	var tri := t.triangles as PackedInt32Array
 	var pos := t.positions as PackedVector3Array

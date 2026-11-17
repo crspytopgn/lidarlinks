@@ -31,6 +31,10 @@ const RADIUS := 0.07  ## ft
 const GRAVITY := 32.152  ## ft/s^2
 const REV_PER_FPS := 2.27364  ## rev/s per ft/s of surface speed
 const FRAME_DT := 1.0 / 60.0
+## Feet a step must clear the highest ground under it by for
+## _ground_crossing to skip its samples (rounding room). Mirrors
+## olcore's kClearMargin.
+const CLEAR_MARGIN := 0.01
 const FEET_PER_METRE := 1.0 / 0.3048
 
 # Bounce.
@@ -232,6 +236,11 @@ class Ground:
 	func surface(_x: float, _y: float) -> LinksGround.Params:
 		return LinksGround.surface_for_class(LinksGround.FAIRWAY)
 
+	## No lower than height() anywhere between (x0, y0) and (x1, y1), or INF.
+	## Mirrors olcore::LinksGround::max_height.
+	func max_height(_x0: float, _y0: float, _x1: float, _y1: float) -> float:
+		return INF
+
 
 ## A CourseTerrain seen in the game's frame.
 class TerrainGround extends Ground:
@@ -242,6 +251,10 @@ class TerrainGround extends Ground:
 
 	func height(x: float, y: float) -> float:
 		return terrain.height_at(-x / LinksGround.FEET_PER_METRE, y / LinksGround.FEET_PER_METRE) * LinksGround.FEET_PER_METRE
+
+	func max_height(x0: float, y0: float, x1: float, y1: float) -> float:
+		var f := LinksGround.FEET_PER_METRE
+		return terrain.max_height_in(-maxf(x0, x1) / f, minf(y0, y1) / f, -minf(x0, x1) / f, maxf(y0, y1) / f) * f
 
 	func normal(x: float, y: float) -> Vector3:
 		var n := terrain.normal_at(-x / LinksGround.FEET_PER_METRE, y / LinksGround.FEET_PER_METRE)
@@ -631,6 +644,10 @@ static func _spin_from_game(w: Vector3) -> Vector3:
 # Straight path p -> q: fraction where the centre first meets the ground, or
 # a negative number if it stays above.
 static func _ground_crossing(g: Ground, p: Vector3, q: Vector3) -> float:
+	# Wholly above the highest ground under it: every sample below would be
+	# above the ground, so the answer is the same without them.
+	if minf(p.z, q.z) > g.max_height(p.x, p.y, q.x, q.y) + CLEAR_MARGIN:
+		return -1.0
 	if _height_above(g, p, q, 0.0) <= 0.0:
 		return 0.0
 	var samples := 16

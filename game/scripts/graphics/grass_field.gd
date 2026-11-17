@@ -415,6 +415,7 @@ static func tuft_mesh() -> ArrayMesh:
 	var normals := PackedVector3Array()
 	var blades := PackedVector2Array()
 	var indices := PackedInt32Array()
+	var far := PackedInt32Array()
 	for b in BLADES:
 		var a := rng.randf() * TAU
 		# Spread over the whole footprint (sqrt: even, not bunched at the
@@ -436,6 +437,7 @@ static func tuft_mesh() -> ArrayMesh:
 			normals.append(Vector3.UP)
 			blades.append(blade)
 		indices.append_array(PackedInt32Array([base, base + 1, base + 2, base, base + 2, base + 3, base + 3, base + 2, base + 4]))
+		far.append_array(PackedInt32Array([base, base + 1, base + 4]))
 	var arrays := []
 	arrays.resize(Mesh.ARRAY_MAX)
 	arrays[Mesh.ARRAY_VERTEX] = verts
@@ -444,5 +446,13 @@ static func tuft_mesh() -> ArrayMesh:
 	arrays[Mesh.ARRAY_TEX_UV2] = blades
 	arrays[Mesh.ARRAY_INDEX] = indices
 	var mesh := ArrayMesh.new()
-	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+	# A coarser level for chunks a few metres off: each blade one triangle
+	# from its root to its tip instead of three (a third of the triangles).
+	# The blade's slight bow is a millimetre or two on a real tuft, so the
+	# renderer swaps it in where that is under a pixel (mesh LOD).
+	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays, [], {TUFT_LOD_ERROR: far})
 	return mesh
+
+
+## How far (m) a tuft's one-triangle blades are off its three-triangle ones.
+const TUFT_LOD_ERROR := 0.002
