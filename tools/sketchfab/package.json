@@ -1,0 +1,1 @@
+{"name":"ol-sketchfab","private":true,"type":"module","dependencies":{"@gltf-transform/core":"4.1.1","@gltf-transform/extensions":"4.1.1","@gltf-transform/functions":"4.1.1","meshoptimizer":"0.22.0","sharp":"0.33.5","gl-matrix":"3.4.3"}}

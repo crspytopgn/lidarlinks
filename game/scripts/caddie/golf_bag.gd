@@ -16,8 +16,11 @@ const TILT_DEG := 14.0  ## leaning back on its stand
 static var _mesh: ArrayMesh
 
 
-func _init() -> void:
-	mesh = shared_mesh()
+## `cart`: the cart bag with a full set (tools/sketchfab), as golfers strap
+## on a buggy, when it is there; otherwise the staff bag.
+func _init(cart := false) -> void:
+	var m: Mesh = CourseProps.mesh("cart_bag") if cart else null
+	mesh = m if m != null else shared_mesh()
 	cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
 
 
