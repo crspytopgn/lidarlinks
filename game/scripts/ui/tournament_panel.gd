@@ -140,11 +140,8 @@ func _build_view(box: VBoxContainer) -> void:
 	_view_box = VBoxContainer.new()
 	_view_box.add_theme_constant_override("separation", 8)
 	box.add_child(_view_box)
-	# The win: a gold banner over the final leaderboard.
-	_trophy = _small("", 34, false)
-	_trophy.add_theme_color_override("font_color", MenuHome.GOLD)
-	_trophy.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_trophy.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	# The result, as a plain broadcast caption over the final leaderboard.
+	_trophy = _small("", 20, false)
 	_view_box.add_child(_trophy)
 	_heading = _small("", 20)
 	_heading.modulate = Color.WHITE
@@ -243,15 +240,17 @@ func _fill() -> void:
 	_watch.text = "\n".join(_watch_lines(t, 6))
 
 
-## The banner once it is over: the trophy for a win, a line for a good week.
+## The caption once it is over, understated like a TV graphic: the win
+## with the winning score, or a top 10.
 static func _trophy_text(t: Tournament) -> String:
 	if not t.over() or t.result.is_empty() or not str(t.result.get("status", "")).is_empty():
 		return ""
 	var pos := int(t.result.get("pos", 0))
 	if pos == 1:
-		return "CHAMPION\nThe %s trophy is yours" % t.title
+		return "WINNER   ·   %s   ·   %s" % [t.title, Scorecard.format_to_par(int(t.result.get("winning", 0)))
+			if t.format == Tournament.Format.STROKE else str(t.result.get("winning", 0)) + " pts"]
 	if pos <= 10 and t.format != Tournament.Format.MATCH and t.format != Tournament.Format.SKINS:
-		return "Top 10 finish"
+		return "TOP 10 FINISH   ·   %s" % t.title
 	return ""
 
 

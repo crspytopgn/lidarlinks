@@ -630,8 +630,9 @@ simulated golfers within `SUNDAY_CONTENTION` (5) of the lead feel it: a
 nervy golfer (`TourPro.nerve` -1) drops about 0.8 strokes and a clutch one
 gains them, and their scores spread more. The computer golfers in the
 person's group feel pressure from six holes out instead of three, and
-more of it (main.gd `_pressure_on`). A win puts a gold CHAMPION banner over
-the final leaderboard.
+more of it (main.gd `_pressure_on`). The result shows as a plain broadcast
+caption over the final leaderboard ("WINNER · Kauri Cliffs Invitational ·
+-18", or a top 10).
 
 The person plays every round for real with up to three field golfers, who
 play as themselves (`RoundSetup.pros`). Everyone else is simulated hole by

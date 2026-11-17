@@ -164,7 +164,7 @@ product lead builds it.
   - [x] Calibrated to real statistics: driving, fairways, approach and chip proximity and putting make rates measured through the physics against PGA Tour and amateur numbers (`tools/olcalibrate`), for both physics models; Classic Links misses as a setting
   - [x] Sixteen named pros and made-up field golfers with their own strengths and weaknesses, shot shape, aggression, course management, nerve, form and pre-shot routine
   - [x] Tournament creator: courses, rounds, field size, strength and gender, cut, stroke play, Stableford, knockout match play or skins, purse, weather, tee times, with a live leaderboard and broadcast captions ([game-shell.md](docs/game-shell.md#tournaments))
-  - [x] Tour event: one click from the main menu builds a PGA Tour-style 72-hole week (144 field, cut, $8M purse, Sunday pressure, champion banner) ([game-shell.md](docs/game-shell.md#tournaments))
+  - [x] Tour event: one click from the main menu builds a PGA Tour-style 72-hole week (144 field, cut, $8M purse, Sunday pressure, winner caption) ([game-shell.md](docs/game-shell.md#tournaments))
   - [ ] Measure real computer-golfer rounds on the disc courses and tune the simulated field against them; play tied playoffs and level matches for real
 - [ ] Menus and HUD: setup, club picker, wind and lie display, aim line
   - [x] Main menu, round setup (course, tees, holes, mode, players), pause menu, multi-player scorecard

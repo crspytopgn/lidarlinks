@@ -6349,7 +6349,7 @@ func _test_tournament_tour_event() -> void:
 	var text := _play_tournament_round(t, pars, -1)
 	print("  " + text)
 	_check(t.over() and int(t.result.pos) == 1, "-72 wins (%s)" % text)
-	_check(TournamentPanel._trophy_text(t).begins_with("CHAMPION"), "the trophy banner")
+	_check(TournamentPanel._trophy_text(t).begins_with("WINNER"), "the winner's caption (%s)" % TournamentPanel._trophy_text(t))
 	Tournament.remove()
 	CourseDifficulty.remove()
 
