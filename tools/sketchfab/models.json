@@ -237,6 +237,94 @@
         "error": 0.05,
         "footCentre": true
       }
+    },
+    "palm_coconut_0": {
+      "uid": "d05c8ffb6ec64a7184c4b673e21f7224",
+      "title": "Realistic Palm Tree 2 Free",
+      "author": "Next Spring",
+      "licence": "CC BY 4.0",
+      "why": "DesertPlants coconut palm variant 0: palm M_Palm_P2_14 from the pack, scaled to 9.7 m (DesertPlants.palm_height(0) plus the crown), so the obstacles still match.",
+      "opts": {
+        "keep": [
+          "^M_Palm_P2_14_"
+        ],
+        "dropMaterials": [
+          "Break"
+        ],
+        "fit": {
+          "axis": "y",
+          "metres": 9.7
+        },
+        "tex": 256,
+        "alphaTex": 512,
+        "footCentre": true
+      }
+    },
+    "palm_coconut_1": {
+      "uid": "d05c8ffb6ec64a7184c4b673e21f7224",
+      "title": "Realistic Palm Tree 2 Free",
+      "author": "Next Spring",
+      "licence": "CC BY 4.0",
+      "why": "DesertPlants coconut palm variant 1: palm M_Palm_P2_13 from the pack, scaled to 11.5 m (DesertPlants.palm_height(1) plus the crown), so the obstacles still match.",
+      "opts": {
+        "keep": [
+          "^M_Palm_P2_13_"
+        ],
+        "dropMaterials": [
+          "Break"
+        ],
+        "fit": {
+          "axis": "y",
+          "metres": 11.5
+        },
+        "tex": 256,
+        "alphaTex": 512,
+        "footCentre": true
+      }
+    },
+    "palm_coconut_2": {
+      "uid": "d05c8ffb6ec64a7184c4b673e21f7224",
+      "title": "Realistic Palm Tree 2 Free",
+      "author": "Next Spring",
+      "licence": "CC BY 4.0",
+      "why": "DesertPlants coconut palm variant 2: palm M_Palm_P2_22 from the pack, scaled to 13.3 m (DesertPlants.palm_height(2) plus the crown), so the obstacles still match.",
+      "opts": {
+        "keep": [
+          "^M_Palm_P2_22_"
+        ],
+        "dropMaterials": [
+          "Break"
+        ],
+        "fit": {
+          "axis": "y",
+          "metres": 13.3
+        },
+        "tex": 256,
+        "alphaTex": 512,
+        "footCentre": true
+      }
+    },
+    "palm_coconut_3": {
+      "uid": "d05c8ffb6ec64a7184c4b673e21f7224",
+      "title": "Realistic Palm Tree 2 Free",
+      "author": "Next Spring",
+      "licence": "CC BY 4.0",
+      "why": "DesertPlants coconut palm variant 3: palm M_Palm_P2_31 from the pack, scaled to 15.1 m (DesertPlants.palm_height(3) plus the crown), so the obstacles still match.",
+      "opts": {
+        "keep": [
+          "^M_Palm_P2_31_"
+        ],
+        "dropMaterials": [
+          "Break"
+        ],
+        "fit": {
+          "axis": "y",
+          "metres": 15.1
+        },
+        "tex": 256,
+        "alphaTex": 512,
+        "footCentre": true
+      }
     }
   }
 }
