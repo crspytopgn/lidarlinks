@@ -73,6 +73,10 @@ var _lie: int = Surface.Type.FAIRWAY
 var _wind := Vector3.ZERO
 var _teed_up := false
 var _jobs: Array[Callable] = []
+## A job waiting in _simulate for the next step(), and when this step ends.
+var _suspended := false
+var _deadline_us := 0
+signal _resume
 var _candidates: Array[Candidate] = []
 var _best_putt: Candidate
 ## What its own shots on this hole really did: [from, club, strokes still to
@@ -156,6 +160,11 @@ func address_time() -> float:
 
 ## Starts planning a shot from `from` on `lie`.
 func plan(model: ShotModel, clubs: Array[Club], hole: HoleData, from: Vector3, lie: int, wind: Vector3) -> void:
+	# A job of the last plan still waiting in _simulate ends first, on the
+	# old shot, rather than waking later on this one.
+	if _suspended:
+		_deadline_us = 1 << 62
+		_resume.emit()
 	if hole != _hole:
 		_tried.clear()
 	_model = model
@@ -202,14 +211,25 @@ func plan(model: ShotModel, clubs: Array[Club], hole: HoleData, from: Vector3, l
 
 
 ## Runs planning jobs for about `budget_ms`; true once the plan is ready.
+## A job is several flights and rolls (up to a dozen in the short game, 20
+## to 60 ms each in the browser), so a job pauses between them once the
+## budget is spent (_simulate) and goes on at the next step: a whole job at
+## once made frames of 200 ms and more while aiming.
 func step(budget_ms := 6.0) -> bool:
 	var start := Time.get_ticks_usec()
+	_deadline_us = start + int(budget_ms * 1000.0)
+	if _suspended:
+		_resume.emit()
+		if _suspended:
+			return false
 	while not _jobs.is_empty():
 		var job: Callable = _jobs.pop_front()
 		job.call()
-		if Time.get_ticks_usec() - start > budget_ms * 1000.0:
+		if _suspended:
+			return false
+		if Time.get_ticks_usec() > _deadline_us:
 			break
-	return _jobs.is_empty()
+	return _jobs.is_empty() and not _suspended
 
 
 func finish() -> void:
@@ -269,7 +289,7 @@ func _job_club(i: int, offset_deg: float, safe: bool, past_m := 0.0) -> void:
 	c.power = top
 	if at_pin:
 		c.power = clampf(top * to_target / reach, MIN_POWER, top)
-	var r := _simulate(c.club, c.power, c.aim_deg, c.accuracy)
+	var r := await _simulate(c.club, c.power, c.aim_deg, c.accuracy)
 	var best_r := r
 	var best_power := c.power
 	var best_aim := c.aim_deg
@@ -289,7 +309,7 @@ func _job_club(i: int, offset_deg: float, safe: bool, past_m := 0.0) -> void:
 			c.power = clampf(c.power * minf(to_target / progress, 3.0), MIN_POWER, top)
 		else:
 			c.power = minf(c.power * 2.0, top)
-		r = _simulate(c.club, c.power, c.aim_deg, c.accuracy)
+		r = await _simulate(c.club, c.power, c.aim_deg, c.accuracy)
 		# Keep the best try: a correction can overshoot.
 		if _value(r) < _value(best_r):
 			best_r = r
@@ -299,13 +319,13 @@ func _job_club(i: int, offset_deg: float, safe: bool, past_m := 0.0) -> void:
 		var base := best_power
 		for f: float in SHORT_GAME_POWER_SCAN:
 			var p := clampf(base * f, MIN_POWER, top)
-			var t := _simulate(c.club, p, best_aim, c.accuracy)
+			var t := await _simulate(c.club, p, best_aim, c.accuracy)
 			if _value(t) < _value(best_r):
 				best_r = t
 				best_power = p
 		var aim0 := best_aim
 		for d: float in SHORT_GAME_AIM_SCAN_DEG:
-			var t := _simulate(c.club, best_power, aim0 + d, c.accuracy)
+			var t := await _simulate(c.club, best_power, aim0 + d, c.accuracy)
 			if _value(t) < _value(best_r):
 				best_r = t
 				best_aim = aim0 + d
@@ -359,10 +379,10 @@ func _job_risk(c: Candidate) -> void:
 	var aim := e[2] * k
 	var pw := 1.5 * e[0] * k
 	var misses := 0.0
-	misses += _value(_simulate(c.club, c.power, c.aim_deg + aim, c.accuracy - acc))
-	misses += _value(_simulate(c.club, c.power, c.aim_deg - aim, c.accuracy + acc))
-	misses += _value(_simulate(c.club, c.power * (1.0 - pw), c.aim_deg, c.accuracy))
-	misses += _value(_simulate(c.club, minf(c.power * (1.0 + pw), 1.0), c.aim_deg, c.accuracy))
+	misses += _value(await _simulate(c.club, c.power, c.aim_deg + aim, c.accuracy - acc))
+	misses += _value(await _simulate(c.club, c.power, c.aim_deg - aim, c.accuracy + acc))
+	misses += _value(await _simulate(c.club, c.power * (1.0 - pw), c.aim_deg, c.accuracy))
+	misses += _value(await _simulate(c.club, minf(c.power * (1.0 + pw), 1.0), c.aim_deg, c.accuracy))
 	var weight := 1.25 - pro.aggression  # each miss against the plan itself
 	c.score = (c.nominal + weight * misses) / (1.0 + 4.0 * weight)
 
@@ -386,7 +406,7 @@ func _job_choose() -> void:
 ## Putts: aim and pace at the hole, then read the green from where the ball
 ## stops and try again, keeping the best.
 func _job_putt(c: Candidate, attempt: int) -> void:
-	var r := _simulate(c.club, c.power, c.aim_deg)
+	var r := await _simulate(c.club, c.power, c.aim_deg)
 	c.score = _value(r)
 	if _best_putt == null or c.score < _best_putt.score:
 		_best_putt = Candidate.new()
@@ -473,6 +493,12 @@ func _choose_fallback() -> void:
 
 
 func _simulate(club: int, p: float, aim: float, accuracy := 0.0) -> ShotResult:
+	# Out of time this step: wait for the next (see step()). Each flight
+	# sets the model up itself, so the pause changes nothing it finds.
+	if Time.get_ticks_usec() > _deadline_us:
+		_suspended = true
+		await _resume
+		_suspended = false
 	if _model is LinksShotModel:
 		(_model as LinksShotModel).computer = true  # plan without the human miss model
 		(_model as LinksShotModel).computer_ratings = null  # nor the computer's own

@@ -357,15 +357,19 @@ func _build_crowd(hole: HoleData, lines: Array[PackedVector3Array], count: int, 
 	var spots := crowd_spots(hole, lines, count, seed_value)
 	for spot: Array in spots:
 		var look := PlayerLook.spectator(rng.randi())
-		var person := FreeGolfer.create(look, FreeGolfer.SPECTATOR_TEXTURE)
+		# A spectator from the last hole if one is spare: dressing a new one
+		# bakes their meshes (several ms each, 28 at Ultra).
+		var person: FreeGolfer = _spare_people.pop_back() if not _spare_people.is_empty() else null
 		if person == null:
-			break  # no golfer model or look pack: ropes only
-		person.walk_in = false
-		for node in person.find_children("*", "MeshInstance3D", true, false):
-			var mi := node as MeshInstance3D
-			if mi.name.begins_with("Driver") or mi.name.begins_with("Putter") or mi.name.begins_with("Iron"):
-				mi.visible = false
-			mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			person = FreeGolfer.create(look, FreeGolfer.SPECTATOR_TEXTURE)
+			if person == null:
+				break  # no golfer model or look pack: ropes only
+			person.walk_in = false
+			for node in person.find_children("*", "MeshInstance3D", true, false):
+				var mi := node as MeshInstance3D
+				if mi.name.begins_with("Driver") or mi.name.begins_with("Putter") or mi.name.begins_with("Iron"):
+					mi.visible = false
+				mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		var at: Vector3 = spot[0]
 		var focus: Vector3 = spot[1]
 		add_child(person)
@@ -382,12 +386,16 @@ func _build_crowd(hole: HoleData, lines: Array[PackedVector3Array], count: int, 
 		if player == null:
 			continue
 		player.set_meta(&"stand", STAND_FRAMES[rng.randi() % STAND_FRAMES.size()])
-		var skeletons := person.find_children("*", "Skeleton3D", true, false)
-		if not skeletons.is_empty():
-			var skeleton := skeletons[0] as Skeleton3D
-			var arms := CrowdArms.new(arm_pose(rng.randf()))
-			skeleton.add_child(arms)
-			player.set_meta(&"arms", arms)
+		var arm := arm_pose(rng.randf())
+		if player.has_meta(&"arms"):
+			(player.get_meta(&"arms") as CrowdArms).pose = arm
+		else:
+			var skeletons := person.find_children("*", "Skeleton3D", true, false)
+			if not skeletons.is_empty():
+				var skeleton := skeletons[0] as Skeleton3D
+				var arms := CrowdArms.new(arm)
+				skeleton.add_child(arms)
+				player.set_meta(&"arms", arms)
 		_stand(player)
 	_add_contact_shadows("ContactShadows", feet, hole.terrain)
 	return spots
@@ -472,9 +480,15 @@ func watch(node: Node3D) -> void:
 		person.watch(node, randf_range(0.05, 0.5))
 		var want := facing_yaw(person.global_position, at) + float(person.get_meta(&"lean", 0.0))
 		var from := person.rotation.y
+		# A turn still running when the hole ends must not reach the person
+		# in the next hole's gallery (release_people).
+		var serial: int = person.get_meta(&"serial", 0)
+		var turn := func(k: float) -> void:
+			if int(person.get_meta(&"serial", 0)) == serial:
+				person.rotation.y = lerp_angle(from, want, k)
 		var t := person.create_tween()
 		t.tween_interval(randf_range(0.0, 0.6))
-		t.tween_method(func(k: float) -> void: person.rotation.y = lerp_angle(from, want, k), 0.0, 1.0, randf_range(0.8, 1.4)).set_trans(Tween.TRANS_SINE)
+		t.tween_method(turn, 0.0, 1.0, randf_range(0.8, 1.4)).set_trans(Tween.TRANS_SINE)
 
 
 ## The crowd watches a spot (the golfer: about chest height over them).
@@ -621,6 +635,35 @@ const CLEAR_MARGIN := 0.8
 var _terrain: CourseTerrain
 var _people: Array[FreeGolfer] = []
 var _people_home := PackedVector3Array()
+## Spectators kept from the last hole's gallery for the next one.
+static var _spare_people: Array[FreeGolfer] = []
+const SPARE_PEOPLE_MAX := 40
+
+
+## Hands the crowd back for the next hole's gallery (call before freeing
+## this one). Anything still timed for them (a turn, a cheer) is dropped.
+func release_people() -> void:
+	for person in _people:
+		if not is_instance_valid(person) or person.is_queued_for_deletion():
+			continue
+		if person.get_parent() == self:
+			remove_child(person)
+		person.set_meta(&"serial", int(person.get_meta(&"serial", 0)) + 1)
+		person.watch(null, 0.0)
+		if _spare_people.size() < SPARE_PEOPLE_MAX:
+			_spare_people.append(person)
+		else:
+			person.queue_free()
+	_people.clear()
+	_people_home = PackedVector3Array()
+
+
+## Frees the spare spectators (when the round ends).
+static func free_spare_people() -> void:
+	for person in _spare_people:
+		if is_instance_valid(person):
+			person.queue_free()
+	_spare_people.clear()
 var _card_home := PackedVector3Array()
 var _bases := {}  ## MultiMesh -> its instances' first bases
 
@@ -744,13 +787,16 @@ func react(crowd: int) -> void:
 		var player := c.find_child("AnimationPlayer", true, false) as AnimationPlayer
 		if player == null or not player.has_animation(clip):
 			continue
-		get_tree().create_timer(randf_range(0.1, 0.9)).timeout.connect(_react_one.bind(player, clip))
+		get_tree().create_timer(randf_range(0.1, 0.9)).timeout.connect(_react_one.bind(player, clip, c, int(c.get_meta(&"serial", 0))))
 
 
 ## `who` is a Variant: the hole can end, freeing the spectator, before the
 ## timer fires, and a freed object can't be passed as an AnimationPlayer.
-static func _react_one(who: Variant, clip: StringName) -> void:
+static func _react_one(who: Variant, clip: StringName, person: Variant = null, serial := 0) -> void:
 	if not is_instance_valid(who):
+		return
+	# Gone on to the next hole's gallery in the meantime.
+	if is_instance_valid(person) and int((person as Node).get_meta(&"serial", 0)) != serial:
 		return
 	var player := who as AnimationPlayer
 	if player.has_meta(&"arms"):

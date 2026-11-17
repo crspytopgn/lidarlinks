@@ -1548,6 +1548,22 @@ func _test_computer_golfer_plans() -> void:
 	_check(not clubs[cpu.club_index].is_putter, "a full club from the fairway")
 	_check(miss < 6.0, "approach plan ends within 6 m in a crosswind (%.1f m)" % miss)
 
+	# Planned a little at a time (a zero budget pauses before every flight),
+	# the plan comes out the same as at once.
+	var sliced := ComputerGolfer.new(OpponentSkill.Level.TOUR, 5, TourPro.find("Callum Reid"))
+	sliced.plan(model, clubs, hole, Vector3.ZERO, Surface.Type.FAIRWAY, Vector3(3.0, 0.0, 0.0))
+	var steps := 0
+	while not sliced.step(0.0) and steps < 10000:
+		steps += 1
+	_check(steps > 10, "a zero budget plans one flight a step (%d steps)" % steps)
+	_check(sliced.club_index == cpu.club_index and sliced.power == cpu.power and sliced.aim_deg == cpu.aim_deg, "and plans the same shot")
+	# A new plan while a flight is waiting finishes the old job first.
+	sliced.plan(model, clubs, hole, Vector3.ZERO, Surface.Type.FAIRWAY, Vector3(3.0, 0.0, 0.0))
+	sliced.step(0.0)
+	sliced.plan(model, clubs, hole, Vector3.ZERO, Surface.Type.FAIRWAY, Vector3(3.0, 0.0, 0.0))
+	sliced.finish()
+	_check(sliced.club_index == cpu.club_index and sliced.aim_deg == cpu.aim_deg, "re-planned mid-job, still the same shot")
+
 	# After stroke and distance it doesn't play the same club out of bounds
 	# again: the plan can't see a real swing catch a bunker lip.
 	var first := cpu.club_index
