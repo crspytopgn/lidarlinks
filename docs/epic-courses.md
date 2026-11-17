@@ -71,7 +71,7 @@ less on Low and Medium). Saguaro trunks are solid; their arms and the small
 cacti slow the ball like a canopy or bush. The saguaros and barrels are
 scanned models where they're there: PlantCatalog's on Sketchfab (CC BY,
 `tools/sketchfab/models.json`, `cactus_saguaro_0` to `_3` and
-`cactus_barrel_0`, one barrel for every variant), cut to 2,000 and 1,500 triangles with 256 px textures without their
+`cactus_barrel_0` to `_3`), cut to 3,000 and 1,500 triangles without their
 flowers, fine spines and fuzz, each saguaro scaled to its variant's height
 and stood on its foot so the obstacles still match. The prickly pear is
 still built here.
