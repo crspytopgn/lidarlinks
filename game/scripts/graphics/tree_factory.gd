@@ -279,6 +279,58 @@ static func batch_node(batch: Dictionary, shadows := true) -> GeometryInstance3D
 	return node
 
 
+## Gives the trees among `parent`'s children (made by instance()) one
+## MultiMesh of impostors between them, in place of a node each: at the
+## tee of Kettle Hollow that was 97 draws of one card each. The trees keep
+## their own full and lite meshes.
+static func batch_impostors(parent: Node3D) -> GeometryInstance3D:
+	var trees: Array[Node3D] = []
+	for c in parent.get_children():
+		if c is Node3D and c.has_meta("tree_variant") and not c.has_meta("impostor_batched"):
+			trees.append(c)
+	if trees.is_empty():
+		return null
+	_ensure_instanced()
+	var centre := Vector3.ZERO
+	for t in trees:
+		centre += t.position
+	centre /= trees.size()
+	var imp := MultiMesh.new()
+	imp.transform_format = MultiMesh.TRANSFORM_3D
+	imp.use_custom_data = true
+	imp.mesh = _impostor_quad
+	imp.instance_count = trees.size()
+	var box := AABB()
+	for i in trees.size():
+		var t := trees[i]
+		var v: int = t.get_meta("tree_variant")
+		t.set_meta("impostor_batched", true)
+		var old := t.get_node_or_null("Impostor")
+		if old != null:
+			t.remove_child(old)
+			old.queue_free()
+			_add_impostor(t)
+		var x := t.transform * Transform3D(Basis.from_scale(Vector3.ONE * _sizes[v]), Vector3.ZERO)
+		x.origin -= centre
+		imp.set_instance_transform(i, x)
+		imp.set_instance_custom_data(i, Color((v + 0.5) / _variants.size(), 0, 0, 0))
+		# The card turns to the camera: allow for its whole width either way.
+		var r := _sizes[v] * t.scale.x
+		var b := AABB(x.origin - Vector3(r, 0, r), Vector3(2 * r, r, 2 * r))
+		box = b if i == 0 else box.merge(b)
+	var node := MultiMeshInstance3D.new()
+	node.name = "TreeImpostors"
+	node.multimesh = imp
+	node.position = centre
+	node.custom_aabb = box
+	node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	parent.add_child(node)
+	if not _baked:
+		_start_bake()
+	_update_distance()
+	return node
+
+
 ## Tree i of `trees` (see batches): scaled from the variant's height to the
 ## placement's, turned by a hash of its position.
 static func _tree_transform(trees: PackedFloat32Array, i: int, mesh_height: float) -> Transform3D:
@@ -872,6 +924,11 @@ static func _scan_material(mat: ShaderMaterial, tree: String, part: String, bake
 static func _add_impostor(root: Node3D) -> void:
 	var variant: int = root.get_meta("tree_variant")
 	var distance := impostor_distance()
+	# A batched impostor dissolves in over the LOD_FADE band: the tree stays
+	# until it is whole, so the two overlap rather than leave a gap.
+	var batched: bool = root.get_meta("impostor_batched", false)
+	if batched:
+		distance *= 1.0 + LOD_FADE
 	var full := root.get_node("Full") as GeometryInstance3D
 	full.visibility_range_end = distance
 	full.visibility_range_end_margin = 4.0
@@ -883,6 +940,8 @@ static func _add_impostor(root: Node3D) -> void:
 		lite.visibility_range_end = distance
 		lite.visibility_range_end_margin = 4.0
 		lite.visible = true
+	if batched:
+		return
 	var quad := QuadMesh.new()
 	quad.size = Vector2.ONE
 	quad.center_offset = Vector3(0, 0.5, 0)

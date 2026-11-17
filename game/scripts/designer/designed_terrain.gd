@@ -446,13 +446,19 @@ func _add_distant_trees(root: Node3D) -> void:
 			continue
 		var species := _tree_rows[k + 4]
 		trees.append_array(PackedFloat32Array([_tree_rows[k], _tree_rows[k + 1], _tree_rows[k + 2], _tree_rows[k + 3], species if d <= full else species + TreeFactory.FAR_ONLY]))
-	for batch: Dictionary in TreeFactory.batches(trees, 160.0):
+	for batch: Dictionary in TreeFactory.batches(trees, DISTANT_TREE_CELL):
 		# They stand at least HOLE_REACH from the tees and the line of play,
 		# so their shadows seldom reach the ground the player looks at, and
 		# drawing them again for the sun is most of what woods cost.
 		var node := TreeFactory.batch_node(batch, false)
 		node.name = "DistantTrees"
 		root.add_child(node)
+
+
+## Side (metres) of the cells the distant trees are batched in. A cell's
+## node is drawn whole while any of it is within the impostor distance, so
+## smaller cells waste less on trees already showing as impostors.
+const DISTANT_TREE_CELL := 80.0
 
 
 ## Every tree of the course as [x, ground height, z, height, species], the

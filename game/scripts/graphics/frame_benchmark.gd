@@ -90,7 +90,7 @@ func _run() -> void:
 		_base[k] = g.get(k)
 	var lines := PackedStringArray()
 	lines.append("OpenLinks2003 benchmark: %s, %s, %s, window %s, look %s" % [OS.get_name(), RenderingServer.get_video_adapter_name(), RenderingServer.get_current_rendering_method(), get_window().size, GraphicsSettings.LOOK_NAMES[g.look]])
-	for line in scene_breakdown(_game):
+	for line in scene_breakdown(_game, get_viewport().get_camera_3d()):
 		print(line)
 		lines.append(line)
 	var only_default := OS.get_cmdline_user_args().has("--scene-only")
@@ -197,8 +197,9 @@ func _play(seconds: float) -> PackedStringArray:
 ## sun shadows, plus how many distinct materials there are (each a shader
 ## the renderer compiles the first time it's seen). Hardware-independent,
 ## so cloud runs show the same costs a phone would pay.
-static func scene_breakdown(root: Node) -> PackedStringArray:
+static func scene_breakdown(root: Node, cam: Camera3D = null) -> PackedStringArray:
 	var groups := {}
+	var planes: Array[Plane] = cam.get_frustum() if cam != null else []
 	var mats := {}
 	var shaders := {}
 	var stack: Array[Node] = [root]
@@ -220,7 +221,10 @@ static func scene_breakdown(root: Node) -> PackedStringArray:
 		if mesh == null or count == 0:
 			continue
 		var owner_name := _owner_name(gi, root)
-		var row: Array = groups.get(owner_name, [0, 0, 0, 0.0, 0, 0])
+		var mesh_name := mesh.resource_name if mesh.resource_name != "" else mesh.resource_path.get_file()
+		if mesh_name != "" and owner_name.contains("@"):
+			owner_name += " (%s)" % mesh_name
+		var row: Array = groups.get(owner_name, [0, 0, 0, 0.0, 0, 0, 0, 0.0])
 		var tris := 0
 		for s in mesh.get_surface_count():
 			var arrays_len := 0
@@ -243,16 +247,38 @@ static func scene_breakdown(root: Node) -> PackedStringArray:
 			row[4] += mesh.get_surface_count()
 		if gi.visibility_range_end > 0.0:
 			row[5] += 1
+		if cam != null and _in_view(gi, cam, planes):
+			row[6] += mesh.get_surface_count()
+			row[7] += float(tris) * count
 		groups[owner_name] = row
 	var keys := groups.keys()
 	keys.sort_custom(func(a: String, b: String) -> bool: return groups[a][1] > groups[b][1])
 	var out := PackedStringArray()
-	out.append("scene by owner | nodes | surfaces | instances | k tris | shadow surfaces | with visibility range")
+	out.append("scene by owner | nodes | surfaces | instances | k tris | shadow surfaces | with visibility range | in view surfaces | in view k tris (LOD0)")
 	for k: String in keys:
 		var r: Array = groups[k]
-		out.append("%s | %d | %d | %d | %.0f | %d | %d" % [k, r[0], r[1], r[2], r[3] / 1000.0, r[4], r[5]])
+		out.append("%s | %d | %d | %d | %.0f | %d | %d | %d | %.0f" % [k, r[0], r[1], r[2], r[3] / 1000.0, r[4], r[5], r[6], r[7] / 1000.0])
 	out.append("distinct materials %d, shaders %d" % [mats.size(), shaders.size()])
 	return out
+
+
+## In the camera's frustum and inside its visibility range (roughly, by the
+## box's centre), so drawn this frame.
+static func _in_view(gi: GeometryInstance3D, cam: Camera3D, planes: Array[Plane]) -> bool:
+	var box := gi.global_transform * gi.get_aabb()
+	var d := cam.global_position.distance_to(box.get_center())
+	if gi.visibility_range_end > 0.0 and d > gi.visibility_range_end + gi.visibility_range_end_margin:
+		return false
+	if gi.visibility_range_begin > 0.0 and d < gi.visibility_range_begin - gi.visibility_range_begin_margin:
+		return false
+	for pl in planes:
+		# Outside if the whole box is on the plane's outer side.
+		var c := box.get_center()
+		var e := box.size * 0.5
+		var r := absf(pl.normal.x) * e.x + absf(pl.normal.y) * e.y + absf(pl.normal.z) * e.z
+		if pl.distance_to(c) > r:
+			return false
+	return true
 
 
 static func _owner_name(n: Node, root: Node) -> String:
