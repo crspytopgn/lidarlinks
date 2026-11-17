@@ -386,6 +386,7 @@ func _exit_tree() -> void:
 	# Shot reads still planning on worker threads (CaddieAdvice) must end
 	# before the game can quit.
 	CaddieAdvice.wait_all()
+	Gallery.free_spare_people()
 
 
 func _ready() -> void:
@@ -697,6 +698,8 @@ func start_hole(index: int) -> void:
 		hole.pin = _home_pins[hole]
 		practice_spot = practice.setup(hole)
 		hole.pin = practice.cup_position()
+	if gallery != null and is_instance_valid(gallery):
+		gallery.release_people()
 	if hole_root:
 		hole_root.queue_free()
 	hole_root = Node3D.new()
