@@ -104,6 +104,23 @@ Ultra and use a notch lighter soft-shadow filter.
   global `sky_tint`). The baked ground shade follows the sun, since it is
   baked at each hole's start after the sun has moved. Classic lighting
   keeps Links 2003's fixed afternoon sun.
+  **Soft overcast** (`TIMES["overcast"]`) is weather more than a time: a
+  weak, wide sun under a bright cloud deck (the Poly Haven
+  `kloofendal_overcast_puresky` panorama, `FreeAssets.overcast_sky()`),
+  a strong sky fill, faint soft shadows (the global `ground_sun_shadow`
+  scales the baked tree shadows; no moving cloud shadows), thicker
+  blue-grey haze that stacks the far ground into layers, and a neutral
+  grade. It follows the Godot forest scenes Michael pointed to.
+- **Meadow plants** (`FescueField`, all renderers): daisies, buttercups,
+  broad-leaved rosettes and yarrow drawn by `tools/grass/meadow_atlas.py`,
+  grown in soft patches on the deep rough within `MEADOW_RADIUS` of the
+  camera, nearer in than the fescue.
+- **Sward** (`FescueField`, all renderers): a carpet of drawn grass cards
+  (`tools/grass/sward_atlas.py`, a couple of hundred fine blades a card)
+  on the deep rough within `SWARD_RADIUS` of the camera, under
+  GrassField's 3D blades, so the near long grass is a mat rather than
+  sparse spikes on the ground texture. Not on the plain rough, where short
+  crossed cards read as stars from the player's height.
 - **Far ground detail levels** (`DesignedTerrain.refine_lods`): each 64 m
   chunk of a designed or built-in course gets three coarser levels (every
   2nd, 4th and 8th height sample) that the renderer swaps in by distance

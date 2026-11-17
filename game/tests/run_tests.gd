@@ -94,6 +94,7 @@ func _initialize() -> void:
 	_run("course_designer", _test_course_designer)
 	_run("real_courses", _test_real_courses)
 	_run("course_library", _test_course_library)
+	_run("weather", _test_weather)
 	# Nodes added here only get _ready() once the main loop runs, so the
 	# full round is played from _process().
 	# Fixed wind, so the shots (and what the camera sees) are the same every run.
@@ -2125,6 +2126,12 @@ func _test_graphics_settings() -> void:
 	_check(sunset.elevation < dusk.elevation and early.elevation < dawn.elevation, "dawn and sunset sit lowest")
 	_check(absf(float(early.bearing) - float(sunset.bearing)) > 120.0, "dawn and sunset light from opposite sides")
 	_check((sunset.sun as Color).b < (dusk.sun as Color).b, "sunset is the warmest sun")
+	var grey := Scenery.time_light(GraphicsSettings.TimeOfDay.OVERCAST, 0.0)
+	var aft: Dictionary = Scenery.TIMES["afternoon"]
+	_check(float(grey.energy) < 0.5 * float(aft.energy) and float(grey.fill_fwd) > float(aft.fill_fwd), "overcast: a weak sun and a strong sky fill")
+	_check(float(grey.fog) > float(aft.fog) and (grey.haze as Color).b > (grey.haze as Color).r, "overcast: thicker, blue-grey distance haze")
+	_check(float(grey.get("shadow", 1.0)) < 0.5 and float(grey.get("soft", 0.0)) > 1.0, "overcast: faint, soft shadows")
+	_check(PhotoMode.step_time(GraphicsSettings.TimeOfDay.OVERCAST, 1) == GraphicsSettings.TimeOfDay.AFTERNOON, "photo mode steps from overcast to afternoon")
 	for t in GraphicsSettings.TimeOfDay.values():
 		_check(PostProcess.lut_for(t, false) != null, "time %d has a grade" % t)
 	_check(PhotoMode.step_time(GraphicsSettings.TimeOfDay.SUNSET, 1) == GraphicsSettings.TimeOfDay.DAWN, "photo mode time wraps sunset to dawn")
@@ -6338,3 +6345,64 @@ func _test_tournament_skins() -> void:
 	_check(absi(paid - 1000000) < 100, "every skin is paid (%d)" % paid)
 	_check(t.money[t.player_index()] == paid, "a birdie on the last takes every carried skin")
 	_check(t.over(), "over after one round")
+
+
+func _test_weather() -> void:
+	# Zones from where courses are.
+	_check(Climate.zone_for(Vector2(55.53, -4.65), FreeAmbience.Setting.SEASIDE, "") == Climate.Zone.MARITIME, "Troon is maritime")
+	_check(Climate.zone_for(Vector2(33.70, -116.40), FreeAmbience.Setting.DESERT, "") == Climate.Zone.DESERT, "Bighorn is desert")
+	_check(Climate.zone_for(Vector2(36.57, -121.95), FreeAmbience.Setting.SEASIDE, "") == Climate.Zone.MEDITERRANEAN, "Pebble Beach is Mediterranean")
+	_check(Climate.zone_for(Vector2(20.0, -155.82), FreeAmbience.Setting.SEASIDE, "") == Climate.Zone.TROPICAL, "Mauna Kea is tropical")
+	_check(Climate.zone_for(Vector2(35.19, -79.47), FreeAmbience.Setting.PARKLAND, "") == Climate.Zone.SUBTROPICAL, "Pinehurst is subtropical")
+	_check(Climate.zone_for(Vector2(51.16, -115.56), FreeAmbience.Setting.WOODLAND, "") == Climate.Zone.ALPINE, "Banff is mountain")
+	_check(Climate.zone_for(Vector2(NAN, NAN), FreeAmbience.Setting.PARKLAND, Biome.SNOW) == Climate.Zone.ALPINE, "snow biome is mountain")
+	_check(Climate.zone_for(Vector2(NAN, NAN), FreeAmbience.Setting.PARKLAND, "") == Climate.Zone.TEMPERATE, "unknown is temperate")
+	# Seasons and hemispheres.
+	_check_near(Climate.summer(7, 50.0), 1.0, 1e-6, "July is midsummer up north")
+	_check_near(Climate.summer(1, -35.0), 1.0, 1e-6, "January is midsummer down south")
+	_check_near(Climate.summer(1, 50.0), 0.0, 0.02, "January is midwinter up north")
+	var uk_winter := Climate.normals(Climate.Zone.MARITIME, 1, 55.0, true)
+	var uk_summer := Climate.normals(Climate.Zone.MARITIME, 7, 55.0, true)
+	_check(float(uk_winter.wind) > float(uk_summer.wind) and float(uk_winter.temp) < float(uk_summer.temp), "a links winter is windier and colder")
+	_check(float(uk_winter.wind) > float(Climate.normals(Climate.Zone.MARITIME, 1, 55.0).wind), "seaside is windier")
+	# Draws: the same seed gives the same day, and climates differ over many.
+	var n := Climate.normals(Climate.Zone.MARITIME, 1, 55.0, true)
+	var a := RoundWeather.draw(n, 12345)
+	var b := RoundWeather.draw(n, 12345)
+	_check(a.cloud == b.cloud and a.rain == b.rain and a.wind_mps == b.wind_mps and a.fog == b.fog, "the same seed draws the same day")
+	var wet_uk := 0
+	var wet_desert := 0
+	var windy_uk := 0.0
+	var windy_desert := 0.0
+	var desert := Climate.normals(Climate.Zone.DESERT, 6, 33.7)
+	for i in 400:
+		var u := RoundWeather.draw(n, i + 1)
+		var d := RoundWeather.draw(desert, i + 1)
+		wet_uk += 1 if u.rain != RoundWeather.Rain.NONE else 0
+		wet_desert += 1 if d.rain != RoundWeather.Rain.NONE else 0
+		windy_uk += u.wind_mps
+		windy_desert += d.wind_mps
+		_check(u.cloud >= 0.0 and u.cloud <= 1.0 and u.fog >= 0.0 and u.fog <= 1.0, "draw in range")
+		if u.rain != RoundWeather.Rain.NONE:
+			_check(u.cloud >= 0.8, "rain comes with cloud")
+	_check(wet_uk > 120 and wet_uk < 280, "a Scottish January is often wet (%d of 400)" % wet_uk)
+	_check(wet_desert < 40, "a desert June is dry (%d of 400)" % wet_desert)
+	_check(windy_uk > windy_desert, "the links is windier than the desert")
+	# The day's wind picks the round's Wind level.
+	var w := RoundWeather.new()
+	for pair: Array in [[0.3, Wind.Level.OFF], [2.0, Wind.Level.LIGHT], [4.5, Wind.Level.MODERATE], [9.0, Wind.Level.STRONG]]:
+		w.wind_mps = pair[0]
+		_check(w.wind_level() == pair[1], "%.1f m/s is %s" % [pair[0], Wind.LEVEL_NAMES[pair[1]]])
+	_check(RoundWeather.fine().describe().begins_with("Sunny"), "a fine day is sunny")
+	# A live Open-Meteo reply.
+	var live := LiveWeather.parse('{"current": {"temperature_2m": 11.4, "precipitation": 0.3, "weather_code": 53, "cloud_cover": 96, "wind_speed_10m": 7.2, "visibility": 8000}}')
+	_check(live != null and live.live and live.rain == RoundWeather.Rain.DRIZZLE and live.wind_level() == Wind.Level.STRONG, "live drizzle and wind")
+	_check(live != null and live.describe() == "Drizzle, 11\u00b0C", "live describe")
+	var fog := LiveWeather.parse('{"current": {"cloud_cover": 100, "wind_speed_10m": 1.0, "weather_code": 45}}')
+	_check(fog != null and fog.fog >= 0.6 and fog.describe().begins_with("Fog"), "live fog")
+	_check(LiveWeather.parse("not json") == null and LiveWeather.parse('{"current": {}}') == null, "bad replies give none")
+	# The look: no cloud, no change; a full deck hides the sun; mist thickens the haze.
+	_check_near(Scenery.overcast_of(0.0), 0.0, 1e-6, "clear sky")
+	_check_near(Scenery.overcast_of(1.0), 1.0, 1e-6, "full deck")
+	_check_near(Scenery.fog_scale(0.0), 1.0, 1e-6, "no mist")
+	_check(RainFx.hiss().data.size() == RainFx.MIX_RATE * 4, "rain loop is two seconds")

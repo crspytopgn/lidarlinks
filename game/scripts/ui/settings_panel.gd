@@ -30,6 +30,7 @@ var _msaa: OptionButton
 var _scale: OptionButton
 var _fov: OptionButton
 var _wind: OptionButton
+var _weather: OptionButton
 var _presentation: OptionButton
 var _shot_camera: OptionButton
 var _sky: OptionButton
@@ -114,6 +115,8 @@ func _ready() -> void:
 		fovs.append("%d deg" % roundi(f))
 	_fov = _row(grid, "Field of view", fovs)
 	_wind = _row(grid, "Wind", Wind.LEVEL_NAMES)
+	_weather = _row(grid, "Weather (next round)", GraphicsSettings.WEATHER_NAMES)
+	_weather.tooltip_text = "Realistic: cloud, rain, mist and wind drawn from the course's climate for this month (its wind replaces the Wind setting). Live: the real weather at real courses now."
 	_sky = _row(grid, "Sky (next course)", [], false)
 	_sky.item_selected.connect(_on_sky_selected)
 	_presentation = _row(grid, "Presentation", GraphicsSettings.PRESENTATION_NAMES)
@@ -180,6 +183,7 @@ func open(s: GraphicsSettings) -> void:
 	_scale.select(_closest(GraphicsSettings.RENDER_SCALES, s.render_scale))
 	_fov.select(_closest(FOV_CHOICES, s.fov))
 	_wind.select(s.wind)
+	_weather.select(s.weather)
 	_presentation.select(s.presentation)
 	_shot_camera.select(1 if s.follow_ball else 0)
 	_fill_skies()
@@ -425,6 +429,7 @@ func _on_selected() -> void:
 	settings.render_scale = GraphicsSettings.RENDER_SCALES[_scale.selected]
 	settings.fov = FOV_CHOICES[_fov.selected]
 	settings.wind = _wind.selected
+	settings.weather = _weather.selected
 	settings.presentation = _presentation.selected
 	settings.follow_ball = _shot_camera.selected == 1
 	if _disc_sounds != null:

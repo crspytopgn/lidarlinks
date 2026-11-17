@@ -27,6 +27,9 @@ const HEIGHTS := {
 	Surface.Type.DEEP_ROUGH: Vector2(0.12, 0.22),
 }
 const FIRST_CUT_HEIGHT := Vector2(0.035, 0.05)
+## How far deep-rough tufts in a golden native drift take the drift's straw
+## (FescueField.native_colour), to sit on its part-straw ground.
+const NATIVE_BLEND := 0.45
 const BLADES := 12
 ## Mown turf (tee, fairway, fringe) up close: a fine fur of short blades
 ## over the photo texture, only a few metres round the camera, where the
@@ -333,6 +336,13 @@ static func build_chunk(t: CourseTerrain, key: Vector2i, density: float) -> Mult
 		var h := lerpf(hr.x, hr.y, size)
 		var w := 0.3 + size * 0.2
 		var c := t.ground_color_at(x, z)
+		if surface == Surface.Type.DEEP_ROUGH:
+			# In a golden native drift the ground goes part straw
+			# (terrain.gdshader native_at, kept greener by the camera):
+			# blades of the plain green stood out as dark spikes on it.
+			var native := FescueField.native_at(x, z, t.normal_at(x, z).y)
+			if native > 0.0:
+				c = c.lerp(FescueField.native_colour(phase), native * NATIVE_BLEND)
 		var o := n * 16
 		var cs := cos(yaw)
 		var sn := sin(yaw)

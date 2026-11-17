@@ -236,6 +236,13 @@ var _water_entry := Vector3.ZERO
 
 var shot_model: ShotModel
 var wind: Wind
+## The round's weather (RoundWeather.fine() with Weather set to Always
+## fine), its rain round the camera, and whether its wind set the round's
+## Wind level (so a change to the Wind setting leaves it be).
+var weather: RoundWeather
+var rain_fx: RainFx
+var _weather_wind := false
+var _live_weather: LiveWeather
 var sounds: SoundBank
 var hud: Hud
 var camera: RoundCamera
@@ -534,7 +541,16 @@ func start_round() -> void:
 		wind_level = round_setup.wind_level
 	if versus != null:
 		wind_level = versus.wind_level
+	weather = _draw_weather()
+	# The climate's wind plays unless the round has set conditions (its own
+	# wind, a friend's code, online).
+	_weather_wind = graphics.weather != GraphicsSettings.WeatherMode.FINE and round_setup.wind_level < 0 \
+		and versus == null and online == null and round_setup.challenge == null
+	if _weather_wind:
+		wind_level = weather.wind_level()
 	wind = Wind.new(wind_level, round_seed)
+	_show_weather()
+	_fetch_live_weather()
 	_holes_started = 0
 	record = RoundRecord.begin(round_setup, round_seed, "links" if shot_model is LinksShotModel else "standard", wind_level)
 	# The greens: the round's own conditions, else the player's settings. A
@@ -1046,6 +1062,8 @@ func auto_play_step() -> void:
 
 func _process(delta: float) -> void:
 	_drift_clouds(delta)
+	if rain_fx != null:
+		rain_fx.follow(get_viewport().get_camera_3d())
 	_update_wind_shaders()
 	_update_post_view()
 	# The pause menu and settings stop the round: the swing meter, the ball
@@ -3318,6 +3336,8 @@ func _flat_distance(a: Vector3, b: Vector3) -> float:
 func _build_world() -> void:
 	scenery = Scenery.new()
 	add_child(scenery)
+	rain_fx = RainFx.new()
+	add_child(rain_fx)
 
 	ball = _make_ball_mesh()
 	add_child(ball)
@@ -3515,7 +3535,8 @@ func _apply_graphics() -> void:
 	camera.fov = graphics.fov
 	camera.attributes = _camera_attributes()
 	RenderingServer.global_shader_parameter_set("foliage_sway", 1.0 if graphics.foliage_wind else 0.0)
-	RenderingServer.global_shader_parameter_set("cloud_shadow", CLOUD_SHADOW if graphics.cloud_shadows else 0.0)
+	# Under a soft overcast the whole sky is cloud: no moving patches of shade.
+	RenderingServer.global_shader_parameter_set("cloud_shadow", CLOUD_SHADOW if _cloud_shadows_on() else 0.0)
 	TreeFactory.set_level(graphics.trees)
 	Landscape.detail = graphics.quality
 	GolferCloth.detail = graphics.quality
@@ -3562,7 +3583,7 @@ func _apply_graphics() -> void:
 	_set_stand_bag()
 	_set_monitor(graphics.launch_monitor)
 	# A round on set conditions (online, or a friend's result code) keeps them.
-	if wind != null and online == null and round_setup.wind_level < 0 and round_setup.challenge == null:
+	if wind != null and online == null and round_setup.wind_level < 0 and round_setup.challenge == null and not _weather_wind:
 		wind.set_level(graphics.wind)
 		_update_wind_shaders()
 		if hole != null:
@@ -3582,10 +3603,76 @@ func _camera_attributes() -> CameraAttributes:
 	return a
 
 
+## The round's weather: a fine day, or one drawn from the course's
+## climate this month on the round's seed (the same day for everyone on a
+## shared round).
+func _draw_weather() -> RoundWeather:
+	if graphics.weather == GraphicsSettings.WeatherMode.FINE:
+		return RoundWeather.fine()
+	return RoundWeather.draw(Climate.for_course(course), round_seed)
+
+
+## Shows the weather: the sky, light and haze, the rain, and the cloud
+## shadows on a day of broken cloud.
+func _show_weather() -> void:
+	scenery.set_weather(weather)
+	rain_fx.set_rain(weather.rain_amount(), graphics.quality, wind.velocity() if wind != null else Vector3.ZERO)
+	RenderingServer.global_shader_parameter_set("cloud_shadow", CLOUD_SHADOW if _cloud_shadows_on() else 0.0)
+	if free_ambience != null:
+		free_ambience.rain = weather.rain_amount()
+
+
+## Cloud shadows: the setting, or a day of broken cloud (cumulus over a
+## sunny course; a full deck casts none).
+func _cloud_shadows_on() -> bool:
+	if graphics.time_of_day == GraphicsSettings.TimeOfDay.OVERCAST:
+		return false
+	if graphics.cloud_shadows:
+		return true
+	return weather != null and weather.cloud > 0.3 and Scenery.overcast_of(weather.cloud) < 0.7
+
+
+## With Weather set to Live, asks for the real weather at a real course.
+## It replaces the drawn day when it comes; the wind changes with it only
+## before the first shot.
+func _fetch_live_weather() -> void:
+	if _live_weather != null:
+		_live_weather.queue_free()
+		_live_weather = null
+	if graphics.weather != GraphicsSettings.WeatherMode.LIVE or online != null or round_setup.challenge != null:
+		return
+	var at := FreeAmbience.location_of(course)
+	if is_nan(at.x):
+		return
+	_live_weather = LiveWeather.new()
+	add_child(_live_weather)
+	_live_weather.arrived.connect(_on_live_weather)
+	if not _live_weather.fetch(at):
+		_live_weather.queue_free()
+		_live_weather = null
+
+
+func _on_live_weather(w: RoundWeather) -> void:
+	if _live_weather != null:
+		_live_weather.queue_free()
+		_live_weather = null
+	if w == null or wind == null:
+		return
+	weather = w
+	if _weather_wind and hole_index == 0 and strokes == 0:
+		wind.set_level(w.wind_level())
+		if record != null:
+			record.wind_level = wind.level
+		_update_wind_shaders()
+	_show_weather()
+	if hole != null:
+		_update_hud()
+
+
 ## Moves the cloud shadows on: the clouds ride a wind aloft that runs
 ## with the one on the course but stronger, and never quite stops.
 func _drift_clouds(delta: float) -> void:
-	if graphics == null or wind == null or not graphics.cloud_shadows:
+	if graphics == null or wind == null or not _cloud_shadows_on():
 		return
 	var v := wind.velocity()
 	var aloft := Vector2(v.x, v.z) * 2.5
@@ -4026,6 +4113,18 @@ func _update_reticle(paused: bool) -> void:
 	r.show_at(p, AimReticle.label_for(roundi(_flat_distance(ball_at, at) * YARDS_PER_METRE), blind), blind)
 
 
+## The wind, and with Weather on the day's weather: "8 mph, against  ·  Drizzle, 11°C".
+func _conditions_text() -> String:
+	var text := wind.describe(aim_deg)
+	if _weather_shown():
+		text += "  \u00b7  " + weather.describe()
+	return text
+
+
+func _weather_shown() -> bool:
+	return weather != null and graphics.weather != GraphicsSettings.WeatherMode.FINE
+
+
 func _update_hud() -> void:
 	var club := clubs[club_index]
 	var to_pin := _flat_distance(ball_at, hole.pin)
@@ -4045,7 +4144,7 @@ func _update_hud() -> void:
 	if players.size() > 1 or opponents[shooter] != null:
 		text += "%s    " % _player_label(shooter)
 	text += "Stroke %d    To pin %s    Lie: %s\nClub: %s    Wind: %s\nRound: %s thru %d" % [
-		strokes + 1, pin_text, lie_text(lie), club_text, wind.describe(aim_deg), total, thru]
+		strokes + 1, pin_text, lie_text(lie), club_text, _conditions_text(), total, thru]
 	var status := scoring.status_text()
 	if not status.is_empty():
 		text += "\n" + status
@@ -4194,6 +4293,8 @@ func _ticker_text() -> String:
 		if thru > 0:
 			parts.append("ROUND %d (%s) THRU %d" % [card.total_strokes(), Scorecard.format_to_par(card.to_par()), thru])
 		parts.append("WIND %s" % wind.describe(aim_deg).to_upper())
+		if _weather_shown():
+			parts.append(weather.describe().to_upper())
 	return "      \u00b7      ".join(parts)
 
 
