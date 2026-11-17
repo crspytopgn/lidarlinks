@@ -94,6 +94,7 @@ func _initialize() -> void:
 	_run("course_reader", _test_course_reader)
 	_run("course_designer", _test_course_designer)
 	_run("real_courses", _test_real_courses)
+	_run("greens_reachable", _test_greens_reachable)
 	_run("course_library", _test_course_library)
 	_run("weather", _test_weather)
 	# Nodes added here only get _ready() once the main loop runs, so the
@@ -196,6 +197,13 @@ func _test_course_reader() -> void:
 
 func _test_real_courses() -> void:
 	var tests: RefCounted = load("res://tests/realcourse_tests.gd").new()
+	for failure: String in tests.call("run_all"):
+		_check(false, failure)
+
+
+## Every built-in hole's green can be reached from its fairway (reach_tests.gd).
+func _test_greens_reachable() -> void:
+	var tests: RefCounted = load("res://tests/reach_tests.gd").new()
 	for failure: String in tests.call("run_all"):
 		_check(false, failure)
 

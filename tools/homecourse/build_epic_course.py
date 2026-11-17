@@ -57,8 +57,8 @@ RED_SPIRE = dict(
              tilt=(2.2, 0.6), tier=None, seed=111),
         # 2: a par 5 bending round a hoodoo garden in its elbow.
         # A wash across the fairway at the lay-up: carry it or stop short.
-        # The green sits up on a mesa, 35 m above: the third is played up
-        # over its wall.
+        # The green sits up on a mesa, 11 m above the fairway: the third is played up
+        # over its wall. (At 35 m no club could carry it; tests/run_tests.gd checks every green can be reached.)
         dict(par=5, tee=(1180, 1130), route=[(1400, 1000)], carry=140.0, gaps=[(320.0, 360.0), (425.0, 470.0)], green=(1560, 820), gsize=(33, 22),
              fw=(36, 31, 24), bunkers=[("fw", 240, -20, 26, 11), ("fw", 380, 17, 18, 9), ("gs", 280, 15, 7),
                                        ("gs", 80, 12, 6)],
@@ -95,7 +95,7 @@ RED_SPIRE = dict(
                                        ("gs", 60, 15, 7)],
              tilt=(1.9, 0.5), tier=None, seed=183),
         # 9: back up to the clubhouse, a tower guarding the left.
-        # Its green is up on a mesa 28 m above, the wall in front of it.
+        # Its green is up on a mesa 12 m above, the wall in front of it.
         dict(par=4, tee=(665, 1515), route=[], carry=120.0, gaps=[(270.0, 305.0)], green=(845, 1245), gsize=(31, 24),
              fw=(33, 30, 23), bunkers=[("fw", 210, -18, 26, 11), ("gs", 280, 15, 7), ("gs", 70, 14, 7),
                                        ("gs", 0, 9, 5)],
@@ -107,11 +107,11 @@ RED_SPIRE = dict(
     # (length, width m), angle (degrees, game frame), rise (m).
     benches=[
         dict(centre=(919, 1429), size=(100, 70), angle=133, rise=30.0, seed=501),  # 1st tee
-        dict(centre=(1575, 800), size=(150, 95), angle=158, rise=35.0, seed=502),  # 2nd green, 3rd tee
+        dict(centre=(1575, 800), size=(150, 95), angle=158, rise=6.0, seed=502),  # 2nd green, 3rd tee
         dict(centre=(1645, 1210), size=(100, 70), angle=-37, rise=40.0, seed=503),  # 5th tee
         dict(centre=(1156, 1910), size=(75, 60), angle=18, rise=24.0, seed=504),  # 7th tee
         dict(centre=(969, 1797), size=(100, 70), angle=40, rise=32.0, seed=505),  # 8th tee
-        dict(centre=(851, 1237), size=(85, 75), angle=0, rise=28.0, seed=506),  # 9th green
+        dict(centre=(851, 1237), size=(85, 75), angle=0, rise=7.0, seed=506),  # 9th green
     ],
     # The rock formations, the course's centrepiece: (kind, E, S, yaw
     # degrees, scale). Spires and hoodoos are towers (scale 1: about 40 m

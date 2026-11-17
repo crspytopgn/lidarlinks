@@ -116,6 +116,8 @@ var _tiles_w := 0
 var _pads := TeePads.new()
 var _img: Image  ## surface raster (R8 holds the Surface.Type)
 var _surf := PackedByteArray()
+## The sea's height (Landscape.sea_level), or NAN on a course with no sea.
+var _sea := NAN
 var _sw := 0
 var _sh := 0
 var _vc := PackedColorArray()  ## surface colour per grid vertex
@@ -150,6 +152,7 @@ func _init(p_course: DesignedCourse) -> void:
 ## Everything from scratch: after loading, or a change to the course area.
 func rebuild() -> void:
 	_tree_rows = PackedFloat32Array()
+	_sea = Landscape.sea_level(course) if not course.landscape.is_empty() else NAN
 	_sw = int(ceil(course.area.size.x / RES))
 	_sh = int(ceil(course.area.size.y / RES))
 	_img = Image.create_empty(_sw, _sh, false, Image.FORMAT_R8)
@@ -415,6 +418,10 @@ func surface_at(x: float, z: float) -> int:
 	var c := mini(int((x - a.position.x) / RES), _sw - 1)
 	var r := mini(int((z - a.position.y) / RES), _sh - 1)
 	var s := _surf[r * _sw + c]
+	# The sea (Landscape draws it over the land below sea level): a ball
+	# there is in the water, not on the sea floor.
+	if not is_nan(_sea) and height_at(x, z) < _sea:
+		return Surface.Type.WATER
 	return Surface.Type.ROUGH if s == FIRST_CUT_CODE else (Surface.Type.FRINGE if s == COLLAR_CODE else s)
 
 
@@ -646,22 +653,49 @@ func _update_splat() -> void:
 		codes.resize(maxi(1, floori(_sw * k)), maxi(1, floori(_sh * k)), Image.INTERPOLATE_NEAREST)
 	var edges := _edge_img
 	var blocks := EDGE_BLOCKS.size()
-	var e := minf(float(SPLAT_MAX - codes.get_height()) / edges.get_height(), float(SPLAT_MAX) / edges.get_width())
+	# The edge blocks go where the texture has most room for them: below
+	# the codes side by side, or to their right, stacked or side by side.
+	# Ember Coast's codes fill 3,836 of the 4,096 rows: below them the
+	# blocks were cut to 7.4 m texels, and every green and bunker edge
+	# came out in straight steps; stacked beside them they keep 1 m.
+	var cs := codes.get_size()
+	var ew := float(_edge_w)
+	var eh := float(edges.get_height())
+	var m := float(SPLAT_MAX)
+	var layouts := [
+		[minf((m - cs.y) / eh, m / (ew * blocks)), false, false],  # below, side by side
+		[minf((m - cs.x) / ew, m / (eh * blocks)), true, true],  # beside, stacked
+		[minf((m - cs.x) / (ew * blocks), m / eh), true, false],  # beside, side by side
+		[minf((m - cs.y) / (eh * blocks), m / ew), false, true],  # below, stacked
+	]
+	var best: Array = layouts[0]
+	for l: Array in layouts:
+		if float(best[0]) < 1.0 and float(l[0]) > float(best[0]):
+			best = l
+	var e := minf(float(best[0]), 1.0)
+	var beside: bool = best[1]
+	var stacked: bool = best[2]
 	var img := codes
-	var block_w := _edge_w
-	if e * edges.get_height() < 64.0:
+	if e * minf(ew, eh) < 64.0:
 		_material.set_shader_parameter("splat_codes", Vector2i.ZERO)
 	else:
+		var block := Vector2i(_edge_w, edges.get_height())
 		if e < 1.0:
-			block_w = maxi(1, floori(_edge_w * e))
+			block = Vector2i(maxi(1, floori(_edge_w * e)), maxi(1, floori(edges.get_height() * e)))
 			edges = _edge_img.duplicate() as Image
-			edges.resize(block_w * blocks, maxi(1, floori(edges.get_height() * e)), Image.INTERPOLATE_BILINEAR)
-		img = Image.create_empty(maxi(codes.get_width(), edges.get_width()), codes.get_height() + edges.get_height(), false, Image.FORMAT_R8)
-		img.blit_rect(codes, Rect2i(Vector2i.ZERO, codes.get_size()), Vector2i.ZERO)
-		img.blit_rect(edges, Rect2i(Vector2i.ZERO, edges.get_size()), Vector2i(0, codes.get_height()))
-		_material.set_shader_parameter("splat_codes", codes.get_size())
-		_material.set_shader_parameter("green_edge_size", Vector2i(block_w, edges.get_height()))
-		_material.set_shader_parameter("green_edge_texel", GREEN_EDGE_RES * Vector2(_edge_img.get_size()) / Vector2(edges.get_size()))
+			edges.resize(block.x * blocks, block.y, Image.INTERPOLATE_BILINEAR)
+		var origin := Vector2i(cs.x, 0) if beside else Vector2i(0, cs.y)
+		var step := Vector2i(0, block.y) if stacked else Vector2i(block.x, 0)
+		var end := origin + step * (blocks - 1) + block
+		img = Image.create_empty(maxi(cs.x, end.x), maxi(cs.y, end.y), false, Image.FORMAT_R8)
+		img.blit_rect(codes, Rect2i(Vector2i.ZERO, cs), Vector2i.ZERO)
+		for k in blocks:
+			img.blit_rect(edges, Rect2i(Vector2i(block.x * k, 0), block), origin + step * k)
+		_material.set_shader_parameter("splat_codes", cs)
+		_material.set_shader_parameter("green_edge_size", block)
+		_material.set_shader_parameter("green_edge_origin", origin)
+		_material.set_shader_parameter("green_edge_step", step)
+		_material.set_shader_parameter("green_edge_texel", GREEN_EDGE_RES * Vector2(_edge_w, _edge_img.get_height()) / Vector2(block))
 		_material.set_shader_parameter("green_edge_range", GREEN_EDGE_RANGE)
 	if _splat == null or _splat.get_size() != Vector2(img.get_size()):
 		_splat = ImageTexture.create_from_image(img)
