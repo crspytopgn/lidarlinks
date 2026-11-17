@@ -18,7 +18,10 @@ var _etags := {}
 
 func _new_request() -> HTTPRequest:
 	var r := HTTPRequest.new()
-	r.use_threads = true
+	# Not threaded: a threaded request that times out makes Godot wait for
+	# its blocked thread, freezing the window (see real_course_fetcher.gd).
+	r.use_threads = false
+	r.download_chunk_size = 1 << 20
 	r.max_redirects = 10
 	_apply_proxy(r)
 	add_child(r)
