@@ -15,6 +15,10 @@ const PARKLAND := ""
 const DESERT := "desert"
 const SNOW := "snow"
 const TROPICAL := "tropical"
+## A mountain course in summer (as the real Alpine courses are played):
+## parkland turf, meadow and spruce woods round the holes, snow only on
+## the high peaks across the valley.
+const ALPINE := "alpine"
 
 ## Ground colours that replace DesignedTerrain.COLORS, by Surface.Type.
 ## Desert: the red sand of the Colorado Plateau's valley floors (sRGB about
@@ -63,7 +67,15 @@ const LAND := {
 		rock2 = Color(0.66, 0.34, 0.18), plants = Color(0.2, 0.22, 0.13), cover = 0.35, snow_from = 99999.0, sea = -99999.0},
 	SNOW: {low = Color(0.86, 0.89, 0.94), high = Color(0.92, 0.94, 0.97), rock = Color(0.32, 0.31, 0.31),
 		rock2 = Color(0.42, 0.41, 0.4), plants = Color(0.05, 0.09, 0.06), cover = 0.55, snow_from = 40.0, sea = -99999.0},
-	TROPICAL: {low = Color(0.16, 0.15, 0.14), high = Color(0.3, 0.32, 0.17), rock = Color(0.13, 0.12, 0.12),
+	# Alpine summer: meadow on the valley sides, dark spruce and larch
+	# forest, grey limestone and gneiss crags, snow above about 2,800 m (some
+	# 1,300 m over a course at 1,500 m, as from Crans across the Rhone).
+	ALPINE: {low = Color(0.2, 0.28, 0.11), high = Color(0.25, 0.28, 0.16), rock = Color(0.42, 0.41, 0.39),
+		rock2 = Color(0.55, 0.54, 0.52), plants = Color(0.06, 0.1, 0.06), cover = 0.65, snow_from = 1300.0, sea = -99999.0},
+	# Tropical: the Kohala coast's old lava under golden fountain grass
+	# (a dark grey slab from the tee before: bare black a'a reads that way
+	# only close up), greening up the mountain's wetter slopes.
+	TROPICAL: {low = Color(0.34, 0.29, 0.19), high = Color(0.24, 0.3, 0.15), rock = Color(0.13, 0.12, 0.12),
 		rock2 = Color(0.22, 0.2, 0.19), plants = Color(0.08, 0.16, 0.05), cover = 0.45, snow_from = 99999.0, sea = 0.0},
 }
 

@@ -48,7 +48,7 @@ static func params(o: PlacedObject) -> Dictionary:
 				"waist": 1.7 * s, "cap": 2.7 * s, "stretch": rng.randf_range(1.0, 1.25)}
 		"rock_butte":
 			return {"seed": seed_value, "height": 45.0 * s * rng.randf_range(0.85, 1.1), "base": 48.0 * s,
-				"waist": 33.0 * s, "cap": 31.0 * s, "stretch": rng.randf_range(1.15, 1.5)}
+				"waist": 27.0 * s, "cap": 25.0 * s, "stretch": rng.randf_range(1.15, 1.5), "lobes": 0.62}
 		"rock_arch":
 			return {"seed": seed_value, "span": 46.0 * s, "height": 30.0 * s, "rib": 8.5 * s, "depth": 10.0 * s}
 		"rock_boulder":
@@ -197,9 +197,11 @@ static func _butte_profile(t: float, p: Dictionary) -> float:
 	var base: float = p.base
 	var waist: float = p.waist
 	var cap: float = p.cap
-	# A concave apron of rubble to a third of the way up, then a cliff with
-	# a bench (a harder bed) at about two thirds, and the flat top.
-	var apron := 1.0 - pow(1.0 - smoothstep(0.0, 0.34, t), 1.8)
+	# A broad concave apron of rubble to nearly half way up (real buttes
+	# stand on talus slopes as high as their cliffs; a sheer wall from the
+	# ground read as a tin can), then a cliff with a bench (a harder bed)
+	# at about two thirds, and the flat top.
+	var apron := 1.0 - pow(1.0 - smoothstep(0.0, 0.46, t), 2.2)
 	var r := lerpf(base, waist, apron)
 	r = lerpf(r, cap, smoothstep(0.6, 0.64, t))
 	return r
@@ -232,7 +234,11 @@ static func _tower(part: Dictionary, p: Dictionary, profile: Callable) -> void:
 			var c := cos(a)
 			var sn := sin(a)
 			var square := 1.0 / pow(pow(absf(c), SQUARE) + pow(absf(sn), SQUARE), 1.0 / SQUARE)
-			var wobble := 0.36 * (ProcMesh.ring_noise(a, y / 22.0, 5, seed_value) - 0.5)
+			# Bays and spurs: big ones on buttes, whose cliffs retreat
+			# unevenly, so none is a round drum in plan.
+			var lobes: float = p.get("lobes", 0.36)
+			var wobble := lobes * (ProcMesh.ring_noise(a, y / 22.0, 5, seed_value) - 0.5)
+			wobble += (lobes - 0.36) * (ProcMesh.ring_noise(a, y / 90.0, 3, seed_value + 23) - 0.5)
 			wobble += 0.16 * (ProcMesh.ring_noise(a, y / 7.0, 13, seed_value + 3) - 0.5)
 			wobble += 0.05 * (ProcMesh.ring_noise(a, y / 40.0, 31, seed_value + 5) - 0.5)
 			# Vertical flutes and joints, running far up the face.

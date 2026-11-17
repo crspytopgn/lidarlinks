@@ -26,9 +26,10 @@ const SINK := 0.8
 ## triangles), for phones, tablets and the web.
 const FULL_FROM := GraphicsSettings.Quality.HIGH
 const SHADER := preload("res://shaders/landscape.gdshader")
+const SEA_SHADER := preload("res://shaders/sea.gdshader")
 ## How much of the scene's fog each biome's air carries far off: desert air
 ## is very clear, so walls 10 km off still stand out.
-const AIR_SHARE := {Biome.DESERT: 0.2, Biome.SNOW: 0.25, Biome.TROPICAL: 0.4}
+const AIR_SHARE := {Biome.DESERT: 0.2, Biome.SNOW: 0.25, Biome.ALPINE: 0.3, Biome.TROPICAL: 0.4}
 
 ## The graphics quality (GraphicsSettings.Quality), set by main.gd.
 static var detail := GraphicsSettings.Quality.HIGH
@@ -71,7 +72,7 @@ static func build(terrain: DesignedTerrain) -> Node3D:
 		var water := MeshInstance3D.new()
 		water.name = "Sea"
 		water.mesh = plane
-		water.material_override = Materials.water_surface()
+		water.material_override = sea_material()
 		water.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		var o: Vector2 = land.origin
 		var mid := o + Vector2(land.cols, land.rows) * float(land.cell) * 0.5
@@ -110,6 +111,22 @@ static func material_for(biome: String) -> ShaderMaterial:
 	m.set_shader_parameter("cover", l.cover)
 	m.set_shader_parameter("snow_from", l.snow_from)
 	m.set_shader_parameter("air_share", float(AIR_SHARE.get(biome, FarScenery.AIR_PER_FOG)))
+	_materials.append(m)
+	set_haze(_haze[0], _haze[1], _haze[2])
+	return m
+
+
+## The open sea's material (sea.gdshader), hazed like the land.
+static func sea_material() -> ShaderMaterial:
+	for m in _materials:
+		if m.get_meta("biome", "") == "_sea":
+			return m
+	var m := ShaderMaterial.new()
+	m.shader = SEA_SHADER
+	m.set_meta("biome", "_sea")
+	# Sea air is clear over open water, and the haze is the course's land
+	# haze (grey): at the land's share the far sea drew as a grey wall.
+	m.set_shader_parameter("air_share", 0.12)
 	_materials.append(m)
 	set_haze(_haze[0], _haze[1], _haze[2])
 	return m

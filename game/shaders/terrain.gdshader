@@ -81,6 +81,9 @@ uniform float surface_bare[11];
 // Biomes with bare ground (desert, snow): where it is steep it is rock, as
 // real slickrock domes, fins and cliffs are (Biome.LAND rock colours).
 uniform bool rock_slopes = false;
+// How bare ground is finished (Biome): 0 plain, 1 desert hardpan (gravel,
+// crust and varnished patches), 2 lava (rough black a'a clinker).
+uniform int bare_style = 0;
 uniform vec3 slope_rock : source_color = vec3(0.52, 0.2, 0.1);
 uniform vec3 slope_rock2 : source_color = vec3(0.66, 0.34, 0.18);
 uniform float surface_mown[11]; // 1 where the surface gets mowing stripes
@@ -351,7 +354,16 @@ void fragment() {
 	// (FescueField near_start), bare straw under the short 3D blades read
 	// as a dry, yellow lawn: keep it mostly green there.
 	float drift_near = mix(0.4, 1.0, smoothstep(12.0, 40.0, length(from_eye)));
-	col = mix(col, native_ground * (0.85 + 0.3 * patches), deep_rough * (1.0 - bare) * native_at(p, ground_up) * native_ground_strength * drift_near);
+	// Real native grass is never one flat straw: seed heads lie over a
+	// grey-green base that shows through in clumps, wind lays swathes of
+	// it lighter or darker, and the tone wanders from pale straw to olive
+	// and russet. One flat colour read from the tee as a painted hillside.
+	float clump = value_noise(p * 0.45) * 0.6 + value_noise(p * 1.9 + vec2(3.1, 7.7)) * 0.4;
+	float swathe = value_noise(vec2(p.x * 0.06 + p.y * 0.03, p.y * 0.11 - p.x * 0.02) + vec2(5.3, 1.9));
+	vec3 straw = native_ground * (0.78 + 0.45 * swathe + 0.3 * patches);
+	straw = mix(straw, straw * vec3(0.82, 0.9, 0.72), smoothstep(0.35, 0.75, value_noise(p * 0.13 + vec2(9.2, 4.4))));
+	float through = mix(0.55, 1.0, smoothstep(0.3, 0.7, clump));
+	col = mix(col, straw, deep_rough * (1.0 - bare) * native_at(p, ground_up) * native_ground_strength * drift_near * through);
 	// Close-cut turf: dense, fine blades, a touch cooler, and smoother.
 	col *= mix(vec3(1.0), vec3(0.97, 1.0, 0.98), cut);
 	// Grass is matt: a mown blade has a faint sheen, but a sward of them
@@ -432,6 +444,47 @@ void fragment() {
 	col *= mix(1.0, 0.9 - 0.22 * damp, sand);
 	col *= 1.0 + 0.07 * rake * sand * (0.6 + 0.4 * value_noise(p * 0.4));
 	vec3 albedo = clamp(tone_turf(col), vec3(0.0), vec3(1.0));
+	// Bare ground as it really lies: one tinted sand texture read as a
+	// smooth painted floor (desert as pink felt, lava as chocolate).
+	float bare_w = clamp(bare, 0.0, 1.0);
+	if (bare_style > 0 && bare_w > 0.0) {
+		float dist_b = length(VERTEX);
+		float near_b = 1.0 - smoothstep(15.0, 60.0, dist_b);
+		float big_b = fbm(p * 0.025);
+		float mid_b = value_noise(p * 0.31 + vec2(2.3, 8.1));
+		float small_b = value_noise(p * 2.9 + vec2(7.7, 1.3));
+		vec3 styled = albedo;
+		float bump_b = 0.0;
+		if (bare_style == 1) {
+			// Hardpan: paler wind-blown sand in swales, darker gravel and
+			// varnished crust between, and scattered dark stones up close.
+			styled *= 0.8 + 0.35 * big_b + 0.12 * (mid_b - 0.5);
+			float gravel = smoothstep(0.45, 0.7, fbm(p * 0.09 + vec2(4.0, 1.0)));
+			styled = mix(styled, styled * vec3(0.72, 0.68, 0.66), gravel * 0.6);
+			// Small stones and grit: tiny, crisp, and only a little darker
+			// (bigger, softer ones read as oil stains).
+			float stone = smoothstep(0.86, 0.9, value_noise(p * 11.0)) * near_b;
+			float grit = (value_noise(p * 23.0) - 0.5) * near_b;
+			styled *= 1.0 + 0.12 * grit;
+			styled = mix(styled, styled * 0.62, stone * 0.55);
+			bump_b = 0.35 * gravel + 0.5 * stone;
+		} else {
+			// A'a: black clinker, rusty where it has weathered, pitted and
+			// rough at every scale, so it catches the light in crumbs.
+			float rust = smoothstep(0.5, 0.75, big_b + 0.25 * (mid_b - 0.5));
+			styled = mix(vec3(0.035, 0.032, 0.03), vec3(0.075, 0.05, 0.035), rust);
+			styled *= 0.6 + 0.6 * small_b * (0.7 + 0.6 * mid_b);
+			bump_b = 1.0;
+		}
+		// Rough at the scale of stones: a bumped normal from the slope of
+		// the fine noise, strongest up close.
+		float e_b = 0.1;
+		float sx = value_noise((p + vec2(e_b, 0.0)) * 2.9 + vec2(7.7, 1.3)) - value_noise((p - vec2(e_b, 0.0)) * 2.9 + vec2(7.7, 1.3));
+		float sz = value_noise((p + vec2(0.0, e_b)) * 2.9 + vec2(7.7, 1.3)) - value_noise((p - vec2(0.0, e_b)) * 2.9 + vec2(7.7, 1.3));
+		vec3 tilt_b = (VIEW_MATRIX * vec4(-sx, 0.0, -sz, 0.0)).xyz;
+		NORMAL = normalize(NORMAL + tilt_b * bump_b * bare_w * mix(0.6, 2.2, near_b));
+		albedo = mix(albedo, styled, bare_w);
+	}
 	if (rock_slopes) {
 		float steep = smoothstep(0.97, 0.86, ground_up) * clamp(bare, 0.0, 1.0);
 		if (steep > 0.0) {

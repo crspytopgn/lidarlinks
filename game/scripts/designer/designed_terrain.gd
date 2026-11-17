@@ -45,9 +45,18 @@ const GREEN_EDGE_RANGE := 2.0
 ## blocks of 1 m texels fit under the 0.5 m codes. Bunkers, which hug
 ## greens and tees, get their own.
 const EDGE_BLOCKS := [[Surface.Type.GREEN, Surface.Type.TEE], [Surface.Type.SAND]]
-const BUNKER_DEPTH := 0.7
-const BUNKER_LIP := 2.5  ## metres inside the outline the bunker reaches full depth
-const BUNKER_LIP_OUT := 1.5  ## metres outside it where the bank starts down
+## Bunkers are built as real ones are, not as even dishes: a flat floor,
+## a low, gently ramped side where the player walks in and the ball runs
+## in, and on the side facing the hole's target a steep face of flashed sand
+## up to a raised turf lip, so from the tee or fairway the bunker shows as
+## a bright wall of sand under a shadowed grass edge (as on broadcast
+## courses), and from behind as a dark hollow.
+const BUNKER_DEPTH := 0.7  ## floor below the ground round it
+const BUNKER_LIP := 2.5  ## metres inside the outline the low side reaches the floor
+const BUNKER_LIP_OUT := 1.5  ## metres outside it where the low side's bank starts down
+const BUNKER_FACE := 1.6  ## metres inside the outline the face reaches the floor
+const BUNKER_FACE_LIFT := 0.4  ## how far the face's turf lip is built up above the ground
+const BUNKER_FACE_OUT := 4.5  ## metres outside it over which the built-up lip falls back to the ground
 const WATER_DROP := 0.3  ## water line below the lowest point of the bank
 const WATER_BANK := 5.0  ## metres outside a pond over which the bank runs down to it
 ## Water surfaces: grid spacing inside a pond, and how far out from the
@@ -527,6 +536,7 @@ func material() -> ShaderMaterial:
 		_material.set_shader_parameter("surface_bare", bare)
 		var land := Biome.land(course.biome)
 		_material.set_shader_parameter("rock_slopes", Biome.BARE.has(course.biome))
+		_material.set_shader_parameter("bare_style", {Biome.DESERT: 1, Biome.TROPICAL: 2}.get(course.biome, 0))
 		_material.set_shader_parameter("slope_rock", land.rock)
 		_material.set_shader_parameter("slope_rock2", land.rock2)
 		_material.set_shader_parameter("has_splat", true)
@@ -1195,8 +1205,7 @@ func _derive(cells: Rect2i) -> void:
 			# drop fell between whichever 2 m grid points happened to be
 			# inside, so the bank wandered up to a cell either side of the
 			# sand's edge and showed as a lumpy, notched lip.
-			_shape_heights(s, cells, BUNKER_LIP_OUT, func(h: float, d: float) -> float:
-				return h - BUNKER_DEPTH * smoothstep(-BUNKER_LIP_OUT, BUNKER_LIP, -d))
+			_bunker_heights(s, cells)
 	for s in course.shapes:
 		if s.is_valid() and s.surface == Surface.Type.WATER:
 			var lowest := INF
@@ -1223,6 +1232,79 @@ func _derive(cells: Rect2i) -> void:
 				return TeePads.profile(h, d, level))
 	_pads.rebuild(course, _g, _h, cells)
 	_update_height_tiles(cells)
+
+
+## Digs bunker `s` into _h within `cells`: the floor, the low ramped side
+## away from its target and the steep flashed face with a built-up lip
+## toward it (see BUNKER_FACE).
+func _bunker_heights(s: CourseShape, cells: Rect2i) -> void:
+	var centre := Vector2.ZERO
+	var ol := s.outline()
+	for q in ol:
+		centre += q
+	centre /= maxf(1.0, ol.size())
+	var b := s.bounds()
+	var radius := maxf(2.0, 0.5 * minf(b.size.x, b.size.y))
+	var face := bunker_face_dir(centre)
+	var r := _cells_of(b.grow(BUNKER_FACE_OUT + DesignedCourse.CELL)).intersection(cells)
+	var cols := course.cols
+	for j in range(r.position.y, r.end.y):
+		for i in range(r.position.x, r.end.x):
+			var p := course.sample_pos(i, j)
+			var d := s.signed_distance(p)
+			if d > BUNKER_FACE_OUT:
+				continue
+			# How much this spot is on the face side: 1 toward the target,
+			# 0 across and behind, eased so the face wraps round its ends.
+			var f := 0.0
+			if face != Vector2.ZERO:
+				f = smoothstep(-0.15, 0.75, (p - centre).dot(face) / radius)
+			var h := _h[j * cols + i]
+			var low := BUNKER_DEPTH * smoothstep(-BUNKER_LIP_OUT, BUNKER_LIP, -d) if d <= BUNKER_LIP_OUT else 0.0
+			# The face: the lip is built up just outside the line and falls
+			# back to the ground over BUNKER_FACE_OUT; inside, the sand
+			# drops steeply from the lip to the floor.
+			var lift := BUNKER_FACE_LIFT * (1.0 - smoothstep(0.3, BUNKER_FACE_OUT, d))
+			var steep := (BUNKER_DEPTH + BUNKER_FACE_LIFT) * smoothstep(0.0, BUNKER_FACE, -d)
+			var hi := lift - steep if d < 0.0 else lift
+			_h[j * cols + i] = h + lerpf(-low, hi, f)
+
+
+## The way a bunker at `at` faces: toward the green of the hole it guards,
+## so the face (on the side nearer the green) is what the tee and the
+## approach look at. From the greens' outlines, not the pins, which move
+## round the green from round to round (the ground must not). Zero with no
+## holes.
+func bunker_face_dir(at: Vector2) -> Vector2:
+	var best := INF
+	var dir := Vector2.ZERO
+	for dh in course.holes:
+		if dh.tees.is_empty():
+			continue
+		var a: Vector2 = dh.tees[0]
+		var g := _green_centre(dh.pin)
+		var ab := g - a
+		var t := clampf((at - a).dot(ab) / maxf(ab.length_squared(), 1.0), 0.0, 1.0)
+		var dist := at.distance_to(a + ab * t)
+		if dist < best:
+			best = dist
+			dir = (g - at).normalized()
+	return dir
+
+
+## The middle of the green nearest `p` (`p` itself with no greens).
+func _green_centre(p: Vector2) -> Vector2:
+	var best := INF
+	var out := p
+	for s in course.shapes:
+		if not s.is_valid() or s.surface != Surface.Type.GREEN:
+			continue
+		var c := s.bounds().get_center()
+		var d := c.distance_squared_to(p)
+		if d < best:
+			best = d
+			out = c
+	return out
 
 
 ## Applies `f(height, signed distance)` to the samples inside the shape (or

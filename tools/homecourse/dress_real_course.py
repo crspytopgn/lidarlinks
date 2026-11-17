@@ -7,7 +7,7 @@ trees and pine forests on the slopes. Tropical: black lava between the
 holes, coconut palms round the tees, greens and fairway edges, scattered
 kiawe on the lava, and the sea.
 
-    python3 tools/homecourse/dress_real_course.py IN.olc OUT.olc --name "Vermilion Ridge" [--biome desert|snow|tropical] [--cache DIR] [--preview out.png]
+    python3 tools/homecourse/dress_real_course.py IN.olc OUT.olc --name "Vermilion Ridge" [--biome desert|snow|alpine|tropical] [--cache DIR] [--preview out.png]
 
 The holes, greens, bunkers, water and ground stay exactly as mapped and
 measured (OpenStreetMap layout, national lidar). What changes is only the
@@ -94,7 +94,7 @@ def main():
     ap.add_argument("out")
     ap.add_argument("--name", required=True)
     ap.add_argument("--cache", default="/tmp/dem")
-    ap.add_argument("--biome", default="desert", choices=["desert", "snow", "tropical"])
+    ap.add_argument("--biome", default="desert", choices=["desert", "snow", "alpine", "tropical"])
     ap.add_argument("--palms", type=int, default=900)
     ap.add_argument("--pines", type=int, default=3500)
     ap.add_argument("--saguaros", type=int, default=650)
@@ -210,7 +210,7 @@ def main():
 
     rng = np.random.default_rng(2003)
     formations = []
-    snow = args.biome == "snow"
+    snow = args.biome in ("snow", "alpine")  # spruce woods either way
     tropical = args.biome == "tropical"
     edge = np.minimum.reduce([X - x0, x0 + w - X, Z - z0, z0 + hh - Z])
     for kind, count, (s_lo, s_hi), target in ([] if snow or tropical else FORMATIONS):

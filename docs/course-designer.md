@@ -90,8 +90,12 @@ browser's own storage for the site). **Open** lists the saved courses.
 `CourseTerrain` the round plays on:
 
 - **Heights** come from the sculpted grid (one sample every 2 m, bilinear
-  between them), then the areas shape them: bunkers are dug 0.7 m in
-  with a 2 m lip; ponds are sunk below a water line 0.3 m under the lowest
+  between them), then the areas shape them: bunkers are dug 0.7 m in,
+  as real ones are built: a low side ramped in over 4 m away from the hole,
+  and on the side toward its pin a steep face of flashed sand (to the floor
+  within 1.6 m of the edge) up to a turf lip built up 0.4 m, so from the tee
+  and the approach the sand shows as a wall under a shadowed lip
+  (`DesignedTerrain.bunker_face_dir`); ponds are sunk below a water line 0.3 m under the lowest
   point of their bank; tee boxes become raised pads (below).
 - **Tee pads** (`TeePads`, `game/scripts/designer/tee_pads.gd`): each tee
   is a level platform 0.45 m above the mean ground round its edge, mown out

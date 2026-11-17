@@ -897,6 +897,56 @@ static func stand_depth() -> float:
 	return STAND_ROWS * STAND_TREAD
 
 
+## Where the tee shot is played toward: the route's first point off the
+## tee, or the pin (what GolfRound builds the gallery toward).
+static func first_leg(hole: HoleData) -> Vector3:
+	for r in hole.route:
+		if Vector2(hole.tee.x, hole.tee.z).distance_to(r) > 1.0:
+			return Vector3(r.x, hole.tee.y, r.y)
+	return hole.pin
+
+
+## The solid boxes of the grandstands build() puts up on `hole` with
+## `stand` on, without building them: a replay needs them where the round
+## had them, for the shots that hit one (ShotRecord.stands).
+static func stand_obstacles(hole: HoleData) -> ObstacleField:
+	var field := ObstacleField.new()
+	var at := grandstand_spot(hole)
+	if not at.is_empty():
+		_stand_box(field, hole.terrain, at[0], at[1], STAND_WIDTH)
+	if hole.par == 3:
+		var tee_at := tee_stand_spot(hole, first_leg(hole))
+		if not tee_at.is_empty():
+			_stand_box(field, hole.terrain, tee_at[0], tee_at[1], TEE_STAND_WIDTH)
+	field.finalize()
+	return field
+
+
+## The stand's floor: level on the highest ground under it, so no corner
+## sinks into a slope. [base, lowest ground].
+static func _stand_base(terrain: CourseTerrain, front: Vector3, facing: Vector3, width: float) -> Vector2:
+	var side := Vector3.UP.cross(facing)
+	var depth := stand_depth()
+	var base := front.y
+	var low := front.y
+	for i in 3:
+		for j in 3:
+			var p := front + side * ((i / 2.0 - 0.5) * width) - facing * (j / 2.0 * depth)
+			var h := terrain.height_at(p.x, p.z)
+			base = maxf(base, h)
+			low = minf(low, h)
+	return Vector2(base, low)
+
+
+static func _stand_box(field: ObstacleField, terrain: CourseTerrain, front: Vector3, facing: Vector3, width: float) -> void:
+	var side := Vector3.UP.cross(facing)
+	var depth := stand_depth()
+	var base := _stand_base(terrain, front, facing, width).x
+	var height := STAND_FIRST + STAND_ROWS * STAND_RISE + STAND_RAIL
+	var centre := Vector3(front.x, base + height * 0.5, front.z) - facing * depth * 0.5
+	field.add_box(centre, Basis(side, Vector3.UP, -facing), Vector3(width * 0.5, height * 0.5, depth * 0.5), ObstacleField.Kind.SOLID)
+
+
 ## Where a grandstand fits behind the green: [front centre, facing
 ## direction (toward the pin)], or empty if water, sand, a green or a tree
 ## is in the way whichever way it is tried.
@@ -993,23 +1043,16 @@ func _build_grandstand(terrain: CourseTerrain, front: Vector3, facing: Vector3, 
 	var side := Vector3.UP.cross(facing)
 	var depth := stand_depth()
 	# Level on the highest ground under it, so no corner sinks into a slope.
-	var base := front.y
-	var low := front.y
-	for i in 3:
-		for j in 3:
-			var p := front + side * ((i / 2.0 - 0.5) * width) - facing * (j / 2.0 * depth)
-			var h := terrain.height_at(p.x, p.z)
-			base = maxf(base, h)
-			low = minf(low, h)
+	var floor_at := _stand_base(terrain, front, facing, width)
+	var base := floor_at.x
+	var low := floor_at.y
 	var stand := Node3D.new()
 	stand.name = node_name
 	add_child(stand)
 	stand.transform = Transform3D(Basis(side, Vector3.UP, -facing), Vector3(front.x, base, front.z))
 	_stands.append([front, facing, width * 0.5, depth])
 	if camera_blockers != null:
-		var height := STAND_FIRST + STAND_ROWS * STAND_RISE + STAND_RAIL
-		var centre := Vector3(front.x, base + height * 0.5, front.z) - facing * depth * 0.5
-		camera_blockers.add_box(centre, Basis(side, Vector3.UP, -facing), Vector3(width * 0.5, height * 0.5, depth * 0.5), ObstacleField.Kind.SOLID)
+		_stand_box(camera_blockers, terrain, front, facing, width)
 	# In the stand's frame: x across, y up, +z back (away from the green).
 	var w := width * 0.5
 	var floor_y := low - base - 0.3
