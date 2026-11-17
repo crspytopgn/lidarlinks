@@ -25,7 +25,6 @@ const ASSETS := {
 	"fir_a": "fir_tree_01",
 	"fir_b": "fir_tree_01",
 	"fir_c": "fir_tree_01",
-	"jacaranda": "jacaranda_tree",
 	"red_oak": "red_oak",
 	"island_01": "island_tree_01",
 	"island_02": "island_tree_02",

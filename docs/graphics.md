@@ -184,11 +184,12 @@ Ultra and use a notch lighter soft-shadow filter.
 - **Photoscanned trees** (`ScannedTree`, `tools/trees/scan_tree.py`): when
   their files are there, the 3D trees are Poly Haven scans (CC0) instead of
   the generated ones below: PlantCatalog's Northern red oak from Sketchfab
-  (CC BY 4.0, an old 16.5 m summer oak, and its mirror image) and
+  (CC BY 4.0, an old 15 m summer oak, and its mirror image; it replaced
+  Poly Haven's jacaranda, which is no longer fetched or shipped) and
   `island_tree_01` for broadleaf, the three trees of `fir_tree_01` for
   pines, `island_tree_02` (and mirrored) for bushes. The scans are millions
   of triangles, so `scan_tree.py` cuts each down offline into
-  `game/assets/trees/*.oltree` (committed, about 1.3 MB in all; the
+  `game/assets/trees/*.oltree` (committed, about 1.2 MB in all; the
   textures come from `fetch_free_assets.py`): the bark decimated to 3,000
   to 17,000 triangles, every scanned leaf one quad fitted to its UVs (a
   share of them kept and grown to hold the cover), and for the fir, whose
