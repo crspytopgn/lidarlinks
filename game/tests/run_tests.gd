@@ -2123,6 +2123,12 @@ func _test_graphics_settings() -> void:
 	_check(sunset.elevation < dusk.elevation and early.elevation < dawn.elevation, "dawn and sunset sit lowest")
 	_check(absf(float(early.bearing) - float(sunset.bearing)) > 120.0, "dawn and sunset light from opposite sides")
 	_check((sunset.sun as Color).b < (dusk.sun as Color).b, "sunset is the warmest sun")
+	var grey := Scenery.time_light(GraphicsSettings.TimeOfDay.OVERCAST, 0.0)
+	var aft: Dictionary = Scenery.TIMES["afternoon"]
+	_check(float(grey.energy) < 0.5 * float(aft.energy) and float(grey.fill_fwd) > float(aft.fill_fwd), "overcast: a weak sun and a strong sky fill")
+	_check(float(grey.fog) > float(aft.fog) and (grey.haze as Color).b > (grey.haze as Color).r, "overcast: thicker, blue-grey distance haze")
+	_check(float(grey.get("shadow", 1.0)) < 0.5 and float(grey.get("soft", 0.0)) > 1.0, "overcast: faint, soft shadows")
+	_check(PhotoMode.step_time(GraphicsSettings.TimeOfDay.OVERCAST, 1) == GraphicsSettings.TimeOfDay.AFTERNOON, "photo mode steps from overcast to afternoon")
 	for t in GraphicsSettings.TimeOfDay.values():
 		_check(PostProcess.lut_for(t, false) != null, "time %d has a grade" % t)
 	_check(PhotoMode.step_time(GraphicsSettings.TimeOfDay.SUNSET, 1) == GraphicsSettings.TimeOfDay.DAWN, "photo mode time wraps sunset to dawn")

@@ -3506,7 +3506,9 @@ func _apply_graphics() -> void:
 	camera.fov = graphics.fov
 	camera.attributes = _camera_attributes()
 	RenderingServer.global_shader_parameter_set("foliage_sway", 1.0 if graphics.foliage_wind else 0.0)
-	RenderingServer.global_shader_parameter_set("cloud_shadow", CLOUD_SHADOW if graphics.cloud_shadows else 0.0)
+	# Under a soft overcast the whole sky is cloud: no moving patches of shade.
+	var cloud_patches := graphics.cloud_shadows and graphics.time_of_day != GraphicsSettings.TimeOfDay.OVERCAST
+	RenderingServer.global_shader_parameter_set("cloud_shadow", CLOUD_SHADOW if cloud_patches else 0.0)
 	TreeFactory.set_level(graphics.trees)
 	Landscape.detail = graphics.quality
 	GolferCloth.detail = graphics.quality

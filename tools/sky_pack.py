@@ -97,8 +97,35 @@ def to_rgb9e5(rgbe):
     return out
 
 
-def pack(hdr_bytes):
+def halve(width, height, rgbe):
+    """The panorama at half size, each pixel the mean of a 2 x 2 block,
+    back as RGBE (for a soft overcast sky, where 1k is more than it needs)."""
+    w, h = width // 2, height // 2
+    out = bytearray(w * h * 4)
+    for y in range(h):
+        for x in range(w):
+            acc = [0.0, 0.0, 0.0]
+            for dy in (0, 1):
+                for dx in (0, 1):
+                    i = ((2 * y + dy) * width + 2 * x + dx) * 4
+                    e = rgbe[i + 3]
+                    f = math.ldexp(1.0, e - 136) if e else 0.0
+                    for c in range(3):
+                        acc[c] += rgbe[i + c] * f * 0.25
+            m = max(acc)
+            o = (y * w + x) * 4
+            if m < 1e-32:
+                continue
+            mant, exp = math.frexp(m)
+            scale = mant * 256.0 / m
+            out[o:o + 4] = bytes([min(255, int(acc[0] * scale)), min(255, int(acc[1] * scale)), min(255, int(acc[2] * scale)), exp + 128])
+    return w, h, out
+
+
+def pack(hdr_bytes, half=False):
     width, height, rgbe = read_hdr(hdr_bytes)
+    if half:
+        width, height, rgbe = halve(width, height, rgbe)
     raw = to_rgb9e5(rgbe)
     return MAGIC + struct.pack("<III", width, height, len(raw)) + zlib.compress(bytes(raw), 9), raw
 

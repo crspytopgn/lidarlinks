@@ -62,6 +62,19 @@ static func sky() -> Texture2D:
 	return _sky
 
 
+static var _overcast_sky: Texture2D
+static var _overcast_loaded := false
+
+
+## The bright overcast panorama for the "Soft overcast" time of day
+## (sky_overcast_panorama.olsky), or null when it wasn't fetched.
+static func overcast_sky() -> Texture2D:
+	if not _overcast_loaded:
+		_overcast_loaded = true
+		_overcast_sky = _load_packed_sky(DIR + "sky_overcast_panorama.olsky")
+	return _overcast_sky
+
+
 ## sky_sun() of the free sky, worked out once.
 static func free_sky_sun() -> Vector2:
 	if _sky_sun.x < -1.5:

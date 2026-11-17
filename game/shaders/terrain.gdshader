@@ -347,7 +347,11 @@ void fragment() {
 	// Golden native drifts on the deep rough (FescueField.native_at, same
 	// noise): the ground under the drift's long grass goes straw too, so a
 	// drift reads as one field of seed heads rather than tufts on lawn.
-	col = mix(col, native_ground * (0.85 + 0.3 * patches), deep_rough * (1.0 - bare) * native_at(p, ground_up) * native_ground_strength);
+	// Near the camera, where the drift's tall tufts haven't grown in yet
+	// (FescueField near_start), bare straw under the short 3D blades read
+	// as a dry, yellow lawn: keep it mostly green there.
+	float drift_near = mix(0.4, 1.0, smoothstep(12.0, 40.0, length(from_eye)));
+	col = mix(col, native_ground * (0.85 + 0.3 * patches), deep_rough * (1.0 - bare) * native_at(p, ground_up) * native_ground_strength * drift_near);
 	// Close-cut turf: dense, fine blades, a touch cooler, and smoother.
 	col *= mix(vec3(1.0), vec3(0.97, 1.0, 0.98), cut);
 	// Grass is matt: a mown blade has a faint sheen, but a sward of them

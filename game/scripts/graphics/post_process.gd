@@ -137,7 +137,7 @@ static func lut_for(time_of_day: int, forward_plus: bool) -> Texture2D:
 	match time_of_day:
 		GraphicsSettings.TimeOfDay.MORNING, GraphicsSettings.TimeOfDay.DAWN:
 			light = "morning"
-		GraphicsSettings.TimeOfDay.MIDDAY:
+		GraphicsSettings.TimeOfDay.MIDDAY, GraphicsSettings.TimeOfDay.OVERCAST:
 			light = "midday"
 		GraphicsSettings.TimeOfDay.GOLDEN, GraphicsSettings.TimeOfDay.SUNSET:
 			light = "golden"
