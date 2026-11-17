@@ -140,6 +140,8 @@ var time_of_day := 0
 ## Somewhere warm: cicadas in the trees on a hot afternoon (is_warm).
 var warm := false
 var round_progress := 0.0
+## How hard it rains (0 dry to 1): fewer birds, no mowers.
+var rain := 0.0
 ## The region's birdcalls (calls_for), or "" for snatches of the bed.
 var calls := ""
 ## The course's latitude (NAN when not known), for the season.
@@ -432,14 +434,15 @@ func _process(delta: float) -> void:
 		var gap: Vector2 = CALL_GAP[time] * season_gap(Time.get_date_dict_from_system().month, latitude)
 		_next_call = randf_range(gap.x, gap.y)
 		# Fewer calls out in the open, where there are few trees to sing in.
-		if has_calls(setting, calls) and randf() < 0.25 + 0.75 * woods:
+		# And few in the rain (RoundWeather.rain_amount).
+		if has_calls(setting, calls) and randf() < (0.25 + 0.75 * woods) * (1.0 - 0.8 * rain):
 			_bird_call()
 	_next_mower -= delta
 	if _next_mower <= 0.0:
 		_next_mower = randf_range(MOWER_GAP.x, MOWER_GAP.y)
 		# Greenkeepers mow in the morning, and some in the afternoon; never
 		# in the evening light.
-		if time != "golden" and setting != Setting.SEASIDE and not _mower.playing and _mower.stream != null:
+		if time != "golden" and setting != Setting.SEASIDE and rain <= 0.0 and not _mower.playing and _mower.stream != null:
 			_mower.volume_db = MOWER_DB + randf_range(-4.0, 0.0)
 			_mower.play()
 

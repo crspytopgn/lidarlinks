@@ -35,6 +35,12 @@ uniform float photo_sun_u = 0.5; // the photo's sun: across (0 to 1)
 uniform float photo_sun_elevation = 0.8; // and its height, radians
 uniform float sun_u = 0.5; // the game's sun, in the same mapping
 uniform float sun_elevation = 0.8; // radians, after the stretch's limit
+// The round's weather (RoundWeather via Scenery): 0 as photographed, 1 a
+// full cloud deck that hides the photo's blue and the sun, its colour
+// `deck` (darker under rain). The photo's cloud detail shows through a
+// little, and the deck is brightest overhead, as a real overcast is.
+uniform float overcast = 0.0;
+uniform vec3 deck : source_color = vec3(0.72, 0.75, 0.78);
 
 void sky() {
 	vec2 coords = SKY_COORDS;
@@ -70,15 +76,21 @@ void sky() {
 	c *= mix(tint, tint * horizon_tint, low);
 	float luma = dot(c, vec3(0.2126, 0.7152, 0.0722));
 	c = max(mix(vec3(luma), c, mix(sky_depth, 1.0, low)), vec3(0.0));
+	if (overcast > 0.0) {
+		float up = smoothstep(-0.05, 0.6, EYEDIR.y);
+		vec3 grey = deck * energy * (0.8 + 0.35 * up) * (0.85 + 0.3 * clamp(luma / energy, 0.0, 1.0));
+		c = mix(c, grey, overcast);
+	}
+	float clear_sky = 1.0 - smoothstep(0.5, 0.9, overcast);
 	if (glow > 0.0 && LIGHT0_ENABLED) {
 		float toward = max(dot(EYEDIR, LIGHT0_DIRECTION), 0.0);
 		float halo = pow(toward, 8.0) * 0.6 + pow(toward, 64.0) * 1.5;
-		c += glow_color * glow * halo * (0.4 + 0.6 * low);
+		c += glow_color * glow * halo * (0.4 + 0.6 * low) * clear_sky;
 	}
 	if (align_sun && LIGHT0_ENABLED) {
 		// The game's own sun disc, about a degree across.
 		float d = dot(EYEDIR, LIGHT0_DIRECTION);
-		c += LIGHT0_COLOR * LIGHT0_ENERGY * 40.0 * smoothstep(0.99995, 0.99998, d);
+		c += LIGHT0_COLOR * LIGHT0_ENERGY * 40.0 * smoothstep(0.99995, 0.99998, d) * clear_sky;
 	}
 	COLOR = c;
 }

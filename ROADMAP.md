@@ -226,4 +226,5 @@ product lead builds it.
   - [x] Graphics looks (Photoreal, Natural, Cinematic, Classic Links, Performance) picked per device, ReShade-style effects (sharpen, grading, vignette, grain, bloom, SSAO, depth of field), FSR upscaling, dynamic resolution, 3D grass in the rough and trees in the wind ([graphics.md](docs/graphics.md))
   - [x] Photo-textured 3D trees with impostors, also in place of the disc courses' tree billboards, baked tree shadows and AO per hole, and a performance budget in CI ([graphics.md](docs/graphics.md))
   - [x] Cloud shadows (Settings > Graphics, on in the Photoreal, Natural and Cinematic looks)
+  - [x] Weather by course location: cloud, rain or drizzle, mist, temperature and the round's wind drawn from the course's climate for the month, or the live weather at real courses (Settings > Weather; [weather.md](docs/weather.md))
   - [ ] Texture compression tiers per device, the HD pack in the browser
