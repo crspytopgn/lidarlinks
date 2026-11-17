@@ -91,7 +91,7 @@ SLOTS = {
               {k: v for k, v in texture_maps("1k").items() if k in ("albedo.jpg", "normal.jpg")}),
     "sky": ("hdris", ["kloofendal_48d_partly_cloudy_puresky", "kloofendal_43d_clear_puresky"], ["pure sky", "clear"], {"panorama.hdr": ("hdri", "2k", "hdr")}),
     # The bright, even cloud of the "Soft overcast" time of day. It has no
-    # sun to line up and little detail, so 1k is plenty.
+    # sun to line up and little detail, so 1k is plenty (packed at half that).
     "sky_overcast": ("hdris", ["kloofendal_overcast_puresky", "overcast_soil_puresky"], ["overcast"], {"panorama.hdr": ("hdri", "1k", "hdr")}),
 }
 
@@ -146,6 +146,11 @@ def choose(kind, preferred, keywords):
     return asset_id, assets[asset_id]
 
 
+# Packed skies stored at half the downloaded size: the overcast deck is
+# soft and even, and 512 x 256 keeps it under the download budget.
+HALF_SKIES = ("sky_overcast_",)
+
+
 def pack_sky(path):
     """The HDR sky as a deflated .olsky next to it (see sky_pack.py), and the
     .hdr itself left out of the import and the export. Lossless, and half
@@ -153,7 +158,7 @@ def pack_sky(path):
     packed_path = os.path.splitext(path)[0] + ".olsky"
     if not (os.path.exists(packed_path) and os.path.getmtime(packed_path) >= os.path.getmtime(path)):
         with open(path, "rb") as f:
-            packed, _raw = sky_pack.pack(f.read())
+            packed, _raw = sky_pack.pack(f.read(), half=os.path.basename(path).startswith(HALF_SKIES))
         with open(packed_path, "wb") as f:
             f.write(packed)
     with open(path + ".import", "w") as f:
