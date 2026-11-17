@@ -107,14 +107,23 @@ static func material() -> StandardMaterial3D:
 	return _material
 
 
-## True when variant `variant` of `id` is a scanned model (see the top).
+## The scanned model for variant `variant` of `id` (see the top): its own,
+## else variant 0's (one barrel serves them all, turned and scaled where it
+## stands), or "" when there's none.
+static func scanned_model(id: String, variant: int) -> String:
+	for name: String in ["%s_%d" % [id, variant % VARIANTS], id + "_0"]:
+		if CourseProps.is_textured(name):
+			return name
+	return ""
+
+
 static func is_scanned(id: String, variant: int) -> bool:
-	return CourseProps.is_textured("%s_%d" % [id, variant % VARIANTS])
+	return not scanned_model(id, variant).is_empty()
 
 
 static func mesh(id: String, variant: int) -> Mesh:
 	if is_scanned(id, variant):
-		var scanned := CourseProps.mesh("%s_%d" % [id, variant % VARIANTS])
+		var scanned := CourseProps.mesh(scanned_model(id, variant))
 		if scanned != null:
 			return scanned
 	if not _meshes.has(id):

@@ -15,6 +15,3 @@ converted to metal/roughness; the bag's club heads turned to steel and its loose
 | cactus_saguaro_2.glb | [Realistic HD Saguaro cactus (30/30)](https://sketchfab.com/3d-models/4cd53602329b4171941e620e1c8360f7) | PlantCatalog | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) |
 | cactus_saguaro_3.glb | [Realistic HD Saguaro cactus (15/30)](https://sketchfab.com/3d-models/fb499e4ae4c749f58a9f10f60e38cf1a) | PlantCatalog | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) |
 | cactus_barrel_0.glb | [Realistic HD Golden barrel cactus (16/30)](https://sketchfab.com/3d-models/027019be54544182a7d4b15fb04e9819) | PlantCatalog | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) |
-| cactus_barrel_1.glb | [Realistic HD Golden barrel cactus (17/30)](https://sketchfab.com/3d-models/1c5f8e93326f40e9bde51f1c04b505ae) | PlantCatalog | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) |
-| cactus_barrel_2.glb | [Realistic HD Golden barrel cactus (12/30)](https://sketchfab.com/3d-models/17e340c653eb45f08e01717d9ca76cb4) | PlantCatalog | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) |
-| cactus_barrel_3.glb | [Realistic HD Golden barrel cactus (26/30)](https://sketchfab.com/3d-models/445a0ea29bdf430d90ca7707deb1df55) | PlantCatalog | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) |
