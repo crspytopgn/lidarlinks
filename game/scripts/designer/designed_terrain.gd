@@ -300,9 +300,10 @@ func build_visual() -> Node3D:
 			var inst := MeshInstance3D.new()
 			inst.mesh = chunk_mesh(Vector2i(ci, cj))
 			inst.material_override = material()
+			inst.set_meta("chunk", Vector2i(ci, cj))
 			root.add_child(inst)
-	if not _lod_queue.is_empty():
-		root.add_child(LodRefiner.new(self))
+	if not _lod_queue.is_empty() or not steepness.is_empty():
+		root.add_child(LodRefiner.new(self, root))
 	if course.landscape.is_empty():
 		root.add_child(build_apron())
 	else:
@@ -900,6 +901,7 @@ func _invalidate(cells: Rect2i) -> void:
 		if r.intersects(g):
 			_meshes.erase(c)
 			lod_keys.erase(c)
+			steepness.erase(c)
 
 
 ## Paints the surface raster inside `px` (raster cells).
@@ -1308,22 +1310,83 @@ const LOD_BUDGET_MS := 1.5
 ## Steps refine_lods() each frame until every chunk has its levels.
 class LodRefiner extends Node:
 	var terrain: DesignedTerrain
+	var ground: Node3D  ## the chunks' parent (build_visual's root)
+	var sun: DirectionalLight3D
+	var _sun_tan := -1.0
+	var _known := 0  ## steepness entries when the casters were last set
 
-	func _init(t: DesignedTerrain) -> void:
+	func _init(t: DesignedTerrain, root: Node3D) -> void:
 		terrain = t
+		ground = root
 		name = "LodRefiner"
-		add_to_group("lod_refiner")
+		if not t._lod_queue.is_empty():
+			add_to_group("lod_refiner")
 
 	func _process(_delta: float) -> void:
-		if terrain.refine_lods(LOD_BUDGET_MS):
-			set_process(false)
+		if is_in_group("lod_refiner") and terrain.refine_lods(LOD_BUDGET_MS):
 			remove_from_group("lod_refiner")
+		_update_casters()
+
+	## Ground that can't shade itself at the sun's height casts no sun
+	## shadow (see SHADOW_SLOPE_MARGIN): most of a parkland course in the
+	## afternoon, which was most of the shadow pass's draws.
+	func _update_casters() -> void:
+		if sun == null or not is_instance_valid(sun):
+			sun = null
+			for l: Node in get_tree().root.find_children("*", "DirectionalLight3D", true, false):
+				if (l as DirectionalLight3D).shadow_enabled:
+					sun = l
+					break
+			if sun == null:
+				return
+		var up := sun.global_transform.basis.z.y  # sin of the sun's height
+		var height := clampf(up, 0.0, 1.0)
+		var t := height / maxf(sqrt(1.0 - height * height), 1e-3)
+		if absf(t - _sun_tan) < 0.005 and terrain.steepness.size() == _known:
+			return
+		_sun_tan = t
+		_known = terrain.steepness.size()
+		for inst in ground.get_children():
+			if not inst is MeshInstance3D or not inst.has_meta("chunk"):
+				continue
+			var steep: float = terrain.steepness.get(inst.get_meta("chunk"), INF)
+			(inst as MeshInstance3D).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON if DesignedTerrain.casts_sun_shadow(steep, t) else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+
+
+## A heightfield only shades itself (or anything standing on it) where it
+## falls away from the sun more steeply than the sun is high, so a chunk
+## whose steepest slope (rise over run) is below the sun's (with this
+## margin) needs no sun shadow pass. Its own slopes still darken by N.L.
+const SHADOW_SLOPE_MARGIN := 0.8
+
+
+static func casts_sun_shadow(steep: float, sun_tan: float) -> bool:
+	return steep >= sun_tan * SHADOW_SLOPE_MARGIN
 
 
 const ARRAY_FLAGS := Mesh.ARRAY_CUSTOM_RGBA_FLOAT << Mesh.ARRAY_FORMAT_CUSTOM0_SHIFT
 ## Chunks built but not yet given their coarser levels: Vector2i -> what
 ## refine_lods() needs.
 var _lod_queue := {}
+## Each refined chunk's steepest slope (rise over run, over a 2 m cell):
+## Vector2i -> float. Chunks not in it always cast sun shadows.
+var steepness := {}
+
+
+## The steepest slope among the chunk's grid cells (rise over run).
+static func _steepest(verts: PackedVector3Array, nx: int, nz: int) -> float:
+	var out := 0.0
+	var inv := 1.0 / DesignedCourse.CELL
+	for j in nz - 1:
+		var row := j * nx
+		for i in nx - 1:
+			var h := verts[row + i].y
+			var gx := (verts[row + i + 1].y - h) * inv
+			var gz := (verts[row + nx + i].y - h) * inv
+			out = maxf(out, sqrt(gx * gx + gz * gz))
+	return out
+
+
 ## The switch errors (m) of each chunk's coarser levels, finest first, once
 ## refine_lods() has given it them: Vector2i -> PackedFloat32Array.
 var lod_keys := {}
@@ -1356,6 +1419,7 @@ func _add_lods(job: Dictionary) -> void:
 	var colors: PackedColorArray = arrays[Mesh.ARRAY_COLOR]
 	var weights: PackedVector2Array = arrays[Mesh.ARRAY_TEX_UV2]
 	var palette: PackedFloat32Array = arrays[Mesh.ARRAY_CUSTOM0]
+	steepness[job.key] = _steepest(verts, nx, nz)
 	var steps := _lod_errors(verts.slice(0, grid), colors.slice(0, grid), weights.slice(0, grid), palette.slice(0, grid * 4), uvs.slice(0, grid), nx, nz)
 	if steps.is_empty():
 		return

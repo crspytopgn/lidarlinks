@@ -132,6 +132,12 @@ Ultra and use a notch lighter soft-shadow filter.
   neighbour at another level never opens a crack. The levels are worked out
   1.5 ms a frame after the course loads (`LodRefiner`), so loading is no
   slower. On Kettle Hollow 421 of 456 chunks get all three levels.
+- **Ground sun shadows only where they can fall**
+  (`DesignedTerrain.casts_sun_shadow`): a heightfield shades itself only
+  where it falls away more steeply than the sun is high, so chunks gentler
+  than that skip the sun's shadow pass, rechecked as the sun moves. In the
+  afternoon on Kettle Hollow 52 of 456 chunks still cast; draw calls at the
+  tee fell from 851 to 743 on the web renderer.
 - **Benchmark** (`-- --benchmark`): also lists what the scene is made of by
   owner (nodes, surfaces, instances, triangles, shadow casters), the
   primitives drawn per case, and takes `--scene-only`, `--play-only` and

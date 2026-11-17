@@ -376,6 +376,13 @@ func _test_ground_lods() -> void:
 		var keys: PackedFloat32Array = t.lod_keys[k]
 		for q in range(1, keys.size()):
 			check(keys[q] > keys[q - 1], "each level switches farther out than the last")
+	# Sun shadows: flat ground never shades itself, a hill does once the
+	# sun is lower than its slopes.
+	check(t.steepness.get(Vector2i(0, 0), INF) < 0.01, "flat ground has no slope")
+	check(not DesignedTerrain.casts_sun_shadow(t.steepness[Vector2i(0, 0)], tan(deg_to_rad(5.0))), "flat ground casts no sun shadow even at sunset")
+	var steep: float = t.steepness.get(t.chunk_count() / 2, 0.0)
+	check(steep > 0.05, "the hill has slopes: %f" % steep)
+	check(DesignedTerrain.casts_sun_shadow(steep, steep * 0.5) and not DesignedTerrain.casts_sun_shadow(steep, steep * 2.0), "a hill casts sun shadows only when the sun is lower than its slopes")
 	# Skirts: an inner chunk's edge has them, the course's edge doesn't.
 	var corner := t.chunk_mesh(Vector2i(0, 0))
 	var arrays := corner.surface_get_arrays(0)

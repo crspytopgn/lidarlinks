@@ -91,11 +91,20 @@ func step_background(budget_ms := 4.0) -> bool:
 		return _task < 0
 	if _task >= 0:
 		return false
-	if not OS.has_feature("threads") or OS.get_processor_count() < 2:
+	# Planning on a worker thread crashed the game: the flight and roll
+	# code reads shared constant arrays (Surface.PARAMS and the like), and
+	# Godot 4.4's script arrays aren't safe to share across threads (seen
+	# 2026-11-17: "Invalid access of index 3", then a segfault). So it is
+	# stepped here, a few milliseconds a frame, until the physics is
+	# thread-safe. THREADED stays off.
+	if not THREADED or not OS.has_feature("threads") or OS.get_processor_count() < 2:
 		return step(budget_ms)
 	_task = WorkerThreadPool.add_task(_plan_all, false, "shot read")
 	_running[_task] = self  # kept alive until the thread is done
 	return false
+
+
+const THREADED := false
 
 
 var _task := -1
