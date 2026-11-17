@@ -706,6 +706,19 @@ func _test_swing_meter() -> void:
 ## Quick pace: brisk chip and putt meters through the same snap, a putting
 ## meter sized to the putt, and the full swing's carry scale.
 func _test_good_moments() -> void:
+	var stats := {"holes": 18, "fairways": 8, "fairway_holes": 14, "gir": 9, "putts": 31}
+	var usual := {"stat_holes": 36, "fairways": 14, "fairway_holes": 28, "gir": 18, "putts": 60}
+	var vs := PlayerProfiles.round_vs_usual(stats, usual)
+	_check(vs == "Fairways 8/14 (usually 50%)   Greens 9/18 (usually 50%)   Putts 31 (usually 30.0)",
+			"the round's numbers sit beside the usual ones (%s)" % vs)
+	_check(PlayerProfiles.round_vs_usual({"holes": 9, "gir": 3, "putts": 15}, {}) == "Greens 3/9   Putts 15",
+			"a first round has nothing to compare with")
+	var was := {"longest_drive_yd": 260, "aces": 0, "eagles": 1, "best": {"Kettle Hollow|9": {"gross": 38, "to_par": 2}}}
+	var now := {"longest_drive_yd": 281, "aces": 0, "eagles": 1, "best": {"Kettle Hollow|9": {"gross": 36, "to_par": 0}}}
+	var news := PlayerProfiles.new_records(was, now, "Kettle Hollow", 9)
+	_check(news.size() == 2 and news[0] == "New best at Kettle Hollow: 36 (E)" and news[1] == "New longest drive: 281 yd",
+			"a better round and a longer drive are called out (%s)" % [news])
+	_check(PlayerProfiles.new_records(now, now, "Kettle Hollow", 9).is_empty(), "nothing beaten, nothing said")
 	_check(ScoreBadge.for_score(3, 4)[0] == "Birdie" and ScoreBadge.for_score(3, 5)[0] == "Eagle"
 			and ScoreBadge.for_score(1, 3)[0] == "Hole in one" and ScoreBadge.for_score(4, 4).is_empty(),
 			"the hole-out badge names birdies, eagles and aces, nothing for par")

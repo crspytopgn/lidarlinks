@@ -166,6 +166,7 @@ var shot: ShotResult
 var shot_from := Vector3.ZERO
 var shot_time := 0.0
 var result_timer := 0.0
+var _drive_noted := {}  ## seat -> a personal-best drive already noted this round
 var _crowd_built := false  ## the gallery's "ooh" has played for this shot
 var _land_time := INF  ## when the ball first lands; INF once the sound has played
 ## One line per shot on the current hole (who, club, lie, distances and
@@ -567,6 +568,7 @@ func start_round() -> void:
 	record.course_file = course_path.get_file()
 	hud.scorecard.visible = false
 	round_stats.clear()
+	_drive_noted.clear()
 	_undo = {}
 	_mulligans_taken.clear()
 	for _i in scoring.player_count():
@@ -1855,6 +1857,12 @@ func _note_drive(strokes_before: int) -> void:
 		return
 	var yd := roundi(shot.total_m * YARDS_PER_METRE)
 	round_stats[shooter]["longest_drive_yd"] = maxi(int(round_stats[shooter].get("longest_drive_yd", 0)), yd)
+	# Past the player's longest ever drive: a quiet note on the spot.
+	if round_setup != null and not round_setup.is_computer(shooter) and not round_setup.practice:
+		var best := int(PlayerProfiles.load_saved().records(scoring.names[shooter]).get("longest_drive_yd", 0))
+		if best > 0 and yd > best and yd > int(_drive_noted.get(shooter, 0)):
+			_drive_noted[shooter] = yd
+			hud.badge.pop("Longest drive", "%d yd · was %d yd" % [yd, best], ScoreBadge.PURE, false)
 
 
 # --- Launch monitor ------------------------------------------------------------
@@ -2856,8 +2864,16 @@ func _record_rounds() -> String:
 			continue
 		var player := scoring.names[i]
 		var before := profiles.index_of(player)
+		var usual := profiles.career(player)
+		var was := profiles.records(player)
 		if not profiles.record_round(player, scoring.cards[i], scoring.ranks, course.course_name, date, round_stats[i]):
 			continue
+		var who := "" if scoring.player_count() == 1 else player + ": "
+		var vs := PlayerProfiles.round_vs_usual(round_stats[i], usual)
+		if not vs.is_empty():
+			lines.append(who + vs)
+		for line in PlayerProfiles.new_records(was, profiles.records(player), course.course_name, scoring.cards[i].pars.size()):
+			lines.append(who + line)
 		var after := profiles.index_of(player)
 		if after == Handicap.NONE:
 			var left := 3 - profiles.rounds(player).size()
