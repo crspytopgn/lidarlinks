@@ -962,6 +962,7 @@ func play_shot(power: float, accuracy: float, monitor: OpenConnect.Launch = null
 		rec.cpu_ratings = PackedInt32Array([sk.links_tee, sk.links_irons, sk.links_chips, sk.links_putts, sk.links_max_power])
 		rec.to_hole_m = ball_at.distance_to(hole.pin) if club.is_putter else _shot_from_pin
 	rec.chip = _chip and not club.is_putter
+	rec.stands = hole.terrain.hole_obstacles != null and hole.terrain.hole_obstacles.size() > 0
 	rec.stroke = null if rec.computer else _mouse_stroke
 	rec.help = null if rec.computer else _mouse_help
 	if not rec.computer and not club.is_putter:
@@ -3800,10 +3801,7 @@ func _add_tee_markers() -> void:
 ## A point down the first leg of the hole from the tee, so tee markers and
 ## the gallery face down the fairway on a dogleg.
 func _first_leg() -> Vector3:
-	for r in hole.route:
-		if Vector2(hole.tee.x, hole.tee.z).distance_to(r) > 1.0:
-			return Vector3(r.x, hole.tee.y, r.y)
-	return hole.pin
+	return Gallery.first_leg(hole)
 
 
 ## Where the two tee markers go: across the line from `tee` toward `toward`.

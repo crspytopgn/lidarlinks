@@ -49,6 +49,9 @@ var stance := 30
 var monitor: Array = []
 ## Taken again as a mulligan: played, but not counted on the card.
 var mulligan := false
+## The hole's tournament grandstands were up (Broadcast dressing), and
+## solid to the ball: a replay puts them back (Gallery.stand_obstacles).
+var stands := false
 ## What happened.
 var rest := Vector3.ZERO
 var outcome: int = ShotResult.Outcome.REST
@@ -70,6 +73,8 @@ func to_dict() -> Dictionary:
 		d["cpu_ratings"] = Array(cpu_ratings)
 	if mulligan:
 		d["mulligan"] = true
+	if stands:
+		d["stands"] = true
 	if stroke != null:
 		d["stroke"] = {
 			"skill": stroke.skill, "shot": stroke.shot, "club": stroke.club, "speed": stroke.speed,
@@ -111,6 +116,7 @@ static func from_dict(d: Dictionary) -> ShotRecord:
 		r.face = int(setup[1])
 		r.stance = int(setup[2])
 	r.mulligan = bool(d.get("mulligan", false))
+	r.stands = bool(d.get("stands", false))
 	var mon: Variant = d.get("monitor")
 	if mon is Array and (mon as Array).size() == 5:
 		r.monitor = (mon as Array).duplicate()

@@ -154,6 +154,7 @@ static func _verify(record: RoundRecord, model: ShotModel, clubs: Array[Club], h
 	var wind := Wind.new(record.wind_level, record.round_seed)
 	var started := 0
 	var checked := 0
+	var stands := {}  ## hole -> Gallery.stand_obstacles, for shots with ShotRecord.stands
 	for i in record.shots.size():
 		var r := record.shots[i]
 		var where := "shot %d (player %d, hole %d)" % [i + 1, r.player + 1, r.hole + 1]
@@ -175,7 +176,16 @@ static func _verify(record: RoundRecord, model: ShotModel, clubs: Array[Club], h
 			if absf(want.x - r.power) > INPUT_TOLERANCE or absf(want.y - r.accuracy) > INPUT_TOLERANCE:
 				errors.append("%s: power and accuracy don't match the mouse swing" % where)
 		var h := holes[r.hole]
+		# The grandstands the round had up on this hole, solid as they were.
+		var kept := h.terrain.hole_obstacles
+		if r.stands:
+			if not stands.has(r.hole):
+				stands[r.hole] = Gallery.stand_obstacles(h)
+			h.terrain.hole_obstacles = stands[r.hole]
+		else:
+			h.terrain.hole_obstacles = null
 		var result := run_shot(model, r, clubs[r.club], h.terrain, h.pin, wind.velocity(), record.round_seed)
+		h.terrain.hole_obstacles = kept
 		wind.next_shot()
 		checked += 1
 		if result.outcome != r.outcome:
