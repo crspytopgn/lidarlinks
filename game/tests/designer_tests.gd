@@ -191,6 +191,15 @@ func _test_splat_and_stakes() -> void:
 		check(codes.x == ceili(c.area.size.x / DesignedTerrain.RES) and splat.get_width() >= codes.x, "splat map at the raster's 0.5 m")
 		var block: Vector2i = mat.get_shader_parameter("green_edge_size")
 		check(splat.get_width() >= block.x * DesignedTerrain.EDGE_BLOCKS.size(), "edge distances for greens, bunkers and tees")
+	# A long course (Ember Coast's 1,244 x 1,918 m): the codes fill most of
+	# the texture's rows, and the edge blocks still keep 1 m texels (beside
+	# the codes), not 7.4 m ones that drew every green edge in steps.
+	var long := DesignedTerrain.new(DesignedCourse.blank(Vector2(1244, 1918)))
+	var lmat := long.material()
+	var texel: Vector2 = lmat.get_shader_parameter("green_edge_texel")
+	var lsplat := lmat.get_shader_parameter("splat_tex") as Texture2D
+	check(texel.x <= 1.01 and texel.y <= 1.01, "a long course keeps 1 m green and bunker edges (%s m)" % texel)
+	check(lsplat != null and lsplat.get_width() <= DesignedTerrain.SPLAT_MAX and lsplat.get_height() <= DesignedTerrain.SPLAT_MAX, "its splat map fits the texture limit")
 	var stakes := t.build_stakes()
 	check(stakes != null and stakes.multimesh.instance_count > 5, "the starter pond has hazard stakes")
 	if stakes != null:

@@ -62,13 +62,17 @@ uniform bool has_splat = false;
 uniform sampler2D splat_tex : filter_nearest, repeat_disable;
 uniform vec2 splat_origin = vec2(0.0); // world x, z of the raster's corner
 uniform vec2 splat_size = vec2(1.0); // metres it covers
-// Where set, the codes fill only the top splat_codes texels, and below
-// them two blocks of green_edge_size texels side by side
+// Where set, the codes fill only the top-left splat_codes texels, and
+// beside or below them two blocks of green_edge_size texels
 // (green_edge_texel metres each) hold the signed distance to the nearest
 // green's or tee's, and the nearest bunker's, outline: 0..1 is
 // -green_edge_range..+green_edge_range metres, positive inside.
 uniform ivec2 splat_codes = ivec2(0);
 uniform ivec2 green_edge_size = ivec2(1);
+// Where block 0 starts in splat_tex, and the step to the next block (beside
+// the codes or below them, side by side or stacked: DesignedTerrain picks).
+uniform ivec2 green_edge_origin = ivec2(0);
+uniform ivec2 green_edge_step = ivec2(0);
 uniform vec2 green_edge_texel = vec2(1.0);
 uniform float green_edge_range = 2.0;
 // By Surface.Type, plus 9 for the first cut of rough beside the fairway
@@ -174,7 +178,7 @@ float baked_edge(vec2 p, int k) {
 	vec2 q = (p - splat_origin) / green_edge_texel - 0.5;
 	ivec2 i = ivec2(floor(q));
 	vec2 f = q - floor(q);
-	ivec2 top = ivec2(green_edge_size.x * k, splat_codes.y);
+	ivec2 top = green_edge_origin + green_edge_step * k;
 	ivec2 hi = green_edge_size - 1;
 	float a = texelFetch(splat_tex, clamp(i, ivec2(0), hi) + top, 0).r;
 	float b = texelFetch(splat_tex, clamp(i + ivec2(1, 0), ivec2(0), hi) + top, 0).r;
