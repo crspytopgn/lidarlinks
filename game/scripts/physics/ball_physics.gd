@@ -187,11 +187,19 @@ static func simulate_shot(start: BallState, terrain: CourseTerrain, has_cup := f
 		landed = true
 		r.first_landing = s.position
 
+	# The ground height last looked up, and where: the next flight step
+	# usually starts where the last one ended, so it is reused (same value).
+	var flight_xz := Vector2(INF, INF)
+	var flight_y := 0.0
 	while t < MAX_TIME:
 		if not rolling:
 			var nxt := step_flight(s, DT, wind, aero)
-			var h0 := s.position.y - terrain.height_at(s.position.x, s.position.z)
-			var h1 := nxt.position.y - terrain.height_at(nxt.position.x, nxt.position.z)
+			var g0 := flight_y if s.position.x == flight_xz.x and s.position.z == flight_xz.y else terrain.height_at(s.position.x, s.position.z)
+			var g1 := terrain.height_at(nxt.position.x, nxt.position.z)
+			flight_xz = Vector2(nxt.position.x, nxt.position.z)
+			flight_y = g1
+			var h0 := s.position.y - g0
+			var h1 := nxt.position.y - g1
 			t += DT
 			step += 1
 			r.apex_m = maxf(r.apex_m, nxt.position.y - start.position.y)

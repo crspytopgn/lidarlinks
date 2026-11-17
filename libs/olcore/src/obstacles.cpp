@@ -43,22 +43,32 @@ void ObstacleField::cell_range(double x0, double z0, double x1, double z1, int& 
   r1 = std::min(rows_ - 1, int(std::floor((z1 - origin_z_) / kCell)));
 }
 
+// Metres a segment must clear a cell's highest item by to skip the cell.
+constexpr double kTopMargin = 1e-3;
+
 void ObstacleField::finalize() {
   // Each item's footprint on the ground, as x0, z0, x1, z1.
   std::vector<std::array<double, 4>> extent;
-  for (const Cylinder& c : cylinders_) extent.push_back({c.x - c.radius, c.z - c.radius, c.x + c.radius, c.z + c.radius});
+  std::vector<double> top;  // each item's highest point
+  for (const Cylinder& c : cylinders_) {
+    extent.push_back({c.x - c.radius, c.z - c.radius, c.x + c.radius, c.z + c.radius});
+    top.push_back(c.y1);
+  }
   for (const Box& b : boxes_) {
-    double rx = 0, rz = 0;
+    double rx = 0, ry = 0, rz = 0;
     for (int k = 0; k < 3; ++k) {
       double h = k == 0 ? b.half.x : (k == 1 ? b.half.y : b.half.z);
       rx += std::fabs(b.axes[k].x) * h;
+      ry += std::fabs(b.axes[k].y) * h;
       rz += std::fabs(b.axes[k].z) * h;
     }
     extent.push_back({b.centre.x - rx, b.centre.z - rz, b.centre.x + rx, b.centre.z + rz});
+    top.push_back(b.centre.y + ry);
   }
   cols_ = rows_ = 0;
   cell_start_.clear();
   cell_items_.clear();
+  cell_top_.clear();
   if (extent.empty()) return;
   double x0 = kInf, z0 = kInf, x1 = -kInf, z1 = -kInf;
   for (const auto& e : extent) {
@@ -81,6 +91,16 @@ void ObstacleField::finalize() {
     cell_range(e[0], e[1], e[2], e[3], c0, r0, c1, r1);
     for (int r = r0; r <= r1; ++r)
       for (int c = c0; c <= c1; ++c) ++count[std::size_t(r) * cols_ + c + 1];
+  }
+  cell_top_.assign(std::size_t(cols_) * rows_, -kInf);
+  for (std::size_t i = 0; i < extent.size(); ++i) {
+    int c0, r0, c1, r1;
+    cell_range(extent[i][0], extent[i][1], extent[i][2], extent[i][3], c0, r0, c1, r1);
+    for (int r = r0; r <= r1; ++r)
+      for (int c = c0; c <= c1; ++c) {
+        double& t = cell_top_[std::size_t(r) * cols_ + c];
+        t = std::max(t, top[i]);
+      }
   }
   for (std::size_t i = 1; i < count.size(); ++i) count[i] += count[i - 1];
   cell_start_ = count;
@@ -154,9 +174,12 @@ bool ObstacleField::segment_hit(Vec3 from, Vec3 to, ObstacleHit& hit) const {
              r0, c1, r1);
   bool found = false;
   ObstacleHit h;
+  double low = std::min(from.y, to.y);
   for (int r = r0; r <= r1; ++r) {
     for (int c = c0; c <= c1; ++c) {
       std::size_t cell = std::size_t(r) * cols_ + c;
+      // Wholly above everything in the cell (a little room for rounding).
+      if (low > cell_top_[cell] + kTopMargin) continue;
       for (std::int32_t i = cell_start_[cell]; i < cell_start_[cell + 1]; ++i) {
         std::int32_t k = cell_items_[std::size_t(i)];
         bool got = k >= 0 ? hit_cylinder(cylinders_[std::size_t(k)], from, d, h)

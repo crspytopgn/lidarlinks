@@ -63,6 +63,9 @@ class ObstacleField {
   double origin_x_ = 0, origin_z_ = 0;
   int cols_ = 0, rows_ = 0;
   std::vector<std::int32_t> cell_start_, cell_items_;
+  // The top of the highest item in each cell: a segment wholly above it
+  // meets nothing there.
+  std::vector<double> cell_top_;
 };
 
 }  // namespace olcore

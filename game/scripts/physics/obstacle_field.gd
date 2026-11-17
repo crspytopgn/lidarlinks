@@ -23,6 +23,10 @@ var _rows := 0
 ## item k >= 0 is a cylinder, k < 0 is box -k - 1.
 var _cell_start := PackedInt32Array()
 var _cell_items := PackedInt32Array()
+## The top of the highest item in each cell: a segment wholly above it meets
+## nothing there. Mirrors olcore's cell_top_.
+var _cell_top := PackedFloat64Array()
+const TOP_MARGIN := 1e-3
 
 
 ## An upright cylinder: centre (x, z), radius, from y0 up to y1.
@@ -70,25 +74,31 @@ func size() -> int:
 func finalize() -> void:
 	var extent := PackedFloat32Array()  # x0, z0, x1, z1 per item
 	var ids := PackedInt32Array()
+	var top := PackedFloat64Array()  # each item's highest point
 	for i in _cylinders.size() / CYLINDER_FLOATS:
 		var o := i * CYLINDER_FLOATS
 		var r := _cylinders[o + 2]
 		extent.append_array(PackedFloat32Array([_cylinders[o] - r, _cylinders[o + 1] - r, _cylinders[o] + r, _cylinders[o + 1] + r]))
 		ids.append(i)
+		top.append(_cylinders[o + 4])
 	for i in _boxes.size() / BOX_FLOATS:
 		var o := i * BOX_FLOATS
 		var rx := 0.0
+		var ry := 0.0
 		var rz := 0.0
 		for k in 3:
 			var h := _boxes[o + 12 + k]
 			rx += absf(_boxes[o + 3 + 3 * k]) * h
+			ry += absf(_boxes[o + 4 + 3 * k]) * h
 			rz += absf(_boxes[o + 5 + 3 * k]) * h
 		extent.append_array(PackedFloat32Array([_boxes[o] - rx, _boxes[o + 2] - rz, _boxes[o] + rx, _boxes[o + 2] + rz]))
 		ids.append(-i - 1)
+		top.append(_boxes[o + 1] + ry)
 	_cols = 0
 	_rows = 0
 	_cell_start = PackedInt32Array()
 	_cell_items = PackedInt32Array()
+	_cell_top = PackedFloat64Array()
 	if ids.is_empty():
 		return
 	var lo := Vector2(INF, INF)
@@ -108,6 +118,13 @@ func finalize() -> void:
 		for row in range(r.position.y, r.end.y):
 			for col in range(r.position.x, r.end.x):
 				count[row * _cols + col + 1] += 1
+	_cell_top.resize(_cols * _rows)
+	_cell_top.fill(-INF)
+	for i in ids.size():
+		var r := _cell_range(extent[4 * i], extent[4 * i + 1], extent[4 * i + 2], extent[4 * i + 3])
+		for row in range(r.position.y, r.end.y):
+			for col in range(r.position.x, r.end.x):
+				_cell_top[row * _cols + col] = maxf(_cell_top[row * _cols + col], top[i])
 	for i in range(1, count.size()):
 		count[i] += count[i - 1]
 	_cell_start = count.duplicate()
@@ -140,9 +157,13 @@ func segment_hit(from: Vector3, to: Vector3) -> Dictionary:
 	var d := to - from
 	var r := _cell_range(minf(from.x, to.x), minf(from.z, to.z), maxf(from.x, to.x), maxf(from.z, to.z))
 	var best := {}
+	var low := minf(from.y, to.y)
 	for row in range(r.position.y, r.end.y):
 		for col in range(r.position.x, r.end.x):
 			var c := row * _cols + col
+			# Wholly above everything in the cell (a little room for rounding).
+			if low > _cell_top[c] + TOP_MARGIN:
+				continue
 			for i in range(_cell_start[c], _cell_start[c + 1]):
 				var k := _cell_items[i]
 				var h := _hit_cylinder(k, from, d) if k >= 0 else _hit_box(-k - 1, from, d)
