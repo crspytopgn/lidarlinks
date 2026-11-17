@@ -166,6 +166,7 @@ var shot: ShotResult
 var shot_from := Vector3.ZERO
 var shot_time := 0.0
 var result_timer := 0.0
+var _crowd_built := false  ## the gallery's "ooh" has played for this shot
 var _land_time := INF  ## when the ball first lands; INF once the sound has played
 ## One line per shot on the current hole (who, club, lie, distances and
 ## outcome), for the tests and for tuning.
@@ -933,6 +934,8 @@ func play_shot(power: float, accuracy: float, monitor: OpenConnect.Launch = null
 	if gallery != null and is_instance_valid(gallery):
 		gallery.watch(ball)
 	_strike_sound = {"club": club, "lie": lie, "power": power}
+	if is_pure_strike(power, accuracy, club.is_putter, _chip, monitor != null or (round_setup != null and round_setup.is_computer(shooter))):
+		_strike_sound["power"] = 1.15  # flushed: the strike rings out, nothing on screen
 	_launch_wait = (golfer.putt_impact_delay() if club.is_putter else golfer.impact_delay()) if golfer and not struck else 0.0
 	if _launch_wait <= 0.0:
 		sounds.play_detail(&"hit", _strike_sound)
@@ -1004,6 +1007,7 @@ func play_shot(power: float, accuracy: float, monitor: OpenConnect.Launch = null
 		free_ambience.set_wind(wind.velocity().length())
 	shot_time = 0.0
 	_land_time = RoundCamera.time_near(shot, shot.first_landing) if shot.bounces > 0 else INF
+	_crowd_built = false
 	camera.golfer = golfer
 	camera.follow(shot, hole.pin, club.is_putter)
 	_plan_voice(power, accuracy)
@@ -2278,8 +2282,57 @@ func _process_flight(delta: float) -> void:
 		_play_landing()
 		if voice != null:
 			voice.say(_voice_landing)
+	_crowd_follow(p)
 	if shot_time >= shot.time_s:
 		_complete_flight()
+
+
+## The gallery lives the ball's last yards with it: a rising "ooh" as a
+## shot from off the green, or a long putt, runs at the hole (it was heard
+## only once the ball had stopped). The roar or groan still comes at the end.
+func _crowd_follow(p: Vector3) -> void:
+	if _crowd_built or not _crowd_on() or not broadcast or shot.outcome == ShotResult.Outcome.WATER:
+		return
+	if shot_time < RoundCamera.time_near(shot, shot.first_landing) or shot_time > shot.time_s - 0.4:
+		return
+	if crowd_should_build(_flat_distance(p, hole.pin), _shot_from_pin, clubs[club_index].is_putter):
+		_crowd_built = true
+		_play_heard(&"crowd_ooh", {}, hole.pin)
+
+
+## True when a ball `to_pin_m` from the hole, played from `from_m`, is
+## close enough for the gallery to start willing it in.
+static func crowd_should_build(to_pin_m: float, from_m: float, putting: bool) -> bool:
+	if putting:
+		return from_m > 6.0 and to_pin_m < 1.2
+	return from_m > 25.0 and to_pin_m < maxf(2.0, from_m * 0.04)
+
+
+## A struck full swing worth a PURE: near full power and on the snap line
+## (within one meter position). Not for putts, chips, computers or a
+## launch monitor's shots.
+static func is_pure_strike(power: float, accuracy: float, putter: bool, chip: bool, not_player: bool) -> bool:
+	return not putter and not chip and not not_player and power >= 0.85 and absf(accuracy) <= 1.0 / 15.0 + 1e-4
+
+
+## BIRDIE / EAGLE / HOLE IN ONE as the ball drops, and CHIP-IN or a long
+## putt holed for par.
+func _badge_hole_out() -> void:
+	var b := ScoreBadge.for_score(strokes, hole.par)
+	var putting := clubs[club_index].is_putter
+	var sub := ""
+	if shot.outcome == ShotResult.Outcome.HOLED and strokes > 1:
+		if not putting:
+			sub = "Chip-in" if _shot_from_pin < 30.0 else "Holed from %d yd" % roundi(_shot_from_pin * YARDS_PER_METRE)
+		elif _shot_from_pin * FEET_PER_METRE >= 20.0:
+			sub = "%d ft putt" % roundi(_shot_from_pin * FEET_PER_METRE)
+	if b.is_empty():
+		if sub.is_empty() or strokes > hole.par:
+			return
+		b = [sub, ScoreBadge.PURE]
+		sub = ""
+	var who := "" if players.size() == 1 else scoring.names[shooter]
+	hud.badge.pop(b[0], sub if who.is_empty() else (who + ("  ·  " + sub if not sub.is_empty() else "")), b[1], true)
 
 
 ## The ball's first bounce, by the ground it lands on and how hard.
@@ -2658,6 +2711,8 @@ func _hole_out(picked_up: bool) -> void:
 	p.holed = not picked_up
 	p.picked_up = picked_up
 	var title := "Picked up" if picked_up else Scorecard.score_name(strokes, hole.par)
+	if not picked_up:
+		_badge_hole_out()
 	if not picked_up and strokes < hole.par:
 		if _crowd_on():
 			sounds.play(&"applause")
@@ -4341,7 +4396,8 @@ func _report_shot() -> void:
 		Commentary.Crowd.GROAN:
 			sounds.play(&"crowd_groan")
 		Commentary.Crowd.OOH:
-			sounds.play(&"crowd_ooh")
+			if not _crowd_built:  # it was heard as the ball ran at the hole
+				sounds.play(&"crowd_ooh")
 		_:
 			# Spectators round the tee applaud a tee shot that finds the short grass.
 			if _crowd_on() and strokes == 1 and not putting and (surface == Surface.Type.FAIRWAY or surface == Surface.Type.GREEN):

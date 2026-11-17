@@ -92,7 +92,7 @@ func _play_event(event: StringName, detail: Dictionary) -> void:
 			var kind := SoundBank.club_kind(club) if club != null else &"iron"
 			var power := float(detail.get("power", 1.0))
 			var lie := int(detail.get("lie", Surface.Type.FAIRWAY))
-			var gain := linear_to_db(clampf(0.45 + 0.55 * power, 0.3, 1.0))
+			var gain := linear_to_db(clampf(0.45 + 0.55 * power, 0.3, 1.25))  # a pure strike rings out (power 1.15)
 			if kind == &"putter":
 				_play(&"putt", gain)
 				return
