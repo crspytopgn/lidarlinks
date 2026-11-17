@@ -3,17 +3,240 @@
   "models": {
     "tee_bench": {
       "uid": "e53ad46c604c44e59a98bad27041cb19",
-      "title": "Wooden Park Bench", "author": "TheMadraver",
+      "title": "Wooden Park Bench",
+      "author": "TheMadraver",
       "licence": "CC BY 4.0",
       "why": "A weathered teak bench as clubs put on their tees. Scaled so the seat is 0.44 m up (it is then a 2.37 m, eight-foot bench with a 1.06 m back, as Lutyens-style teak benches are).",
-      "opts": {"tris": 3000, "tex": 768, "fit": {"axis": "x", "metres": 2.37}}
+      "opts": {
+        "tris": 3000,
+        "tex": 768,
+        "fit": {
+          "axis": "x",
+          "metres": 2.37
+        }
+      }
     },
     "cart_bag": {
       "uid": "12113d34eca34f619dfcafaf9ae36a2a",
-      "title": "Golf Bag", "author": "mikethornley",
+      "title": "Golf Bag",
+      "author": "mikethornley",
       "licence": "CC BY 4.0",
       "why": "A cart bag with a full set, as golfers strap on a buggy. 0.95 m bag, the driver's head 1.25 m up; club heads turned to chrome.",
-      "opts": {"tris": 14000, "error": 0.001, "tex": 512, "fit": {"axis": "y", "metres": 1.25}, "chrome": ["metal"], "drop": ["straps"]}
+      "opts": {
+        "tris": 14000,
+        "error": 0.001,
+        "tex": 512,
+        "fit": {
+          "axis": "y",
+          "metres": 1.25
+        },
+        "chrome": [
+          "metal"
+        ],
+        "drop": [
+          "straps"
+        ]
+      }
+    },
+    "cactus_saguaro_0": {
+      "uid": "c9310cae729f471e82c355a15efebed9",
+      "title": "Realistic HD Saguaro cactus (17/30)",
+      "author": "PlantCatalog",
+      "licence": "CC BY 4.0",
+      "why": "DesertPlants saguaro variant 0: an unbranched column, scaled to 6.0 m, DesertPlants.saguaro_height(0), so the obstacles still match.",
+      "opts": {
+        "tris": 3000,
+        "tex": 512,
+        "fit": {
+          "axis": "y",
+          "metres": 6.0
+        },
+        "alphaTex": 256,
+        "dropMaterials": [
+          "petal",
+          "sepal",
+          "stigma",
+          "stamens",
+          "flower_stalk"
+        ],
+        "error": 0.05,
+        "footCentre": true
+      }
+    },
+    "cactus_saguaro_1": {
+      "uid": "386db8a965c443c390b91e2cc2528c7c",
+      "title": "Realistic HD Saguaro cactus (28/30)",
+      "author": "PlantCatalog",
+      "licence": "CC BY 4.0",
+      "why": "DesertPlants saguaro variant 1: two arms, scaled to 7.6 m, DesertPlants.saguaro_height(1), so the obstacles still match.",
+      "opts": {
+        "tris": 3000,
+        "tex": 512,
+        "fit": {
+          "axis": "y",
+          "metres": 7.6
+        },
+        "alphaTex": 256,
+        "dropMaterials": [
+          "petal",
+          "sepal",
+          "stigma",
+          "stamens",
+          "flower_stalk"
+        ],
+        "error": 0.05,
+        "footCentre": true
+      }
+    },
+    "cactus_saguaro_2": {
+      "uid": "4cd53602329b4171941e620e1c8360f7",
+      "title": "Realistic HD Saguaro cactus (30/30)",
+      "author": "PlantCatalog",
+      "licence": "CC BY 4.0",
+      "why": "DesertPlants saguaro variant 2: arms low and high, scaled to 9.2 m, DesertPlants.saguaro_height(2), so the obstacles still match.",
+      "opts": {
+        "tris": 3000,
+        "tex": 512,
+        "fit": {
+          "axis": "y",
+          "metres": 9.2
+        },
+        "alphaTex": 256,
+        "dropMaterials": [
+          "petal",
+          "sepal",
+          "stigma",
+          "stamens",
+          "flower_stalk"
+        ],
+        "error": 0.05,
+        "footCentre": true
+      }
+    },
+    "cactus_saguaro_3": {
+      "uid": "fb499e4ae4c749f58a9f10f60e38cf1a",
+      "title": "Realistic HD Saguaro cactus (15/30)",
+      "author": "PlantCatalog",
+      "licence": "CC BY 4.0",
+      "why": "DesertPlants saguaro variant 3: an old saguaro with many arms, scaled to 10.8 m, DesertPlants.saguaro_height(3), so the obstacles still match.",
+      "opts": {
+        "tris": 3000,
+        "tex": 512,
+        "fit": {
+          "axis": "y",
+          "metres": 10.8
+        },
+        "alphaTex": 256,
+        "dropMaterials": [
+          "petal",
+          "sepal",
+          "stigma",
+          "stamens",
+          "flower_stalk"
+        ],
+        "error": 0.05,
+        "footCentre": true
+      }
+    },
+    "cactus_barrel_0": {
+      "uid": "027019be54544182a7d4b15fb04e9819",
+      "title": "Realistic HD Golden barrel cactus (16/30)",
+      "author": "PlantCatalog",
+      "licence": "CC BY 4.0",
+      "why": "DesertPlants barrel variant 0, scaled to 0. Its fine spines and fuzz (thousands of cut-out shells) are dropped: at a few metres the skin's own photo carries the ribs and spines.8 m tall (its obstacle height at scale 1).",
+      "opts": {
+        "tris": 1500,
+        "tex": 512,
+        "fit": {
+          "axis": "y",
+          "metres": 0.8
+        },
+        "alphaTex": 256,
+        "dropMaterials": [
+          "spine",
+          "areola",
+          "flower",
+          "petal",
+          "fur"
+        ],
+        "error": 0.05,
+        "footCentre": true
+      }
+    },
+    "cactus_barrel_1": {
+      "uid": "1c5f8e93326f40e9bde51f1c04b505ae",
+      "title": "Realistic HD Golden barrel cactus (17/30)",
+      "author": "PlantCatalog",
+      "licence": "CC BY 4.0",
+      "why": "DesertPlants barrel variant 1, scaled to 0. Its fine spines and fuzz (thousands of cut-out shells) are dropped: at a few metres the skin's own photo carries the ribs and spines.8 m tall (its obstacle height at scale 1).",
+      "opts": {
+        "tris": 1500,
+        "tex": 512,
+        "fit": {
+          "axis": "y",
+          "metres": 0.8
+        },
+        "alphaTex": 256,
+        "dropMaterials": [
+          "spine",
+          "areola",
+          "flower",
+          "petal",
+          "fur"
+        ],
+        "error": 0.05,
+        "footCentre": true
+      }
+    },
+    "cactus_barrel_2": {
+      "uid": "17e340c653eb45f08e01717d9ca76cb4",
+      "title": "Realistic HD Golden barrel cactus (12/30)",
+      "author": "PlantCatalog",
+      "licence": "CC BY 4.0",
+      "why": "DesertPlants barrel variant 2, scaled to 0. Its fine spines and fuzz (thousands of cut-out shells) are dropped: at a few metres the skin's own photo carries the ribs and spines.8 m tall (its obstacle height at scale 1).",
+      "opts": {
+        "tris": 1500,
+        "tex": 512,
+        "fit": {
+          "axis": "y",
+          "metres": 0.8
+        },
+        "alphaTex": 256,
+        "dropMaterials": [
+          "spine",
+          "areola",
+          "flower",
+          "petal",
+          "fur"
+        ],
+        "error": 0.05,
+        "footCentre": true
+      }
+    },
+    "cactus_barrel_3": {
+      "uid": "445a0ea29bdf430d90ca7707deb1df55",
+      "title": "Realistic HD Golden barrel cactus (26/30)",
+      "author": "PlantCatalog",
+      "licence": "CC BY 4.0",
+      "why": "DesertPlants barrel variant 3, scaled to 0. Its fine spines and fuzz (thousands of cut-out shells) are dropped: at a few metres the skin's own photo carries the ribs and spines.8 m tall (its obstacle height at scale 1).",
+      "opts": {
+        "tris": 1500,
+        "tex": 512,
+        "fit": {
+          "axis": "y",
+          "metres": 0.8
+        },
+        "alphaTex": 256,
+        "dropMaterials": [
+          "spine",
+          "areola",
+          "flower",
+          "petal",
+          "fur"
+        ],
+        "error": 0.05,
+        "footCentre": true
+      }
     }
   }
 }

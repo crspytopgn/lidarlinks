@@ -16,6 +16,11 @@ extends RefCounted
 ## 15 m tall, 25 to 30 cm across, leaning toward the light, under a crown of
 ## a dozen or more fronds 4 to 5 m long that arch out and droop (Hawaii
 ## Tropical Plant Guide; University of Hawaii CTAHR coconut fact sheet).
+##
+## Where a scanned model is there (CourseProps.SKETCHFAB_DIR, "<id>_<variant>":
+## PlantCatalog's saguaros and golden barrels from Sketchfab, CC BY, scaled
+## to the same heights so the obstacles still match), it is drawn instead,
+## with its own textures.
 
 const IDS := ["cactus_saguaro", "cactus_barrel", "cactus_pear", "palm_coconut"]
 const VARIANTS := 4
@@ -79,7 +84,8 @@ static func build(terrain: DesignedTerrain) -> Node3D:
 		mm.buffer = buf
 		var node := MultiMeshInstance3D.new()
 		node.multimesh = mm
-		node.material_override = material()
+		if not is_scanned(key[0], key[1]):
+			node.material_override = material()
 		node.visibility_range_end = SAGUARO_RANGE[quality] if _tall(key[0]) else SMALL_RANGE[quality]
 		node.visibility_range_end_margin = 30.0
 		node.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF
@@ -101,7 +107,16 @@ static func material() -> StandardMaterial3D:
 	return _material
 
 
-static func mesh(id: String, variant: int) -> ArrayMesh:
+## True when variant `variant` of `id` is a scanned model (see the top).
+static func is_scanned(id: String, variant: int) -> bool:
+	return CourseProps.is_textured("%s_%d" % [id, variant % VARIANTS])
+
+
+static func mesh(id: String, variant: int) -> Mesh:
+	if is_scanned(id, variant):
+		var scanned := CourseProps.mesh("%s_%d" % [id, variant % VARIANTS])
+		if scanned != null:
+			return scanned
 	if not _meshes.has(id):
 		var list: Array[ArrayMesh] = []
 		for v in VARIANTS:

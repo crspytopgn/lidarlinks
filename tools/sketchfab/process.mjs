@@ -4,6 +4,9 @@
 // cut to a size cap, then turned, scaled and stood on y = 0.
 //
 //   node process.mjs IN.glb OUT.glb '{"tris":8000,"tex":1024,"fit":{"axis":"x","metres":1.83},"yaw":90,"drop":["name substring"]}'
+// More options: "dropMaterials" (parts whose material name has one of these
+// substrings), "alphaTex" (size cap for the cut-out png textures),
+// "footCentre" (stand it on the middle of its lowest 3 %, not its bounds).
 import { NodeIO, Document } from '@gltf-transform/core';
 import { ALL_EXTENSIONS } from '@gltf-transform/extensions';
 import { metalRough, simplify, weld, prune, dedup, textureCompress, flatten, join, transformPrimitive, getBounds } from '@gltf-transform/functions';
@@ -27,7 +30,13 @@ for (const node of root.listNodes()) {
 	if ((o.drop || []).some((d) => (node.getName() + '/' + mesh.getName()).includes(d))) { node.setMesh(null); continue; }
 	const m = node.getWorldMatrix();
 	for (const prim of mesh.listPrimitives()) {
+		// Parts by material name: fine spines and the like that vanish at
+		// game distances but cost most of the triangles.
+		const matName = prim.getMaterial() ? prim.getMaterial().getName() : '';
+		if ((o.dropMaterials || []).some((d) => matName.includes(d))) continue;
 		const p = prim.clone();
+		// Only the first uv set and no tangents: Godot makes its own.
+		for (const sem of p.listSemantics()) if (sem === 'TANGENT' || /^TEXCOORD_[1-9]/.test(sem)) p.setAttribute(sem, null);
 		transformPrimitive(p, m);
 		merged.addPrimitive(p);
 	}
@@ -47,7 +56,21 @@ let b = getBounds(node);
 const ax = { x: 0, y: 1, z: 2 }[o.fit.axis];
 const s = o.fit.metres / (b.max[ax] - b.min[ax]);
 b = getBounds(node);
-const cx = (b.min[0] + b.max[0]) / 2, cz = (b.min[2] + b.max[2]) / 2;
+let cx = (b.min[0] + b.max[0]) / 2, cz = (b.min[2] + b.max[2]) / 2;
+if (o.footCentre) {
+	// Stood on the middle of its foot (a plant's trunk, not its spread of
+	// arms), where the game's obstacles put it.
+	let n = 0, sx = 0, sz = 0;
+	const cut = b.min[1] + (b.max[1] - b.min[1]) * 0.03;
+	for (const p of merged.listPrimitives()) {
+		const a = p.getAttribute('POSITION');
+		for (let i = 0; i < a.getCount(); i++) {
+			const v = a.getElement(i, [0, 0, 0]);
+			if (v[1] <= cut) { sx += v[0]; sz += v[2]; n++; }
+		}
+	}
+	if (n > 0) { cx = sx / n; cz = sz / n; }
+}
 const place = mat4.create();
 mat4.scale(place, place, [s, s, s]);
 mat4.translate(place, place, [-cx, -b.min[1], -cz]);
@@ -74,6 +97,16 @@ for (const mat of root.listMaterials()) if (mat.getAlphaMode() !== 'OPAQUE' && m
 for (const tex of root.listTextures()) {
 	if (tex.getMimeType() !== 'image/png' || needAlpha.has(tex)) continue;
 	tex.setImage(new Uint8Array(await sharp(tex.getImage()).flatten().jpeg({ quality: 88 }).toBuffer())).setMimeType('image/jpeg').setURI('');
+}
+// Cut-out textures keep their alpha as png, cut to their own cap.
+if (o.alphaTex) {
+	for (const tex of root.listTextures()) {
+		if (tex.getMimeType() !== 'image/png') continue;
+		const [w, h] = tex.getSize();
+		if (Math.max(w, h) <= o.alphaTex) continue;
+		const k = o.alphaTex / Math.max(w, h);
+		tex.setImage(new Uint8Array(await sharp(tex.getImage()).resize(Math.round(w * k), Math.round(h * k)).png({ compressionLevel: 9, palette: true }).toBuffer()));
+	}
 }
 for (const ext of root.listExtensionsUsed()) if (['KHR_materials_specular', 'KHR_materials_ior'].includes(ext.extensionName)) ext.dispose();
 b = getBounds(node);
