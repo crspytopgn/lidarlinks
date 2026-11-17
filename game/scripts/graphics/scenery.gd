@@ -115,6 +115,11 @@ var _sun_angle := 0.0
 var _time: Dictionary = TIMES["afternoon"]
 var _time_setting := 0
 var _round_progress := 0.0
+## The round's weather (set_weather): how overcast (0 to 1, after
+## overcast_of), how misty and how wet.
+var _weather_overcast := 0.0
+var _weather_fog := 0.0
+var _weather_rain := 0.0
 
 
 func _init() -> void:
@@ -336,7 +341,11 @@ func _pick_sky() -> void:
 	if real or _backdrop_sky == null:
 		environment.sky.sky_material = _free_sky if _free_sky != null else environment.sky.sky_material
 		environment.fog_light_color = _time.haze if real else HORIZON
-		environment.fog_density = 0.0006 if not real else 0.00035 * float(_time.fog)
+		environment.fog_density = (0.0006 if not real else 0.00035 * float(_time.fog)) * fog_scale(_weather_fog)
+		if real and _weather_overcast > 0.0:
+			# Under cloud the haze loses the sun's colour and goes grey.
+			environment.fog_light_color = environment.fog_light_color.lerp(deck_color(_weather_rain), _weather_overcast * 0.8)
+		environment.volumetric_fog_density = 0.0004 * fog_scale(_weather_fog)
 		# The haze lights up warm towards a low sun (light through the air
 		# between the tree rows), as on TV and in GSPro, cheap on every
 		# renderer.
@@ -362,13 +371,15 @@ func _pick_sky() -> void:
 			sky_mat.set_shader_parameter("horizon_tint", _time.horizon)
 			sky_mat.set_shader_parameter("glow", _time.glow)
 			sky_mat.set_shader_parameter("glow_color", _time.sun)
+			sky_mat.set_shader_parameter("overcast", _weather_overcast)
+			sky_mat.set_shader_parameter("deck", deck_color(_weather_rain))
 			_align_sky_sun(sky_mat)
 		return
 	environment.sky.sky_material = _backdrop_sky
 	environment.fog_sun_scatter = 0.0
 	environment.fog_sky_affect = 0.0
 	environment.fog_light_color = backdrop.sky_haze.lerp(backdrop.ground, 0.35)
-	environment.fog_density = 0.00035
+	environment.fog_density = 0.00035 * fog_scale(_weather_fog)
 
 
 ## Turns and stretches the photographed sky so the sun in the photo sits
@@ -540,6 +551,34 @@ static func people_light(photo: bool, forward_plus: bool) -> Vector3:
 	return Vector3(1.0 / COMPAT_EXPOSURE_LIFT, PEOPLE_COMPAT_FILL, 1.0)
 
 
+## Sets the round's weather (RoundWeather; null for a fine day): cloud dims
+## the sun, softens its shadows and greys the sky and haze, mist thickens
+## the haze. Photoreal light only, except the mist, which Classic gets too.
+func set_weather(w: RoundWeather) -> void:
+	_weather_overcast = overcast_of(w.cloud) if w != null else 0.0
+	_weather_fog = w.fog if w != null else 0.0
+	_weather_rain = w.rain_amount() if w != null else 0.0
+	_choose_sky()
+
+
+## How much a cloud cover (0 to 1) hides the sun on average: scattered
+## cloud leaves it out most of the time (the cloud shadows show the rest),
+## a full deck hides it.
+static func overcast_of(cloud: float) -> float:
+	return smoothstep(0.35, 0.95, cloud)
+
+
+## How much thicker the haze is in mist `fog` (0 to 1): up to about 11x,
+## about 700 m visibility.
+static func fog_scale(fog: float) -> float:
+	return 1.0 + 10.0 * clampf(fog, 0.0, 1.0)
+
+
+## The grey of a cloud deck, darker under rain.
+static func deck_color(rain: float) -> Color:
+	return Color(0.74, 0.77, 0.80).lerp(Color(0.55, 0.58, 0.62), clampf(rain, 0.0, 1.0))
+
+
 ## Photoreal light follows a sky the player picked: under cloud the sun
 ## dims and its shadows soften while the sky's fill light grows; a sunrise
 ## or sunset sky warms the sun. Classic and the photographed sky keep the
@@ -593,12 +632,30 @@ func _apply_weather_light() -> void:
 	sun.light_angular_distance = _sun_angle
 	if _photo and _sun_angle > 0.0 and _time.has("soft"):
 		sun.light_angular_distance = maxf(_sun_angle, float(_time.soft))
-	if not _photo or backdrop == null or not backdrop.chosen or not backdrop.has_sky:
+	sun.shadow_opacity = 1.0
+	var tree_shadow := float(_time.get("shadow", 1.0)) if _photo else 1.0
+	RenderingServer.global_shader_parameter_set("ground_sun_shadow", tree_shadow)
+	if not _photo:
 		return
-	var o := backdrop.overcast
-	sun.light_energy = _sun_energy * (1.0 - 0.65 * o)
-	environment.ambient_light_energy = _ambient_energy * (1.0 + 0.6 * o)
-	if backdrop.warm:
-		sun.light_color = Color(1.0, 0.78, 0.55)
-	if GraphicsSettings.is_forward_plus():
-		sun.light_angular_distance = maxf(_sun_angle, 4.0 * o)
+	var picked := backdrop != null and backdrop.chosen and backdrop.has_sky
+	if picked:
+		var o := backdrop.overcast
+		sun.light_energy = _sun_energy * (1.0 - 0.65 * o)
+		environment.ambient_light_energy = _ambient_energy * (1.0 + 0.6 * o)
+		if backdrop.warm:
+			sun.light_color = Color(1.0, 0.78, 0.55)
+		if GraphicsSettings.is_forward_plus():
+			sun.light_angular_distance = maxf(_sun_angle, 4.0 * o)
+	var w := _weather_overcast
+	if w > 0.0:
+		# The round's cloud: the sun behind the deck is weak and wide, so
+		# shadows fade and soften, and the whole sky's light fills in. Under
+		# rain the deck is thicker and the day darker.
+		sun.light_energy *= 1.0 - (0.82 + 0.08 * _weather_rain) * w
+		sun.light_color = sun.light_color.lerp(Color(0.96, 0.98, 1.0), w)
+		environment.ambient_light_energy *= 1.0 + (0.55 - 0.2 * _weather_rain) * w
+		if GraphicsSettings.is_forward_plus():
+			sun.light_angular_distance = maxf(sun.light_angular_distance, 9.0 * w)
+		# Compatibility can't soften shadows, so a weak sun's are faded.
+		sun.shadow_opacity = 1.0 - 0.85 * w
+		RenderingServer.global_shader_parameter_set("ground_sun_shadow", tree_shadow * (1.0 - 0.85 * w))
