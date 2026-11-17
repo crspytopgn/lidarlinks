@@ -134,6 +134,7 @@ func _init(p_course: DesignedCourse) -> void:
 
 ## Everything from scratch: after loading, or a change to the course area.
 func rebuild() -> void:
+	_tree_rows = PackedFloat32Array()
 	_sw = int(ceil(course.area.size.x / RES))
 	_sh = int(ceil(course.area.size.y / RES))
 	_img = Image.create_empty(_sw, _sh, false, Image.FORMAT_R8)
@@ -160,6 +161,7 @@ func rebuild() -> void:
 
 ## After sculpting: `cells` is the rect of height samples that changed.
 func update_heights(cells: Rect2i) -> void:
+	_tree_rows = PackedFloat32Array()
 	var r := cells.grow(int(ceil(TeePads.REACH / DesignedCourse.CELL)) + 1).intersection(Rect2i(0, 0, course.cols, course.rows))
 	# A pond's water line follows its bank, and a tee pad its mean height,
 	# so a change near either redoes the whole shape.
@@ -192,6 +194,7 @@ func update_surfaces(area: Rect2) -> void:
 
 ## After placing or removing trees and other objects.
 func update_objects() -> void:
+	_tree_rows = PackedFloat32Array()
 	obstacles = ObstacleField.new()
 	for o in course.objects:
 		DesignerObjects.add_obstacles(obstacles, o, height_at(o.position.x, o.position.z), course.object_info)
@@ -342,11 +345,36 @@ func _add_distant_trees(root: Node3D) -> void:
 	var dh := course.played_hole(hole_number)
 	if dh == null:
 		return
+	if _tree_rows.is_empty():
+		_tree_rows = _course_tree_rows()
 	var trees := PackedFloat32Array()
-	for o in course.objects:
-		var p := Vector2(o.position.x, o.position.z)
-		if DesignedCourse.near_hole(dh, p):
+	var near := DesignedCourse.HOLE_REACH * DesignedCourse.HOLE_REACH
+	var full := DesignedCourse.FULL_TREE_REACH * DesignedCourse.FULL_TREE_REACH
+	for k in range(0, _tree_rows.size(), 5):
+		var d := DesignedCourse.hole_distance_squared(dh, Vector2(_tree_rows[k], _tree_rows[k + 2]))
+		if d <= near:
 			continue
+		var species := _tree_rows[k + 4]
+		trees.append_array(PackedFloat32Array([_tree_rows[k], _tree_rows[k + 1], _tree_rows[k + 2], _tree_rows[k + 3], species if d <= full else species + TreeFactory.FAR_ONLY]))
+	for batch: Dictionary in TreeFactory.batches(trees, 160.0):
+		# They stand at least HOLE_REACH from the tees and the line of play,
+		# so their shadows seldom reach the ground the player looks at, and
+		# drawing them again for the sun is most of what woods cost.
+		var node := TreeFactory.batch_node(batch, false)
+		node.name = "DistantTrees"
+		root.add_child(node)
+
+
+## Every tree of the course as [x, ground height, z, height, species], the
+## same for every hole, so a new hole only sorts them by distance (it was a
+## 60 ms stall at each hole change on Kettle Hollow's 7,700 trees).
+## Emptied when the ground or the objects change.
+var _tree_rows := PackedFloat32Array()
+
+
+func _course_tree_rows() -> PackedFloat32Array:
+	var out := PackedFloat32Array()
+	for o in course.objects:
 		var species := -1
 		match o.id:
 			"tree_pine":
@@ -355,16 +383,10 @@ func _add_distant_trees(root: Node3D) -> void:
 				species = TreeFactory.Species.BROADLEAF
 		if species < 0:
 			continue
+		var p := Vector2(o.position.x, o.position.z)
 		var h := TreeFactory.natural_height(species, p.x, p.y) * o.scale
-		var code := species if DesignedCourse.near_hole(dh, p, DesignedCourse.FULL_TREE_REACH) else species + TreeFactory.FAR_ONLY
-		trees.append_array(PackedFloat32Array([p.x, height_at(p.x, p.y), p.y, h, code]))
-	for batch: Dictionary in TreeFactory.batches(trees, 160.0):
-		# They stand at least HOLE_REACH from the tees and the line of play,
-		# so their shadows seldom reach the ground the player looks at, and
-		# drawing them again for the sun is most of what woods cost.
-		var node := TreeFactory.batch_node(batch, false)
-		node.name = "DistantTrees"
-		root.add_child(node)
+		out.append_array(PackedFloat32Array([p.x, height_at(p.x, p.y), p.y, h, species]))
+	return out
 
 
 ## The ground's material: the shared terrain shader with this course's

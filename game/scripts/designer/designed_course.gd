@@ -284,6 +284,21 @@ static func near_hole(dh: DesignedHole, p: Vector2, reach := HOLE_REACH) -> bool
 	return p.distance_squared_to(Geometry2D.get_closest_point_to_segment(p, prev, dh.pin)) <= r2
 
 
+## The squared distance from `p` to the hole's line (its tees, then the
+## route to the pin): near_hole() for every reach at once. INF without tees.
+static func hole_distance_squared(dh: DesignedHole, p: Vector2) -> float:
+	if dh.tees.is_empty():
+		return INF
+	var best := INF
+	for t in dh.tees:
+		best = minf(best, p.distance_squared_to(t))
+	var prev := dh.tees[0]
+	for q in dh.route:
+		best = minf(best, p.distance_squared_to(Geometry2D.get_closest_point_to_segment(p, prev, q)))
+		prev = q
+	return minf(best, p.distance_squared_to(Geometry2D.get_closest_point_to_segment(p, prev, dh.pin)))
+
+
 ## The hole played as number `number` (holes without a tee are skipped,
 ## as in to_course_data()), or null.
 func played_hole(number: int) -> DesignedHole:

@@ -138,6 +138,12 @@ Ultra and use a notch lighter soft-shadow filter.
   than that skip the sun's shadow pass, rechecked as the sun moves. In the
   afternoon on Kettle Hollow 52 of 456 chunks still cast; draw calls at the
   tee fell from 851 to 743 on the web renderer.
+- **3D grass far level** (`GrassField.tuft_mesh`): beyond a couple of metres
+  each blade is one triangle from root to tip instead of three (the bow it
+  loses is a millimetre). With the ground's levels and shadows, the tee view
+  on the web renderer went from 1.73M to 1.21M primitives.
+- **Hole changes**: the course's trees are listed once per course
+  (`DesignedTerrain._tree_rows`), so a new hole only sorts them by distance.
 - **Benchmark** (`-- --benchmark`): also lists what the scene is made of by
   owner (nodes, surfaces, instances, triangles, shadow casters), the
   primitives drawn per case, and takes `--scene-only`, `--play-only` and
