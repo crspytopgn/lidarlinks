@@ -233,6 +233,51 @@ static func career_text(c: Dictionary) -> String:
 	return "   ".join(parts)
 
 
+## This round's numbers beside the player's usual ones (career `c`, from
+## before the round): "Fairways 8/14 (usually 52%)   Greens 9/18 (41%)
+## Putts 31 (32.6)". "" without the round's stats.
+static func round_vs_usual(stats: Dictionary, c: Dictionary) -> String:
+	var holes := int(stats.get("holes", 0))
+	if holes <= 0:
+		return ""
+	var parts: Array[String] = []
+	var fh := int(stats.get("fairway_holes", 0))
+	if fh > 0:
+		var t := "Fairways %d/%d" % [int(stats.get("fairways", 0)), fh]
+		if int(c.get("fairway_holes", 0)) > 0:
+			t += " (usually %d%%)" % roundi(100.0 * c.fairways / c.fairway_holes)
+		parts.append(t)
+	var g := "Greens %d/%d" % [int(stats.get("gir", 0)), holes]
+	var stat_holes := int(c.get("stat_holes", 0))
+	if stat_holes > 0:
+		g += " (usually %d%%)" % roundi(100.0 * c.gir / stat_holes)
+	parts.append(g)
+	var pt := "Putts %d" % int(stats.get("putts", 0))
+	if stat_holes > 0:
+		pt += " (usually %.1f)" % (float(holes) * c.putts / stat_holes)
+	parts.append(pt)
+	return "   ".join(parts)
+
+
+## What a finished round beat, from the records before (`was`) and after
+## (`now`) it: "New best at Kettle Hollow: 71 (-1)", "New longest drive:
+## 288 yd", "First hole in one!". Empty when nothing was beaten.
+static func new_records(was: Dictionary, now: Dictionary, course_name: String, holes: int) -> Array[String]:
+	var out: Array[String] = []
+	var key := "%s|%d" % [course_name, holes]
+	var before: Dictionary = (was.get("best", {}) as Dictionary).get(key, {})
+	var after: Dictionary = (now.get("best", {}) as Dictionary).get(key, {})
+	if not after.is_empty() and not before.is_empty() and int(after.get("gross", 0)) < int(before.get("gross", 0)):
+		out.append("New best at %s: %d (%s)" % [course_name, int(after.gross), Scorecard.format_to_par(int(after.to_par))])
+	if int(now.get("longest_drive_yd", 0)) > int(was.get("longest_drive_yd", 0)) and int(was.get("longest_drive_yd", 0)) > 0:
+		out.append("New longest drive: %d yd" % int(now.longest_drive_yd))
+	if int(now.get("aces", 0)) > 0 and int(was.get("aces", 0)) == 0:
+		out.append("First hole in one!")
+	elif int(now.get("eagles", 0)) > 0 and int(was.get("eagles", 0)) == 0:
+		out.append("First eagle!")
+	return out
+
+
 ## The player's golfer from the player creator, or null if they haven't
 ## made one.
 func look_of(player_name: String) -> PlayerLook:
