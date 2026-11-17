@@ -60,6 +60,8 @@ DATUM = 0.0
 LAST_PATHS = []
 # Cells of blur on the raw ground (rock country keeps its edges sharper).
 BLUR = 3.0
+RELIEF = 1.8
+RELIEF_SIGMA = 60.0
 # Raised benches (mesas) sculpted into the ground for rock-country courses:
 # dicts of centre (E, S), size (length, width m), angle (degrees), rise (m)
 # and seed. Their walls are near sheer; LAST_BENCHES keeps their outlines
@@ -105,10 +107,10 @@ HOLES = [
          fw=(35, 32, 24), bunkers=[("fw", 250, 20, 30, 12), ("fw", 214, -22, 16, 9), ("gs", 285, 16, 7),
                                    ("gs", 95, 13, 6)],
          tilt=(2.0, 0.9), tier=(0.5, 0.4), seed=67),
-    dict(par=3, tee=(1000, 332), route=[], green=(1158, 228), gsize=(30, 22),
+    dict(par=3, tee=(1225, 215), route=[], green=(1345, 75), gsize=(30, 22),
          fw=None, bunkers=[("gs", 260, 16, 7), ("gs", 15, 13, 6), ("gs", 100, 15, 6)],
          tilt=(2.2, -0.6), tier=None, seed=71),
-    dict(par=4, tee=(1192, 252), route=[], green=(1350, 592), gsize=(30, 23),
+    dict(par=4, tee=(1400, 130), route=[(1445, 300)], green=(1400, 500), gsize=(30, 23),
          fw=(34, 31, 24), bunkers=[("fw", 232, 18, 28, 11), ("fw", 245, -20, 20, 9), ("gs", 300, 12, 6),
                                    ("gs", 60, 15, 7)],
          tilt=(1.9, 0.5), tier=None, seed=83),
@@ -242,6 +244,9 @@ def build(dem, mpp):
     E = CENTRE[0] - X
     S = CENTRE[1] - Z
     raw = sample(dem, mpp, E, S)
+    if RELIEF != 1.0:
+        broad = geom.gaussian(raw, RELIEF_SIGMA / CELL)
+        raw = raw + (broad - broad.mean()) * (RELIEF - 1.0)
     base = geom.gaussian(raw, BLUR)  # ~6 m
     smooth = geom.gaussian(raw, 10.0)  # ~20 m, for graded corridors
     # Ground movement too small for the tiles (fairways are never flat).
@@ -406,6 +411,9 @@ def build(dem, mpp):
         # Surrounds: the green blends out over 10 m; a false front falls off
         # quicker, the sides and back roll down in grassy mounds.
         reach = np.where(rel_f < 0, 7.0, 11.0)
+        # On a hillside the green's low side stands well proud of the
+        # ground: lengthen the bank there so it stays near 1 in 3.
+        reach = np.clip(np.maximum(reach, np.abs(surf - here) / 0.22), reach, 20.0)
         w = 1.0 - geom.smoothstep(0.5, reach, sd)
         mounds = np.zeros_like(sd)
         for k in range(4):
@@ -442,6 +450,10 @@ def build(dem, mpp):
         height[box] = height[box] * (1 - w) + smooth[box] * w
 
     add_mounding(holes, shapes, X, Z, height)
+
+    for h in holes:
+        if h.par == 3:
+            grade_sightline(h, X, Z, height)
 
     for h in holes:
         if h.pond is None:
@@ -514,6 +526,41 @@ def build(dem, mpp):
     objects = place_trees(holes, shapes, X, Z, height, area)
 
     return holes, shapes, paths, objects, area, cols, rows, height
+
+
+# A par 3's green must be seen from its tees. Off a hillside the ground
+# can fall at about the slope of the line of sight, so its brow (or a
+# forward tee) hides the green; architects cut such a brow down. Along the
+# line from the back tee to the apron, the ground (and with it the middle
+# and forward tees, which are stepped down the slope) is let down to
+# SIGHT_CLEAR below the sight line from a golfer's eye on the back tee to
+# the foot of the flag, easing out to either side.
+SIGHT_CLEAR = 2.0  # metres
+EYE = 1.7 + 0.45  # metres above the ground: a golfer on a raised tee pad
+
+
+def grade_sightline(h, X, Z, height):
+    def ground(p):
+        i = int(round((p[0] - X[0, 0]) / CELL))
+        j = int(round((p[1] - Z[0, 0]) / CELL))
+        return height[j, i]
+    tee, green = h.at(0.0)[0], h.green
+    y0, y1 = ground(tee) + EYE, ground(green) + 0.3
+    run = np.linalg.norm(green - tee)
+    s0 = 9.0  # just past the back tee's pad
+    s1 = run - h.spec["gsize"][0] * 0.5 - 12.0
+    box = (np.abs(X - (tee[0] + green[0]) * 0.5) < run * 0.5 + 40) & (np.abs(Z - (tee[1] + green[1]) * 0.5) < run * 0.5 + 40)
+    xs, zs = X[box], Z[box]
+    u = (green - tee) / run
+    along = (xs - tee[0]) * u[0] + (zs - tee[1]) * u[1]
+    across = np.abs(-(xs - tee[0]) * u[1] + (zs - tee[1]) * u[0])
+    sight = y0 + (y1 - y0) * np.clip(along / run, 0, 1) - SIGHT_CLEAR
+    w = (geom.smoothstep(s0, s0 + 12.0, along) * (1.0 - geom.smoothstep(s1, s1 + 10.0, along))
+         * (1.0 - geom.smoothstep(8.0, 30.0, across)))
+    here = height[box]
+    cut = np.maximum(here - sight, 0.0) * w
+    height[box] = here - cut
+    print(f"hole {h.n}: sight line cut up to {cut.max():.1f} m")
 
 
 # Mounding: parkland courses roll between the holes. Framing mounds sit in

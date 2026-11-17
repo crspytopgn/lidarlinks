@@ -173,6 +173,7 @@ def configure(spec):
     hc.FW_WANDER = spec.get("wander", hc.FW_WANDER)
     hc.BLUR = spec.get("blur", hc.BLUR)
     hc.BENCHES = spec.get("benches", [])
+    hc.RELIEF = spec.get("relief", 1.0)
     hc.ROUGH_WANDER = spec.get("wander", hc.ROUGH_WANDER) * 0.92
 
 

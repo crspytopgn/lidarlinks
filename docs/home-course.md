@@ -28,6 +28,19 @@ hummocky ground left by ice sheets: knolls, kettle hollows and long
 slopes, 33 m of relief over the site. It is classic golf ground; the
 course takes only the landform, nothing of any course.
 
+The farmland is gentler than the hilly parkland courses players know, so
+the builder doubles the height of the broad landform only (`RELIEF` 1.8
+of the ground blurred over about 60 m, `RELIEF_SIGMA`): the hills and
+valleys grow while the small slopes keep the lidar's own shape. The site
+then has 55 m of relief, about Augusta National's (some 53 m), and the
+holes change height by 5 to 26 m, tee to green. Fairways stay mowable and
+playable: median slopes of 2 to 10 %. Where a green sits on a hillside its
+low side's bank is lengthened (up to 20 m) so it stays near 1 in 3.
+On the par 3s the ground along the line from the back tee is cut down to
+2 m below a golfer's line of sight to the flag (`grade_sightline`), with
+the middle and forward tees stepped down with it, so a green below the
+tee is never hidden behind a brow.
+
 The lidar keeps field drains, tracks and crop rows, so the builder blurs it
 by about 6 m (the landform stays) and adds the small ground movement the
 tiles are too coarse for (0.3 m at 30 m, 0.1 m at 13 m, 5 cm at 6 m), as
@@ -37,11 +50,12 @@ farm left.
 
 ## Routing and yardages
 
-Par 36, 3,416 yards from the back tees: two par 3s, five par 4s and two par
+Par 36, 3,417 yards from the back tees: two par 3s, five par 4s and two par
 5s, the usual mix for a nine. The holes run as a loop from a clubhouse
-spot on the high ground: hole 1 plays 11 m downhill into the valley, 2 to 4
+spot on the high ground: hole 1 plays 20 m downhill into the valley, 2 to 4
 work round the low ground (3 is a downhill par 3 over a pond), 5 climbs
-back up, 6 to 8 cross the plateau and 9 returns, past a pond, to finish
+back up, 6 climbs onto the plateau, 7 drops 22 m off its north edge, 8
+climbs 26 m back up and 9 returns, past a pond, to finish
 beside the first tee.
 
 | Hole | Par | Yards | Shape |
@@ -51,9 +65,9 @@ beside the first tee.
 | 3 | 3 | 178 | Downhill over a pond |
 | 4 | 5 | 513 | Up the valley, two bends |
 | 5 | 4 | 328 | Short, uphill |
-| 6 | 4 | 434 | Dogleg right across the plateau |
-| 7 | 3 | 207 | Long par 3 |
-| 8 | 4 | 410 | Straight, firm |
+| 6 | 4 | 434 | Dogleg right, up onto the plateau |
+| 7 | 3 | 202 | Long par 3, 22 m downhill off the plateau |
+| 8 | 4 | 417 | Bends right, climbing 26 m back up |
 | 9 | 5 | 517 | Dogleg left past a pond, home |
 
 Each hole has three tee boxes (back, middle and forward, 26 to 66 m apart
