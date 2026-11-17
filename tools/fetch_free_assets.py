@@ -90,6 +90,9 @@ SLOTS = {
     "cliff": ("textures", ["cliff_side", "rock_06"], ["cliff", "rock face"],
               {k: v for k, v in texture_maps("1k").items() if k in ("albedo.jpg", "normal.jpg")}),
     "sky": ("hdris", ["kloofendal_48d_partly_cloudy_puresky", "kloofendal_43d_clear_puresky"], ["pure sky", "clear"], {"panorama.hdr": ("hdri", "2k", "hdr")}),
+    # The bright, even cloud of the "Soft overcast" time of day. It has no
+    # sun to line up and little detail, so 1k is plenty.
+    "sky_overcast": ("hdris", ["kloofendal_overcast_puresky", "overcast_soil_puresky"], ["overcast"], {"panorama.hdr": ("hdri", "1k", "hdr")}),
 }
 
 # Import settings Godot would otherwise guess: compressed with mipmaps, as
@@ -302,6 +305,20 @@ def make_fescue(out_dir):
         f.write(TEXTURE_IMPORT.format(mode=1, limit=256, mipmaps="true"))
 
 
+def make_meadow(out_dir):
+    """The meadow plant atlas (tools/grass/meadow_atlas.py): daisies,
+    buttercups, broad-leaved rosettes and yarrow among the long grass.
+    Drawn, so it needs only Pillow; without it the rough is fescue only."""
+    out = os.path.join(out_dir, "meadow.png")
+    if not os.path.exists(out):
+        sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "grass"))
+        import meadow_atlas  # noqa: E402 - needs Pillow, so only imported here
+        print("  meadow: drawing the plant atlas")
+        meadow_atlas.build(out)
+    with open(out + ".import", "w") as f:
+        f.write(TEXTURE_IMPORT.format(mode=1, limit=512, mipmaps="true"))
+
+
 def fetch_twigs(out_dir):
     """The photoscanned fir sprigs for the conifers' needle cards."""
     paths = {name: os.path.join(out_dir, name) for name in TWIG_MAPS}
@@ -373,6 +390,10 @@ def main():
         make_fescue(args.out)
     except Exception as e:  # noqa: BLE001 - Pillow missing: no fescue
         print(f"WARNING: no fescue atlas: {e}")
+    try:
+        make_meadow(out_dir=args.out)
+    except Exception as e:  # noqa: BLE001 - Pillow missing: no meadow plants
+        print(f"WARNING: no meadow atlas: {e}")
     try:
         credits.append(fetch_twigs(args.out))
     except Exception as e:  # noqa: BLE001

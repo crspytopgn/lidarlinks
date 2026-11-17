@@ -77,6 +77,20 @@ const TIMES := {
 	"sunset": {elevation = 5.0, bearing = 245.0, sun = Color(1.0, 0.6, 0.36), energy = 1.3, fill = 0.5, fill_fwd = 4.2,
 		ambient = Color(0.7, 0.66, 0.72), sky = Color(1.02, 0.92, 0.86), horizon = Color(1.18, 0.9, 0.72), glow = 0.9,
 		haze = Color(0.88, 0.74, 0.62), fog = 2.0, exposure = 1.75, scatter = 0.6, warm = Color(1.12, 0.96, 0.78), cool = Color(0.92, 0.95, 1.1), pop = 1.12},
+	# Soft overcast: a high, thin cloud deck (the look of Toni Macaroni's
+	# Godot forest scenes that Michael pointed to, 2026-11-17). The sun is a
+	# weak, wide source, so shadows are faint and soft and the fill from the
+	# whole sky does most of the lighting: no dark, muddy shade. The air is
+	# thick enough to stack the far hills and woods into blue-grey layers
+	# (aerial perspective), and the grade stays neutral so the turf keeps a
+	# fresh green instead of the sunny times' warm olive. `soft` is the
+	# sun's angular size in degrees on Forward+ (contact-hardening shadows),
+	# `shadow` scales the baked tree shadows on the ground (ground_sun_shadow),
+	# and `sky_photo` swaps in the overcast panorama (FreeAssets.overcast_sky).
+	"overcast": {elevation = 48.0, bearing = 150.0, sun = Color(0.97, 0.98, 1.0), energy = 0.32, fill = 1.55, fill_fwd = 2.8,
+		ambient = Color(0.70, 0.75, 0.80), sky = Color(1.0, 1.0, 1.0), horizon = Color(1.0, 1.0, 1.0), glow = 0.0,
+		haze = Color(0.66, 0.74, 0.84), fog = 2.2, exposure = 1.2, scatter = 0.0, warm = Color(1.0, 1.0, 0.99), cool = Color(0.98, 1.0, 1.03), pop = 1.12,
+		soft = 9.0, shadow = 0.25, sky_photo = 1.0},
 }
 ## "Through the round": the light at these points of the round, blended.
 const ROUND_TIMES := [[0.0, "morning"], [0.35, "midday"], [0.7, "afternoon"], [1.0, "golden"]]
@@ -337,6 +351,8 @@ func _pick_sky() -> void:
 		environment.fog_sky_affect = (0.08 if GraphicsSettings.is_forward_plus() else COMPAT_SKY_FOG) if real else 0.0
 		if _free_sky is ShaderMaterial:
 			var sky_mat := _free_sky as ShaderMaterial
+			var grey := FreeAssets.overcast_sky() if _time.has("sky_photo") else null
+			sky_mat.set_shader_parameter("panorama", grey if grey != null else FreeAssets.sky())
 			# Compatibility has no sky fill light, so its sky is drawn a
 			# little brighter than Forward+'s, but no longer pale and milky.
 			sky_mat.set_shader_parameter("energy", 0.8 if GraphicsSettings.is_forward_plus() else COMPAT_SKY_ENERGY)
@@ -360,7 +376,8 @@ func _pick_sky() -> void:
 ## lit from one side and the course's shadows fall from another, the
 ## commonest giveaway of a pasted-on sky.
 func _align_sky_sun(sky_mat: ShaderMaterial) -> void:
-	var photo_sun := FreeAssets.free_sky_sun()
+	# The overcast photo has no sun to line up.
+	var photo_sun := Vector2(-1.0, 0.0) if _time.has("sky_photo") and FreeAssets.overcast_sky() != null else FreeAssets.free_sky_sun()
 	sky_mat.set_shader_parameter("align_sun", photo_sun.x >= 0.0)
 	if photo_sun.x < 0.0:
 		return
@@ -432,6 +449,8 @@ static func time_light(setting: int, progress: float) -> Dictionary:
 			return TIMES["dawn"]
 		GraphicsSettings.TimeOfDay.SUNSET:
 			return TIMES["sunset"]
+		GraphicsSettings.TimeOfDay.OVERCAST:
+			return TIMES["overcast"]
 		GraphicsSettings.TimeOfDay.ROUND:
 			for i in ROUND_TIMES.size() - 1:
 				var a: Array = ROUND_TIMES[i]
@@ -465,6 +484,7 @@ func _apply_time() -> void:
 	RenderingServer.global_shader_parameter_set("turf_tone", (1.0 if GraphicsSettings.is_forward_plus() else 1.35) if _photo else 0.0)
 	RenderingServer.global_shader_parameter_set("people_light", people_light(_photo, GraphicsSettings.is_forward_plus()))
 	_set_grade_look()
+	RenderingServer.global_shader_parameter_set("ground_sun_shadow", float(_time.get("shadow", 1.0)) if _photo else 1.0)
 	if not _photo:
 		environment.ambient_light_color = AMBIENT
 		return
@@ -571,6 +591,8 @@ func _apply_weather_light() -> void:
 	sun.light_color = _sun_color
 	environment.ambient_light_energy = _ambient_energy
 	sun.light_angular_distance = _sun_angle
+	if _photo and _sun_angle > 0.0 and _time.has("soft"):
+		sun.light_angular_distance = maxf(_sun_angle, float(_time.soft))
 	if not _photo or backdrop == null or not backdrop.chosen or not backdrop.has_sky:
 		return
 	var o := backdrop.overcast

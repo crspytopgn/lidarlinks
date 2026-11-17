@@ -104,6 +104,17 @@ Ultra and use a notch lighter soft-shadow filter.
   global `sky_tint`). The baked ground shade follows the sun, since it is
   baked at each hole's start after the sun has moved. Classic lighting
   keeps Links 2003's fixed afternoon sun.
+  **Soft overcast** (`TIMES["overcast"]`) is weather more than a time: a
+  weak, wide sun under a bright cloud deck (the Poly Haven
+  `kloofendal_overcast_puresky` panorama, `FreeAssets.overcast_sky()`),
+  a strong sky fill, faint soft shadows (the global `ground_sun_shadow`
+  scales the baked tree shadows; no moving cloud shadows), thicker
+  blue-grey haze that stacks the far ground into layers, and a neutral
+  grade. It follows the Godot forest scenes Michael pointed to.
+- **Meadow plants** (`FescueField`, all renderers): daisies, buttercups,
+  broad-leaved rosettes and yarrow drawn by `tools/grass/meadow_atlas.py`,
+  grown in soft patches on the deep rough within `MEADOW_RADIUS` of the
+  camera, nearer in than the fescue.
 - **Upscaler**: FSR 1 or FSR 2 on Forward+. **Dynamic resolution**
   (`DynamicResolution`) lowers the 3D resolution, down to half, when frames
   miss 30 or 60 fps and raises it again when there's room.

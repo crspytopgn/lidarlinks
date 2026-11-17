@@ -26,7 +26,7 @@ enum Grade { NEUTRAL, VIVID, WARM, COOL, FILM }
 ## against tour statistics, or the game's own computer miss generators.
 enum ComputerPlay { REALISTIC, CLASSIC }
 const COMPUTER_PLAY_NAMES := ["Realistic (tour statistics)", "Classic Links"]
-enum TimeOfDay { AFTERNOON, MORNING, MIDDAY, GOLDEN, ROUND, DAWN, SUNSET }
+enum TimeOfDay { AFTERNOON, MORNING, MIDDAY, GOLDEN, ROUND, DAWN, SUNSET, OVERCAST }
 ## Fullscreen as a borderless window the size of the screen (quick to switch
 ## away from) or exclusive fullscreen (can be a little faster on Windows).
 enum DisplayMode { BORDERLESS, EXCLUSIVE }
@@ -50,7 +50,7 @@ const UPSCALER_NAMES := ["Off", "FSR 1", "FSR 2"]
 const GRADE_NAMES := ["Neutral", "Vivid", "Warm afternoon", "Cool morning", "Film"]
 const LEVEL_NAMES := ["Off", "Low", "Medium", "High"]
 const PUTTING_GRID_NAMES := ["Off", "Yellow (Links)", "Coloured by height (Links)", "Coloured by slope (TV)"]
-const TIME_NAMES := ["Afternoon", "Morning", "Midday", "Golden hour", "Through the round", "Dawn", "Sunset"]
+const TIME_NAMES := ["Afternoon", "Morning", "Midday", "Golden hour", "Through the round", "Dawn", "Sunset", "Soft overcast"]
 ## Trees: the course's own (classic) or 3D, by how far out they stay 3D
 ## before turning into impostors (TreeFactory.IMPOSTOR_DISTANCE).
 const TREE_NAMES := ["Classic", "3D near", "3D", "3D far"]
@@ -367,7 +367,7 @@ static func _load_saved(path: String) -> GraphicsSettings:
 	s.breakline = bool(cfg.get_value(GAME_SECTION, "breakline", s.breakline))
 	s.putting_assistant = bool(cfg.get_value(GAME_SECTION, "putting_assistant", s.putting_assistant))
 	s.caddie = bool(cfg.get_value(GAME_SECTION, "caddie", s.caddie))
-	s.time_of_day = clampi(int(cfg.get_value(SECTION, "time_of_day", s.time_of_day)), TimeOfDay.AFTERNOON, TimeOfDay.SUNSET)
+	s.time_of_day = clampi(int(cfg.get_value(SECTION, "time_of_day", s.time_of_day)), TimeOfDay.AFTERNOON, TimeOfDay.OVERCAST)
 	s.true_size_ball = bool(cfg.get_value(GAME_SECTION, "ball_true_size", s.true_size_ball))
 	s.photo_golfer = cfg.get_value(GAME_SECTION, "photo_golfer", s.photo_golfer) == true
 	s.buggy = bool(cfg.get_value(GAME_SECTION, "buggy", s.buggy))

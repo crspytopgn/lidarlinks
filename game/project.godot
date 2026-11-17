@@ -83,6 +83,10 @@ cloud_shadow={
 "type": "float",
 "value": 0.0
 }
+ground_sun_shadow={
+"type": "float",
+"value": 1.0
+}
 cloud_offset={
 "type": "vec2",
 "value": Vector2(0, 0)
