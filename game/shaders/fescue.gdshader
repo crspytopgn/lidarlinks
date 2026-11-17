@@ -51,7 +51,11 @@ void vertex() {
 	vec3 root = MODEL_MATRIX[3].xyz;
 	root_xz = root.xz;
 	float dist = distance(root.xz, camera_pos.xz);
-	float grow = smoothstep(near_start, near_end, dist) * (1.0 - smoothstep(far_start, far_end, dist));
+	// The ring sinks away by the eye's straight-line distance, so seen
+	// from above (a flyover, a high camera) the chunks under the camera
+	// don't show as a square brown patch of cards in the ground.
+	float dist_eye = distance(root, camera_pos);
+	float grow = smoothstep(near_start, near_end, dist) * (1.0 - smoothstep(far_start, far_end, dist_eye));
 	float phase = INSTANCE_CUSTOM.a * 37.7;
 	float gust = 0.6 + 0.4 * sin(TIME * 1.3 + phase + dot(root.xz, vec2(0.13, 0.11)));
 	float up = 1.0 - UV.y; // 0 at the root, 1 at the top of the card

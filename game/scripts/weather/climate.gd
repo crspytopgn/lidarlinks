@@ -35,7 +35,7 @@ const SEASIDE_FOG := 1.4
 ## The climate zone of a course at `at` (latitude, longitude; NAN when not
 ## known), of kind `setting` (FreeAmbience.Setting) and biome (Biome).
 static func zone_for(at: Vector2, setting: int, biome: String) -> Zone:
-	if biome == Biome.SNOW:
+	if biome == Biome.SNOW or biome == Biome.ALPINE:
 		return Zone.ALPINE
 	if biome == Biome.DESERT or setting == FreeAmbience.Setting.DESERT:
 		return Zone.DESERT

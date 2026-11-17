@@ -11,7 +11,7 @@ Hollow as "(built in)".
 |---|---|---|---|
 | Red Spire | desert | Castle Valley, Utah (38.64 N, 109.39 W): a red-rock valley floor between 400 m sandstone walls | Playable |
 | Vermilion Ridge | desert | a real 18-hole layout in the badlands near Mesquite, Nevada, from OpenStreetMap, on USGS 3DEP lidar | Playable |
-| Glacier Crown | snow | a real 18-hole Alpine layout 1,500 m up in Valais, Switzerland, from OpenStreetMap, above the Rhône valley | Playable |
+| Glacier Crown | alpine | a real 18-hole Alpine layout 1,500 m up in Valais, Switzerland, from OpenStreetMap, above the Rhône valley | Playable |
 | Ember Coast | tropical | a real 18-hole layout on the Kohala lava coast of Hawaii's Big Island, from OpenStreetMap, on USGS 3DEP lidar | Playable |
 
 ## How they are built
@@ -26,7 +26,7 @@ Terrarium elevation tiles (USGS 3DEP in the US, public domain).
 
 Two new fields in the course file (`DesignedCourse`):
 
-- `biome`: `"desert"`, `"snow"` or `"tropical"` (`Biome`). It sets the colour of
+- `biome`: `"desert"`, `"snow"`, `"alpine"` or `"tropical"` (`Biome`). It sets the colour of
   the semi-rough, deep rough and out of bounds, and whether that ground is bare
   (desert hardpan and snow take the sand texture under their own colour and grow
   no grass blades). Fescue becomes sparse sage scrub in the desert (30 %), and
@@ -131,18 +131,21 @@ contributors (ODbL). Rebuild:
 python3 tools/homecourse/dress_real_course.py "Real.olc" game/assets/courses/vermilion_ridge.olc --name "Vermilion Ridge" --cache /tmp/dem
 ```
 
-## Glacier Crown: snow
+## Glacier Crown: alpine summer
 
-The same tool with `--biome snow`: deep snow between the holes (bare ground,
-no grass), a mown band round each tee, fairway and green, spruce woods in
+The same tool with `--biome alpine` (2026-11-17; it was `snow` at first):
+the course as the real Alpine courses are played, in summer. Parkland turf,
+long meadow grass and wild flowers between the holes, spruce woods in
 stands on the slopes (`--pines`), the mapped trees kept as spruce, and the
-Alps and the Rhône valley to the horizon (snow above 40 m over the course).
-The trees carry snow on their crowns: the `tree_snow` shader global (set
-from the course's biome when a hole loads) whitens the upward faces of the
-full trees' leaves and the tops of their impostors.
+Alps and the Rhône valley to the horizon, with meadow and forest on the
+valley sides, grey crags and snow only above about 1,300 m over the course
+(the peaks across the valley). Green turf in fields of deep snow read as
+fake: nobody plays golf in snow. `--biome snow` still builds the winter
+version: deep snow between the holes and snow on the trees' crowns (the
+`tree_snow` shader global, set from the course's biome when a hole loads).
 
 ```bash
-python3 tools/homecourse/dress_real_course.py "Real.olc" game/assets/courses/glacier_crown.olc --name "Glacier Crown" --biome snow --cache /tmp/dem
+python3 tools/homecourse/dress_real_course.py "Real.olc" game/assets/courses/glacier_crown.olc --name "Glacier Crown" --biome alpine --cache /tmp/dem
 ```
 
 ## Ember Coast: tropical
@@ -151,12 +154,18 @@ python3 tools/homecourse/dress_real_course.py "Real.olc" game/assets/courses/gla
 out of bounds, with dry fountain grass in it), a mown band round each tee,
 fairway and green, coconut palms in groves in the rough beside play (the
 mapped trees become palms too, kept off fairways and paths), small kiawe out
-on the lava, and nothing in the sea or on the shore. The sea is a water
-plane at sea level over the land (Landscape.sea_level: a map-built course's
+on the lava, and nothing in the sea or on the shore. The sea is a plane
+(`sea.gdshader`: deep ocean blue, the sky reflected toward the horizon, sun
+glitter on a moving swell, hazed like the land; the pond water's shader took
+the course's fog and drew the far sea as a grey wall) at sea level over the land (Landscape.sea_level: a map-built course's
 heights are measured from `source.base_height`), reaching past the far
 plane so the horizon is the sea's. The palm (`palm_coconut`, DesertPlants)
 is built from numbers like the cacti: a ringed, leaning trunk and a crown of
 arching, drooping fronds.
+The land beyond the course is the Kohala coast's old lava under golden
+fountain grass, greening up the mountain. Bare lava and desert hardpan get
+their own finish in terrain.gdshader (`bare_style`): black, rusty, rough
+clinker; and hardpan with gravel patches, grit and small stones.
 
 ```bash
 python3 tools/homecourse/dress_real_course.py "Real.olc" game/assets/courses/ember_coast.olc --name "Ember Coast" --biome tropical --cache /tmp/dem
