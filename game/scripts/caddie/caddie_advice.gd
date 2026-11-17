@@ -81,7 +81,51 @@ func step(budget_ms := 4.0) -> bool:
 	return true
 
 
+## Like step(), but where the game has threads the whole plan runs on a
+## worker thread instead: each club it tries is a full flight and roll,
+## 50 ms and more on a fast desktop, so even step()'s budget let whole
+## frames stall while aiming. True once the advice is ready.
+func step_background(budget_ms := 4.0) -> bool:
+	reap()
+	if _ready:
+		return _task < 0
+	if _task >= 0:
+		return false
+	if not OS.has_feature("threads") or OS.get_processor_count() < 2:
+		return step(budget_ms)
+	_task = WorkerThreadPool.add_task(_plan_all, false, "shot read")
+	_running[_task] = self  # kept alive until the thread is done
+	return false
+
+
+var _task := -1
+static var _running := {}  ## task id -> CaddieAdvice still planning on a thread
+
+
+## Collects plans whose threads have ended, including ones nobody waits
+## for any more.
+static func reap() -> void:
+	for id: int in _running.keys():
+		if WorkerThreadPool.is_task_completed(id):
+			WorkerThreadPool.wait_for_task_completion(id)
+			(_running[id] as CaddieAdvice)._task = -1
+			_running.erase(id)
+
+
+## Plans to the end on the calling thread, or waits for the worker thread
+## when step_background() already started one, so the plan is never
+## stepped from two threads at once.
 func finish() -> void:
+	if _task >= 0:
+		var id := _task
+		_running.erase(id)
+		WorkerThreadPool.wait_for_task_completion(id)
+		_task = -1
+		return
+	_plan_all()
+
+
+func _plan_all() -> void:
 	while not step(1e9):
 		if _cpu == null:
 			return

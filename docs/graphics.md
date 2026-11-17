@@ -579,11 +579,24 @@ defaults).
 placeholder round, holds the first tee and draws it with one feature
 changed at a time (`FrameBenchmark.CASES`), v-sync off. GPU and CPU
 milliseconds per frame for each case go to the log and
-`user://benchmark.txt`, then the game quits.
+`user://benchmark.txt`, then the game quits. Add `--look=natural` (or
+another look) to start from that preset instead of the saved settings.
 
 On Forward+ (desktop) the free textures, imported as lossy WebP for a
 small download, are block-compressed (BC1/BC3) as they load
 (`FreeAssets.gpu_compress`), since WebP is stored uncompressed in video
 memory. At the Ultra tee view this cut Forward+ video memory from 1027 to
-881 MB. Compatibility keeps them as they are, so its CI budget still
-stands for the browser.
+881 MB. Only the editor build has the compressor, so exported games skip
+it (players' builds still use the larger figure); importing the textures
+VRAM-compressed for desktop exports would be the real fix. Compatibility
+keeps them as they are, so its CI budget still stands for the browser.
+
+The benchmark ends with 90 seconds of automatic play (shots, flights,
+camera moves, the next hole) with v-sync on, and reports frame-time
+percentiles and the worst frames. Averages hide hitches: on 2026-11-15 the
+round averaged 7 ms a frame in the cloud but had 229 frames over 33 ms.
+They came from building the tall grass (FescueField, over 20 ms a 32 m
+chunk; now built a few milliseconds a frame, and kept when the camera
+leaves), the shot read (CaddieAdvice, now on a worker thread where there
+are threads) and the putting meter's scale (now worked out once per
+putter, lie and green speed). After: 15 frames over 33 ms, p99 17 ms.

@@ -59,7 +59,7 @@ func _process(_delta: float) -> void:
 func _show_when_ready() -> void:
 	if advice == null or not note.text_empty():
 		return
-	if advice.step(PLAN_BUDGET_MS):
+	if advice.step_background(PLAN_BUDGET_MS):
 		note.say(advice.text)
 
 
