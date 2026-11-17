@@ -96,6 +96,8 @@ double ground_crossing(const LinksGround& g, Vec3 p, Vec3 q) {
   if (std::min(p.z, q.z) > g.max_height(p.x, p.y, q.x, q.y) + kClearMargin) {
     return -1;
   }
+  // Low over the ground but clear of it all the way: the same.
+  if (g.clear_above(p, q, kClearMargin)) return -1;
   auto f = [&](double t) {
     Vec3 x = p + (q - p) * t;
     return x.z - g.height(x.x, x.y);

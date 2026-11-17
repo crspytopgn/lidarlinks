@@ -241,6 +241,11 @@ class Ground:
 	func max_height(_x0: float, _y0: float, _x1: float, _y1: float) -> float:
 		return INF
 
+	## True only if the segment p -> q is above the ground by more than
+	## `margin` all along it. Mirrors olcore::LinksGround::clear_above.
+	func clear_above(_p: Vector3, _q: Vector3, _margin: float) -> bool:
+		return false
+
 
 ## A CourseTerrain seen in the game's frame.
 class TerrainGround extends Ground:
@@ -255,6 +260,10 @@ class TerrainGround extends Ground:
 	func max_height(x0: float, y0: float, x1: float, y1: float) -> float:
 		var f := LinksGround.FEET_PER_METRE
 		return terrain.max_height_in(-maxf(x0, x1) / f, minf(y0, y1) / f, -minf(x0, x1) / f, maxf(y0, y1) / f) * f
+
+	func clear_above(p: Vector3, q: Vector3, margin: float) -> bool:
+		var f := LinksGround.FEET_PER_METRE
+		return terrain.clear_above(Vector3(-p.x / f, p.z / f, p.y / f), Vector3(-q.x / f, q.z / f, q.y / f), margin / f)
 
 	func normal(x: float, y: float) -> Vector3:
 		var n := terrain.normal_at(-x / LinksGround.FEET_PER_METRE, y / LinksGround.FEET_PER_METRE)
@@ -296,6 +305,11 @@ static func object_surface() -> Params:
 static func surface_for_class(ground_class: int) -> Params:
 	if ground_class == GREEN and greens != null:
 		return greens
+	# Made once per class: every step on the ground asks for one, and nothing
+	# changes a record once made.
+	var made: Params = _class_records.get(ground_class)
+	if made != null:
+		return made
 	var c := ground_class if SURFACES.has(ground_class) else FAIRWAY
 	var v: Array = SURFACES[c]
 	var p := Params.new()
@@ -310,7 +324,12 @@ static func surface_for_class(ground_class: int) -> Params:
 	if v.size() > 7:
 		p.lie_spin = v[7]
 		p.lie_power = v[8]
+	_class_records[ground_class] = p
 	return p
+
+
+## surface_for_class()'s records, by the class asked for.
+static var _class_records := {}
 
 
 enum GreenFirmness { SOFT, MEDIUM, FIRM }
@@ -549,13 +568,22 @@ static func simulate_shot(start: BallState, terrain: CourseTerrain, has_cup: boo
 		hole.pin = _to_game(cup)
 		hole.radius = BallPhysics.CUP_RADIUS * FEET_PER_METRE
 	r.add_sample(0.0, start.position)
+	# One context for the whole shot (step() makes one per step).
+	var c := Ctx.new()
+	c.objects = terrain.links_objects
+	c.facing = facing
+	c.g = ground
+	c.aero = aero
+	c.wind = wind
+	c.rng = rng
+	c.cup = hole
 
 	while t < BallPhysics.MAX_TIME:
 		var before := _from_game(b.position) - Vector3(0, radius_m, 0)
 		var before_velocity := _from_game(b.velocity)
 		var before_spin := _spin_from_game(b.spin)
 		var was_flying := b.mode == Mode.FLIGHT
-		var info := step(b, ground, aero, wind, rng, dt, hole, terrain.links_objects, facing)
+		var info := _step(c, b, dt)
 		t += dt
 		n_steps += 1
 		var after := _from_game(b.position) - Vector3(0, radius_m, 0)
@@ -647,6 +675,9 @@ static func _ground_crossing(g: Ground, p: Vector3, q: Vector3) -> float:
 	# Wholly above the highest ground under it: every sample below would be
 	# above the ground, so the answer is the same without them.
 	if minf(p.z, q.z) > g.max_height(p.x, p.y, q.x, q.y) + CLEAR_MARGIN:
+		return -1.0
+	# Low over the ground but clear of it all the way: the same.
+	if g.clear_above(p, q, CLEAR_MARGIN):
 		return -1.0
 	if _height_above(g, p, q, 0.0) <= 0.0:
 		return 0.0
