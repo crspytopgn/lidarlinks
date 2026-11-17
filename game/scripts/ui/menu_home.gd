@@ -16,6 +16,7 @@ const TILES := {
 	"Play a round": ["play", "Pick a course and tees"],
 	"Resume round": ["play", "Carry on where you stopped"],
 	"Play online": ["online", "Rounds and leaderboards"],
+	"Tour event": ["tournament", "72 holes against the pros"],
 	"Career": ["career", "Tours, cuts, prize money"],
 	"Tournament": ["tournament", "Build your own event"],
 	"Course designer": ["designer", "Make your own course"],

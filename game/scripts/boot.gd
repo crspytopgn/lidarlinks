@@ -215,6 +215,7 @@ func _ask_for_files(problem := "") -> void:
 		["Play now", _play_placeholders],
 		["Load disc images...", _pick.bind(false)],
 		["Load a game folder...", _pick.bind(true)],
+		["Tour event", _open_tour_event],
 		["Career", _open_career],
 		["Tournament", _open_tournament],
 		["Course designer", _open_designer],
@@ -319,6 +320,7 @@ Saved round: %s." % SavedRound.describe()
 		items.append(["Play online", _open_online])
 	if _can_resume():
 		items.append(["Resume round", _resume_round])
+	items.append(["Tour event", _open_tour_event])
 	items.append(["Career", _open_career])
 	items.append(["Tournament", _open_tournament])
 	items += extra + [["Players", _open_players], ["Courses", _open_courses], ["Course designer", _open_designer], ["Settings", _open_settings]]
@@ -481,6 +483,28 @@ func _open_tournament() -> void:
 	_players.close()
 	_tournament.open(_setup_paths, titles)
 	SceneFade.pop_in(_tournament)
+
+
+## Tour event: one click builds a 72-hole PGA Tour-style week
+## (Tournament.tour_event) on one of the courses and opens its page, ready
+## for round 1. A tournament already under way opens as it is.
+func _open_tour_event() -> void:
+	if _busy:
+		return
+	var t := Tournament.load_saved()
+	if t == null or t.over():
+		var keys := CourseLibrary.shown(_all_courses())
+		var picks: Array[String] = [""]  # Kettle Hollow
+		var designed := DesignedCourse.saved_paths()
+		for k in keys:
+			if not designed.has(k):
+				picks.append(k)
+		var key: String = picks[randi() % picks.size()]
+		var course_title := PlaceholderCourseLoader.NAME if key.is_empty() else CourseFiles.display_name(key)
+		var saved := RoundSetup.load_saved()
+		var player: String = saved.names[0] if not saved.names.is_empty() else "Player 1"
+		Tournament.tour_event(player, key, course_title, randi()).save()
+	_open_tournament()
 
 
 func _close_tournament() -> void:
@@ -722,6 +746,7 @@ func _show_desktop_choice() -> void:
 	_set_buttons([
 		["Play now", _play_placeholders],
 		["Choose game folder...", _choose_folder],
+		["Tour event", _open_tour_event],
 		["Career", _open_career],
 		["Tournament", _open_tournament],
 		["Course designer", _open_designer],

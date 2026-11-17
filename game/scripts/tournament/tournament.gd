@@ -55,6 +55,21 @@ const WIND_STROKES := [-0.4, 0.0, 1.0, 2.5]
 enum TeeTimes { MORNING, AFTERNOON, DRAW }
 const TEE_TIME_NAMES := ["Morning", "Afternoon", "Draw (leaders go out last at the weekend)"]
 const MAX_PARTNERS := 3
+## A Tour event (quick): one click builds a week on tour like the PGA Tour's:
+## 72 holes on one course, a world tour field of 144 with the named pros,
+## the top 65 and ties after 36 holes, an $8,000,000 purse, the leaders out
+## last at the weekend and the person in a group of three.
+const TOUR_EVENT := {"format": Format.STROKE, "rounds": 4, "strength": 3, "field_kind": Field.MEN,
+	"field_size": 144, "cut": 1, "purse": 8000000, "weather": Weather.CHANGEABLE, "tee_times": TeeTimes.DRAW,
+	"partners": 2}
+const TOUR_EVENT_NAMES := ["%s Championship", "%s Invitational", "%s Classic", "%s Open"]
+## Sunday: in the last round of a 72-hole (or 54-hole) event the ones in
+## contention, within this many strokes of the lead, feel it. A nervy golfer
+## (TourPro.nerve -1) loses about SUNDAY_NERVE_STROKES and a clutch one (+1)
+## gains them, and everyone in the hunt scores less predictably.
+const SUNDAY_CONTENTION := 5
+const SUNDAY_NERVE_STROKES := 0.8
+const SUNDAY_SPREAD := 0.9
 
 ## The odds of each score against par for the average tour pro on an
 ## average tour hole, from -3 (albatross) to +4, rounded from PGA Tour
@@ -186,6 +201,36 @@ static func create(settings: Dictionary, keys: Array[String], titles: Array[Stri
 	if t.format == Format.MATCH:
 		t._make_bracket()
 	return t
+
+
+## A Tour event for `player` on one course, every round there, with a
+## sponsor-style name ("Kauri Cliffs Invitational").
+static func tour_event(player_name: String, key: String, course_title: String, event_seed: int) -> Tournament:
+	var settings := TOUR_EVENT.duplicate()
+	settings.player = player_name
+	settings.seed = event_seed
+	var pick: String = TOUR_EVENT_NAMES[absi(event_seed) % TOUR_EVENT_NAMES.size()]
+	settings.title = pick % Career._short_name(course_title)
+	var keys: Array[String] = [key]
+	var titles: Array[String] = [course_title]
+	return create(settings, keys, titles)
+
+
+## Sunday: the last round of an event of three or more rounds.
+func final_round() -> bool:
+	return rounds >= 3 and rounds_played() == rounds - 1
+
+
+## Strokes behind the leader after the rounds played (0 leads), for
+## Sunday's pressure.
+func behind_lead(i: int) -> int:
+	var best := 1 << 30
+	for j in names.size():
+		if _in_event(j):
+			var v := _total(j)
+			best = mini(best, -v if format == Format.STABLEFORD else v)
+	var mine := -_total(i) if format == Format.STABLEFORD else _total(i)
+	return maxi(0, mine - best)
 
 
 func _default_title() -> String:
@@ -506,10 +551,13 @@ func begin_round(id: String, pars: Array[int], stroke_index: Array[int] = []) ->
 	_live.clear()
 	_start.clear()
 	var waves := _tee_times(round_no)
+	var sunday := final_round() and (format == Format.STROKE or format == Format.STABLEFORD)
 	for i in names.size():
 		var p := pro(i)
 		var streaky := p.streaky if p != null else 0.4
 		var form := r.randfn(0.0, 0.7 + 1.0 * streaky)
+		if sunday and p != null and _in_event(i) and behind_lead(i) <= SUNDAY_CONTENTION:
+			form += -SUNDAY_NERVE_STROKES * p.nerve + r.randfn(0.0, SUNDAY_SPREAD)
 		var avg := averages[i]
 		var wind_cost := _wind_cost(wind_level, avg)
 		var afternoon := waves[i] >= WAVE_GAP_HOLES - 0.01

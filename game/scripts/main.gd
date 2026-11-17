@@ -485,7 +485,7 @@ func start_round() -> void:
 		var t := Tournament.load_saved()
 		if t != null and t.begin_round(round_setup.tournament, pars, stroke_index):
 			_tournament = t
-			_career_title = "%s, %s" % [t.title, t.next_text().get_slice(".", 0) if t.format == Tournament.Format.MATCH else "round %d" % (t.rounds_played() + 1)]
+			_career_title = "%s, %s" % [t.title, t.next_text().get_slice(".", 0) if t.format == Tournament.Format.MATCH else ("final round" if t.final_round() else "round %d" % (t.rounds_played() + 1))]
 			_update_tournament_board(0, 0)
 	for p in players:
 		if p.marker:
@@ -3195,11 +3195,17 @@ func _classic_computer(i: int) -> bool:
 ## How tense this shot is for player `i`, 0 to 1: nothing early on, building
 ## over the last three holes when they are in the hunt (within two of the
 ## lead in their group, or of the tournament lead), most of all on the last.
+## On a tournament Sunday it starts six holes out and builds higher.
 func _pressure_on(i: int) -> float:
 	var left := holes.size() - 1 - hole_index
-	if left > 2 or i >= scoring.player_count():
+	# Sunday in a tournament: the back nine's last six holes, and harder.
+	var sunday := _tournament != null and _tournament.final_round() and holes.size() >= 18
+	var window := 6.0 if sunday else 3.0
+	if left > int(window) - 1 or i >= scoring.player_count():
 		return 0.0
-	var late := (3.0 - left) / 3.0
+	var late := (window - left) / window
+	if sunday:
+		late = minf(1.0, 0.35 + late)
 	var mine := scoring.cards[i].to_par()
 	var best := mine
 	for j in scoring.player_count():
