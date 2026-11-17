@@ -39,6 +39,7 @@ var _tee_label: Label
 var _partners: OptionButton
 var _partners_label: Label
 var _view_box: VBoxContainer
+var _trophy: Label
 var _heading: Label
 var _next: Label
 var _board_title: Label
@@ -139,6 +140,9 @@ func _build_view(box: VBoxContainer) -> void:
 	_view_box = VBoxContainer.new()
 	_view_box.add_theme_constant_override("separation", 8)
 	box.add_child(_view_box)
+	# The result, as a plain broadcast caption over the final leaderboard.
+	_trophy = _small("", 20, false)
+	_view_box.add_child(_trophy)
 	_heading = _small("", 20)
 	_heading.modulate = Color.WHITE
 	_view_box.add_child(_heading)
@@ -220,6 +224,8 @@ func _fill() -> void:
 	_play.text = "Done" if t.over() else ("Play the match" if t.format == Tournament.Format.MATCH else "Play round %d" % (t.rounds_played() + 1))
 	if not t.playing() and not t.over():
 		_play.text = "See it out"
+	_trophy.text = _trophy_text(t)
+	_trophy.visible = not _trophy.text.is_empty()
 	var board := t.leaderboard_lines(12)
 	match t.format:
 		Tournament.Format.MATCH:
@@ -228,8 +234,24 @@ func _fill() -> void:
 			_board_title.text = "Money won"
 		_:
 			_board_title.text = "Leaderboard after round %d" % t.rounds_played() if not board.is_empty() else "Leaderboard"
+			if t.over() and not board.is_empty():
+				_board_title.text = "Final leaderboard"
 	_board.text = "\n".join(board) if not board.is_empty() else "The first round is still to play."
 	_watch.text = "\n".join(_watch_lines(t, 6))
+
+
+## The caption once it is over, understated like a TV graphic: the win
+## with the winning score, or a top 10.
+static func _trophy_text(t: Tournament) -> String:
+	if not t.over() or t.result.is_empty() or not str(t.result.get("status", "")).is_empty():
+		return ""
+	var pos := int(t.result.get("pos", 0))
+	if pos == 1:
+		return "WINNER   ·   %s   ·   %s" % [t.title, Scorecard.format_to_par(int(t.result.get("winning", 0)))
+			if t.format == Tournament.Format.STROKE else str(t.result.get("winning", 0)) + " pts"]
+	if pos <= 10 and t.format != Tournament.Format.MATCH and t.format != Tournament.Format.SKINS:
+		return "TOP 10 FINISH   ·   %s" % t.title
+	return ""
 
 
 ## The best few in the field, with how they play.

@@ -616,6 +616,24 @@ Main menu > Tournament hosts an event of the person's own
   (a morning or afternoon wave, or the tour draw: two waves and two tees on
   the first two days, then the leaders go out last).
 
+**Tour event** (main menu) is the one-click version: a PGA Tour-style
+week (`Tournament.tour_event`, `TOUR_EVENT`) on one of the person's courses
+picked at random (Kettle Hollow, the built-in and added courses and the
+disc's, not their own designs), with a sponsor-style name ("Kauri Cliffs
+Invitational"). It is 72 holes of stroke play there against a world tour
+field of 144 men with the named pros, the top 65 and ties after 36 holes,
+an $8,000,000 purse, changeable weather, the tour draw and two field golfers
+in the person's group. A tournament already under way opens as it is.
+
+**Sunday**: in the last round of an event of three or more rounds, the
+simulated golfers within `SUNDAY_CONTENTION` (5) of the lead feel it: a
+nervy golfer (`TourPro.nerve` -1) drops about 0.8 strokes and a clutch one
+gains them, and their scores spread more. The computer golfers in the
+person's group feel pressure from six holes out instead of three, and
+more of it (main.gd `_pressure_on`). The result shows as a plain broadcast
+caption over the final leaderboard ("WINNER · Kauri Cliffs Invitational ·
+-18", or a top 10).
+
 The person plays every round for real with up to three field golfers, who
 play as themselves (`RoundSetup.pros`). Everyone else is simulated hole by
 hole: each golfer's expected score on a hole is the tour average for its par

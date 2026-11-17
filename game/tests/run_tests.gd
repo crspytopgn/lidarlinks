@@ -53,6 +53,7 @@ func _initialize() -> void:
 	_run("tournament_stroke_play", _test_tournament_stroke_play)
 	_run("tournament_match_play", _test_tournament_match_play)
 	_run("tournament_skins", _test_tournament_skins)
+	_run("tournament_tour_event", _test_tournament_tour_event)
 	_run("drop_rules_match_olcore", _test_drop_rules_match_olcore)
 	_run("drop_rules_hazards_and_bounds", _test_drop_rules_hazards_and_bounds)
 	_run("rest_out_of_bounds", _test_rest_out_of_bounds)
@@ -6333,6 +6334,39 @@ func _test_tournament_match_play() -> void:
 	print("  " + _play_tournament_round(lost, pars, 2))
 	_check(lost.over() and str(lost.result.status) == "OUT", "losing knocks you out and the draw plays out")
 	_check(int(lost.bracket[-1][0][2]) >= 0, "someone wins it")
+
+
+## Tour event: one click makes a PGA Tour-style week on one course.
+func _test_tournament_tour_event() -> void:
+	Tournament.path = "user://test_tournament.cfg"
+	Tournament.remove()
+	CourseDifficulty.path = "user://test_course_difficulty.cfg"
+	CourseDifficulty.remove()
+	var t := Tournament.tour_event("Tester", "", "Kauri Cliffs Golf Club", 7)
+	_check(t.format == Tournament.Format.STROKE and t.rounds == 4, "72 holes of stroke play")
+	_check(t.names.size() == 144 and t.names[-1] == "Tester", "a field of 144 (%d)" % t.names.size())
+	_check(t.title.begins_with("Kauri Cliffs ") and t.title != "Kauri Cliffs Golf Club", "a sponsor-style name (%s)" % t.title)
+	_check(t.course_index(3) == 0 and t.course_names.size() == 1, "every round on the one course")
+	_check(t.has_cut() and t.purse == 8000000, "a cut and a tour purse")
+	var named := 0
+	for n in t.names:
+		if TourPro.find(n) != null:
+			named += 1
+	_check(named > 0, "the named pros are in the field (%d)" % named)
+	var pars := _tournament_pars(18)
+	_check(not t.final_round(), "round 1 isn't Sunday")
+	for k in 3:
+		_play_tournament_round(t, pars, -1)
+	var made := t.made_cut.count(true)
+	_check(made >= 65 and made < 144, "top 65 and ties make the cut (%d)" % made)
+	_check(t.final_round(), "round 4 is Sunday")
+	_check(t.behind_lead(t.player_index()) == 0, "-54 leads going into Sunday")
+	var text := _play_tournament_round(t, pars, -1)
+	print("  " + text)
+	_check(t.over() and int(t.result.pos) == 1, "-72 wins (%s)" % text)
+	_check(TournamentPanel._trophy_text(t).begins_with("WINNER"), "the winner's caption (%s)" % TournamentPanel._trophy_text(t))
+	Tournament.remove()
+	CourseDifficulty.remove()
 
 
 func _test_tournament_skins() -> void:
