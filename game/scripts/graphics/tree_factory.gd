@@ -32,8 +32,8 @@ const VARIANTS := [
 ## [species, scan name, mirrored]. A mirrored copy of a scan makes a second
 ## variant (each tree is also turned at random where it stands).
 const SCANNED := [
-	[Species.BROADLEAF, "jacaranda", false],
-	[Species.BROADLEAF, "jacaranda", true],
+	[Species.BROADLEAF, "red_oak", false],
+	[Species.BROADLEAF, "red_oak", true],
 	[Species.BROADLEAF, "island_01", false],
 	[Species.PINE, "fir_a", false],
 	[Species.PINE, "fir_b", false],

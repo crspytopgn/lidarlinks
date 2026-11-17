@@ -183,7 +183,8 @@ Ultra and use a notch lighter soft-shadow filter.
   still, as in the original.
 - **Photoscanned trees** (`ScannedTree`, `tools/trees/scan_tree.py`): when
   their files are there, the 3D trees are Poly Haven scans (CC0) instead of
-  the generated ones below: the jacaranda (and its mirror image) and
+  the generated ones below: PlantCatalog's Northern red oak from Sketchfab
+  (CC BY 4.0, an old 16.5 m summer oak, and its mirror image) and
   `island_tree_01` for broadleaf, the three trees of `fir_tree_01` for
   pines, `island_tree_02` (and mirrored) for bushes. The scans are millions
   of triangles, so `scan_tree.py` cuts each down offline into
@@ -192,7 +193,12 @@ Ultra and use a notch lighter soft-shadow filter.
   to 17,000 triangles, every scanned leaf one quad fitted to its UVs (a
   share of them kept and grown to hold the cover), and for the fir, whose
   scan models every needle, one sprig card per 36 cm of needles laid in
-  their plane and drawn as the generated pines' needles are. Each tree
+  their plane and drawn as the generated pines' needles are. The oak
+  models each of its 100,000 leaves, so its leaves are gathered into one
+  card per 55 cm cell, each drawing one of eight real leaf sprays rendered
+  from the model's own leaves (`--atlas`, face on, back to front); its
+  textures are committed in `game/assets/trees/textures/` with the credit,
+  since Sketchfab can't be fetched without a token. Each tree
   also has a lite mesh (about 1,000 leaves, a tenth of the bark, no sun
   shadow) drawn from 35 m (`TreeFactory.LITE_DISTANCE`) to the impostor
   distance; the full meshes go in 16 m cells so their MultiMeshes are
