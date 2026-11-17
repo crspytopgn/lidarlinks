@@ -31,6 +31,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import build_epic_course as epic  # noqa: E402
 import build_home_course as hc  # noqa: E402
 import geom  # noqa: E402
+import playable  # noqa: E402
 
 ROCK_REACH = epic.ROCK_REACH
 PLAY = ("Tee", "Fairway", "Green", "Sand", "Water")
@@ -414,6 +415,11 @@ def main():
         "(openstreetmap.org/copyright). " + ". ".join(ground).rstrip(".") + ". The land round it from the "
         "Terrain Tiles on AWS Open Data (Mapzen). Scenery (rock, plants, snow, desert) by "
         "OpenLinks2003. Not connected with or endorsed by any club.")
+    # Every hole playable: greens graded to a plate (the map's ground follows
+    # hillsides), no par 3 past a driver, no trees in a line of play.
+    playable.grade(d)
+    playable.trim_tees(d)
+    playable.clear_lines(d)
     blob = json.dumps(d, separators=(",", ":")).encode()
     with gzip.open(args.out, "wb", compresslevel=9) as f:
         f.write(blob)

@@ -116,6 +116,8 @@ var _tiles_w := 0
 var _pads := TeePads.new()
 var _img: Image  ## surface raster (R8 holds the Surface.Type)
 var _surf := PackedByteArray()
+## The sea's height (Landscape.sea_level), or NAN on a course with no sea.
+var _sea := NAN
 var _sw := 0
 var _sh := 0
 var _vc := PackedColorArray()  ## surface colour per grid vertex
@@ -150,6 +152,7 @@ func _init(p_course: DesignedCourse) -> void:
 ## Everything from scratch: after loading, or a change to the course area.
 func rebuild() -> void:
 	_tree_rows = PackedFloat32Array()
+	_sea = Landscape.sea_level(course) if not course.landscape.is_empty() else NAN
 	_sw = int(ceil(course.area.size.x / RES))
 	_sh = int(ceil(course.area.size.y / RES))
 	_img = Image.create_empty(_sw, _sh, false, Image.FORMAT_R8)
@@ -415,6 +418,10 @@ func surface_at(x: float, z: float) -> int:
 	var c := mini(int((x - a.position.x) / RES), _sw - 1)
 	var r := mini(int((z - a.position.y) / RES), _sh - 1)
 	var s := _surf[r * _sw + c]
+	# The sea (Landscape draws it over the land below sea level): a ball
+	# there is in the water, not on the sea floor.
+	if not is_nan(_sea) and height_at(x, z) < _sea:
+		return Surface.Type.WATER
 	return Surface.Type.ROUGH if s == FIRST_CUT_CODE else (Surface.Type.FRINGE if s == COLLAR_CODE else s)
 
 
