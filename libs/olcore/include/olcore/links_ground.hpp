@@ -127,6 +127,10 @@ class LinksGround {
                             double /*y1*/) const {
     return std::numeric_limits<double>::infinity();
   }
+  // True only if the segment p -> q is above the ground by more than margin
+  // all along it; false when it isn't or the ground can't tell. Lets the
+  // flight skip its search for a step low over the ground that clears it.
+  virtual bool clear_above(Vec3 /*p*/, Vec3 /*q*/, double /*margin*/) const { return false; }
 };
 
 // Resolves a landing in place. `n` is the ground normal at the contact

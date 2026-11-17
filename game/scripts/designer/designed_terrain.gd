@@ -256,6 +256,11 @@ func height_at(x: float, z: float) -> float:
 
 ## Grid cells to a side of a max_height_in() tile.
 const HEIGHT_TILE := 8
+## A max_height_in() rect over at most this many grid cells is bounded by
+## the cells themselves rather than their tiles.
+const FINE_CELLS := 16
+## Each tee pad's highest point (and a hair), for max_height_in().
+var _pad_top := PackedFloat32Array()
 
 
 func max_height_in(x0: float, z0: float, x1: float, z1: float) -> float:
@@ -265,15 +270,99 @@ func max_height_in(x0: float, z0: float, x1: float, z1: float) -> float:
 	var e := 0.001
 	var top := course.cols - 1.001
 	var side := course.rows - 1.001
-	var i0 := int(clampf((x0 - e - a.position.x) / DesignedCourse.CELL, 0.0, top)) / HEIGHT_TILE
-	var i1 := int(clampf((x1 + e - a.position.x) / DesignedCourse.CELL, 0.0, top)) / HEIGHT_TILE
-	var j0 := int(clampf((z0 - e - a.position.y) / DesignedCourse.CELL, 0.0, side)) / HEIGHT_TILE
-	var j1 := int(clampf((z1 + e - a.position.y) / DesignedCourse.CELL, 0.0, side)) / HEIGHT_TILE
+	var ci0 := int(clampf((x0 - e - a.position.x) / DesignedCourse.CELL, 0.0, top))
+	var ci1 := int(clampf((x1 + e - a.position.x) / DesignedCourse.CELL, 0.0, top))
+	var cj0 := int(clampf((z0 - e - a.position.y) / DesignedCourse.CELL, 0.0, side))
+	var cj1 := int(clampf((z1 + e - a.position.y) / DesignedCourse.CELL, 0.0, side))
 	var m := -INF
+	if (ci1 - ci0 + 1) * (cj1 - cj0 + 1) <= FINE_CELLS:
+		# A small rect (a flight step near the ground): the corners of the
+		# cells it covers, which bound the blend between them, and the top of
+		# any pad on them.
+		var cols := course.cols
+		for j in range(cj0, cj1 + 1):
+			for i in range(ci0, ci1 + 1):
+				var k := j * cols + i
+				m = maxf(m, maxf(maxf(_h[k], _h[k + 1]), maxf(_h[k + cols], _h[k + cols + 1])))
+				if not _pads.cell_pad.is_empty():
+					var pad := _pads.cell_pad[j * (cols - 1) + i]
+					if pad > 0:
+						m = maxf(m, _pad_top[pad - 1] if pad <= _pad_top.size() else INF)
+		return m
+	var i0 := ci0 / HEIGHT_TILE
+	var i1 := ci1 / HEIGHT_TILE
+	var j0 := cj0 / HEIGHT_TILE
+	var j1 := cj1 / HEIGHT_TILE
 	for tj in range(j0, j1 + 1):
 		for ti in range(i0, i1 + 1):
 			m = maxf(m, _tile_max[tj * _tiles_w + ti])
 	return m
+
+
+## Exact for the grid's bilinear cells; over a tee pad, only above its top.
+func clear_above(a: Vector3, b: Vector3, margin: float) -> bool:
+	if _h.is_empty():
+		return false
+	var o := course.area.position
+	var cols := course.cols
+	var u0 := (a.x - o.x) / DesignedCourse.CELL
+	var v0 := (a.z - o.y) / DesignedCourse.CELL
+	var du := (b.x - a.x) / DesignedCourse.CELL
+	var dv := (b.z - a.z) / DesignedCourse.CELL
+	# Only well inside the grid, where height_at() clamps nothing.
+	var top := cols - 1.01
+	var side := course.rows - 1.01
+	if minf(u0, u0 + du) < 0.01 or maxf(u0, u0 + du) > top or minf(v0, v0 + dv) < 0.01 or maxf(v0, v0 + dv) > side:
+		return false
+	# The pieces of the segment in each grid cell, where the ground is one
+	# bilinear patch: the height along a piece is a quadratic in t.
+	var cuts := PackedFloat64Array([0.0, 1.0])
+	for n in range(floori(minf(u0, u0 + du)) + 1, floori(maxf(u0, u0 + du)) + 1):
+		cuts.append((n - u0) / du)
+	for n in range(floori(minf(v0, v0 + dv)) + 1, floori(maxf(v0, v0 + dv)) + 1):
+		cuts.append((n - v0) / dv)
+	cuts.sort()
+	var dy := b.y - a.y
+	for k in cuts.size() - 1:
+		var ta := cuts[k]
+		var tb := cuts[k + 1]
+		if not (tb > ta):
+			continue
+		var tm := 0.5 * (ta + tb)
+		var i := int(u0 + du * tm)
+		var j := int(v0 + dv * tm)
+		if not _pads.cell_pad.is_empty():
+			var pad := _pads.cell_pad[j * (cols - 1) + i]
+			if pad > 0:
+				# A tee pad plays its own triangles: clear of its top, or unsure.
+				if pad <= _pad_top.size() and minf(a.y + dy * ta, a.y + dy * tb) > _pad_top[pad - 1] + margin:
+					continue
+				return false
+		var c := j * cols + i
+		var h00 := _h[c]
+		var h10 := _h[c + 1]
+		var h01 := _h[c + cols]
+		var h11 := _h[c + cols + 1]
+		var fa := a.y + dy * ta - _bilinear(h00, h10, h01, h11, u0 + du * ta - i, v0 + dv * ta - j)
+		var fb := a.y + dy * tb - _bilinear(h00, h10, h01, h11, u0 + du * tb - i, v0 + dv * tb - j)
+		if fa <= margin or fb <= margin:
+			return false
+		# Clearance z(t) - h(t) has second derivative -2 q: with q < 0 it may
+		# dip between the ends, lowest where its slope is zero.
+		var q := (h00 - h10 - h01 + h11) * du * dv
+		if q < 0.0:
+			var w := tb - ta
+			var slope_a := (fb - fa) / w + q * w  # clearance slope at ta
+			var t_low := ta - slope_a / (-2.0 * q)
+			if t_low > ta and t_low < tb:
+				var fl := a.y + dy * t_low - _bilinear(h00, h10, h01, h11, u0 + du * t_low - i, v0 + dv * t_low - j)
+				if fl <= margin:
+					return false
+	return true
+
+
+static func _bilinear(h00: float, h10: float, h01: float, h11: float, fu: float, fv: float) -> float:
+	return lerpf(lerpf(h00, h10, fu), lerpf(h01, h11, fu), fv)
 
 
 ## Recomputes the max_height_in() tiles that hold a grid point in `cells`.
@@ -298,6 +387,7 @@ func _update_height_tiles(cells: Rect2i) -> void:
 			for y in pad.heights:
 				top = maxf(top, y)
 			pad_top.append(top + 0.01)
+	_pad_top = pad_top
 	for tj in range(t0.y, t1.y + 1):
 		for ti in range(t0.x, t1.x + 1):
 			var ci0 := ti * HEIGHT_TILE

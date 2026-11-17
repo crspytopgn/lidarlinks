@@ -394,12 +394,40 @@ func _test_height_bounds() -> void:
 			skipped += 1
 	check(differ == 0, "the ground search answers the same with the bound (%d differ)" % differ)
 	check(skipped > 50, "and the bound lets it skip steps clear of the ground (%d)" % skipped)
+	# Steps low over the ground (a ball hopping along it): clear_above() only
+	# says so when every point along them is above it, and the search answers
+	# the same with it.
+	var wrong := 0
+	var clear := 0
+	differ = 0
+	for k in 600:
+		var p := tee + Vector2(rng.randf_range(-60, 60), rng.randf_range(-60, 60))
+		var q := p + Vector2(rng.randf_range(-0.6, 0.6), rng.randf_range(-0.6, 0.6))
+		var a3 := Vector3(p.x, t.height_at(p.x, p.y) + rng.randf_range(-0.02, 0.25), p.y)
+		var b3 := Vector3(q.x, t.height_at(q.x, q.y) + rng.randf_range(-0.02, 0.25), q.y)
+		if t.clear_above(a3, b3, 0.003):
+			clear += 1
+			for s in 65:
+				var x := a3.lerp(b3, s / 64.0)
+				if x.y - t.height_at(x.x, x.z) <= 0.002:
+					wrong += 1
+					break
+		var from := LinksGround._to_game(a3)
+		var to := LinksGround._to_game(b3)
+		if LinksGround._ground_crossing(g, from, to) != LinksGround._ground_crossing(plain, from, to):
+			differ += 1
+	check(wrong == 0, "clear_above() is never wrong (%d wrong)" % wrong)
+	check(clear > 100, "and clears most low steps (%d of 600)" % clear)
+	check(differ == 0, "low steps: the ground search answers the same (%d differ)" % differ)
 
 
-## TerrainGround without its height bound.
+## TerrainGround without its height bound or clearance test.
 class _PlainGround extends LinksGround.TerrainGround:
 	func max_height(_x0: float, _y0: float, _x1: float, _y1: float) -> float:
 		return INF
+
+	func clear_above(_p: Vector3, _q: Vector3, _margin: float) -> bool:
+		return false
 
 
 ## Far ground gets coarser detail levels (DesignedTerrain.refine_lods):

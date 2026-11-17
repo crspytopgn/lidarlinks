@@ -32,6 +32,14 @@ func max_height_in(_x0: float, _z0: float, _x1: float, _z1: float) -> float:
 	return INF
 
 
+## True only if the straight segment from a to b is above the ground by
+## more than `margin` all the way along; false when it isn't or the terrain
+## can't tell. The Links flight uses it to skip its search for the ground on
+## a step low over it that still clears it.
+func clear_above(_a: Vector3, _b: Vector3, _margin: float) -> bool:
+	return false
+
+
 ## A Surface.Type value.
 func surface_at(_x: float, _z: float) -> int:
 	return Surface.Type.FAIRWAY
