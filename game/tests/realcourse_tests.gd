@@ -26,6 +26,7 @@ func run_all() -> Array[String]:
 	_test_real_world_fixes()
 	_test_far_woods()
 	_test_retries()
+	_test_map_servers()
 	return failures
 
 
@@ -827,6 +828,27 @@ func _test_real_world_fixes() -> void:
 	check(RealCourseBuilder.is_open_ditch(line, 1.5, dip, f), "a ditch in the lidar is open")
 	check(not RealCourseBuilder.is_open_ditch(line, 1.5, flat, f), "a drain the lidar can't see is piped")
 	check(meadow == 1, "the hay meadow is long grass")
+
+
+## The map servers are all asked at once and the wait is shown, and no
+## download runs on a thread: a threaded HTTPRequest that times out makes
+## Godot wait for its blocked thread, and the game froze for a minute or
+## more building West Essex while a busy map server held on (Nov 2026).
+func _test_map_servers() -> void:
+	var q := RealCourseFetcher.overpass_query(51.62, 0.0, 51.64, 0.02)
+	check(q.begins_with("[out:json][timeout:%d];" % RealCourseFetcher.OVERPASS_QUERY_SECS), "the query asks for the server time we wait for")
+	check(RealCourseFetcher.OVERPASS_TIMEOUT > RealCourseFetcher.OVERPASS_QUERY_SECS, "the download waits longer than the server may think")
+	check(RealCourseFetcher.OVERPASS_TRIES >= 2, "busy map servers are asked again")
+	var f := RealCourseFetcher.new()
+	var req := f._make_request(5.0)
+	check(not req.use_threads, "downloads are polled, not threaded (a threaded timeout freezes the game)")
+	check(req.timeout == 5.0, "the request keeps its timeout")
+	f.free()
+	var none: Array = [null, null]
+	var reqs: Array = [null, null]
+	check(RealCourseFetcher.overpass_status(none, reqs, 5.0).begins_with("Reading the course map"), "a short wait reads the map")
+	var slow := RealCourseFetcher.overpass_status(none, reqs, 95.0)
+	check(slow.contains("1:35") and slow.contains("busy"), "a long wait says how long and that the servers are busy (%s)" % slow)
 
 
 ## A lidar or tile download that stalls or meets a busy server is asked for

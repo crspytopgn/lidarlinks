@@ -20,7 +20,7 @@ and the next import picks them up.
 | Step | Source | Licence |
 | --- | --- | --- |
 | Name to place | [Nominatim](https://nominatim.openstreetmap.org) (OpenStreetMap's search) | ODbL; [usage policy](https://operations.osmfoundation.org/policies/nominatim/): at most one search a second, which a person typing never reaches |
-| Holes, fairways, greens, tees, bunkers, water, woods, trees, cart paths, roads | [Overpass API](https://wiki.openstreetmap.org/wiki/Overpass_API) (public servers, tried in turn) | OpenStreetMap, ODbL 1.0 |
+| Holes, fairways, greens, tees, bunkers, water, woods, trees, cart paths, roads | [Overpass API](https://wiki.openstreetmap.org/wiki/Overpass_API) (public servers, all asked at once, first answer wins) | OpenStreetMap, ODbL 1.0 |
 | Ground heights | National lidar where a service covers the course (below), else the [Terrain Tiles on AWS Open Data](https://registry.opendata.aws/terrain-tiles/) (Mapzen "Terrarium" PNG tiles, zoom 15) | Per source, below |
 | Trees | Lidar canopy height (surface model minus ground) where offered, else the aerial photo, plus OpenStreetMap's trees and woods | As the source |
 | Aerial photo | National orthophoto tile services (below) | Per source, below |

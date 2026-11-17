@@ -33,6 +33,16 @@ const RETRY_WAIT := 2.0
 ## Seconds a lidar request may take: a good answer takes a few seconds, and
 ## a stalled one isn't worth two minutes when it can be asked for again.
 const LIDAR_TIMEOUT := 45.0
+## Seconds the map servers may take over the course map: a busy public
+## server can take a minute and a half over a big club, so the query asks
+## for up to OVERPASS_QUERY_SECS and the download allows a little more.
+const OVERPASS_QUERY_SECS := 180
+const OVERPASS_TIMEOUT := 210.0
+## Rounds of asking every map server, and the wait before the next round.
+const OVERPASS_TRIES := 2
+const OVERPASS_RETRY_WAIT := 5.0
+## Bytes read from each download per frame.
+const DOWNLOAD_CHUNK := 1 << 20
 const MAX_DETAILS := 40  ## close-ups of greens fetched at most
 ## Phones and tablets in the browser have far less memory (an iPad's Safari
 ## drops the page's graphics when it runs short, leaving a black screen),
@@ -54,7 +64,7 @@ var use_land_cover := true
 ## Called with each HTTPRequest before it is sent (tools use it to set a
 ## proxy); empty in the game.
 var configure_request: Callable
-## Overpass servers, tried in order.
+## Overpass servers, all asked at once (see _overpass).
 var servers: Array = OVERPASS.duplicate()
 var _last_summary := {}
 var _cancelled := false
@@ -364,7 +374,7 @@ func _fetch_details(psrc: Dictionary, builder: RealCourseBuilder) -> Array[Dicti
 ## The Overpass query for everything a course needs in a box.
 static func overpass_query(s: float, w: float, n: float, e: float) -> String:
 	var bb := "(%.6f,%.6f,%.6f,%.6f)" % [s, w, n, e]
-	return ("[out:json][timeout:90];(" +
+	return ("[out:json][timeout:%d];(" % OVERPASS_QUERY_SECS +
 		"nwr[\"golf\"]%s;" % bb +
 		"nwr[\"leisure\"=\"golf_course\"]%s;" % bb +
 		"nwr[\"natural\"~\"^(water|wood|scrub|heath|wetland|dune|grassland)$\"]%s;" % bb +
@@ -408,17 +418,80 @@ static func _has_golf(results: Array[Dictionary]) -> bool:
 	return false
 
 
-## The Overpass answer, trying each server in turn; {} if none answer.
+## The Overpass answer; {} if no server gives one. Every server is asked
+## at once and the first full answer wins, because the public servers are
+## often busy: one may sit on a query for minutes, or drop it, while
+## another answers. If none answer, they are all asked again, up to
+## OVERPASS_TRIES rounds. Progress shows the time waited and the data
+## received, so a slow server never looks like a frozen game.
 func _overpass(query: String) -> Dictionary:
 	var body := "data=" + query.uri_encode()
-	for url: String in servers:
-		var res := await _request(url, HTTPClient.METHOD_POST, body, ["Content-Type: application/x-www-form-urlencoded"])
-		if res[0] != 200:
-			continue
+	var headers := ["Content-Type: application/x-www-form-urlencoded"]
+	for round in OVERPASS_TRIES:
+		if _cancelled:
+			break
+		if round > 0:
+			progress.emit("The map servers are busy; asking them again (try %d of %d)..." % [round + 1, OVERPASS_TRIES])
+			await get_tree().create_timer(OVERPASS_RETRY_WAIT * round).timeout
+			if _cancelled:
+				break
+		var answers: Array = []
+		answers.resize(servers.size())
+		var reqs: Array[HTTPRequest] = []
+		var done := [0]
+		for i in servers.size():
+			var req := _make_request(OVERPASS_TIMEOUT)
+			reqs.append(req)
+			_overpass_into(req, str(servers[i]), body, headers, answers, i, done)
+		var started := Time.get_ticks_msec()
+		var won := {}
+		while not _cancelled and won.is_empty() and done[0] < servers.size():
+			await get_tree().process_frame
+			for a: Variant in answers:
+				if a is Dictionary and not (a as Dictionary).is_empty():
+					won = a
+					break
+			if won.is_empty():
+				progress.emit(overpass_status(answers, reqs, (Time.get_ticks_msec() - started) / 1000.0))
+		if won.is_empty():
+			for a: Variant in answers:
+				if a is Dictionary and not (a as Dictionary).is_empty():
+					won = a
+					break
+		# Stop the slower servers: their answers aren't needed.
+		for req in reqs:
+			if is_instance_valid(req) and req.get_http_client_status() != HTTPClient.STATUS_DISCONNECTED:
+				req.cancel_request()
+				req.request_completed.emit(HTTPRequest.RESULT_REQUEST_FAILED, 0, PackedStringArray(), PackedByteArray())
+		if not won.is_empty():
+			return won
+	return {}
+
+
+## One server's Overpass answer into answers[i]: the parsed map, or {}.
+func _overpass_into(req: HTTPRequest, url: String, body: String, headers: Array, answers: Array, i: int, done: Array) -> void:
+	var res := await _send(req, url, HTTPClient.METHOD_POST, body, headers)
+	var got := {}
+	if res[0] == 200:
 		var parsed: Variant = JSON.parse_string((res[1] as PackedByteArray).get_string_from_utf8())
 		if parsed is Dictionary and parsed.get("elements", null) is Array:
-			return parsed
-	return {}
+			got = parsed
+	answers[i] = got
+	done[0] += 1
+
+
+## The progress line while waiting for the map servers: what has arrived
+## so far, or how long they have been thinking.
+static func overpass_status(answers: Array, reqs: Array, secs: float) -> String:
+	var bytes := 0
+	for i in reqs.size():
+		if answers[i] == null and is_instance_valid(reqs[i]):
+			bytes = maxi(bytes, (reqs[i] as HTTPRequest).get_downloaded_bytes())
+	if bytes >= 100000:
+		return "Reading the course map from OpenStreetMap (%.1f MB received)..." % (bytes / 1048576.0)
+	if secs < 20.0:
+		return "Reading the course map from OpenStreetMap..."
+	return "Waiting for OpenStreetMap's map servers (%d:%02d). They are busy; this can take a few minutes..." % [int(secs) / 60, int(secs) % 60]
 
 
 ## Fetches every URL, PARALLEL at a time; [[code, bytes], ...] in order.
@@ -475,14 +548,29 @@ func _http_get(url: String) -> Array:
 
 ## [status code (0 on failure), body bytes].
 func _request(url: String, method: int, body: String, headers: Array, timeout := 120.0) -> Array:
+	return await _send(_make_request(timeout), url, method, body, headers)
+
+
+## A new HTTPRequest child, ready for _send.
+func _make_request(timeout: float) -> HTTPRequest:
 	var req := HTTPRequest.new()
 	req.timeout = timeout
-	if not OS.has_feature("web"):
-		req.use_threads = true
-		headers = headers + ["User-Agent: " + USER_AGENT]
+	# Polled each frame, not on a thread: when a threaded request times out
+	# (or is cancelled) Godot waits for its thread, which sits in a blocking
+	# read until the server lets go, freezing the game for a minute or more
+	# (seen on West Essex with a busy map server). Big chunks keep it fast.
+	req.use_threads = false
+	req.download_chunk_size = DOWNLOAD_CHUNK
 	add_child(req)
 	if configure_request.is_valid():
 		configure_request.call(req)
+	return req
+
+
+## Sends `req` and frees it; [status code (0 on failure), body bytes].
+func _send(req: HTTPRequest, url: String, method: int, body: String, headers: Array) -> Array:
+	if not OS.has_feature("web"):
+		headers = headers + ["User-Agent: " + USER_AGENT]
 	var err := req.request(url, PackedStringArray(headers), method, body)
 	if err != OK:
 		req.queue_free()
