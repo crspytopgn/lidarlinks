@@ -68,7 +68,13 @@ Cacti (`DesertPlants`): saguaros (6 to 11 m, 16 ribs, up to four arms), barrel
 cacti and prickly pear clumps, a few variants each, drawn for the whole course
 in MultiMeshes by 400 m area (saguaros to 1.4 km on High, small cacti to 220 m;
 less on Low and Medium). Saguaro trunks are solid; their arms and the small
-cacti slow the ball like a canopy or bush.
+cacti slow the ball like a canopy or bush. The saguaros and barrels are
+scanned models where they're there: PlantCatalog's on Sketchfab (CC BY,
+`tools/sketchfab/models.json`, `cactus_saguaro_0` to `_3` and
+`cactus_barrel_0` to `_3`), cut to 3,000 and 1,500 triangles without their
+flowers, fine spines and fuzz, each saguaro scaled to its variant's height
+and stood on its foot so the obstacles still match. The prickly pear is
+still built here.
 
 Nothing is placed on a tee, fairway, green, fringe or bunker (checked by
 `designer_tests.gd`), and plants keep 14 to 22 m off each line of play.

@@ -57,3 +57,4 @@ tools/audio/.cache/
 
 # Textures Godot extracts from the Sketchfab glbs on import
 game/assets/props/sketchfab/*.jpg
+game/assets/props/sketchfab/*.png
