@@ -71,7 +71,7 @@ const LAND_SAMPLES_PER_STEP := 20000
 ## Goes up whenever a build gives a better course (new detection, trees,
 ## walls...): courses built before it offer "Update" on the Courses page.
 ## Saved in each course's source as "builder" (RealCourseUpdate).
-const BUILDER_VERSION := 3
+const BUILDER_VERSION := 4  ## 4: Mapterhorn lidar, more aerial photos
 
 var busy := false
 ## Use national lidar and aerial photos where they cover the course.
@@ -293,7 +293,8 @@ func _build(place: Dictionary) -> DesignedCourse:
 			return null
 		var dtm_missing := 0
 		for i in lidar.chunks.size():
-			if got[i][0] != 200:
+			# A tile service has no tile where it has no data.
+			if got[i][0] != 200 and not (lidar.chunks[i].has("tile") and got[i][0] == 404):
 				dtm_missing += 1
 		for i in got.size():
 			if got[i][0] == 200:

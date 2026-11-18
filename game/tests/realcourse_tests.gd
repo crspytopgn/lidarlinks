@@ -272,16 +272,20 @@ func _test_national_lidar() -> void:
 	check(str(NationalLidar.source_for(51.4, -0.3).get("id", "")) == "ea", "England uses the Environment Agency")
 	check(str(NationalLidar.source_for(52.2, 5.2).get("id", "")) == "ahn", "the Netherlands use AHN")
 	check(str(NationalLidar.source_for(36.57, -121.95).get("id", "")) == "3dep", "California uses 3DEP")
-	check(NationalLidar.source_for(-33.9, 151.2).is_empty(), "no service for Sydney yet")
+	check(str(NationalLidar.source_for(-33.9, 151.2).get("id", "")) == "mapterhorn", "Sydney tries Mapterhorn")
+	check(str(NationalLidar.source_for(56.34, -2.80).get("id", "")) == "mapterhorn", "St Andrews uses Mapterhorn")
+	var eng := NationalLidar.sources_for(51.4, -0.3)
+	check(eng.size() == 2 and eng[1]["id"] == "mapterhorn", "England falls back to Mapterhorn")
 	check(str(NationalLidar.source_for(51.3, 4.55).get("id", "")) == "vl", "Flanders uses DHMV")
 	check(str(NationalLidar.source_for(51.23, 6.85).get("id", "")) == "nrw", "Duesseldorf uses Geobasis NRW")
 	check(str(NationalLidar.source_for(59.93, 10.75).get("id", "")) == "no", "Oslo uses Kartverket")
 	check(str(NationalLidar.source_for(35.6, 139.7).get("id", "")) == "gsi", "Tokyo uses the GSI tiles")
 	var both := NationalLidar.sources_for(51.4, 3.8)
-	check(both.size() == 2 and both[1]["id"] == "ahn", "Zeeland falls back from Flanders to AHN")
+	check(both.size() == 3 and both[1]["id"] == "ahn", "Zeeland falls back from Flanders to AHN")
 	var vl := NationalLidar.new(_lidar_source("vl"), [51.30, 4.55, 51.302, 4.553])
 	check(vl.url(vl.chunks[0], false).contains("BBOX=4.5500000,51.3000000,4.5530000,51.3020000"), "WCS 1.0 box is west, south, east, north")
 	_test_gsi_tiles()
+	_test_mapterhorn_tiles()
 	var l := NationalLidar.new(NationalLidar.source_for(51.4, -0.3), [51.40, -0.31, 51.42, -0.28])
 	# About 2.1 km by 2.2 km at 1 m: 3 x 3 requests of at most 1000 px.
 	check(l.chunks.size() == 9, "chunks: %d" % l.chunks.size())
@@ -363,6 +367,28 @@ func _test_gsi_tiles() -> void:
 	check(l.coverage() > 0.2, "coverage from the coarse tile: %f" % l.coverage())
 
 
+## Mapterhorn: 512 px Terrarium WebP tiles, counted four to a 256 px
+## tile against the cap.
+func _test_mapterhorn_tiles() -> void:
+	var box := [56.340, -2.810, 56.350, -2.795]
+	var l := NationalLidar.new(_lidar_source("mapterhorn"), box)
+	check(not l.chunks.is_empty() and int(l.chunks[0]["cols"]) == 512, "512 px tile chunks")
+	check(l.url(l.chunks[0], false).begins_with("https://tiles.mapterhorn.com/16/"), "zoom 16 first")
+	var big := NationalLidar.new(_lidar_source("mapterhorn"), [56.30, -2.90, 56.40, -2.70])
+	for c in big.chunks:
+		check((c["tile"] as Vector3i).z == 15, "a big box skips zoom 16")
+		break
+	# Height 12.5 m: 32780.5 = R 128, G 12, B 128.
+	var img := Image.create(512, 512, false, Image.FORMAT_RGB8)
+	img.fill(Color8(128, 12, 128))
+	var c0: Dictionary = l.chunks[0]
+	check(l.add(c0, img.save_webp_to_buffer(false), false), "WebP Terrarium tile loads")
+	var b: Array = c0["box"]
+	var h := l.ground_at(lerpf(b[0], b[2], 0.5), lerpf(b[1], b[3], 0.5))
+	check(absf(h - 12.5) < 0.01, "Terrarium height: %f" % h)
+	check(GeoRaster.from_terrarium(PackedByteArray([1, 2, 3]), b) == null, "junk is no tile")
+
+
 func _test_photo_trees() -> void:
 	# A 100 x 100 m photo at 1 m: light fairway grass with a dark green
 	# 12 m clump of trees in the middle.
@@ -377,6 +403,16 @@ func _test_photo_trees() -> void:
 	check(AerialPhotos.source_for(52.2, 5.2).get("id", "") == "pdok", "Dutch photos from PDOK")
 	check(AerialPhotos.source_for(48.2, 16.3).get("id", "") == "basemap", "Vienna photos from basemap.at")
 	check(AerialPhotos.source_for(35.6, 139.7).get("id", "") == "gsi", "Tokyo photos from GSI")
+	check(AerialPhotos.source_for(48.1, 11.6).get("id", "") == "by", "Munich photos from Bavaria")
+	check(AerialPhotos.source_for(52.2, 21.0).get("id", "") == "pl", "Warsaw photos from GUGiK")
+	check(AerialPhotos.source_for(50.5, 4.9).get("id", "") == "wal", "Namur photos from Wallonia")
+	check(AerialPhotos.source_for(-33.87, 151.2).get("id", "") == "nsw", "Sydney photos from NSW")
+	var us := AerialPhotos.sources_for(36.57, -121.95)
+	check(us.size() == 2 and us[0]["id"] == "naip" and us[1]["id"] == "usgs", "US: full NAIP, then the basemap")
+	var ee := AerialPhotos.new(AerialPhotos.source_for(59.437, 24.75), [59.436, 24.749, 59.438, 24.752])
+	var eu := ee.urls()[0]
+	var ty := (1 << ee.zoom) - 1 - ee.origin.y
+	check(eu.ends_with("/%d/%d/%d.jpg" % [ee.zoom, ee.origin.x, ty]), "Estonia TMS rows from the south: " + eu)
 	var vl := AerialPhotos.new(AerialPhotos.source_for(51.30, 4.55), [51.300, 4.550, 51.302, 4.553])
 	var u := vl.urls()[0]
 	var bb := u.get_slice("BBOX=", 1).get_slice("&", 0).split(",")

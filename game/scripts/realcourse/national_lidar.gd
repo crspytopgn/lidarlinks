@@ -14,14 +14,16 @@ extends RefCounted
 
 const CHUNK := 1000  ## pixels a side per request at most
 const RES := 1.0  ## metres per pixel asked for
-const MAX_TILE_CHUNKS := 256  ## tiles per layer at most, for tile sources
+const MAX_TILE_CHUNKS := 256  ## 256 px tiles per layer at most (a 512 px tile counts 4)
 
 ## Each source: the box it may cover (south, west, north, east; gaps
 ## outside the country come back as no data), how to ask for a box, and
 ## the credit its licence asks for. URL placeholders: {s} {w} {n} {e}
 ## (degrees), {cols} {rows} (pixels), {layer} (the DTM or DSM name).
 ## A "tiles" source lists tile layers instead, finest first, each a URL
-## with {z} {x} {y} and its zoom; the finest that has a point wins.
+## with {z} {x} {y} and its zoom (and "size" and "encoding" when not 256 px
+## GSI PNGs); the finest that has a point wins. A tile that isn't there
+## (404) is no data, not a failed download.
 ## Smaller areas come first: where boxes overlap, the first service whose
 ## answer covers the course is used.
 const SOURCES := [
@@ -102,6 +104,22 @@ const SOURCES := [
 		"query": "?bbox={w},{s},{e},{n}&bboxSR=4326&imageSR=4326&size={cols},{rows}&format=tiff&pixelType=F32&noData=-9999&interpolation=RSP_BilinearInterpolation&f=image",
 		"credit": "Lidar: USGS 3D Elevation Program, public domain",
 	},
+	# Last, everywhere: Mapterhorn's tiles merge the open national lidar
+	# of many countries (Scotland, Wales, Denmark, Sweden, Finland,
+	# Poland, Germany, Canada, New Zealand and more). Only zoom 15 and 16
+	# (about 2 m and 1 m a pixel at 512 px): coarser zooms are 5 to 30 m
+	# models, no better than the Terrain Tiles.
+	{
+		"id": "mapterhorn", "name": "Mapterhorn open lidar (1 to 2 m)",
+		"boxes": [[-85.0, -180.0, 85.0, 180.0]],
+		"format": "tiles",
+		"layers": [
+			{"url": "https://tiles.mapterhorn.com/{z}/{x}/{y}.webp", "zoom": 16, "size": 512, "encoding": "terrarium"},
+			{"url": "https://tiles.mapterhorn.com/{z}/{x}/{y}.webp", "zoom": 15, "size": 512, "encoding": "terrarium"},
+		],
+		"dtm": "", "dtm_layer": "", "dsm": "", "dsm_layer": "", "query": "",
+		"credit": "Elevation: Mapterhorn (mapterhorn.com/attribution), from open national lidar (CC BY 4.0, OGL and others)",
+	},
 ]
 
 var source: Dictionary
@@ -163,13 +181,15 @@ func _tile_chunks(box: Array) -> void:
 		var x1 := int(TerrainTiles._tile_x(box[3], z))
 		var y0 := int(TerrainTiles._tile_y(box[2], z))
 		var y1 := int(TerrainTiles._tile_y(box[0], z))
-		if (x1 - x0 + 1) * (y1 - y0 + 1) > MAX_TILE_CHUNKS:
+		var size := int(layer.get("size", 256))
+		if (x1 - x0 + 1) * (y1 - y0 + 1) * (size / 256) * (size / 256) > MAX_TILE_CHUNKS:
 			continue
 		for y in range(y0, y1 + 1):
 			for x in range(x0, x1 + 1):
 				chunks.append({
 					"box": [TerrainTiles.tile_lat(y + 1, z), TerrainTiles.tile_lon(x, z), TerrainTiles.tile_lat(y, z), TerrainTiles.tile_lon(x + 1, z)],
-					"cols": 256, "rows": 256, "tile": Vector3i(x, y, z),
+					"cols": size, "rows": size, "tile": Vector3i(x, y, z),
+					"encoding": str(layer.get("encoding", "gsi")),
 					"url": str(layer["url"]).format({"z": z, "x": x, "y": y}),
 				})
 
@@ -195,6 +215,8 @@ func add(chunk: Dictionary, bytes: PackedByteArray, surface: bool) -> bool:
 	var r: GeoRaster
 	if source["format"] == "bil":
 		r = GeoRaster.from_bil(bytes, chunk["cols"], chunk["rows"], chunk["box"])
+	elif source["format"] == "tiles" and chunk.get("encoding", "gsi") == "terrarium":
+		r = GeoRaster.from_terrarium(bytes, chunk["box"])
 	elif source["format"] == "tiles":
 		r = GeoRaster.from_gsi_png(bytes, chunk["box"])
 	else:
