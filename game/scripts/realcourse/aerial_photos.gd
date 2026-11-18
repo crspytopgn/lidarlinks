@@ -54,6 +54,12 @@ const SOURCES := [
 		"credit": "Aerial photo: Bayerische Vermessungsverwaltung, CC BY 4.0",
 	},
 	{
+		"id": "cz", "name": "CUZK orthophoto, Czechia",
+		"boxes": [[48.5, 12.0, 51.1, 18.9]],
+		"url": "https://ags.cuzk.cz/arcgis1/services/ORTOFOTO/MapServer/WMSServer?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap&LAYERS=0&STYLES=&CRS=EPSG:3857&BBOX={bbox}&WIDTH=256&HEIGHT=256&FORMAT=image/jpeg",
+		"credit": "Aerial photo: CUZK (Czech Office for Surveying, Mapping and Cadastre), CC BY 4.0",
+	},
+	{
 		"id": "pdok", "name": "PDOK aerial photo, Netherlands",
 		"boxes": [[50.70, 3.20, 53.60, 7.25]],
 		"url": "https://service.pdok.nl/hwh/luchtfotorgb/wmts/v1_0/Actueel_orthoHR/EPSG:3857/{z}/{x}/{y}.jpeg",
@@ -78,6 +84,12 @@ const SOURCES := [
 		"credit": "Aerial photo: IGN (Geoplateforme), Licence Ouverte 2.0",
 	},
 	{
+		"id": "pt", "name": "DGT OrtoSat 2023, Portugal",
+		"boxes": [[36.9, -9.6, 42.2, -6.1]],
+		"url": "https://ortos.dgterritorio.gov.pt/wms/ortosat2023?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap&LAYERS=ortoSat2023-CorVerdadeira&STYLES=&CRS=EPSG:3857&BBOX={bbox}&WIDTH=256&HEIGHT=256&FORMAT=image/jpeg",
+		"credit": "Aerial photo: Direcao-Geral do Territorio (DGT), OrtoSat 2023, CC BY 4.0",
+	},
+	{
 		"id": "pnoa", "name": "PNOA aerial photo, Spain",
 		"boxes": [[35.9, -9.4, 43.9, 4.4], [27.6, -18.2, 29.5, -13.4]],
 		"url": "https://www.ign.es/wmts/pnoa-ma?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=OI.OrthoimageCoverage&STYLE=default&TILEMATRIXSET=GoogleMapsCompatible&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}&FORMAT=image/jpeg",
@@ -88,6 +100,18 @@ const SOURCES := [
 		"boxes": [[49.0, 14.1, 54.9, 24.2]],
 		"url": "https://mapy.geoportal.gov.pl/wss/service/PZGIK/ORTO/WMS/StandardResolution?SERVICE=WMS&VERSION=1.1.1&REQUEST=GetMap&LAYERS=Raster&STYLES=&SRS=EPSG:3857&BBOX={bbox}&WIDTH=256&HEIGHT=256&FORMAT=image/jpeg",
 		"credit": "Aerial photo: GUGiK (geoportal.gov.pl), open data",
+	},
+	{
+		"id": "vic", "name": "Vicmap aerial, Victoria",
+		"boxes": [[-39.2, 140.9, -33.9, 150.0]],
+		"url": "https://base.maps.vic.gov.au/wmts/AERIAL_WM_256/EPSG:3857:256/{z}/{x}/{y}.png",
+		"credit": "Aerial photo: Vicmap Basemap, State of Victoria (DEECA), CC BY 4.0",
+	},
+	{
+		"id": "qld", "name": "Queensland Government aerial, Queensland",
+		"boxes": [[-29.2, 137.9, -9.0, 153.6]],
+		"url": "https://spatial-img.information.qld.gov.au/arcgis/rest/services/Basemaps/LatestStateProgram_AllUsers/ImageServer/tile/{z}/{y}/{x}",
+		"credit": "Aerial photo: State of Queensland, CC BY 4.0",
 	},
 	{
 		"id": "nsw", "name": "NSW Imagery, New South Wales",

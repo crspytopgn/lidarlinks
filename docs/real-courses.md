@@ -142,6 +142,10 @@ photo**), to check and trace the course against.
 | Poland | GUGiK orthophoto (WMS) | open data (Prawo geodezyjne art. 40a) |
 | Estonia | Maa-amet orthophoto (TMS) | open data with credit |
 | New South Wales (Australia) | Spatial Services NSW Imagery | CC BY 4.0 |
+| Victoria (Australia) | Vicmap Basemap aerial | CC BY 4.0 |
+| Queensland (Australia) | Queensland Government latest state imagery | CC BY 4.0 |
+| Czechia | CUZK orthophoto (WMS) | CC BY 4.0 |
+| Portugal | DGT OrtoSat 2023 (WMS) | CC BY 4.0 |
 
 **Satellite guide (designer only):** on a real course the designer also
 offers **Show the satellite guide (Esri)**. It streams Esri World Imagery

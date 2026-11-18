@@ -407,6 +407,10 @@ func _test_photo_trees() -> void:
 	check(AerialPhotos.source_for(52.2, 21.0).get("id", "") == "pl", "Warsaw photos from GUGiK")
 	check(AerialPhotos.source_for(50.5, 4.9).get("id", "") == "wal", "Namur photos from Wallonia")
 	check(AerialPhotos.source_for(-33.87, 151.2).get("id", "") == "nsw", "Sydney photos from NSW")
+	check(AerialPhotos.source_for(-37.95, 145.05).get("id", "") == "vic", "Melbourne photos from Vicmap")
+	check(AerialPhotos.source_for(-27.5, 153.0).get("id", "") == "qld", "Brisbane photos from Queensland")
+	check(AerialPhotos.source_for(50.08, 14.42).get("id", "") == "cz", "Prague photos from CUZK")
+	check(AerialPhotos.source_for(37.1, -8.2).get("id", "") == "pt", "Algarve photos from DGT")
 	var us := AerialPhotos.sources_for(36.57, -121.95)
 	check(us.size() == 2 and us[0]["id"] == "naip" and us[1]["id"] == "usgs", "US: full NAIP, then the basemap")
 	for src in AerialPhotos.SOURCES:
