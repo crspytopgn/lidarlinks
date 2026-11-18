@@ -464,6 +464,32 @@ or not at all. What that found, and what the builder now does:
 - **Tees and pins where they belong:** a tee point mapped on the last
   hole's green is moved off it, and a hole whose line ends with no green
   near gets its pin moved out of the water it was drawn into.
+- **The championship course first:** a club's courses are listed by
+  holes, then the "Championship" or "Old" course, then length, and a
+  search ranks a golf course with such a name higher, so Carnoustie and
+  Sunningdale open the course people mean. When nothing is found the
+  search also tries the club's last words with "golf course" (Real Club
+  Valderrama, Engadine Golf Club Samedan). Names come in English where
+  the map has one (`display_name`; Dubai Creek's map name is Arabic).
+- **Pars that fit the hole:** a mapped par that can't be right for the
+  length (a par 3 over 270 m, a par 4 under 200 m or over 520 m, a par 5
+  under 380 m) is replaced by the par for the length.
+- **Pins on the flat:** after the greens are graded, each pin is moved to
+  the gentlest spot within 14 m, at least 3 m from the edge, where its
+  spot is steeper than 3.5 % (`CoursePlayability.place_pins`).
+- **Holes not on the map yet:** the builder counts the numbers missing
+  from a course's holes and says so when it's done ("4 of its holes
+  aren't on OpenStreetMap yet"), as at Bandon Dunes and Fancourt.
+- **Unlabelled courses parted:** a club whose holes have no course names
+  is parted by letters in their numbers (Jockey Club Argentino's 1A to
+  18C), or, with no numbers at all (Royal Golf Dar Es Salam's 45), by how
+  the holes follow on, each green to the nearest free tee within 150 m;
+  rounds of 9 or more holes become courses, numbered in playing order.
+- **Network trouble:** with no connection the build stops in about 5 s
+  ("Couldn't reach OpenStreetMap's map server"), with the elevation
+  tiles down in about 12 s, and Cancel stops a build within a second and
+  a half at any step with nothing left running; the next build works.
+  `tools/realcourse_bench/stress.sh` checks all three.
 
 `tools/realcourse_bench/e2e.sh` builds a course the way the game does and
 audits it (each hole's tee and pin surfaces, green slope, par for its

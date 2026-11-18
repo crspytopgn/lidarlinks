@@ -31,6 +31,9 @@ func run_all() -> Array[String]:
 	_test_terraces_eased_out()
 	_test_streams_hold_water()
 	_test_island_green_kept_dry()
+	_test_missing_holes_counted()
+	_test_pin_off_a_bank()
+	_test_unlabelled_courses_parted()
 	_test_playability_steps()
 	_test_courses_at_a_club()
 	_test_boundary_by_name()
@@ -535,7 +538,7 @@ func _test_extra_trees() -> void:
 			var x := -120.0 + n * 12.0 + (6.0 if name == "New" else 0.0)
 			two.append(_way({"golf": "hole", "ref": str(n + 1), "golf:course:name": name}, f, [Vector2(x, -100), Vector2(x, 100)], false))
 	var club := RealCourseBuilder.new({"elements": two}, 51.0, -1.0)
-	check(Array(club.course_names()) == ["New", "Old"], "both courses named: %s" % club.course_names())
+	check(Array(club.course_names()) == ["Old", "New"], "both courses named, the Old (the club's main course) first: %s" % club.course_names())
 	club.course_filter = "Old"
 	var old := club.build(func(_la: float, _lo: float) -> float: return 10.0)
 	check(old.holes.size() == 18 and old.course_name == "Old", "the Old course alone (%d holes)" % old.holes.size())
@@ -1149,6 +1152,122 @@ func _test_island_green_kept_dry() -> void:
 	check(half.size() == 1 and not Geometry2D.is_point_in_polygon(Vector2(55, 0), half[0]), "a green half in the pond trims its edge")
 
 
+## Bandon Dunes has holes 1, 9, 10 and 18 mapped: 14 of 18 are missing,
+## and the build says so. Holes 1 and 3 of a nine leave 7.
+func _test_missing_holes_counted() -> void:
+	var f := GeoFrame.new(43.18, -124.39)
+	for case: Array in [[["1", "9", "10", "18"], 14], [["1", "3"], 7], [["", ""], 0]]:
+		var els: Array = []
+		els.append(_way({"leisure": "golf_course", "name": "Dunes"}, f, _rect(Vector2(-500, -500), Vector2(500, 500))))
+		var x := -300.0
+		for ref: String in case[0]:
+			els.append(_way({"golf": "hole", "ref": ref, "par": "4"}, f, [Vector2(x, -150), Vector2(x, 150)], false))
+			x += 120.0
+		var b := RealCourseBuilder.new({"elements": els}, 43.18, -124.39)
+		check(not RealCourseBuilder.par_fits(4, 175.0) and RealCourseBuilder.par_fits(3, 263.0) and RealCourseBuilder.par_fits(4, 475.0) and not RealCourseBuilder.par_fits(5, 300.0), "a mapped par checked against the hole's length")
+		check(b.missing_holes() == case[1], "holes %s: %d missing (%d)" % [case[0], case[1], b.missing_holes()])
+
+
+## A pin mapped on a bank inside a green that holds a ball elsewhere goes
+## to the gentlest spot near it, on the green; a pin on flat ground stays.
+func _test_pin_off_a_bank() -> void:
+	var c := DesignedCourse.blank(Vector2(200, 200))
+	for j in c.rows:
+		for i in c.cols:
+			var p := c.sample_pos(i, j)
+			c.heights[j * c.cols + i] = 3.0 + (0.08 * (p.x - 4.0) if p.x > 4.0 else 0.0)
+	c.shapes.append(CourseShape.new(Surface.Type.GREEN, PackedVector2Array([Vector2(-16, -14), Vector2(16, -14), Vector2(16, 14), Vector2(-16, 14)])))
+	var h := DesignedHole.new()
+	h.par = 4
+	h.pin = Vector2(10, 0)
+	h.tees = PackedVector2Array([Vector2(0, -300)])
+	c.holes.append(h)
+	var flat := DesignedHole.new()
+	flat.par = 4
+	flat.pin = Vector2(-8, 4)
+	flat.tees = PackedVector2Array([Vector2(-8, -300)])
+	c.holes.append(flat)
+	check(CoursePlayability.place_pins(c) == 1, "one pin moved")
+	check(h.pin.x < 4.0 and h.pin.distance_to(Vector2(10, 0)) <= CoursePlayability.PIN_SEARCH, "the pin left the bank for the flat (%s)" % h.pin)
+	check(flat.pin == Vector2(-8, 4), "a pin on flat ground stays")
+	# A pond beside the green, south of it: the pin by the shore moves away.
+	c.shapes.append(CourseShape.new(Surface.Type.WATER, PackedVector2Array([Vector2(-40, -40), Vector2(40, -40), Vector2(40, -15), Vector2(-40, -15)])))
+	flat.pin = Vector2(-8, -10)
+	check(CoursePlayability.place_pins(c) == 1, "the pin by the water moved")
+	check(flat.pin.y > -15.0 + CoursePlayability.PIN_WATER - 0.01, "it keeps %.0f m from the water (%s)" % [CoursePlayability.PIN_WATER, flat.pin])
+
+
+## A club whose 27 holes have no numbers or course names (Royal Golf Dar
+## Es Salam) is parted by how its holes follow on, green to next tee, and
+## numbered in that order; holes numbered 1A to 18A and 1C to 18C (Jockey
+## Club Argentino) are parted by their letter.
+func _test_unlabelled_courses_parted() -> void:
+	var f := GeoFrame.new(33.9, -6.9)
+	var els: Array = []
+	els.append(_way({"leisure": "golf_course", "name": "Royal Golf Test"}, f, _rect(Vector2(-1700, -900), Vector2(1700, 900))))
+	var lines: Array = []
+	for k in 18:
+		lines.append([Vector2(-1600 + k * 170.0, -500), Vector2(-1600 + k * 170.0 + 150.0, -500)])
+	for k in 9:
+		lines.append([Vector2(-800 + k * 170.0, 500), Vector2(-800 + k * 170.0 + 150.0, 500)])
+	var order := range(lines.size())
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 3
+	for i in range(order.size() - 1, 0, -1):
+		var j := rng.randi_range(0, i)
+		var t: int = order[i]
+		order[i] = order[j]
+		order[j] = t
+	for i: int in order:
+		els.append(_way({"golf": "hole", "par": "3"}, f, lines[i], false))
+	var b := RealCourseBuilder.new({"elements": els}, 33.9, -6.9)
+	var names := b.course_names()
+	check(names.size() == 2, "27 unnumbered holes part into two courses (%s)" % names)
+	if names.size() == 2:
+		b.course_filter = names[0]
+		var c := b.build(func(_la: float, _lo: float) -> float: return 10.0)
+		check(c.holes.size() == 18, "the eighteen first (%d holes)" % c.holes.size())
+		var in_order := true
+		for k in range(1, c.holes.size()):
+			if c.holes[k].tees[0].x < c.holes[k - 1].tees[0].x:
+				in_order = false
+		check(in_order, "its holes numbered in playing order")
+	var two: Array = [els[0]]
+	for k in 18:
+		for letter in ["A", "C"]:
+			var z := -500.0 if letter == "A" else 500.0
+			two.append(_way({"golf": "hole", "ref": "%d%s" % [k + 1, letter], "par": "3"}, f, [Vector2(-1600 + k * 170.0, z), Vector2(-1600 + k * 170.0 + 150.0, z)], false))
+	var jockey := RealCourseBuilder.new({"elements": two}, 33.9, -6.9)
+	check(jockey.course_names().size() == 2, "holes 1A to 18A and 1C to 18C are two courses (%s)" % jockey.course_names())
+	# Two courses both numbered 1 to 18 (Whistling Straits): each 1st
+	# starts a course, the next number follows on from its last green.
+	var twin: Array = [els[0]]
+	for k in 18:
+		for z in [-500.0, 500.0]:
+			twin.append(_way({"golf": "hole", "ref": str(k + 1), "par": "3"}, f, [Vector2(-1600 + k * 170.0, z), Vector2(-1600 + k * 170.0 + 150.0, z)], false))
+	var straits := RealCourseBuilder.new({"elements": twin}, 33.9, -6.9)
+	var twin_names := straits.course_names()
+	check(twin_names.size() == 2, "two courses both numbered 1 to 18 are parted (%s)" % twin_names)
+	if twin_names.size() == 2:
+		straits.course_filter = twin_names[1]
+		var c2 := straits.build(func(_la: float, _lo: float) -> float: return 10.0)
+		var one_row := c2.holes.size() == 18
+		for h in c2.holes:
+			if absf(h.tees[0].y - c2.holes[0].tees[0].y) > 1.0:
+				one_row = false
+		check(one_row, "each takes its own row of holes (%d holes)" % c2.holes.size())
+	# 36 unnumbered holes in one run (the 18th green beside the next
+	# course's 1st tee) are cut into two rounds of 18.
+	var run: Array = [els[0]]
+	for k in 36:
+		var row := -500.0 if k < 18 else 500.0
+		var x := -1600 + (k % 18) * 170.0
+		run.append(_way({"golf": "hole", "par": "3"}, f, [Vector2(x, row), Vector2(x + 150.0, row)], false))
+	run.append(_way({"golf": "hole", "par": "3"}, f, [Vector2(-1600 + 17 * 170.0 + 150.0, -500), Vector2(-1600, 500)], false))
+	var long_run := RealCourseBuilder.new({"elements": run}, 33.9, -6.9)
+	check(long_run.course_names().size() == 2, "a 37-hole run is two courses (%s)" % long_run.course_names())
+
+
 ## Each step on its own: smoothing keeps the mean and calms speckle, a tee
 ## too far for a par 3 is dropped while the hole has another, and a green
 ## already flat is left as measured.
@@ -1316,6 +1435,15 @@ func _test_search_ranking() -> void:
 	var out := RealCourseFetcher.rank(r, "Pebble Beach Golf Links")
 	var names: Array = out.map(func(d: Dictionary) -> String: return d["name"])
 	check(names == ["Pebble Beach Golf Course", "Spyglass Hill Golf Course", "Poppy Hills Golf Course", "", "Pebble Beach Golf Links"], "search ranking (%s)" % [names])
+	var club := [{"name": "The Carnoustie Burnside Course", "golf": true}, {"name": "The Carnoustie Buddon Course", "golf": true}, {"name": "The Carnoustie Championship Course", "golf": true}]
+	check(str(RealCourseFetcher.rank(club, "Carnoustie Golf Links")[0]["name"]) == "The Carnoustie Championship Course", "a club's championship course first")
+	check(RealCourseBuilder.display_name({"name": "ملعب خور دبي للغولف", "name:en": "Dubai Creek Golf Course"}) == "Dubai Creek Golf Course", "an Arabic name gives way to its English one")
+	check(RealCourseBuilder.display_name({"name": "Golf de Saint-Cloud", "name:en": "Saint-Cloud Golf Club"}) == "Golf de Saint-Cloud", "a Latin-script name is kept")
+	check(RealCourseBuilder.display_name({"name": "霞ヶ関カンツリー倶楽部"}) == "霞ヶ関カンツリー倶楽部", "with no English name, its own")
+	var tries := RealCourseFetcher.search_names("Real Club Valderrama")
+	check("valderrama golf club" in Array(tries).map(func(t: String) -> String: return t.to_lower()), "a Spanish club name is also tried as a golf club (%s)" % tries)
+	check(RealCourseFetcher.search_names("Royal County Down Golf Club")[0] == "Royal County Down Golf Course", "the other ending first")
+	check(RealCourseBuilder.is_main_course("Sunningdale Old Course") and not RealCourseBuilder.is_main_course("Sunningdale New Course") and not RealCourseBuilder.is_main_course("Oldham Golf Club"), "a club's main course by name")
 	var inside := {"lat": 46.31, "lon": 7.47, "box": ["46.30", "46.32", "7.46", "7.48"]}
 	var off := {"lat": 46.32, "lon": 7.49, "box": ["46.315", "46.325", "7.485", "7.495"]}
 	check(RealCourseFetcher.near_distance(inside, 46.305, 7.465) == 0.0 and RealCourseFetcher.near_distance(off, 46.305, 7.465) > 1000.0, "the course round the clubhouse is nearest")
