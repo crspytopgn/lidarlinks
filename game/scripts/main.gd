@@ -305,6 +305,8 @@ var plants: ScannedPlants  ## real scanned plants round the tee and green (priva
 var _trail_mesh := ImmediateMesh.new()
 ## Broadcast presentation pieces (GraphicsSettings.presentation).
 var broadcast := false
+## Who Broadcast's name strip last showed (_begin_turn).
+var _lower_third_for := -1
 var gallery: Gallery  ## the ropes, crowd and grandstand (Broadcast only)
 var tracer: BallTracer
 var green_grid: GreenGrid
@@ -867,7 +869,13 @@ func _begin_turn(index: int, snap_camera: bool) -> void:
 	_update_markers()
 	_prepare_shot(snap_camera)
 	sounds.play(&"footsteps")  # stepping up to the ball
+	# The name strip, as TV golf runs it: when a different player steps up
+	# or a hole starts, not before every shot (the score bug already says
+	# whose shot it is, and the strip stacked over the caddie's read).
 	if broadcast:
+		hud.overlay.show_detail()  # the shot detail shows as each player steps up
+	if broadcast and (shooter != _lower_third_for or strokes == 0):
+		_lower_third_for = shooter
 		var thru := card.holes_played()
 		hud.overlay.lower_third(scoring.names[shooter], "%s    THRU %d    SHOT %d    %s TO THE PIN" % [
 			"E" if thru == 0 else Scorecard.format_to_par(card.to_par()), thru, strokes + 1, _pin_text().to_upper()])

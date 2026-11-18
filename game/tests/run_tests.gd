@@ -3472,6 +3472,12 @@ func _test_result_codes(game: GolfRound, rec: RoundRecord) -> void:
 	var panel := RoundSetupPanel.new()
 	root.add_child(panel)
 	panel.open(PackedStringArray([PlaceholderCourseLoader.NAME + " (built in)"]), 0, RoundSetup.new())
+	var tees: OptionButton = panel._tees
+	var was := tees.selected
+	RoundSetupPanel.step_picker(tees, 1)
+	_check(tees.selected == wrapi(was + 1, 0, tees.item_count), "the tee picker steps on")
+	RoundSetupPanel.step_picker(tees, -1)
+	_check(tees.selected == was, "and back")
 	panel._code.text = code
 	panel._open_code()
 	_check(panel.current_setup().challenge != null, "the setup page takes the code")

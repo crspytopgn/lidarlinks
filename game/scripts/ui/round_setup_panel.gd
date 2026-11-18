@@ -52,15 +52,19 @@ func _ready() -> void:
 	# No fixed width: the panel fits what is showing (handicap and team
 	# columns appear only when needed), so it stays centred on screen.
 	add_child(box)
-	box.add_child(MenuStyle.heading("Play a round", 30))
+	var title := MenuStyle.heading("PLAY A ROUND", 40)
+	title.add_theme_font_override("font", GlassTheme.display_font(700))
+	box.add_child(title)
 
+	# Two settings to a row, each a ◀ value ▶ picker as console golf sets up
+	# a round: half the height of one long column, so it fits the screen.
 	var grid := GridContainer.new()
-	grid.columns = 2
+	grid.columns = 4
 	grid.add_theme_constant_override("h_separation", 24)
 	grid.add_theme_constant_override("v_separation", 10)
 	box.add_child(grid)
 	_course = _row(grid, "Course", [])
-	_course.custom_minimum_size = Vector2(380, 36)
+	_course.custom_minimum_size = Vector2(300, 40)
 	_tees = _row(grid, "Tees", RoundSetup.TEES_NAMES)
 	_holes = _row(grid, "Holes", RoundSetup.HOLES_NAMES)
 	_pins = _row(grid, "Pins", RoundSetup.PINS_NAMES)
@@ -69,17 +73,18 @@ func _ready() -> void:
 	_firmness = _row(grid, "Greens", RoundSetup.GREEN_FIRMNESS_NAMES)
 	var greens := HBoxContainer.new()
 	greens.add_theme_constant_override("separation", 8)
-	grid.remove_child(_firmness)
+	var firm_picker := _firmness.get_parent()
+	grid.remove_child(firm_picker)
 	grid.add_child(greens)
-	greens.add_child(_firmness)
-	_firmness.custom_minimum_size = Vector2(186, 36)
+	greens.add_child(firm_picker)
+	_firmness.custom_minimum_size = Vector2(120, 40)
 	_firmness.tooltip_text = "How firm the greens are: firm greens bounce higher and grip spin harder"
 	_speed = OptionButton.new()
-	_speed.custom_minimum_size = Vector2(186, 36)
+	_speed.custom_minimum_size = Vector2(120, 40)
 	_speed.tooltip_text = "How fast the greens roll"
 	for item in RoundSetup.GREEN_SPEED_NAMES:
 		_speed.add_item(str(item))
-	greens.add_child(_speed)
+	greens.add_child(_picker(_speed))
 	_swing = _row(grid, "Swing", ["3-click meter", "Mouse swing"])
 	_play = _row(grid, "Play", PLAY_NAMES)
 	_play.item_selected.connect(_refresh.unbind(1))
@@ -102,7 +107,6 @@ func _ready() -> void:
 	for n in RoundSetup.MAX_PLAYERS:
 		counts.append("1 player" if n == 0 else "%d players" % (n + 1))
 	_count = _row(players, "Players", counts)
-	_count.custom_minimum_size = _course.custom_minimum_size
 	_count.item_selected.connect(_on_count_selected.unbind(1))
 	for i in RoundSetup.MAX_PLAYERS:
 		var row := HBoxContainer.new()
@@ -433,13 +437,57 @@ const LABEL_W := 100.0
 
 func _row(grid: GridContainer, label: String, items: Array) -> OptionButton:
 	var l := Label.new()
-	l.text = label
-	l.add_theme_font_size_override("font_size", 18)
+	l.text = label.to_upper()
+	l.add_theme_font_override("font", GlassTheme.display_font(600))
+	l.add_theme_font_size_override("font_size", 17)
+	l.add_theme_color_override("font_color", Color(1, 1, 1, 0.62))
 	l.custom_minimum_size = Vector2(LABEL_W, 0)  # lines up the separate grids
 	grid.add_child(l)
 	var opt := OptionButton.new()
-	opt.custom_minimum_size = Vector2(240, 36)
+	opt.custom_minimum_size = Vector2(240, 40)
 	for item in items:
 		opt.add_item(str(item))
-	grid.add_child(opt)
+	grid.add_child(_picker(opt))
 	return opt
+
+
+## `opt` between ‹ and › buttons that step through its items (skipping
+## disabled ones, wrapping round), as a console picker; clicking the value
+## still opens the full list. Steps emit item_selected like a pick.
+static func _picker(opt: OptionButton) -> HBoxContainer:
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 2)
+	opt.alignment = HORIZONTAL_ALIGNMENT_CENTER
+	opt.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	var blank := ImageTexture.create_from_image(Image.create(1, 1, false, Image.FORMAT_RGBA8))
+	opt.add_theme_icon_override("arrow", blank)
+	for step in [-1, 1]:
+		var b := Button.new()
+		b.text = "‹" if step < 0 else "›"
+		b.flat = true
+		b.focus_mode = Control.FOCUS_NONE
+		b.custom_minimum_size = Vector2(34, 40)
+		b.add_theme_font_override("font", GlassTheme.display_font(700))
+		b.add_theme_font_size_override("font_size", 30)
+		b.add_theme_color_override("font_color", Color(1, 1, 1, 0.7))
+		b.add_theme_color_override("font_hover_color", Color(0.914, 0.78, 0.4))
+		b.pressed.connect(func() -> void: step_picker(opt, step))
+		row.add_child(b)
+		if step < 0:
+			row.add_child(opt)
+	return row
+
+
+## The next enabled item of `opt` in direction `step`, wrapping round.
+static func step_picker(opt: OptionButton, step: int) -> void:
+	var n := opt.item_count
+	if n < 2:
+		return
+	var i := opt.selected
+	for _k in n:
+		i = wrapi(i + step, 0, n)
+		if not opt.is_item_disabled(i):
+			break
+	if i != opt.selected:
+		opt.select(i)
+		opt.item_selected.emit(i)
