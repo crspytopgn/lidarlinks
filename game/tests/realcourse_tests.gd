@@ -1527,7 +1527,7 @@ func _test_landscape() -> void:
 	lakeside.apply(lc)
 	check(absf(float(lc.source.get("sea", -1.0)) - 176.75) < 0.06, "the course gets the lake")
 	var far_east := lakeside.heights[lakeside.count / 2 * lakeside.count + 2]
-	check(far_east + 190.0 < 176.76 - 2.0, "the lake's surface is let down under its water (%.1f)" % (far_east + 190.0))
+	check(far_east + 190.0 < 176.76 - 1.5, "the lake's surface is let down under its water (%.1f)" % (far_east + 190.0))
 	var plain := RealLandscape.new(f, lc)
 	plain.rows(0, plain.count, func(lat: float, lon: float) -> float:
 		var p := f.to_local(lat, lon)

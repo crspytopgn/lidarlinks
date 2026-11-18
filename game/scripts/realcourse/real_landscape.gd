@@ -26,8 +26,8 @@ const SEA_DEPTH := -8.0
 ## metres) with hardly any land below it: the tiles hold big lakes level.
 const LAKE_SHARE := 0.03
 const LAKE_FLAT := 0.05
-const LAKE_SHORE := 0.6  ## metres above or below its level the course's ground may be its water
-const LAKE_SINK := 3.0  ## metres its surface in the tiles is let down under the water
+const LAKE_SHORE := 0.6  ## metres over its level that ground may be its water surface
+const LAKE_STEEP := 4.0
 
 var frame: GeoFrame
 var course: DesignedCourse  ## the first course: its ground and datum
@@ -115,8 +115,7 @@ func apply(c: DesignedCourse) -> void:
 		_lake_sunk = true
 		var base := float(course.source.get("base_height", 0.0))
 		for k in heights.size():
-			if absf(heights[k] + base - lake) <= LAKE_FLAT * 1.5:
-				heights[k] -= LAKE_SINK
+			heights[k] = under_lake(heights[k] + base, lake) - base
 	var saved := encode()
 	c.landscape = DesignedCourse._decode_landscape(saved)
 	c._landscape_saved = saved
@@ -128,27 +127,27 @@ func apply(c: DesignedCourse) -> void:
 
 
 ## Lets the course's own ground down under a lake where it is the lake's
-## flat water surface (lidar measures it a little above the tiles' level:
+## water surface (lidar measures it a little above the tiles' level:
 ## Whistling Straits' shore showed a flat green shelf over the water).
 static func sink_lake(c: DesignedCourse, lake: float) -> int:
 	var base := float(c.source.get("base_height", 0.0))
-	var sunk := PackedInt32Array()
-	for j in range(1, c.rows - 1):
-		for i in range(1, c.cols - 1):
-			var k := j * c.cols + i
-			var h := c.heights[k]
-			if absf(h + base - lake) > LAKE_SHORE:
-				continue
-			var flat := true
-			for o in [-1, 1, -c.cols, c.cols]:
-				if absf(c.heights[k + o] - h) > 0.08:
-					flat = false
-					break
-			if flat:
-				sunk.append(k)
-	for k in sunk:
-		c.heights[k] -= LAKE_SINK
-	return sunk.size()
+	var n := 0
+	for k in c.heights.size():
+		var h := c.heights[k] + base
+		var low := under_lake(h, lake)
+		if low < h:
+			c.heights[k] = low - base
+			n += 1
+	return n
+
+
+## Ground `h` near a lake's `level` steepened down under its water: the
+## same above LAKE_SHORE over it, LAKE_STEEP times as far under below,
+## so the water's flat surface in the data goes under and the shore keeps
+## its line (a fixed drop drew it as a sawtooth on the 2 m grid).
+static func under_lake(h: float, level: float) -> float:
+	var top := level + LAKE_SHORE
+	return h if h >= top else top - (top - h) * LAKE_STEEP
 
 
 ## True when hardly any of the course's own ground lies below sea level
