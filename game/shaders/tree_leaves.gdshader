@@ -140,6 +140,16 @@ void fragment() {
 		// face the sun, some the sky, some are deep in the crown. 0.85 to
 		// 1.1 left a crown one flat, brush-stroked mass (2K25 quality pass).
 		col = sc.rgb * scan_tint * mix(0.68, 1.2, info.r);
+		// The atlas is about 256 px a cluster, so close up each leaf is a
+		// flat smear of one green: break it into the light and dark of
+		// separate leaves and veins at about 1/40 of a card, fading out as
+		// the card shrinks (mip level) so far crowns don't shimmer.
+		vec2 q = UV * 40.0 + info.r * 53.0;
+		vec2 qi = floor(q);
+		vec2 qf = fract(q);
+		qf = qf * qf * (3.0 - 2.0 * qf);
+		float n = mix(mix(hash(qi), hash(qi + vec2(1.0, 0.0)), qf.x), mix(hash(qi + vec2(0.0, 1.0)), hash(qi + vec2(1.0, 1.0)), qf.x), qf.y);
+		col *= 1.0 + (n - 0.5) * 0.45 * (1.0 - clamp(lod / 3.0, 0.0, 1.0));
 	} else if (core && has_spray && !needles) {
 		// The crown's shaded middle: solid inside a round outline that the
 		// spray's leaves make ragged.
