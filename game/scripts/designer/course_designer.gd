@@ -1198,7 +1198,7 @@ func _on_real_built(c: DesignedCourse, summary: Dictionary) -> void:
 		o.save_file(o.save_path())
 	_set_status("Built %s: %d holes, %d areas, %d trees%s%s. %s" % [c.course_name, int(summary.get("holes", 0)),
 		int(summary.get("areas", 0)), int(summary.get("trees", 0)),
-		_filled_note(summary),
+		_filled_note(summary) + (", %d steep greens graded to hold a ball" % int(summary["greens_graded"]) if int(summary.get("greens_graded", 0)) > 0 else ""),
 		(", ground every %.1f m" % float(summary.get("metres_per_pixel", 0))) if summary.has("metres_per_pixel") else "",
 		_lidar_note(summary) + ("Saved; polish it here, then play it." if saved else "Save it to keep it.") +
 		(" Also saved: %s (Open)." % ", ".join(others.map(func(o: DesignedCourse) -> String: return o.course_name)) if not others.is_empty() else "")])
