@@ -414,6 +414,7 @@ func _build(place: Dictionary) -> DesignedCourse:
 	# Land cover everywhere: trees the map lacks and, without a photo, the
 	# ground colours round the course.
 	var cover: Image = null
+	var land_cover: LandCover = null
 	if use_land_cover:
 		var land := LandCover.new(gb)
 		var lgot := await _fetch_all(PackedStringArray([land.url()]), "Fetching the land cover", TRIES)
@@ -422,6 +423,7 @@ func _build(place: Dictionary) -> DesignedCourse:
 		await _step("Reading the land cover...")
 		if lgot[0][0] == 200 and land.add(lgot[0][1]) and land.coverage() >= 0.25:
 			builder.extra_credits.append(LandCover.CREDIT)
+			land_cover = land
 			if builder.lidar_trees.is_empty() and builder.photo_trees.is_empty():
 				builder.land_trees = land.tree_points(builder.frame, builder.area)
 			if photo == null:
@@ -474,6 +476,16 @@ func _build(place: Dictionary) -> DesignedCourse:
 		await _add_landscape(builder, [course] + others)
 		if _cancelled:
 			return null
+		if land_cover != null:
+			await _step("Letting the sea in...")
+			for c: DesignedCourse in [course] + others:
+				RealLandscape.sea_from_cover(c, builder.frame, land_cover)
+		# A links course by the sea with no photo to read its fescue from.
+		if builder.photo == null:
+			var none: Array[PackedVector2Array] = []
+			for c: DesignedCourse in [course] + others:
+				if RealLandscape.by_the_sea(c):
+					RealCourseBuilder.links_fescue(c, none)
 	# What the Courses page needs to build it again with a newer builder.
 	for c: DesignedCourse in [course] + others:
 		RealCourseUpdate.stamp(c, place)

@@ -520,6 +520,18 @@ or not at all. What that found, and what the builder now does:
   Mouj), so the sea test (2 % of the land 8 m under) missed it. A flat
   sheet at 0 m over 8 % of the land is the sea too, let down under its
   water like a lake.
+- **The sea in the course's own box:** open tiles smear the land out over
+  the sea by a coast (Ballybunion's Atlantic was a field 10 m up, half of
+  Kingsbarns' box was dry North Sea). Low ground joined to the sea floor
+  is let down under the sea, and inside the box, water in the 10 m land
+  cover joined to its edge and away from the play areas is too
+  (`RealLandscape.sea_from_cover`). Whether the sea may come in at all is
+  judged on the fairways, greens and tees, not the whole box.
+- **Links fescue without a photo:** Scotland, Ireland and Wales have no
+  open aerial photos and the satellite image is too coarse there to tell
+  fescue from fairway, so a course with the sea within 1 km and no photo
+  gets deep rough (fescue) between the holes past a 12 m first cut round
+  each fairway (15 m round greens, 8 m round tees), as on any links.
 - **Checked against the real place from above:** `e2e.sh` ends with
   `look_export.gd` and `look_check.py`, which read a satellite picture of
   the same ground (a dev check only: it is cached in /tmp, never saved

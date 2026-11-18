@@ -680,6 +680,36 @@ func _test_land_cover() -> void:
 	var want_nw: Color = LandCover.COLORS[LandCover.TREES]
 	var want_ne: Color = LandCover.COLORS[LandCover.CROPS]
 	check(absf(nw.r - want_nw.r) + absf(nw.g - want_nw.g) < 0.02 and absf(ne.r - want_ne.r) + absf(ne.g - want_ne.g) < 0.02, "ground picture: woods to the north-west, fields to the north-east")
+	# The sea in the course's box (water in the east half) let in under
+	# ground the tiles left 10 m up; the west half stays.
+	var wv := PackedFloat32Array()
+	for j in 20:
+		for i in 20:
+			wv.append(LandCover.WATER if i >= 10 else LandCover.RANGELAND)
+	var wl := LandCover.new([50.98, -1.0, 51.0, -0.98])
+	wl.add(_tiff(wv, 20, 20, false, false, true))
+	var sc := DesignedCourse.blank(Vector2(600, 400))
+	sc.shapes.clear()
+	for k in sc.heights.size():
+		sc.heights[k] = 10.0
+	check(RealLandscape.sea_from_cover(sc, f, wl) == 0, "no sea, nothing let in")
+	sc.source["sea"] = 0.0
+	var mid := sc.area.get_center()
+	check(RealLandscape.sea_from_cover(sc, f, wl) > 0, "the sea in the box is let in")
+	check(sc.base_height(mid.x - 200.0, mid.y) < 0.0 and sc.base_height(mid.x + 200.0, mid.y) > 9.0, "under the water (east) only: %.1f, %.1f" % [sc.base_height(mid.x - 200.0, mid.y), sc.base_height(mid.x + 200.0, mid.y)])
+	# A links course with no photo: fescue between the holes, a first cut
+	# round the fairway.
+	var lk := DesignedCourse.blank(Vector2(600, 400))
+	lk.shapes.clear()
+	var fw := CourseShape.new(Surface.Type.FAIRWAY, PackedVector2Array([Vector2(-100, -20), Vector2(100, -20), Vector2(100, 20), Vector2(-100, 20)]))
+	lk.shapes.append(fw)
+	var none: Array[PackedVector2Array] = []
+	check(RealCourseBuilder.links_fescue(lk, none) == 2, "fescue over the area and a cut round the fairway")
+	var lt := lk.to_course_data().holes[0].terrain if not lk.holes.is_empty() else null
+	var deep := lk.shapes[1]
+	var cut := lk.shapes[2]
+	check(deep.surface == Surface.Type.DEEP_ROUGH and cut.surface == Surface.Type.ROUGH and cut.contains(Vector2(0, 28)) and not cut.contains(Vector2(0, 40)), "the first cut is 12 m wide")
+	check(lt == null or lt.surface_at(0, 60) == Surface.Type.DEEP_ROUGH, "past the cut is fescue")
 
 
 ## A hole mapped only as a line gets a green, a tee, a fairway and bunkers
@@ -1505,6 +1535,14 @@ func _test_landscape() -> void:
 	var again := DesignedCourse.from_json(c.to_json())
 	land.apply(again)
 	check(again.landscape.get("cols", 0) == land.count and float(again.source.get("sea", -1.0)) == 0.0, "the land and the sea are set")
+	# The tiles' noisy sea surface over 0 by the shore is the sea too.
+	var noisy := RealLandscape.new(f, DesignedCourse.from_json(c.to_json()))
+	noisy.rows(0, noisy.count, func(lat: float, lon: float) -> float:
+		var p := f.to_local(lat, lon)
+		return -20.0 if p.x < -4000.0 else (0.8 if p.x < -2000.0 else 15.0 + p.x * 0.01))
+	noisy.apply(DesignedCourse.from_json(c.to_json()))
+	var shallow := noisy.heights[noisy.count / 2 * noisy.count + (noisy.count / 2 - roundi(3000.0 / RealLandscape.CELL))]
+	check(shallow + float(c.source.get("base_height", 0.0)) <= RealLandscape.SEA_FLOOR + 0.01, "a noisy sea surface by the shore is let down (%.1f)" % shallow)
 	var edge := land.heights[land.count / 2 * land.count + land.count / 2]
 	check(absf(edge - 2.0) < 0.2, "inside the course it follows the course's ground (%.2f)" % edge)
 	var round := DesignedCourse.from_json(JSON.stringify(_with_land(c, land)))

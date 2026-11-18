@@ -26,7 +26,8 @@ const LOW_GROUND := -12.0  ## heights below this (sea floor) are raised to it
 const MAX_POINTS := 90  ## control points per area at most
 const STREAM_PIECE := 60.0  ## streams are split so each piece has its own water line
 const STREAM_PIECE_DROP := 0.3  ## metres a piece's ground may fall along it
-const NATIVE_ROWS_PER_STEP := 120  ## rows of NativeGrass cells read a step
+const NATIVE_ROWS_PER_STEP := 120
+const LINKS_CUT := 12.0  ## metres of first cut round a links fairway  ## rows of NativeGrass cells read a step
 const CHAIN_REACH := 150.0  ## metres from a green to the next hole's tee, chaining unnumbered holes
 const CHAIN_REACH_FAR := 400.0  ## then joining what's left of the chains
 const GREEN_BANK := 3.0  ## metres of dry bank kept round a green in a pond
@@ -1993,6 +1994,37 @@ static func simplify_line(line: PackedVector2Array, tolerance: float) -> PackedV
 ## scaled back to the ring's own area. Even spacing also keeps the designer's
 ## spline from overshooting where a short side meets a long one. Wiggles
 ## shorter than a few spacings go; the bays and fingers of the shape stay.
+## A links course's native grass where there is no photo to read it from
+## (Scotland, Ireland, Wales have no open aerial photos, and the satellite
+## image is too coarse to tell fescue from fairway): the ground between the
+## holes, past a first cut round the fairways, greens and tees, becomes
+## deep rough, drawn as fescue, as on any links. `boundary` is the course
+## outline (its whole area without one). Returns the shapes added.
+static func links_fescue(c: DesignedCourse, boundary: Array[PackedVector2Array]) -> int:
+	var cut := {Surface.Type.FAIRWAY: LINKS_CUT, Surface.Type.GREEN: LINKS_CUT + 3.0, Surface.Type.TEE: LINKS_CUT - 4.0}
+	var added: Array[CourseShape] = []
+	if boundary.is_empty():
+		var r := c.area.grow(-2.0)
+		added.append(CourseShape.new(Surface.Type.DEEP_ROUGH, PackedVector2Array([r.position, Vector2(r.end.x, r.position.y), r.end, Vector2(r.position.x, r.end.y)])))
+	for ring in boundary:
+		added.append(CourseShape.new(Surface.Type.DEEP_ROUGH, ring))
+	for s in c.shapes:
+		if not s.is_valid() or not cut.has(s.surface):
+			continue
+		# The biggest piece is the outline grown (the rest are holes in it).
+		var best := PackedVector2Array()
+		var best_a := 0.0
+		for poly in Geometry2D.offset_polygon(s.points, float(cut[s.surface]), Geometry2D.JOIN_ROUND):
+			var a := absf(_ring_area(poly))
+			if a > best_a:
+				best_a = a
+				best = poly
+		if best.size() >= 3:
+			added.append(CourseShape.new(Surface.Type.ROUGH, best))
+	c.shapes.append_array(added)
+	return added.size()
+
+
 static func smooth_ring(ring: PackedVector2Array, spacing := 1.5, passes := 4) -> PackedVector2Array:
 	var n := ring.size()
 	if n >= 2 and ring[0].is_equal_approx(ring[n - 1]):

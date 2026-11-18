@@ -31,6 +31,12 @@ const LAKE_SHARE := 0.03
 const LAKE_FLAT := 0.05
 const LAKE_SHORE := 0.6  ## metres over its level that ground may be its water surface
 const LAKE_STEEP := 4.0
+## The tiles' sea surface near the shore is often a metre or so of noise
+## over 0 (Ballybunion's Atlantic was land): ground this low joined to the
+## sea floor is the sea, let down to SEA_FLOOR.
+const SEA_SHORE := 1.5
+const SEA_FLOOR := -1.5
+const LINKS_REACH := 1000.0  ## metres from the course the sea makes it links
 
 var frame: GeoFrame
 var course: DesignedCourse  ## the first course: its ground and datum
@@ -40,6 +46,7 @@ var heights := PackedFloat32Array()  ## from the course's datum
 var _deep := 0
 var _levels := {}  ## samples by their height in LAKE_FLAT steps
 var _lake_sunk := false
+var _sea_flooded := false
 
 
 func _init(p_frame: GeoFrame, p_course: DesignedCourse) -> void:
@@ -130,6 +137,9 @@ func apply(c: DesignedCourse) -> void:
 		var base := float(course.source.get("base_height", 0.0))
 		for k in heights.size():
 			heights[k] = under_lake(heights[k] + base, lake) - base
+	if has_sea() and not flat_sea() and not _sea_flooded:
+		_sea_flooded = true
+		flood_sea()
 	var saved := encode()
 	c.landscape = DesignedCourse._decode_landscape(saved)
 	c._landscape_saved = saved
@@ -139,9 +149,143 @@ func apply(c: DesignedCourse) -> void:
 			sink_lake(c, 0.0)
 	elif has_sea() and dry(c):
 		c.source["sea"] = 0.0
+		sink_lake(c, 0.0)
 	elif not is_nan(lake) and dry(c, lake, -1.0):
 		c.source["sea"] = lake
 		sink_lake(c, lake)
+
+
+## The low ground joined to the sea floor (under SEA_DEPTH) let down under
+## the sea; the course and the land easing into it are left. Returns the
+## samples let down.
+func flood_sea() -> int:
+	var base := float(course.source.get("base_height", 0.0))
+	var near := course.area.grow(BLEND)
+	var seen := PackedByteArray()
+	seen.resize(heights.size())
+	var todo := PackedInt32Array()
+	for k in heights.size():
+		if heights[k] + base < SEA_DEPTH:
+			seen[k] = 1
+			todo.append(k)
+	var at := 0
+	var sunk := 0
+	while at < todo.size():
+		var k := todo[at]
+		at += 1
+		var i := k % count
+		var j := k / count
+		for d: Vector2i in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
+			var ni := i + d.x
+			var nj := j + d.y
+			if ni < 0 or nj < 0 or ni >= count or nj >= count:
+				continue
+			var nk := nj * count + ni
+			if seen[nk] == 1 or heights[nk] + base > SEA_SHORE:
+				continue
+			seen[nk] = 1
+			if near.has_point(origin + Vector2(ni, nj) * CELL):
+				continue
+			todo.append(nk)
+			if heights[nk] + base > SEA_FLOOR:
+				heights[nk] = SEA_FLOOR - base
+				sunk += 1
+	return sunk
+
+
+## The sea inside the course's own box, where its heights stand it above
+## the water: open tiles smear the land out over the sea by a coast
+## (Ballybunion's Atlantic was a field 10 m up). Where the land cover
+## (10 m) has water joined to the box's edge, away from the play areas, the
+## ground is let down under the sea. Returns the samples let down.
+static func sea_from_cover(c: DesignedCourse, frame: GeoFrame, cover: LandCover) -> int:
+	if not c.source.has("sea"):
+		return 0
+	var sea := float(c.source["sea"])
+	var base := float(c.source.get("base_height", 0.0))
+	var step := maxi(1, roundi(LandCover.RES / DesignedCourse.CELL))
+	var cw := ceili(float(c.cols) / step)
+	var ch := ceili(float(c.rows) / step)
+	var wet := PackedByteArray()
+	wet.resize(cw * ch)
+	var play: Array[CourseShape] = []
+	for s in c.shapes:
+		if s.is_valid() and s.surface in [Surface.Type.FAIRWAY, Surface.Type.GREEN, Surface.Type.TEE, Surface.Type.SAND]:
+			play.append(s)
+	for cj in ch:
+		for ci in cw:
+			var p := c.sample_pos(mini(ci * step + step / 2, c.cols - 1), mini(cj * step + step / 2, c.rows - 1))
+			if cover.class_at(frame.lat_of(p), frame.lon_of(p)) != LandCover.WATER:
+				continue
+			var dry_play := false
+			for s in play:
+				if s.bounds().grow(LandCover.RES).has_point(p) and s.signed_distance(p) < LandCover.RES:
+					dry_play = true
+					break
+			if not dry_play:
+				wet[cj * cw + ci] = 1
+	# Joined to the edge: the sea comes in from outside.
+	var todo := PackedInt32Array()
+	var seen := PackedByteArray()
+	seen.resize(cw * ch)
+	for k in wet.size():
+		var ci := k % cw
+		var cj := k / cw
+		if wet[k] == 1 and (ci == 0 or cj == 0 or ci == cw - 1 or cj == ch - 1):
+			seen[k] = 1
+			todo.append(k)
+	var at := 0
+	while at < todo.size():
+		var k := todo[at]
+		at += 1
+		var ci := k % cw
+		var cj := k / cw
+		for d: Vector2i in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
+			var ni := ci + d.x
+			var nj := cj + d.y
+			if ni < 0 or nj < 0 or ni >= cw or nj >= ch:
+				continue
+			var nk := nj * cw + ni
+			if wet[nk] == 1 and seen[nk] == 0:
+				seen[nk] = 1
+				todo.append(nk)
+	var n := 0
+	var floor_h := sea + SEA_FLOOR - base
+	for k in todo:
+		var ci := k % cw
+		var cj := k / cw
+		for j in range(cj * step, mini((cj + 1) * step, c.rows)):
+			for i in range(ci * step, mini((ci + 1) * step, c.cols)):
+				var q := j * c.cols + i
+				if c.heights[q] > floor_h:
+					c.heights[q] = floor_h
+					n += 1
+	return n
+
+
+## True when the course has the sea (not a lake) within LINKS_REACH of its
+## box: links land.
+static func by_the_sea(c: DesignedCourse) -> bool:
+	if not c.source.has("sea") or float(c.source["sea"]) != 0.0 or c.landscape.is_empty():
+		return false
+	var land: Dictionary = c.landscape
+	var o: Vector2 = land["origin"]
+	var cell := float(land["cell"])
+	var cols := int(land["cols"])
+	var rows_n := int(land["rows"])
+	var hs: PackedFloat32Array = land["heights"]
+	var base := float(c.source.get("base_height", 0.0))
+	var box := c.area.grow(LINKS_REACH)
+	var i0 := clampi(floori((box.position.x - o.x) / cell), 0, cols - 1)
+	var i1 := clampi(ceili((box.end.x - o.x) / cell), 0, cols - 1)
+	var j0 := clampi(floori((box.position.y - o.y) / cell), 0, rows_n - 1)
+	var j1 := clampi(ceili((box.end.y - o.y) / cell), 0, rows_n - 1)
+	var wet := 0
+	for j in range(j0, j1 + 1):
+		for i in range(i0, i1 + 1):
+			if hs[j * cols + i] + base < -0.5:
+				wet += 1
+	return wet >= 20
 
 
 ## Lets the course's own ground down under a lake where it is the lake's
@@ -177,6 +321,18 @@ static func dry(c: DesignedCourse, level := 0.0, margin := 0.3) -> bool:
 	var base := float(c.source.get("base_height", 0.0))
 	var low := 0
 	var n := 0
+	# The play areas, where there are any: a course's box takes in the sea
+	# beside it (Kingsbarns' is half North Sea).
+	for s in c.shapes:
+		if s.surface in [Surface.Type.FAIRWAY, Surface.Type.GREEN, Surface.Type.TEE]:
+			for p in s.points:
+				n += 1
+				if c.base_height(p.x, p.y) + base < level + margin:
+					low += 1
+	if n >= 20:
+		return low <= n * 0.01
+	low = 0
+	n = 0
 	for k in range(0, c.heights.size(), 37):
 		n += 1
 		if c.heights[k] + base < level + margin:

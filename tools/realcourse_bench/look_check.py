@@ -142,6 +142,8 @@ def main():
     game = np.asarray(Image.open(base + ".png"))
     if game.ndim == 3:
         game = game[..., 0]
+    rough = game == 8
+    game = np.where(rough, 0, game)  # mapped rough is mown grass too
     cell = meta["cell"]
     area = cell * cell
     pic = picture(meta, ZOOM)
@@ -179,7 +181,7 @@ def main():
     if not green:
         notes.append("the picture's grass is dormant, so fescue and sand aren't judged")
     elif pic_fescue.sum() * area >= FESCUE_MIN and mown.sum() > FESCUE_SHARE * pic_fescue.sum():
-        findings.append(f"fescue: {mown.sum() * area / 1e4:.1f} of the picture's {pic_fescue.sum() * area / 1e4:.1f} ha of straw fescue is mown in the game")
+        findings.append(f"fescue: {mown.sum() * area / 1e4:.1f} of the picture's {pic_fescue.sum() * area / 1e4:.1f} ha of straw fescue is mown in the game ({(mown & rough).sum() * area / 1e4:.1f} ha of it mapped rough)")
     bunkers = [p for p in patches(sand & in_course) if SAND_PATCH <= p[0] * area <= 3000.0]
     missing = 0
     for n, (i, j) in bunkers:

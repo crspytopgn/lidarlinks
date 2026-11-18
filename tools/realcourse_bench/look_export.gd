@@ -8,7 +8,8 @@ extends SceneTree
 # Codes: 0 mown grass, 1 fescue (deep rough), 2 sand, 3 water, 4 trees,
 # 5 outside the course's own ground (the landscape: land), 6 landscape
 # water (under the sea or lake level), 7 the course's ground but more than
-# NEAR from any fairway, green, tee or bunker (roads, houses, fields).
+# NEAR from any fairway, green, tee or bunker (roads, houses, fields),
+# 8 mapped rough.
 
 const CELL := 6.0
 const MARGIN := 300.0  ## metres of the landscape beyond the course looked at
@@ -86,7 +87,7 @@ func _initialize() -> void:
 	for j in h:
 		for i in w:
 			var code := img.get_pixel(i, j).r8
-			if code <= 2 and near[j * w + i] == 0:
+			if (code <= 2 or code == 8) and near[j * w + i] == 0:
 				img.set_pixel(i, j, Color8(7, 0, 0))
 	img.save_png(a[1] + ".png")
 	# Row 0 is box.position.y (south... whichever way +z runs): give the
