@@ -71,6 +71,11 @@ var _streams: Array[Dictionary] = []  ## {"line", "width"}
 const WALLS := ["wall", "dry_stone_wall", "stone_wall"]
 var _paths: Array[Dictionary] = []  ## {"line", "width", "bridge"}: cart paths and roads
 var _walls: Array[PackedVector2Array] = []  ## field walls
+var _hedges: Array[PackedVector2Array] = []  ## mapped hedges (barrier=hedge)
+## Bushes a hedge is planted with, this far apart (a bush is about 2 m
+## across), and their size.
+const HEDGE_SPACING := 1.5
+const HEDGE_SCALE := Vector2(1.1, 1.4)
 var _pins: PackedVector2Array = []
 var _buildings: Array[Dictionary] = []  ## {"ring", "box"}, grown 2 m
 var _footprints: Array[Dictionary] = []  ## {"ring", "tags"}: building outlines as mapped
@@ -266,13 +271,33 @@ static func short_name(club: String) -> String:
 	return out
 
 
-## "4/9" gives "9 holes"; empty for a plain number.
+## "4/9" gives "9 holes"; a course label beside the number gives that
+## course ("5 - #2" is Pinehurst No. 2, "A-7" course A); empty for a plain
+## number.
 func _course_from_ref(d: Dictionary) -> String:
 	var ref := str(d["ref"])
-	if not ref.contains("/"):
+	if ref.contains("/"):
+		var of := ref.get_slice("/", 1).strip_edges()
+		return "%s (%s holes)" % [short_name(course_name), of] if of.is_valid_int() else ""
+	var label := ref_label(ref)
+	if label.is_empty():
 		return ""
-	var of := ref.get_slice("/", 1).strip_edges()
-	return "%s (%s holes)" % [short_name(course_name), of] if of.is_valid_int() else ""
+	var club := short_name(course_name)
+	return club if club.to_lower().ends_with(label.to_lower()) else "%s %s" % [club, label]
+
+
+## The course label in a ref like "5 - #2" ("No. 2") or "A-7" ("A"); empty
+## for a plain number.
+static func ref_label(ref: String) -> String:
+	var m := RegEx.create_from_string("^\\s*\\d+\\s*[-:]\\s*(\\S.*?)\\s*$").search(ref)
+	if m == null:
+		m = RegEx.create_from_string("^\\s*(\\S.*?)\\s*[-:]\\s*\\d+\\s*$").search(ref)
+	if m == null:
+		return ""
+	var label := m.get_string(1)
+	if label.begins_with("#") and label.substr(1).is_valid_int():
+		return "No. " + label.substr(1)
+	return label
 
 
 ## The name of the smallest course outline round the hole's green that
@@ -554,6 +579,8 @@ func _read(elements: Array) -> void:
 						_buildings.append({"ring": ring, "box": r})
 		elif str(t.get("barrier", "")) in WALLS and type == "way":
 			_walls.append(_local_line(_geo_points(e)))
+		elif str(t.get("barrier", "")) == "hedge" and type == "way":
+			_hedges.append(_local_line(_geo_points(e)))
 		elif natural == "tree_row" and type == "way":
 			_rows.append({"line": _local_line(_geo_points(e)), "leaf": str(t.get("leaf_type", ""))})
 		elif STREAM_WIDTHS.has(str(t.get("waterway", ""))) and type == "way" and not _underground(t):
@@ -1193,6 +1220,10 @@ func _add_trees(c: DesignedCourse) -> void:
 		var line: PackedVector2Array = r["line"]
 		for p in _resample(line, ROW_SPACING):
 			_plant(c, p, r["leaf"], 0.0, clear, 0.0, false)
+	# Hedges (field and garden boundaries all over Britain): bushes in a row.
+	for line in _hedges:
+		for p in _resample(line, HEDGE_SPACING):
+			_plant(c, p, "hedge", 0.0, clear, 0.0, false)
 	# Lidar crowns are real trees, typed by the wood they stand in (if any).
 	# A wooded course has tens of thousands, more than MAX_TREES, so the ones
 	# nearest the holes go in first and deep woods are left thinner.
@@ -1351,6 +1382,9 @@ func _plant(c: DesignedCourse, p: Vector2, leaf: String, height: float, clear: A
 	_near[cell].append(p)
 	var id: String
 	match leaf:
+		"hedge":
+			c.objects.append(PlacedObject.new(DesignedCourse.TREE_IDS[2], Vector3(p.x, 0, p.y), _rng.randf_range(0, 360), _rng.randf_range(HEDGE_SCALE.x, HEDGE_SCALE.y)))
+			return
 		"needleleaved":
 			id = DesignedCourse.TREE_IDS[0]
 		"broadleaved":

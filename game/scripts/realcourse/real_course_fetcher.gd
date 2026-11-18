@@ -578,7 +578,7 @@ static func overpass_query(s: float, w: float, n: float, e: float) -> String:
 		"nwr[\"leisure\"=\"golf_course\"]%s;" % bb +
 		"nwr[\"natural\"~\"^(water|wood|scrub|heath|wetland|dune|grassland)$\"]%s;" % bb +
 		"way[\"natural\"=\"tree_row\"]%s;" % bb +
-		"way[\"barrier\"~\"^(wall|dry_stone_wall|stone_wall)$\"]%s;" % bb +
+		"way[\"barrier\"~\"^(wall|dry_stone_wall|stone_wall|hedge)$\"]%s;" % bb +
 		"nwr[\"landuse\"~\"^(forest|reservoir|basin)$\"]%s;" % bb +
 		"node[\"natural\"=\"tree\"]%s;" % bb +
 		"way[\"waterway\"~\"^(river|stream|canal|ditch|drain)$\"]%s;" % bb +

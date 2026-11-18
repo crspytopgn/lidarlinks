@@ -287,6 +287,10 @@ func _test_national_lidar() -> void:
 	_test_gsi_tiles()
 	_test_mapterhorn_tiles()
 	_test_canopy_heights()
+	check(RealCourseBuilder.ref_label("5 - #2") == "No. 2" and RealCourseBuilder.ref_label("A-7") == "A" and RealCourseBuilder.ref_label("12") == "" and RealCourseBuilder.ref_label("3 - TC") == "TC", "course labels in refs")
+	var naip := AerialPhotos.new(_photo_source("naip"), [36.56, -121.96, 36.57, -121.94])
+	var nu := naip.urls()
+	check(naip.block() == 4 and nu.size() == naip.blocks_across().x * naip.blocks_across().y and nu[0].contains("size=1024,1024"), "NAIP asked for in 4 x 4 tile blocks")
 	var l := NationalLidar.new(NationalLidar.source_for(51.4, -0.3), [51.40, -0.31, 51.42, -0.28])
 	# About 2.1 km by 2.2 km at 1 m: 3 x 3 requests of at most 1000 px.
 	check(l.chunks.size() == 9, "chunks: %d" % l.chunks.size())

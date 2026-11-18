@@ -172,6 +172,10 @@ saved, never used for detection or ground colours, and isn't in
 showing the imagery with its credit, not copying it. It is the only photo
 to check English, Scottish, Welsh and Irish courses against.
 
+NAIP's ImageServer takes about 3 s a request, so it is asked for blocks
+of 4 x 4 tiles (1024 px) at a time (`"block": 4`): Pebble Beach's photo
+went from 58 s to 11 s.
+
 WMS services are asked for each web mercator tile's box. Services answer
 white or empty tiles outside their country; those don't count, and the next
 service is tried when fewer than half the tiles have a photo.
@@ -265,6 +269,12 @@ OpenStreetMap from the club's own published scorecard.
   `landuse=forest`) filled on a jittered 9 m grid, thinned to keep the
   course under the tree limit. `leaf_type` picks pines or broadleaves. No tree
   is planted on a fairway, green, tee, bunker or in water.
+- **Hedges:** `barrier=hedge` lines become rows of bushes 1.5 m apart
+  (St Andrews: 378 bushes), the field and garden edges of most British
+  courses.
+- **Courses in refs:** where a club's holes carry the course in their ref
+  ("5 - #2" at Pinehurst), the holes are parted by it, so each course gets
+  its own 18.
 - **What the map lacks:** many clubs are mapped with their hole lines but
   not every green, tee, fairway or bunker. `CourseGuesser`
   (`game/scripts/realcourse/course_guesser.gd`) fills in whatever a hole is

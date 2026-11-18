@@ -130,7 +130,8 @@ const SOURCES := [
 		# about 2 m.
 		"id": "naip", "name": "USDA NAIP orthoimagery (0.6 m), United States",
 		"boxes": [[24.4, -125.0, 49.5, -66.9]],
-		"url": "https://imagery.nationalmap.gov/arcgis/rest/services/USGSNAIPImagery/ImageServer/exportImage?bbox={bbox}&bboxSR=3857&imageSR=3857&size=256,256&format=jpg&f=image",
+		"url": "https://imagery.nationalmap.gov/arcgis/rest/services/USGSNAIPImagery/ImageServer/exportImage?bbox={bbox}&bboxSR=3857&imageSR=3857&size={size},{size}&format=jpg&f=image",
+		"block": 4,
 		"credit": "Aerial photo: USDA NAIP via USGS The National Map, public domain",
 	},
 	{
@@ -199,19 +200,34 @@ func urls() -> PackedStringArray:
 	# Web mercator metres: the world is 2 pi R across, centred on 0.
 	var world := 2.0 * PI * 6378137.0
 	var size := world / pow(2.0, zoom)
-	for j in count.y:
-		for i in count.x:
-			var x := origin.x + i
-			var y := origin.y + j
+	# A "block" source answers one request for block x block tiles ({size}
+	# pixels a side), far quicker than a request per tile (NAIP: 3 s each).
+	var b := block()
+	var blocks := blocks_across()
+	for j in blocks.y:
+		for i in blocks.x:
+			var x := origin.x + i * b
+			var y := origin.y + j * b
 			var x0 := x * size - world * 0.5
 			var y1 := world * 0.5 - y * size
-			var bbox := "%.3f,%.3f,%.3f,%.3f" % [x0, y1 - size, x0 + size, y1]
+			var bbox := "%.3f,%.3f,%.3f,%.3f" % [x0, y1 - size * b, x0 + size * b, y1]
 			var ty := (1 << zoom) - 1 - y
-			out.append(str(source["url"]).format({"z": zoom, "x": x, "y": y, "ty": ty, "bbox": bbox}))
+			out.append(str(source["url"]).format({"z": zoom, "x": x, "y": y, "ty": ty, "bbox": bbox, "size": TILE * b}))
 	return out
 
 
-## Puts tile `index` (row by row from the top left) in the mosaic.
+## Tiles a side per request (1 for tile services).
+func block() -> int:
+	return maxi(1, int(source.get("block", 1)))
+
+
+## Requests across and down.
+func blocks_across() -> Vector2i:
+	var b := block()
+	return Vector2i(ceili(float(count.x) / b), ceili(float(count.y) / b))
+
+
+## Puts tile (or block) `index`, row by row from the top left, in the mosaic.
 func add_tile(index: int, bytes: PackedByteArray) -> bool:
 	var img := Image.new()
 	var err := ERR_FILE_UNRECOGNIZED
@@ -219,13 +235,15 @@ func add_tile(index: int, bytes: PackedByteArray) -> bool:
 		err = img.load_jpg_from_buffer(bytes)
 	elif bytes.size() > 3 and bytes[0] == 0x89 and bytes[1] == 0x50:
 		err = img.load_png_from_buffer(bytes)
-	if err != OK or img.get_width() != TILE or img.get_height() != TILE:
+	var px := TILE * block()
+	if err != OK or img.get_width() != px or img.get_height() != px:
 		return false
 	img.convert(Image.FORMAT_RGB8)
 	if is_blank(img):
 		return false
-	var at := Vector2i(index % count.x, floori(float(index) / count.x)) * TILE
-	_mosaic.blit_rect(img, Rect2i(0, 0, TILE, TILE), at)
+	var across := blocks_across().x
+	var at := Vector2i(index % across, floori(float(index) / across)) * px
+	_mosaic.blit_rect(img, Rect2i(0, 0, px, px), at)
 	loaded += 1
 	return true
 
