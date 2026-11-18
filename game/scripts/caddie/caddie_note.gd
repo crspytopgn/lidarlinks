@@ -21,8 +21,9 @@ func _init() -> void:
 	add_child(row)
 	var who := Label.new()
 	who.text = "CADDIE"
-	who.add_theme_font_size_override("font_size", 13)
-	who.add_theme_color_override("font_color", Color(0.98, 0.84, 0.35))
+	who.add_theme_font_override("font", GlassTheme.display_font(700))
+	who.add_theme_font_size_override("font_size", 15)
+	who.add_theme_color_override("font_color", Color(0.914, 0.78, 0.4))
 	who.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
 	row.add_child(who)
 	_body = Label.new()
