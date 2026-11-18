@@ -22,10 +22,22 @@ const MIN_SAT := 0.14  ## greyer is sand, paths or water
 const MIN_CELLS := 40  ## smallest patch kept (640 m2)
 const MIN_SHARE := 0.04  ## of the course's cells, or none is taken
 
+## What is looked for: STRAW (fescue, meadow: lighter than the fairways)
+## or SCRUB (scrub, heather, sage: darker, browner or purple, Torrey Pines'
+## canyons, Sunningdale's heather), drawn with its own cover.
+enum Kind { STRAW, SCRUB }
+const SCRUB_MIN_VALUE := 0.15  ## darker is woods' shade
+const SCRUB_DARKER := 0.07  ## than the fairways
+const SCRUB_GREYER := 0.7  ## of the fairways' saturation, at most
+const SCRUB_MIN_SAT := 0.06  ## greyer is rock, tarmac, water
+
+var kind := Kind.STRAW
 var photo: Image
 var area: Rect2
 var boundary: Array[PackedVector2Array] = []
 var grass_hue := 0.0
+var grass_sat := 0.0
+var grass_val := 0.0
 var cols := 0
 var rows_n := 0
 var mask := PackedByteArray()
@@ -34,7 +46,8 @@ var _found := 0
 
 ## `grass` are course points on fairways, for the mown grass's colour;
 ## without any (or a photo) nothing is found.
-func _init(p_photo: Image, p_area: Rect2, p_boundary: Array[PackedVector2Array], grass: PackedVector2Array) -> void:
+func _init(p_photo: Image, p_area: Rect2, p_boundary: Array[PackedVector2Array], grass: PackedVector2Array, p_kind := Kind.STRAW) -> void:
+	kind = p_kind
 	photo = p_photo
 	area = p_area
 	boundary = p_boundary
@@ -46,16 +59,24 @@ func _init(p_photo: Image, p_area: Rect2, p_boundary: Array[PackedVector2Array],
 		rows_n = 0
 		return
 	var hues := PackedFloat32Array()
+	var sats := PackedFloat32Array()
+	var vals := PackedFloat32Array()
 	for p in grass:
 		var c := _colour(p)
 		if c.s > MIN_SAT:
 			hues.append(c.h)
+			sats.append(c.s)
+			vals.append(c.v)
 	if hues.is_empty():
 		cols = 0
 		rows_n = 0
 		return
 	hues.sort()
+	sats.sort()
+	vals.sort()
 	grass_hue = hues[hues.size() / 2]
+	grass_sat = sats[sats.size() / 2]
+	grass_val = vals[vals.size() / 2]
 
 
 ## True when there is anything to read.
@@ -72,7 +93,8 @@ func rows(j0: int, j1: int) -> void:
 			var i1 := mini(cols - 1, floori((span.y - area.position.x) / CELL))
 			for i in range(i0, i1 + 1):
 				var p := Vector2(area.position.x + (i + 0.5) * CELL, z)
-				if is_native(_colour(p), grass_hue):
+				var col := _colour(p)
+				if is_scrub(col, grass_sat, grass_val) if kind == Kind.SCRUB else is_native(col, grass_hue):
 					mask[j * cols + i] = 1
 					_found += 1
 
@@ -81,6 +103,32 @@ func rows(j0: int, j1: int) -> void:
 ## hue `grass`.
 static func is_native(c: Color, grass: float) -> bool:
 	return c.v >= MIN_VALUE and c.v <= MAX_VALUE and c.s >= MIN_SAT and c.h < grass - HUE_DROP and c.h > 0.05
+
+
+## True for a photo colour that reads as scrub, sage or heather beside mown
+## grass of saturation `sat` and value `val`: darker and greyer than it, but
+## not as dark as the woods' shade. (Its hue says little: Torrey Pines'
+## canyon sage is greener than the fairways in the photo, heather purple.)
+static func is_scrub(c: Color, sat: float, val: float) -> bool:
+	return c.v >= SCRUB_MIN_VALUE and c.v <= val - SCRUB_DARKER and c.s >= SCRUB_MIN_SAT and c.s <= sat * SCRUB_GREYER
+
+
+## The cover a scrub patch is drawn with: heather where it is purple or red
+## brown, scrub otherwise.
+func cover_of(ring: PackedVector2Array) -> String:
+	var b := Rect2(ring[0], Vector2.ZERO)
+	for q in ring:
+		b = b.expand(q)
+	var purple := 0
+	var n := 0
+	for k in 25:
+		var p := b.position + b.size * Vector2((k % 5 + 0.5) / 5.0, (k / 5 + 0.5) / 5.0)
+		if Geometry2D.is_point_in_polygon(p, ring):
+			n += 1
+			var c := _colour(p)
+			if c.h > 0.8 or c.h < 0.08:
+				purple += 1
+	return "heath" if n > 0 and purple * 2 > n else "scrub"
 
 
 ## The outlines of the patches found, outer rings and the mown islands in
@@ -121,6 +169,28 @@ func rings() -> Dictionary:
 		else:
 			islands.append(ring)
 	return out
+
+
+## Share of a shape's cells that are native grass (after rings(), so the
+## tidied patches): a mapped rough that is mostly straw in the photo is
+## native rough (Torrey Pines' canyon rough), not a mown second cut.
+func share_in(shape: CourseShape) -> float:
+	if not ready():
+		return 0.0
+	var b := shape.bounds()
+	var i0 := maxi(0, floori((b.position.x - area.position.x) / CELL))
+	var i1 := mini(cols - 1, floori((b.end.x - area.position.x) / CELL))
+	var j0 := maxi(0, floori((b.position.y - area.position.y) / CELL))
+	var j1 := mini(rows_n - 1, floori((b.end.y - area.position.y) / CELL))
+	var inside := 0
+	var native := 0
+	for j in range(j0, j1 + 1):
+		for i in range(i0, i1 + 1):
+			var p := area.position + (Vector2(i, j) + Vector2(0.5, 0.5)) * CELL
+			if shape.contains(p):
+				inside += 1
+				native += mask[j * cols + i]
+	return float(native) / inside if inside > 0 else 0.0
 
 
 ## Course points' photo colour, the mean of 4 pixels round it.

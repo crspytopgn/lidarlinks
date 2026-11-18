@@ -1253,6 +1253,24 @@ func _test_native_grass() -> void:
 		check(Geometry2D.is_point_in_polygon(Vector2(150, -150), rings[0]) and not Geometry2D.is_point_in_polygon(Vector2(-100, 0), rings[0]), "it covers the straw half, not the mown one")
 	var islands: Array[PackedVector2Array] = found["islands"]
 	check(islands.size() == 1 and Geometry2D.is_point_in_polygon(Vector2(90, 10), islands[0]), "the mown island inside it stays mown")
+	var straw_rough := CourseShape.new(Surface.Type.ROUGH, PackedVector2Array([Vector2(120, -150), Vector2(180, -150), Vector2(180, -90), Vector2(120, -90)]))
+	var mown_rough := CourseShape.new(Surface.Type.ROUGH, PackedVector2Array([Vector2(-150, -150), Vector2(-90, -150), Vector2(-90, -90), Vector2(-150, -90)]))
+	check(g.share_in(straw_rough) > 0.9 and g.share_in(mown_rough) < 0.1, "a mapped rough on the straw reads as native, one on the lawn doesn't")
+	# Dark brown canyon scrub (Torrey Pines) and purple heather.
+	var dark := Image.create(200, 200, false, Image.FORMAT_RGB8)
+	dark.fill(Color(0.36, 0.55, 0.25))
+	dark.fill_rect(Rect2i(0, 0, 100, 100), Color(0.30, 0.29, 0.24))
+	dark.fill_rect(Rect2i(0, 120, 100, 80), Color(0.30, 0.20, 0.24))
+	var sg := NativeGrass.new(dark, area, [] as Array[PackedVector2Array], grass, NativeGrass.Kind.SCRUB)
+	sg.rows(0, 1000)
+	var srings: Array[PackedVector2Array] = sg.rings()["rings"]
+	var covers := []
+	for r in srings:
+		covers.append(sg.cover_of(r))
+	covers.sort()
+	check(srings.size() >= 1 and covers.has("heath") and covers.has("scrub"), "dark scrub and purple heather are found (%s)" % [covers])
+	check(not NativeGrass.is_scrub(Color(0.12, 0.25, 0.10), sg.grass_sat, sg.grass_val), "dark green woods aren't scrub")
+	check(NativeGrass.is_scrub(Color.from_hsv(0.28, 0.2, 0.28), 0.37, 0.41), "Torrey's grey-green canyon sage is scrub")
 	var green := Image.create(200, 200, false, Image.FORMAT_RGB8)
 	green.fill(Color(0.36, 0.55, 0.25))
 	var none := NativeGrass.new(green, area, [] as Array[PackedVector2Array], grass)
@@ -1571,6 +1589,29 @@ func _test_landscape() -> void:
 		var p := f.to_local(lat, lon)
 		return 12.0 if p.x < -1500.0 else 14.0 + p.x * 0.004)
 	check(is_nan(plain.lake_level()), "a flat plain on a whole metre isn't a lake")
+	# A cliff the tiles smear 20 m up over the sea: the land cover's water
+	# joined to the sea goes under it (Mauna Kea).
+	var cliff_x := f.lon_of(Vector2(-2000.0, 0.0))
+	var cv := PackedFloat32Array()
+	for j in 40:
+		for i in 40:
+			cv.append(LandCover.WATER if -2.90 + (i + 0.5) * 0.005 > cliff_x else LandCover.RANGELAND)
+	var cliffs := RealLandscape.new(f, DesignedCourse.from_json(c.to_json()))
+	cliffs.cover = LandCover.new([56.30, -2.90, 56.38, -2.70])
+	check(cliffs.cover.add(_tiff(cv, 40, 40, false, false, true)), "shore land cover loads")
+	# (_tiff places its raster by Sussex: put this one on the cliffs' box.)
+	cliffs.cover.raster.west = -2.90
+	cliffs.cover.raster.north = 56.38
+	cliffs.cover.raster.dlon = 0.005
+	cliffs.cover.raster.dlat = 0.002
+	cliffs.rows(0, cliffs.count, func(lat: float, lon: float) -> float:
+		var p := f.to_local(lat, lon)
+		return -20.0 if p.x < -4000.0 else (20.0 if p.x < -1000.0 else 30.0))
+	cliffs.apply(DesignedCourse.from_json(c.to_json()))
+	var mid_row := cliffs.count / 2 * cliffs.count
+	var over_sea := cliffs.heights[mid_row + cliffs.count / 2 - roundi(3000.0 / RealLandscape.CELL)] + 10.0
+	var on_cliff := cliffs.heights[mid_row + cliffs.count / 2 - roundi(1500.0 / RealLandscape.CELL)] + 10.0
+	check(over_sea < 0.0 and on_cliff > 19.0, "the sea under a smeared cliff is let in, the cliff stays (%.1f, %.1f)" % [over_sea, on_cliff])
 	# Tiles without a sea floor hold the sea flat at 0 (Barnbougle).
 	var bc := DesignedCourse.blank(Vector2(600, 400))
 	bc.source["base_height"] = 6.0

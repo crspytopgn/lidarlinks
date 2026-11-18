@@ -51,6 +51,10 @@ var _deep := 0
 var _levels := {}  ## samples by their height in LAKE_FLAT steps
 var _lake_sunk := false
 var _sea_flooded := false
+## Land cover round the course (optional): its water joined to the sea is
+## let down under it, where cliffs smear the tiles out over the sea.
+var cover: LandCover = null
+var _cover_sunk := false
 
 
 func _init(p_frame: GeoFrame, p_course: DesignedCourse) -> void:
@@ -163,6 +167,9 @@ func apply(c: DesignedCourse) -> void:
 	if has_sea() and not flat_sea() and not _sea_flooded:
 		_sea_flooded = true
 		flood_sea()
+	if cover != null and has_sea() and not _cover_sunk:
+		_cover_sunk = true
+		sea_from_land_cover(flat_sea_level() if flat_sea() else 0.0)
 	var saved := encode()
 	c.landscape = DesignedCourse._decode_landscape(saved)
 	c._landscape_saved = saved
@@ -178,12 +185,54 @@ func apply(c: DesignedCourse) -> void:
 		sink_lake(c, lake)
 
 
+## Samples the land cover has as water, joined (through more of them) to
+## the sea already in the land, let down under the sea at `sea`: the open
+## tiles smear cliffs out over the water (Mauna Kea's lava coast, Durness)
+## and the shore test alone can't reach past them. Returns the samples let
+## down.
+func sea_from_land_cover(sea: float) -> int:
+	var base := float(course.source.get("base_height", 0.0))
+	var near := course.area
+	var wet := PackedByteArray()
+	wet.resize(heights.size())
+	var todo := PackedInt32Array()
+	for k in heights.size():
+		var p := origin + Vector2(k % count, k / count) * CELL
+		if near.has_point(p):
+			continue
+		if heights[k] + base < sea - 0.5:
+			wet[k] = 2  # the sea already
+			todo.append(k)
+		elif cover.class_at(frame.lat_of(p), frame.lon_of(p)) == LandCover.WATER:
+			wet[k] = 1
+	var at := 0
+	var n := 0
+	while at < todo.size():
+		var k := todo[at]
+		at += 1
+		var i := k % count
+		var j := k / count
+		for d: Vector2i in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
+			var ni := i + d.x
+			var nj := j + d.y
+			if ni < 0 or nj < 0 or ni >= count or nj >= count:
+				continue
+			var nk := nj * count + ni
+			if wet[nk] != 1:
+				continue
+			wet[nk] = 2
+			todo.append(nk)
+			heights[nk] = minf(heights[nk], sea + SEA_FLOOR - base)
+			n += 1
+	return n
+
+
 ## The low ground joined to the sea floor (under SEA_DEPTH) let down under
 ## the sea; the course and the land easing into it are left. Returns the
 ## samples let down.
 func flood_sea() -> int:
 	var base := float(course.source.get("base_height", 0.0))
-	var near := course.area.grow(BLEND)
+	var near := course.area
 	var seen := PackedByteArray()
 	seen.resize(heights.size())
 	var todo := PackedInt32Array()
