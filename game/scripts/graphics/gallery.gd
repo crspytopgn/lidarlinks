@@ -296,6 +296,20 @@ static func _tube(st: SurfaceTool, path: PackedVector3Array) -> void:
 			st.add_vertex(ring_a[q2])
 
 
+## How thickly the gallery stands at a spot along the ropes, 0 to 1. Real
+## galleries gather in knots (behind the flag, by a walkway) with thin gaps
+## between, never one even ring; this is a smooth pattern about 10 to 20 m
+## across, different for each seed.
+const CLUMP_FLOOR := 0.12  ## the chance a spot in the thinnest gap still gets someone
+const CLUMP_DEEP := 1.3  ## thick knots of cards stand this much deeper than CARD_FAR
+static func clump(p: Vector3, seed_value: int) -> float:
+	var s := float(seed_value % 97) * 1.37
+	var n := sin(p.x * 0.31 + s) * cos(p.z * 0.27 - s * 0.7)
+	n += 0.6 * sin((p.x - p.z) * 0.13 + s * 2.1)
+	n += 0.3 * sin((p.x + p.z) * 0.71 + s * 0.4)
+	return smoothstep(-1.0, 0.8, n)
+
+
 ## Where the spectators stand: behind each rope, away from the play, the
 ## nearest to the tee and the green first. Each is [position, the point
 ## they face].
@@ -317,9 +331,15 @@ static func crowd_spots(hole: HoleData, lines: Array[PackedVector3Array], count:
 			var mid := (a + b) * 0.5
 			if out.dot(Vector3(mid.x - focus.x, 0.0, mid.z - focus.z)) < 0.0:
 				out = -out
-			for j in 3:
-				var back := rng.randf_range(CROWD_NEAR, CROWD_FAR)
-				var p := a.lerp(b, rng.randf()) + out * back
+			for j in 6:
+				var at := a.lerp(b, rng.randf())
+				# Thin spots along the rope are mostly skipped, and thick ones
+				# stand deeper, so people bunch in knots, not an even ring.
+				var thick := clump(at, seed_value)
+				if rng.randf() > CLUMP_FLOOR + (1.0 - CLUMP_FLOOR) * thick:
+					continue
+				var back := rng.randf_range(CROWD_NEAR, lerpf(CROWD_NEAR + 0.8, CROWD_FAR, thick))
+				var p := at + out * back
 				candidates.append([p, focus, p.distance_to(focus), back < CROUCH_ROW])
 	candidates.sort_custom(func(x: Array, y: Array) -> bool: return x[2] < y[2])
 	var spots: Array = []
@@ -535,7 +555,7 @@ static func card_spots(hole: HoleData, lines: Array[PackedVector3Array], people:
 			total += line[k].distance_to(line[k + 1])
 	if total <= 0.0:
 		return out
-	var tries := count * 4
+	var tries := count * 8
 	while out.size() < count and tries > 0:
 		tries -= 1
 		# A random point along all the ropes, then back from it.
@@ -560,7 +580,11 @@ static func card_spots(hole: HoleData, lines: Array[PackedVector3Array], people:
 		var mid := (a + b) * 0.5
 		if outward.dot(Vector3(mid.x - focus.x, 0.0, mid.z - focus.z)) < 0.0:
 			outward = -outward
-		var p := a.lerp(b, at / maxf(a.distance_to(b), 1e-3)) + outward * rng.randf_range(CARD_NEAR, CARD_FAR)
+		var on_rope := a.lerp(b, at / maxf(a.distance_to(b), 1e-3))
+		var thick := clump(on_rope, seed_value)
+		if rng.randf() > CLUMP_FLOOR + (1.0 - CLUMP_FLOOR) * thick:
+			continue
+		var p := on_rope + outward * rng.randf_range(CARD_NEAR, lerpf(CARD_NEAR + 1.0, CARD_FAR * CLUMP_DEEP, thick))
 		var s := hole.terrain.surface_at(p.x, p.z)
 		if s == Surface.Type.WATER or s == Surface.Type.SAND or s == Surface.Type.GREEN:
 			continue

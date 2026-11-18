@@ -63,6 +63,10 @@ const DYNAMIC_NAMES := ["Off", "Keep 30 fps", "Keep 60 fps"]
 const DYNAMIC_FPS := [0, 30, 60]
 ## Strength of each level (Off, Low, Medium, High) of the post effects.
 const SHARPEN_LEVELS := [0.0, 0.25, 0.5, 0.8]
+## FSR 2's own sharpening (0 sharpest, 2 softest), and how much of ours is
+## added on top of it.
+const FSR2_SHARPNESS := 0.8
+const FSR2_OUR_SHARPEN := 0.0
 const BLOOM_LEVELS := [0.0, 0.15, 0.3, 0.55]
 const VIGNETTE_LEVELS := [0.0, 0.15, 0.3, 0.5]
 const GRAIN_LEVELS := [0.0, 0.025, 0.05, 0.1]
@@ -609,7 +613,11 @@ func apply_display(viewport: Viewport) -> void:
 				viewport.scaling_3d_mode = Viewport.SCALING_3D_MODE_FSR
 			Upscaler.FSR2:
 				viewport.scaling_3d_mode = Viewport.SCALING_3D_MODE_FSR2
-		viewport.fsr_sharpness = 0.3
+		# Godot's FSR sharpness runs from 0 (sharpest) to 2. FSR 2 at full
+		# size is a temporal anti-aliaser whose own sharpen, at 0.3 and
+		# with ours on top, gave people, leaves and turf a crunchy,
+		# over-processed edge; 2K25 and TV pictures are soft-edged.
+		viewport.fsr_sharpness = FSR2_SHARPNESS if upscaler == Upscaler.FSR2 else 0.3
 	viewport.scaling_3d_scale = scale
 	viewport.mesh_lod_threshold = MESH_LOD_PIXELS[quality]
 	RenderingServer.directional_shadow_atlas_set_size(shadow_atlas_size(), true)
