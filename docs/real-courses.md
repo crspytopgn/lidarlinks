@@ -117,6 +117,22 @@ the holes (Hilversum has 40,000 crowns). On Hilversum, 30,000 trees cost
 about the same draw calls as the old 6,000 and a fifth more triangles from
 the first tee, and fewer from inside the woods.
 
+### Tree heights everywhere else (desktop)
+
+Where the lidar has no surface model (Scotland, Wales and everywhere else
+Mapterhorn covers, the US, Japan) or there is no lidar, `CanopyHeights`
+(`game/scripts/realcourse/canopy_heights.gd`) reads Meta and the World
+Resources Institute's global 1 m canopy height map (CC BY 4.0, on AWS Open
+Data). Each file is a 65536 px square per zoom 9 web mercator tile (about
+500 MB), one Deflate row per strip, heights in whole metres. Only the
+course's rows are downloaded, with range requests: the 1 KB header, the
+rows' offsets and sizes, then the rows as one block (7 MB for Gleneagles,
+up to about 35 MB for a big wooded course, since each row spans the whole
+tile). The heights are smoothed over a plus of pixels, and each highest
+pixel within 1.5 m at least 3 m tall is a crown, one per 4 m, planted like
+lidar trees. Gleneagles: 2,461 crowns in 7 s, on the trees in the photo.
+The bucket sends no cross-site headers, so the web build skips it.
+
 ### Aerial photos
 
 `AerialPhotos` (`game/scripts/realcourse/aerial_photos.gd`) fetches web

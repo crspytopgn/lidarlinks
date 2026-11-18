@@ -317,7 +317,7 @@ func canopy_rows(top: GeoRaster, chm: PackedFloat32Array, j0: int, j1: int) -> v
 
 ## The crowns whose tops sit in rows j0 to j1 of `chm` (all of it filled by
 ## canopy_rows), appended to `out`.
-func crowns_in_rows(top: GeoRaster, chm: PackedFloat32Array, out: Array[Dictionary], taken: Dictionary, j0: int, j1: int, min_height := 3.0, spacing := 4.0) -> void:
+static func crowns_in_rows(top: GeoRaster, chm: PackedFloat32Array, out: Array[Dictionary], taken: Dictionary, j0: int, j1: int, min_height := 3.0, spacing := 4.0) -> void:
 	var w := top.width
 	var h := top.height
 	var m_px := maxf(top.dlat * 111000.0, 0.1)

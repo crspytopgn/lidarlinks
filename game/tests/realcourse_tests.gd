@@ -286,6 +286,7 @@ func _test_national_lidar() -> void:
 	check(vl.url(vl.chunks[0], false).contains("BBOX=4.5500000,51.3000000,4.5530000,51.3020000"), "WCS 1.0 box is west, south, east, north")
 	_test_gsi_tiles()
 	_test_mapterhorn_tiles()
+	_test_canopy_heights()
 	var l := NationalLidar.new(NationalLidar.source_for(51.4, -0.3), [51.40, -0.31, 51.42, -0.28])
 	# About 2.1 km by 2.2 km at 1 m: 3 x 3 requests of at most 1000 px.
 	check(l.chunks.size() == 9, "chunks: %d" % l.chunks.size())
@@ -387,6 +388,78 @@ func _test_mapterhorn_tiles() -> void:
 	var h := l.ground_at(lerpf(b[0], b[2], 0.5), lerpf(b[1], b[3], 0.5))
 	check(absf(h - 12.5) < 0.01, "Terrarium height: %f" % h)
 	check(GeoRaster.from_terrarium(PackedByteArray([1, 2, 3]), b) == null, "junk is no tile")
+
+
+## The canopy height map: which file and rows a course needs, the BigTIFF
+## header, and a row round trip through Deflate and the predictor.
+func _test_canopy_heights() -> void:
+	check(CanopyHeights.quadkey(250, 158, 9) == "031133230", "quadkey for Gleneagles")
+	var c := CanopyHeights.new([56.278, -3.760, 56.292, -3.735])
+	check(c.parts.size() == 1 and c.parts[0]["key"] == "031133230", "one file for a course")
+	var part: Dictionary = c.parts[0]
+	var rows := int(part["r1"]) - int(part["r0"]) + 1
+	check(rows > 2000 and rows < 3000, "rows for 1.6 km at 0.66 m: %d" % rows)
+	# A BigTIFF header like the map's: 65536 px, 8 bit, Deflate, a strip a row.
+	var h := PackedByteArray()
+	h.resize(CanopyHeights.HEADER_BYTES)
+	h.encode_u16(0, 0x4949)
+	h.encode_u16(2, 43)
+	h.encode_u64(8, 16)
+	var tags := [[256, 4, 65536], [257, 4, 65536], [258, 3, 8], [259, 3, 8], [273, 16, 5000], [278, 3, 1], [279, 16, 9000], [317, 3, 2]]
+	h.encode_u64(16, tags.size())
+	for k in tags.size():
+		var p := 24 + k * 20
+		h.encode_u16(p, tags[k][0])
+		h.encode_u16(p + 2, tags[k][1])
+		h.encode_u64(p + 4, 1 if tags[k][1] != 16 else 65536)
+		h.encode_u64(p + 12, tags[k][2])
+	var header := CanopyHeights.parse_header(h)
+	check(int(header.get("offsets", 0)) == 5000 and int(header.get("counts", 0)) == 9000, "header: %s" % header)
+	check(CanopyHeights.offsets_range(header, part).x == 5000 + 8 * int(part["r0"]), "offset index range")
+	h.encode_u64(24 + 2 * 20 + 12, 16)
+	check(CanopyHeights.parse_header(h).is_empty(), "16-bit maps are refused")
+	# Two rows: a 12 m tree at the part's first column, else bare.
+	var c0 := int(part["c0"])
+	var blob := PackedByteArray()
+	var counts := PackedByteArray()
+	var offsets := PackedByteArray()
+	counts.resize(16)
+	offsets.resize(16)
+	for j in 2:
+		var row := PackedByteArray()
+		row.resize(CanopyHeights.SIZE)
+		row[c0] = 12  # the predictor stores differences
+		row[c0 + 1] = 256 - 12
+		var z := row.compress(FileAccess.COMPRESSION_DEFLATE)
+		offsets.encode_u64(j * 8, 100 + blob.size())
+		counts.encode_u64(j * 8, z.size())
+		blob.append_array(z)
+	var block := CanopyHeights.rows_block(offsets, counts)
+	check(int(block.get("start", 0)) == 100 and int(block.get("end", 0)) == 99 + blob.size(), "rows are one block")
+	var small := part.duplicate()
+	small["r1"] = int(small["r0"]) + 1
+	var raster := CanopyHeights.raster_for(small)
+	check(CanopyHeights.decode_rows(small, header, counts, blob, [0], raster, 0, 2), "rows decode")
+	check(raster.data[0] == 12.0 and raster.data[1] == 0.0 and raster.data[raster.width] == 12.0, "predictor undone: %s %s" % [raster.data[0], raster.data[1]])
+	check(absf(raster.west - TerrainTiles.tile_lon(250.0 + c0 / 65536.0, 9)) < 1e-9, "raster placed at its columns")
+	# A cone-shaped crown is found once, at its top.
+	var t := GeoRaster.new()
+	t.width = 30
+	t.height = 30
+	t.west = -3.75
+	t.north = 56.28
+	t.dlon = 0.00001
+	t.dlat = 0.000006
+	t.data.resize(900)
+	for j in 30:
+		for i in 30:
+			t.data[j * 30 + i] = maxf(0.0, 14.0 - roundf(Vector2(i - 15, j - 15).length()))
+	var sm := PackedFloat32Array()
+	sm.resize(900)
+	CanopyHeights.smooth_rows(t, sm, 0, 30)
+	var out: Array[Dictionary] = []
+	CanopyHeights.crowns_in_rows(t, sm, out, {}, 0, 30)
+	check(out.size() == 1 and float(out[0]["height"]) > 12.0, "one crown at the top (%d)" % out.size())
 
 
 func _test_photo_trees() -> void:
