@@ -331,6 +331,83 @@ The result is an ordinary designed course (`.olc`) with two extra keys:
 and `source` (where it came from). It plays with the usual ground textures,
 grass and trees of the current graphics look.
 
+## Playable and solid on every course
+
+Tested end to end (search, map, ground, lidar, photos, build, then every
+hole played through the physics) on 18 clubs in 11 countries: West Essex,
+St Andrews, Royal Portrush, Royal County Down, Hilversum, Golf National,
+Crans-sur-Sierre, Pebble Beach, Banff Springs, Hirono, Kasumigaseki, Royal
+Melbourne, The Australian, Leopard Creek, Emirates, and clubs mapped badly
+or not at all. What that found, and what the builder now does:
+
+- **Greens that hold a ball** (`CoursePlayability`, the in-game side of
+  `tools/homecourse/playable.py`): a green steeper than a real one's
+  pinnable ground (over 3 % overall, or a quarter of it over 4.5 %) is cut
+  and filled to a plate falling 2 % toward its front, keeping a softened
+  share of its own contours, with the ground round it eased onto it over
+  14 m. Crans-sur-Sierre's greens followed the mountain at 8 to 13 % and
+  Sydney's (on coarse tiles) 15 to 33 %, where no ball stopped. Tee boxes
+  are levelled, and a par 3 tee further than a driver carries (220 m) is
+  dropped while the hole has another.
+- **Coarse ground smoothed:** without lidar the open elevation tiles (3 to
+  5 m a pixel) carry speckle and steps at their tile edges, a metre or two
+  high; they are smoothed over about two of their pixels (4 to 10 m).
+- **Lines of play clear:** trees the lidar, photo or land cover finds
+  within 8 m of a hole's line (each tee along its route to the pin, past
+  its first 10 m) are left out; Hirono's 12th had 93 photo trees on it.
+  Trees mapped one by one and tree rows stay where they are.
+- **The right course:** a name often finds the clubhouse, its restaurant
+  or its road rather than the course (Pebble Beach Golf Links is a
+  restaurant on the map; Royal Portrush's club a building). The search then
+  looks for golf courses round the places found, the one round the place
+  first, and ranks the courses named like the query first (a stable sort:
+  equal places kept their order). Searches keep a second apart, as
+  Nominatim asks. The builder picks the outline named like the place, then
+  the one with most mapped holes, so a lodge beside a pitch-and-putt still
+  gives the real course.
+- **Clubs parted into their courses** even without `golf:course:name`: by
+  the holes' own names ("L'Aigle - Trou n°3" at Golf National), refs like
+  "4/9" (Banff Springs' nine beside its eighteen) or the courses' own
+  outlines inside the club's (Crans-sur-Sierre). A few stray holes of a
+  third course stay out. The course with most holes, then the longest
+  (Royal County Down's Championship before Annesley), opens first.
+- **Fails fast:** a map with no holes says so as soon as the map is read
+  (it used to fetch a minute of ground, lidar and photos first), naming the
+  tag that is missing. A hole whose ends run off the ground built (a club
+  over 3.6 km is cut) or a stub under 20 m is left out. A lidar service
+  that answers with no data (the course is outside its country) is not
+  reported as a failed download. A search that can't reach Nominatim says
+  so, rather than "nothing found".
+- **No freezes:** the course is built in steps of a fraction of a second
+  (`RealCourseBuilder.build_steps`), the lidar canopy is read a band of
+  rows at a time, and trees are checked against the play areas, buildings
+  and woods by 32 m cells instead of one by one (Pebble Beach's photo has
+  77,000 trees). Golf National held the game still for 8 s and Hilversum's
+  lidar for 2 s; the longest pause is now about half a second. The
+  club's other courses reuse the ground already read.
+- **The land to the horizon** (`RealLandscape`): the open elevation tiles
+  8 km each way from the course, on a 40 m grid, drawn by `Landscape` as
+  the epic courses' land is, instead of the flat apron that showed from
+  every high view. It follows the course's ground inside the course and
+  eases into the land over 160 m outside. Where the tiles carry a sea floor
+  (2 % of the land deeper than 8 m below sea level) the course gets a sea
+  (`source.sea`), as at St Andrews, but only when hardly any of the
+  course's own ground lies below sea level.
+- **Lidar must agree with the tiles:** England's lidar answers outside
+  England with zeros, which put Royal County Down at sea level and let the
+  sea in over it. Lidar is used only when its ground and the open tiles'
+  agree (not mostly zeros where the tiles say the land is above 2 m, and
+  medians within 30 m: the tiles measure tree tops in places like
+  Hilversum's woods).
+- **Tees and pins where they belong:** a tee point mapped on the last
+  hole's green is moved off it, and a hole whose line ends with no green
+  near gets its pin moved out of the water it was drawn into.
+
+`tools/realcourse_bench/e2e.sh` builds a course the way the game does and
+audits it (each hole's tee and pin surfaces, green slope, par for its
+length, trees on its line, and the reach check of `reach_tests.gd`);
+`realcourse_tests.gd` checks each step above on made-up maps in CI.
+
 ## Building in the browser
 
 The Web build has one thread, so a build runs between frames: downloads
@@ -370,6 +447,8 @@ game/scripts/realcourse/
   course_detector.gd      CourseDetector: real greens, fairways and bunkers in the photo
   terrain_tiles.gd        TerrainTiles: which tiles, PNG decoding, height sampling
   real_course_builder.gd  RealCourseBuilder: OpenStreetMap data to a DesignedCourse
+  course_playability.gd   CoursePlayability: greens that hold, level tees, smooth coarse ground
+  real_landscape.gd       RealLandscape: the land round the course to the horizon
   real_course_fetcher.gd  RealCourseFetcher: the Nominatim, Overpass and tile requests
   real_course_dialog.gd   RealCourseDialog: the designer's window
 game/tests/realcourse_tests.gd  checks on a made-up map (no network)
@@ -382,9 +461,6 @@ game/tests/realcourse_tests.gd  checks on a made-up map (no network)
 - More lidar and photo services (above); reprojecting from national
   grids would open most of the rest.
 - The course outline as out of bounds where the club marks it so.
-- The real land round a real course to the horizon (Landscape, as the epic
-  courses have), coloured from the land cover, in place of the flat apron
-  beyond the area.
+- The land round a real course coloured from the land cover (woods,
+  towns, fields); it is one parkland green now.
 - Hedges (`barrier=hedge`) and fences.
-- Building the ground over several frames, so the browser doesn't pause
-  for a few seconds on big courses.

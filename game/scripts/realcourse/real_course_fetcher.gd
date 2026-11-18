@@ -15,8 +15,18 @@ signal found(results: Array)  ## [{"name", "label", "lat", "lon", "box", "golf"}
 signal progress(text: String)
 signal built(course: DesignedCourse, summary: Dictionary)
 signal failed(text: String)
+## search() couldn't reach the search service (rather than finding nothing).
+signal search_failed(text: String)
 
 const NOMINATIM := "https://nominatim.openstreetmap.org/search?format=jsonv2&limit=10&q=%s"
+## Golf courses within a box (west, north, east, south), for a name that
+## finds the club's buildings rather than its course.
+const NOMINATIM_NEAR := "https://nominatim.openstreetmap.org/search?format=jsonv2&limit=10&q=golf%%20course&bounded=1&viewbox=%.5f,%.5f,%.5f,%.5f"
+## Places found by name that are looked round for golf courses, and how far
+## (degrees of latitude; about 2.2 km).
+const NEAR_LOOKUPS := 2
+const NEAR_DEGREES := 0.02
+const NOMINATIM_GAP_MS := 1100
 const OVERPASS := [
 	"https://overpass-api.de/api/interpreter",
 	"https://overpass.private.coffee/api/interpreter",
@@ -33,6 +43,9 @@ const RETRY_WAIT := 2.0
 ## Seconds a lidar request may take: a good answer takes a few seconds, and
 ## a stalled one isn't worth two minutes when it can be asked for again.
 const LIDAR_TIMEOUT := 45.0
+## Metres the lidar's middle height may differ from the coarse tiles'
+## before it is taken for a service with no real data there.
+const LIDAR_AGREE_M := 30.0
 ## Seconds the map servers may take over the course map: a busy public
 ## server can take a minute and a half over a big club, so the query asks
 ## for up to OVERPASS_QUERY_SECS and the download allows a little more.
@@ -51,16 +64,22 @@ const LIGHT_MAX_TREES := 2500
 ## Milliseconds of work between drawn frames, so the progress keeps moving
 ## in the single-threaded browser build.
 const FRAME_BUDGET_MS := 60
+## Lidar pixels read per step when finding the trees.
+const LIDAR_PIXELS_PER_STEP := 60000
+## Land samples shaped per step (RealLandscape).
+const LAND_SAMPLES_PER_STEP := 20000
 ## Goes up whenever a build gives a better course (new detection, trees,
 ## walls...): courses built before it offer "Update" on the Courses page.
 ## Saved in each course's source as "builder" (RealCourseUpdate).
-const BUILDER_VERSION := 2
+const BUILDER_VERSION := 3
 
 var busy := false
 ## Use national lidar and aerial photos where they cover the course.
 var use_lidar := true
 var use_photos := true
 var use_land_cover := true
+## Draw the real land round the course to the horizon (RealLandscape).
+var use_landscape := true
 ## Called with each HTTPRequest before it is sent (tools use it to set a
 ## proxy); empty in the game.
 var configure_request: Callable
@@ -69,6 +88,7 @@ var servers: Array = OVERPASS.duplicate()
 var _last_summary := {}
 var _cancelled := false
 var _last_yield := 0
+var _last_search := -100000
 
 
 ## True on a phone or tablet browser: build lighter courses there.
@@ -97,14 +117,57 @@ func search(query: String) -> void:
 		return
 	busy = true
 	var q := query.strip_edges()
-	var results := await _search_once(q)
+	var results: Variant = await _search_once(q)
+	if results == null:
+		busy = false
+		search_failed.emit("Couldn't reach OpenStreetMap's search. Check the connection and try again.")
+		return
 	if not _has_golf(results):
-		var more := await _search_once(q + (" course" if q.to_lower().contains("golf") else " golf course"))
-		if _has_golf(more):
+		var more: Variant = await _search_once(q + (" course" if q.to_lower().contains("golf") else " golf course"))
+		if more != null and _has_golf(more):
 			results = more + results
+	if not _has_golf(results):
+		# The name often finds the clubhouse, its restaurant or its road
+		# rather than the course (Pebble Beach Golf Links is mapped as a
+		# restaurant, the course as "Pebble Beach Golf Course"): look for
+		# golf courses round the first places found.
+		var near: Array[Dictionary] = []
+		for r: Dictionary in (results as Array).slice(0, NEAR_LOOKUPS):
+			var more: Variant = await _search_near(float(r["lat"]), float(r["lon"]))
+			if more == null:
+				continue
+			var golf: Array[Dictionary] = []
+			for m: Dictionary in more:
+				if m["golf"] and not near.any(func(o: Dictionary) -> bool: return o["label"] == m["label"]):
+					m["near"] = near_distance(m, float(r["lat"]), float(r["lon"]))
+					golf.append(m)
+			# The course round the clubhouse first (Crans-sur-Sierre's
+			# club is a point inside its Ballesteros course, with another
+			# club's nine a mile off).
+			golf.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return a["near"] < b["near"])
+			near.append_array(golf)
+		results = near + results
 	busy = false
-	results.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return a["golf"] and not b["golf"])
-	found.emit(results)
+	found.emit(rank(results, q))
+
+
+## Golf courses first, those named most like the query first among them,
+## else in the order found (a stable sort: sort_custom alone shuffled equal
+## places, and once offered the course next door first).
+static func rank(results: Array, query: String) -> Array:
+	var words := RealCourseBuilder.name_words(query)
+	var keyed: Array = []
+	for i in results.size():
+		var r: Dictionary = results[i]
+		var own := RealCourseBuilder.name_words(str(r["name"]))
+		var matched := 0
+		for w in words:
+			if w in own:
+				matched += 1
+		var score := (1000 if r["golf"] else 0) + matched * 10 + (0 if str(r["name"]).is_empty() else 1)
+		keyed.append([score, i, r])
+	keyed.sort_custom(func(a: Array, b: Array) -> bool: return a[0] > b[0] or (a[0] == b[0] and a[1] < b[1]))
+	return keyed.map(func(k: Array) -> Dictionary: return k[2])
 
 
 ## Fetches and builds the course at a search result.
@@ -169,6 +232,10 @@ func _build(place: Dictionary) -> DesignedCourse:
 		return null
 	await _step("Reading the map...")
 	var builder := RealCourseBuilder.new(data, lat, lon, str(place.get("name", "")))
+	if builder.hole_count() == 0:
+		# Say so now, not after minutes of ground, lidar and photos.
+		failed.emit(no_holes_text(builder.course_name))
+		return null
 	var light := light_mode()
 	if light:
 		builder.max_trees = LIGHT_MAX_TREES
@@ -192,6 +259,7 @@ func _build(place: Dictionary) -> DesignedCourse:
 	# National lidar: the first service that covers the course.
 	var lidar: NationalLidar = null
 	var lidar_gaps := 0  ## lidar ground chunks that never arrived
+	var lidar_outside := 0  ## services that answered with no data for the course
 	var lidar_sources := NationalLidar.sources_for(lat, lon) if use_lidar else ([] as Array[Dictionary])
 	for src in lidar_sources:
 		lidar = NationalLidar.new(src, gb)
@@ -222,7 +290,10 @@ func _build(place: Dictionary) -> DesignedCourse:
 				got[i] = [0, PackedByteArray()]  # free the download
 				await _breathe()
 		lidar_gaps = dtm_missing
-		if lidar.coverage() >= 0.25:
+		var covers := lidar.coverage() >= 0.25 and lidar_agrees(lidar.ground_at, tiles.height_at, gb)
+		if dtm_missing == 0 and not covers:
+			lidar_outside += 1  # every chunk came, with no data here: outside its country
+		if covers:
 			height = lidar.ground_at
 			builder.lidar_ground = true
 			ground_name = src["name"]
@@ -234,7 +305,20 @@ func _build(place: Dictionary) -> DesignedCourse:
 					await _step("Finding the trees in the lidar (%d of %d)..." % [k + 1, lidar.dsm.size()])
 					if _cancelled:
 						return null
-					lidar.trees_in(lidar.dsm[k], crowns, taken)
+					# A band of rows at a time: a 0.5 m raster in one go held
+					# the game still for two seconds (Hilversum).
+					var top: GeoRaster = lidar.dsm[k]
+					var chm := PackedFloat32Array()
+					chm.resize(top.width * top.height)
+					var band := maxi(1, LIDAR_PIXELS_PER_STEP / maxi(top.width, 1))
+					for j in range(0, top.height, band):
+						lidar.canopy_rows(top, chm, j, mini(j + band, top.height))
+						await _breathe()
+					for j in range(0, top.height, band / 2):
+						lidar.crowns_in_rows(top, chm, crowns, taken, j, mini(j + band / 2, top.height))
+						await _breathe()
+					if _cancelled:
+						return null
 				builder.lidar_trees = crowns
 				builder.surface = lidar.surface_at
 			break
@@ -287,6 +371,9 @@ func _build(place: Dictionary) -> DesignedCourse:
 				cover = land.ground_image(builder.frame, builder.area)
 
 	builder.photo = photo
+	if lidar == null:
+		# Open elevation tiles: speckled, and stepped at their edges.
+		builder.ground_smooth = clampf(tiles.pixel_metres(lat) * 2.0, 4.0, 10.0)
 	await _step("Building %s..." % builder.course_name)
 	if _cancelled:
 		return null
@@ -296,23 +383,31 @@ func _build(place: Dictionary) -> DesignedCourse:
 	var others: Array[DesignedCourse] = []
 	if not names.is_empty():
 		builder.course_filter = names[0]
-	var course := builder.build(height, tiles.height_at)
+	var course := await _build_course(builder, height, tiles.height_at)
+	if course == null:
+		return null
 	var first_summary := builder.summary.duplicate()
 	for k in range(1, names.size()):
 		await _step("Building %s..." % names[k])
 		if _cancelled:
 			return null
 		builder.course_filter = names[k]
-		var more := builder.build(height, tiles.height_at)
+		var more := await _build_course(builder, height, tiles.height_at)
+		if more == null:
+			return null
 		if not more.holes.is_empty():
 			others.append(more)
 	builder.course_filter = names[0] if not names.is_empty() else ""
+	if use_landscape:
+		await _add_landscape(builder, [course] + others)
+		if _cancelled:
+			return null
 	# What the Courses page needs to build it again with a newer builder.
 	for c: DesignedCourse in [course] + others:
 		RealCourseUpdate.stamp(c, place)
 	_last_summary = first_summary
 	_last_summary["ground"] = ground_name
-	if not lidar_sources.is_empty() and (lidar == null or lidar_gaps > 0):
+	if not lidar_sources.is_empty() and (lidar == null or lidar_gaps > 0) and not (lidar == null and lidar_outside == lidar_sources.size()):
 		# Say so, rather than leave coarse ground looking like the lidar's.
 		_last_summary["lidar_failed"] = str(lidar_sources[0]["name"]) if lidar == null else ""
 		_last_summary["lidar_gaps"] = lidar_gaps
@@ -329,9 +424,85 @@ func _build(place: Dictionary) -> DesignedCourse:
 	if lidar == null:
 		_last_summary["metres_per_pixel"] = snappedf(tiles.pixel_metres(lat), 0.1)
 	if course.holes.is_empty():
-		failed.emit("OpenStreetMap has no holes mapped for %s yet. Try another course, or map it at openstreetmap.org." % builder.course_name)
+		failed.emit(no_holes_text(builder.course_name))
 		return null
 	return course
+
+
+static func no_holes_text(course_name: String) -> String:
+	return "OpenStreetMap has no holes mapped for %s yet (each hole is a line from tee to green, tagged golf=hole). Try another course, or map it at openstreetmap.org." % course_name
+
+
+## The real land round the course out to the horizon (RealLandscape), for
+## each of the club's courses; left out if its tiles don't come.
+func _add_landscape(builder: RealCourseBuilder, courses: Array) -> void:
+	var land := RealLandscape.new(builder.frame, courses[0])
+	var b := land.box()
+	var tiles := TerrainTiles.for_box(b[0], b[1], b[2], b[3])
+	var urls := tiles.urls()
+	var got := await _fetch_all(urls, "Fetching the land round the course", TRIES)
+	if _cancelled:
+		return
+	for i in urls.size():
+		if got[i][0] == 200:
+			tiles.add_tile(i, got[i][1])
+			await _breathe()
+	if tiles.loaded * 4 < urls.size() * 3:
+		return  # a patchwork horizon is worse than none
+	tiles.fill_missing()
+	await _step("Shaping the land round the course...")
+	var band := maxi(1, LAND_SAMPLES_PER_STEP / land.count)
+	for j in range(0, land.count, band):
+		land.rows(j, j + band, tiles.height_at)
+		await _breathe()
+		if _cancelled:
+			return
+	for c: DesignedCourse in courses:
+		land.apply(c)
+
+
+## Builds the builder's course a step at a time, drawing frames between;
+## null if cancelled.
+func _build_course(builder: RealCourseBuilder, height: Callable, fallback: Callable) -> DesignedCourse:
+	var c := builder.start_build()
+	for step in builder.build_steps(c, height, fallback):
+		step.call()
+		await _breathe()
+		if _cancelled:
+			return null
+	return c
+
+
+## True unless the lidar's ground is plainly not the ground: outside its
+## country a service may answer with zeros rather than no data (England's
+## does over Northern Ireland, Wales and southern Scotland, and Royal County
+## Down came out as a flat sheet at sea level, flooded). Mostly zeros where
+## the coarse tiles see land above 2 m, or tens of metres off them overall,
+## isn't lidar. (A few metres off is normal: where the tiles come from SRTM
+## they measure the tree tops, as over Hilversum's woods.)
+static func lidar_agrees(lidar: Callable, coarse: Callable, box: Array[float], grid := 12) -> bool:
+	var ours := PackedFloat32Array()
+	var theirs := PackedFloat32Array()
+	var zeros := 0
+	for j in grid:
+		for i in grid:
+			var lat := lerpf(box[0], box[2], (j + 0.5) / grid)
+			var lon := lerpf(box[1], box[3], (i + 0.5) / grid)
+			var h := float(lidar.call(lat, lon))
+			if is_nan(h):
+				continue
+			ours.append(h)
+			theirs.append(float(coarse.call(lat, lon)))
+			if absf(h) < 0.01:
+				zeros += 1
+	if ours.size() < grid:
+		return false
+	ours.sort()
+	theirs.sort()
+	var mid := ours.size() / 2
+	if zeros * 2 > ours.size() and theirs[mid] > 2.0:
+		return false
+	return absf(ours[mid] - theirs[mid]) < LIDAR_AGREE_M
 
 
 ## Close-up photos round the greens the map leaves unfinished
@@ -388,14 +559,39 @@ static func overpass_query(s: float, w: float, n: float, e: float) -> String:
 		");out geom;")
 
 
-func _search_once(q: String) -> Array[Dictionary]:
-	var out: Array[Dictionary] = []
-	var res := await _http_get(NOMINATIM % q.uri_encode())
+## The places Nominatim finds for `q`; null if it couldn't be reached.
+func _search_once(q: String) -> Variant:
+	return await _search_url(NOMINATIM % q.uri_encode())
+
+
+## Golf courses round (lat, lon); null if the search couldn't be reached.
+func _search_near(lat: float, lon: float) -> Variant:
+	var dlon := NEAR_DEGREES / maxf(cos(deg_to_rad(lat)), 0.1)
+	return await _search_url(NOMINATIM_NEAR % [lon - dlon, lat + NEAR_DEGREES, lon + dlon, lat - NEAR_DEGREES])
+
+
+## Metres from (lat, lon) to a found place: 0 inside its box, else to its
+## middle.
+static func near_distance(place: Dictionary, lat: float, lon: float) -> float:
+	var box: Array = place.get("box", [])
+	if box.size() == 4 and lat >= float(box[0]) and lat <= float(box[1]) and lon >= float(box[2]) and lon <= float(box[3]):
+		return 0.0
+	return GeoFrame.new(lat, lon).to_local(float(place["lat"]), float(place["lon"])).length()
+
+
+func _search_url(url: String) -> Variant:
+	# Nominatim asks for a second between requests.
+	var wait := _last_search + NOMINATIM_GAP_MS - Time.get_ticks_msec()
+	if wait > 0:
+		await get_tree().create_timer(wait / 1000.0).timeout
+	_last_search = Time.get_ticks_msec()
+	var res := await _http_get(url)
 	if res[0] != 200:
-		return out
+		return null
+	var out: Array[Dictionary] = []
 	var parsed: Variant = JSON.parse_string((res[1] as PackedByteArray).get_string_from_utf8())
 	if not parsed is Array:
-		return out
+		return null
 	for r: Variant in parsed:
 		if not r is Dictionary:
 			continue
@@ -411,7 +607,7 @@ func _search_once(q: String) -> Array[Dictionary]:
 	return out
 
 
-static func _has_golf(results: Array[Dictionary]) -> bool:
+static func _has_golf(results: Array) -> bool:
 	for r in results:
 		if r["golf"]:
 			return true

@@ -27,6 +27,17 @@ func run_all() -> Array[String]:
 	_test_far_woods()
 	_test_retries()
 	_test_map_servers()
+	_test_playable_on_a_hillside()
+	_test_playability_steps()
+	_test_courses_at_a_club()
+	_test_boundary_by_name()
+	_test_lines_of_play()
+	_test_holes_checked_early()
+	_test_search_ranking()
+	_test_landscape()
+	_test_tee_off_the_last_green()
+	_test_pin_out_of_the_pond()
+	_test_lidar_must_agree()
 	return failures
 
 
@@ -864,3 +875,313 @@ func _test_retries() -> void:
 	check(CourseDesigner._lidar_note({}).is_empty(), "no lidar note when it all came")
 	check(not CourseDesigner._lidar_note({"lidar_gaps": 1, "lidar_failed": ""}).is_empty(), "a note when part of the lidar is missing")
 	check(not CourseDesigner._lidar_note({"lidar_gaps": 2, "lidar_failed": "EA"}).is_empty(), "a note when the lidar failed")
+
+
+## A course on a mountainside (Crans-sur-Sierre's greens followed the slope
+## at 8 to 13 %, where no ball stops) on speckled coarse ground (Sydney's
+## open tiles tilted its greens up to 33 %) is shaped as a club would: every
+## green holds a ball from the fairway (the check reach_tests.gd makes on
+## the built-in courses), tees are level and the far side is untouched.
+func _test_playable_on_a_hillside() -> void:
+	var f := GeoFrame.new(46.3, 7.5)
+	var els: Array = []
+	els.append(_way({"leisure": "golf_course", "name": "Hillside"}, f, _rect(Vector2(-200, -300), Vector2(200, 300))))
+	var holes := [[Vector2(-100, -250), Vector2(-100, 120), "4"], [Vector2(0, 120), Vector2(0, -40), "3"], [Vector2(100, -200), Vector2(100, 200), "4"]]
+	for i in holes.size():
+		var tee: Vector2 = holes[i][0]
+		var pin: Vector2 = holes[i][1]
+		els.append(_way({"golf": "hole", "ref": str(i + 1), "par": holes[i][2]}, f, [tee, pin], false))
+		els.append(_way({"golf": "tee"}, f, _rect(tee - Vector2(6, 8), tee + Vector2(6, 8))))
+		els.append(_way({"golf": "green"}, f, _rect(pin - Vector2(14, 14), pin + Vector2(14, 14))))
+		var dir := (pin - tee).normalized()
+		els.append(_way({"golf": "fairway"}, f, _rect((tee + dir * 30).min(pin - dir * 20) - Vector2(18, 0), (tee + dir * 30).max(pin - dir * 20) + Vector2(18, 0))))
+	var b := RealCourseBuilder.new({"elements": els}, 46.3, 7.5)
+	b.ground_smooth = 8.0
+	# 11 % up toward the north and east, with metre-high speckle.
+	var ground := func(la: float, lo: float) -> float:
+		var p := f.to_local(la, lo)
+		return 1200.0 + p.y * 0.11 - p.x * 0.04 + sin(p.x * 0.9) * cos(p.y * 1.3) * 0.8
+	var c := b.build(ground)
+	check(c.holes.size() == 3, "three holes on the hillside (%d)" % c.holes.size())
+	check(int(b.playability.get("greens", 0)) == 3, "all three greens are graded (%s)" % b.playability)
+	var data := c.to_course_data()
+	var reach: RefCounted = load("res://tests/reach_tests.gd").new()
+	AssetProviders.ensure_defaults()
+	for h in data.holes:
+		reach.call("_check_hole", "hillside", h)
+		var t := h.terrain
+		var pin := h.pin
+		var tilt := Vector2(t.height_at(pin.x + 5, pin.z) - t.height_at(pin.x - 5, pin.z), t.height_at(pin.x, pin.z + 5) - t.height_at(pin.x, pin.z - 5)).length() / 10.0
+		check(tilt < 0.035, "hole %d's green is graded to a gentle plate (%.1f %%)" % [h.number, tilt * 100.0])
+		var tee_fall := absf(t.height_at(h.tee.x, h.tee.z + 5) - t.height_at(h.tee.x, h.tee.z - 5)) / 10.0
+		check(tee_fall < 0.03, "hole %d's tee is level (%.1f %%)" % [h.number, tee_fall * 100.0])
+	for failure: String in reach.get("failures"):
+		check(false, failure)
+	# Ground away from the greens and tees keeps the mountain's slope.
+	var shift := b.frame.to_local(46.3, 7.5)
+	var far_a := c.base_height(-170 + shift.x, -100 + shift.y)
+	var far_b := c.base_height(-170 + shift.x, 0 + shift.y)
+	check(absf((far_b - far_a) - 11.0) < 1.5, "the hillside away from the greens keeps its 11 %% (%.1f m in 100 m)" % (far_b - far_a))
+
+
+## Each step on its own: smoothing keeps the mean and calms speckle, a tee
+## too far for a par 3 is dropped while the hole has another, and a green
+## already flat is left as measured.
+func _test_playability_steps() -> void:
+	var c := DesignedCourse.blank(Vector2(200, 200))
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 7
+	for k in c.heights.size():
+		c.heights[k] = 5.0 + rng.randf_range(-1.0, 1.0)
+	var before := _roughness(c)
+	CoursePlayability.smooth_ground(c, 8.0)
+	var mean := 0.0
+	for h in c.heights:
+		mean += h
+	mean /= c.heights.size()
+	check(_roughness(c) < before * 0.3, "smoothing calms the speckle (%.2f to %.2f)" % [before, _roughness(c)])
+	check(absf(mean - 5.0) < 0.1, "smoothing keeps the ground's height (%.2f)" % mean)
+	for k in c.heights.size():
+		c.heights[k] = 2.0
+	c.shapes.append(CourseShape.new(Surface.Type.GREEN, PackedVector2Array([Vector2(-15, -15), Vector2(15, -15), Vector2(15, 15), Vector2(-15, 15)])))
+	check(CoursePlayability.grade_greens(c) == 0, "a flat green is left as it is")
+	var h := DesignedHole.new()
+	h.par = 3
+	h.pin = Vector2(0, 0)
+	h.tees = PackedVector2Array([Vector2(0, -245), Vector2(0, -180), Vector2(0, -140)])
+	c.holes.append(h)
+	var long := DesignedHole.new()
+	long.par = 3
+	long.pin = Vector2(50, 0)
+	long.tees = PackedVector2Array([Vector2(50, -240)])
+	c.holes.append(long)
+	check(CoursePlayability.trim_par3_tees(c) == 1, "one tee dropped")
+	check(h.tees.size() == 2 and h.tees[0].y == -180.0, "the 245 m back tee of a par 3 is dropped (%s)" % h.tees)
+	check(long.tees.size() == 1, "a par 3's only tee stays")
+
+
+static func _roughness(c: DesignedCourse) -> float:
+	var sum := 0.0
+	for j in range(1, c.rows - 1):
+		for i in range(1, c.cols - 1):
+			sum += absf(c.heights[j * c.cols + i] - c.heights[j * c.cols + i + 1])
+	return sum / ((c.rows - 2) * (c.cols - 2))
+
+
+## A club whose holes repeat their numbers is parted into its courses even
+## when the map doesn't tag golf:course:name: by the holes' names (Golf
+## National's "L'Aigle - Trou n°3"), by refs like "4/9" (Banff Springs) or by
+## the courses' own outlines (Crans-sur-Sierre); and a few holes of a third
+## course stay out of both.
+func _test_courses_at_a_club() -> void:
+	var f := GeoFrame.new(48.75, 2.07)
+	for way in ["name", "ref", "outline"]:
+		var els: Array = []
+		els.append(_way({"leisure": "golf_course", "name": "Big Club"}, f, _rect(Vector2(-900, -700), Vector2(900, 700))))
+		if way == "outline":
+			els.append(_way({"leisure": "golf_course", "name": "West Course"}, f, _rect(Vector2(-880, -680), Vector2(-20, 680))))
+			els.append(_way({"leisure": "golf_course", "name": "East Course"}, f, _rect(Vector2(20, -680), Vector2(880, 680))))
+		for side in [-1, 1]:
+			var count := 18 if side < 0 else 9
+			for n in count:
+				var x: float = side * (60.0 + (n % 6) * 130.0)
+				var z := -600.0 + int(n / 6.0) * 400.0
+				var tags := {"golf": "hole", "ref": str(n + 1), "par": "4"}
+				if way == "name":
+					tags["name"] = ("L'Albatros - Trou n°%d" if side < 0 else "L'Aigle - Trou n°%d") % (n + 1)
+				elif way == "ref":
+					tags["ref"] = "%d/%d" % [n + 1, count]
+				els.append(_way(tags, f, [Vector2(x, z), Vector2(x, z + 330)], false))
+		# Two stray holes of a short course, numbered like the others.
+		els.append(_way({"golf": "hole", "ref": "5", "name": "Oiselet 5"}, f, [Vector2(-10, -650), Vector2(-10, -560)], false))
+		els.append(_way({"golf": "hole", "ref": "6", "name": "Oiselet 6"}, f, [Vector2(10, -650), Vector2(10, -560)], false))
+		var b := RealCourseBuilder.new({"elements": els}, 48.75, 2.07, "Big Club")
+		var names := b.course_names()
+		check(names.size() == 2, "%s: the club parts into two courses (%s)" % [way, names])
+		if names.size() == 2:
+			b.course_filter = names[0]
+			var first := b.build(func(_a: float, _b: float) -> float: return 50.0)
+			b.course_filter = names[1]
+			var second := b.build(func(_a: float, _b: float) -> float: return 50.0)
+			check(first.holes.size() == 18 and second.holes.size() == 9, "%s: 18 and 9 holes (%d, %d)" % [way, first.holes.size(), second.holes.size()])
+			check(way != "name" or first.course_name.contains("Albatros"), "the course is named from its holes (%s)" % first.course_name)
+	# A single course numbered once through stays whole.
+	var one: Array = []
+	one.append(_way({"leisure": "golf_course", "name": "One"}, f, _rect(Vector2(-500, -500), Vector2(500, 500))))
+	for n in 18:
+		one.append(_way({"golf": "hole", "ref": str(n + 1), "name": "Hole %d" % (n + 1)}, f, [Vector2(-400 + n * 45, -300), Vector2(-400 + n * 45, 100)], false))
+	check(RealCourseBuilder.new({"elements": one}, 48.75, 2.07, "One").course_names().is_empty(), "a single course isn't parted")
+
+
+## A name that finds the club's lodge rather than its course (Pebble Beach
+## Golf Links is a restaurant on the map) gives the course named like it,
+## not the pitch-and-putt next door.
+func _test_boundary_by_name() -> void:
+	var f := GeoFrame.new(36.57, -121.95)
+	var els: Array = []
+	els.append(_way({"leisure": "golf_course", "name": "The Hay"}, f, _rect(Vector2(-150, -100), Vector2(50, 100))))
+	els.append(_way({"leisure": "golf_course", "name": "Pebble Beach Golf Course"}, f, _rect(Vector2(150, -900), Vector2(1200, 900))))
+	for n in 9:
+		els.append(_way({"golf": "hole", "ref": str(n + 1), "par": "3"}, f, [Vector2(-140 + n * 20, -80), Vector2(-140 + n * 20, -10)], false))
+	for n in 18:
+		els.append(_way({"golf": "hole", "ref": str(n + 1)}, f, [Vector2(200 + n * 50, -700), Vector2(200 + n * 50, -300)], false))
+	var b := RealCourseBuilder.new({"elements": els}, 36.57, -121.95, "Pebble Beach Golf Links")
+	check(b.course_name == "Pebble Beach Golf Links" and b.hole_count() == 18, "the course named like the place, not the short course beside it (%d holes)" % b.hole_count())
+	var near := RealCourseBuilder.new({"elements": els}, 36.57, -121.95, "Cypress Point Club")
+	check(near.hole_count() == 18, "with no name to match, a real course before the pitch-and-putt (%d holes)" % near.hole_count())
+	check(RealCourseBuilder.name_words("The Royal Portrush Golf Club") == PackedStringArray(["portrush"]), "only a name's own words count")
+
+
+## Trees the lidar or photo found on a hole's line of play are left out (a
+## crown on the line 30 m out blocked Hirono's 12th).
+func _test_lines_of_play() -> void:
+	var lines: Array[PackedVector2Array] = [PackedVector2Array([Vector2(0, 0), Vector2(0, 200), Vector2(50, 350)])]
+	var cells := RealCourseBuilder.line_cells(lines)
+	check(RealCourseBuilder.on_line_of_play(Vector2(3, 100), cells), "a tree 3 m off the line is on it")
+	check(RealCourseBuilder.on_line_of_play(Vector2(28, 280), cells), "on the dogleg's second leg too")
+	check(not RealCourseBuilder.on_line_of_play(Vector2(20, 100), cells), "20 m off isn't")
+	check(not RealCourseBuilder.on_line_of_play(Vector2(1, -5), cells), "behind the tee isn't")
+	var f := GeoFrame.new(52.0, 5.0)
+	var els: Array = []
+	els.append(_way({"leisure": "golf_course", "name": "Woods"}, f, _rect(Vector2(-150, -250), Vector2(150, 250))))
+	els.append(_way({"golf": "hole", "ref": "1", "par": "4"}, f, [Vector2(0, -200), Vector2(0, 150)], false))
+	var b := RealCourseBuilder.new({"elements": els}, 52.0, 5.0)
+	var shift := b.frame.to_local(52.0, 5.0)
+	b.lidar_trees = [{"lat": f.lat_of(Vector2(-3, 0)), "lon": f.lon_of(Vector2(-3, 0)), "height": 15.0}, {"lat": f.lat_of(Vector2(-60, 0)), "lon": f.lon_of(Vector2(-60, 0)), "height": 15.0}]
+	var c := b.build(func(_a: float, _b: float) -> float: return 10.0)
+	var on_line := 0
+	var off := false
+	for o in c.objects:
+		var p := Vector2(o.position.x, o.position.z) - shift
+		if p.distance_to(Vector2(-3, 0)) < 1.0:
+			on_line += 1
+		if p.distance_to(Vector2(-60, 0)) < 1.0:
+			off = true
+	check(on_line == 0, "the lidar crown on the line is left out")
+	check(off, "the lidar crown 60 m off is planted")
+
+
+## A map with no holes says so at once, before minutes of ground, lidar and
+## photo downloads (Chipping Sodbury, 2026-11-18), and a hole that runs off
+## the ground built, or is a stub, is left out.
+func _test_holes_checked_early() -> void:
+	var f := GeoFrame.new(51.5, -2.4)
+	var els: Array = []
+	els.append(_way({"leisure": "golf_course", "name": "Unmapped"}, f, _rect(Vector2(-300, -300), Vector2(300, 300))))
+	els.append(_way({"golf": "green"}, f, _rect(Vector2(-10, -10), Vector2(10, 10))))
+	var b := RealCourseBuilder.new({"elements": els}, 51.5, -2.4)
+	check(b.hole_count() == 0, "no holes are counted on an unmapped course")
+	check(RealCourseFetcher.no_holes_text("Unmapped").contains("golf=hole"), "the message says what is missing")
+	els.append(_way({"golf": "hole", "ref": "1"}, f, [Vector2(0, -100), Vector2(0, -92)], false))
+	els.append(_way({"golf": "hole", "ref": "2"}, f, [Vector2(0, 0), Vector2(0, 5000)], false))
+	els.append(_way({"golf": "hole", "ref": "3"}, f, [Vector2(50, -200), Vector2(50, 150)], false))
+	check(RealCourseBuilder.new({"elements": els}, 51.5, -2.4).hole_count() == 1, "a stub and a hole running off the area are left out")
+
+
+## Search results: golf courses first, the one named like the query first,
+## in the order found otherwise; unnamed courses last.
+func _test_search_ranking() -> void:
+	var r := [
+		{"name": "Pebble Beach Golf Links", "golf": false},
+		{"name": "", "golf": true},
+		{"name": "Spyglass Hill Golf Course", "golf": true},
+		{"name": "Pebble Beach Golf Course", "golf": true},
+		{"name": "Poppy Hills Golf Course", "golf": true},
+	]
+	var out := RealCourseFetcher.rank(r, "Pebble Beach Golf Links")
+	var names: Array = out.map(func(d: Dictionary) -> String: return d["name"])
+	check(names == ["Pebble Beach Golf Course", "Spyglass Hill Golf Course", "Poppy Hills Golf Course", "", "Pebble Beach Golf Links"], "search ranking (%s)" % [names])
+	var inside := {"lat": 46.31, "lon": 7.47, "box": ["46.30", "46.32", "7.46", "7.48"]}
+	var off := {"lat": 46.32, "lon": 7.49, "box": ["46.315", "46.325", "7.485", "7.495"]}
+	check(RealCourseFetcher.near_distance(inside, 46.305, 7.465) == 0.0 and RealCourseFetcher.near_distance(off, 46.305, 7.465) > 1000.0, "the course round the clubhouse is nearest")
+	check(RealCourseBuilder.short_name("The Fairmont Banff Springs Golf Course") == "Fairmont Banff Springs", "short club name (%s)" % RealCourseBuilder.short_name("The Fairmont Banff Springs Golf Course"))
+
+
+## The land round a real course to the horizon: it meets the course's own
+## ground at its edge without a step, saves and loads, and a coast's sea
+## floor gives the course a sea.
+func _test_landscape() -> void:
+	var f := GeoFrame.new(56.34, -2.80)
+	var c := DesignedCourse.blank(Vector2(600, 400))
+	c.source["base_height"] = 10.0
+	for k in c.heights.size():
+		c.heights[k] = 2.0
+	var land := RealLandscape.new(f, c)
+	check(land.count >= 400, "the land reaches 8 km each way (%d samples)" % land.count)
+	var b := land.box()
+	check(b[0] < 56.34 - 0.06 and b[2] > 56.34 + 0.06, "its box spans the land")
+	# The sea floor east of the course (-x is east), rising land to the west.
+	var height := func(lat: float, lon: float) -> float:
+		var p := f.to_local(lat, lon)
+		return -20.0 if p.x < -2000.0 else 15.0 + p.x * 0.01
+	land.rows(0, land.count, height)
+	check(land.has_sea(), "a sea floor nearby gives a sea")
+	var again := DesignedCourse.from_json(c.to_json())
+	land.apply(again)
+	check(again.landscape.get("cols", 0) == land.count and float(again.source.get("sea", -1.0)) == 0.0, "the land and the sea are set")
+	var edge := land.heights[land.count / 2 * land.count + land.count / 2]
+	check(absf(edge - 2.0) < 0.2, "inside the course it follows the course's ground (%.2f)" % edge)
+	var round := DesignedCourse.from_json(JSON.stringify(_with_land(c, land)))
+	check(round != null and not round.landscape.is_empty(), "the land saves and loads")
+	if round != null and not round.landscape.is_empty():
+		var hs: PackedFloat32Array = round.landscape["heights"]
+		var far := land.count - 2
+		check(absf(hs[land.count / 2 * land.count + far] - land.heights[land.count / 2 * land.count + far]) < 0.11, "heights keep to a decimetre")
+	check(not is_nan(Landscape.sea_level(again)), "the course draws its sea")
+
+
+static func _with_land(c: DesignedCourse, land: RealLandscape) -> Dictionary:
+	land.apply(c)
+	return c.to_dict()
+
+
+## A hole drawn from the last green's middle with no tee mapped starts past
+## that green, not on it.
+func _test_tee_off_the_last_green() -> void:
+	var f := GeoFrame.new(52.2, 5.2)
+	var els: Array = []
+	els.append(_way({"leisure": "golf_course", "name": "Greens"}, f, _rect(Vector2(-200, -300), Vector2(200, 300))))
+	els.append(_way({"golf": "green"}, f, _rect(Vector2(-12, -212), Vector2(12, -188))))
+	els.append(_way({"golf": "green"}, f, _rect(Vector2(-12, -12), Vector2(12, 12))))
+	els.append(_way({"golf": "hole", "ref": "5", "par": "3"}, f, [Vector2(0, -200), Vector2(0, 0)], false))
+	var b := RealCourseBuilder.new({"elements": els}, 52.2, 5.2)
+	var c := b.build(func(_a: float, _b: float) -> float: return 3.0)
+	var shift := b.frame.to_local(52.2, 5.2)
+	check(c.holes.size() == 1 and c.holes[0].tees[0].y - shift.y > -188.0 + 5.0, "the tee is past the last green (%s)" % (c.holes[0].tees[0] - shift if c.holes.size() == 1 else Vector2.ZERO))
+	var data := c.to_course_data()
+	if data.holes.size() == 1:
+		var t := data.holes[0].tee
+		check(data.holes[0].terrain.surface_at(t.x, t.z) != Surface.Type.GREEN, "and not on a green")
+
+
+## A hole line that ends in a pond with no green mapped puts its pin (and
+## the green guessed round it) on the bank.
+func _test_pin_out_of_the_pond() -> void:
+	var f := GeoFrame.new(-25.4, 31.9)
+	var els: Array = []
+	els.append(_way({"leisure": "golf_course", "name": "Creek"}, f, _rect(Vector2(-200, -300), Vector2(200, 300))))
+	els.append(_way({"natural": "water"}, f, _rect(Vector2(-30, 150), Vector2(30, 210))))
+	els.append(_way({"golf": "hole", "ref": "1", "par": "4"}, f, [Vector2(0, -200), Vector2(0, 180)], false))
+	var b := RealCourseBuilder.new({"elements": els}, -25.4, 31.9)
+	var c := b.build(func(_a: float, _b: float) -> float: return 300.0)
+	var shift := b.frame.to_local(-25.4, 31.9)
+	check(c.holes.size() == 1 and c.holes[0].pin.y - shift.y < 150.0 - 8.0, "the pin is on the bank (%s)" % (c.holes[0].pin - shift if c.holes.size() == 1 else Vector2.ZERO))
+
+
+## A lidar service that answers outside its country with zeros (England's
+## over Northern Ireland) isn't taken for the ground, and the sea isn't let
+## in over a course whose ground lies at sea level.
+func _test_lidar_must_agree() -> void:
+	var box: Array[float] = [54.21, -5.89, 54.23, -5.86]
+	var hills := func(lat: float, lon: float) -> float: return 8.0 + (lat - 54.21) * 900.0 + (lon + 5.89) * 300.0
+	var zeros := func(_lat: float, _lon: float) -> float: return 0.0
+	var close := func(lat: float, lon: float) -> float: return float(hills.call(lat, lon)) + 0.7
+	check(not RealCourseFetcher.lidar_agrees(zeros, hills, box), "a sheet of zeros isn't lidar")
+	check(RealCourseFetcher.lidar_agrees(close, hills, box), "lidar near the tiles is taken")
+	var canopy := func(lat: float, lon: float) -> float: return float(hills.call(lat, lon)) + 18.0
+	check(RealCourseFetcher.lidar_agrees(hills, canopy, box), "lidar under tiles that measured the tree tops is taken")
+	var c := DesignedCourse.blank(Vector2(200, 200))
+	c.source["base_height"] = 0.0
+	check(not RealLandscape.dry(c), "ground at sea level isn't dry")
+	c.source["base_height"] = 6.0
+	check(RealLandscape.dry(c), "ground 6 m up is")

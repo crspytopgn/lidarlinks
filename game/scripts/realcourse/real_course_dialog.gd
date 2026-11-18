@@ -33,6 +33,7 @@ func _ready() -> void:
 	fetcher = RealCourseFetcher.new()
 	add_child(fetcher)
 	fetcher.found.connect(_on_found)
+	fetcher.search_failed.connect(_on_search_failed)
 	fetcher.progress.connect(_on_progress)
 	fetcher.failed.connect(_on_failed)
 	fetcher.built.connect(_on_built)
@@ -126,11 +127,18 @@ func _on_found(found: Array) -> void:
 	for p: Dictionary in found:
 		results.add_item(("[golf course]  " if p["golf"] else "") + str(p["label"]))
 	if found.is_empty():
-		results.add_item("Nothing found. Check the connection, or try the club's full name and its town.")
+		results.add_item("Nothing found. Try the club's full name and its town.")
 		results.set_item_disabled(0, true)
 	elif found[0]["golf"]:
 		results.select(0)
 		get_ok_button().disabled = false
+
+
+func _on_search_failed(text: String) -> void:
+	results.clear()
+	_places.clear()
+	results.add_item(text)
+	results.set_item_disabled(0, true)
 
 
 func _on_build() -> void:

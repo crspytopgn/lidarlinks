@@ -183,7 +183,8 @@ product lead builds it.
   - [ ] Real courses: find fairways on more holes, and greens and bunkers where there is no open photo (England)
   - [ ] Real courses: Scotland, Wales, Ireland, Denmark, Canada and the rest (need a key or reprojection from national grids)
   - [x] Real courses: buildings from the map with lidar heights and roofs, lidar woods in full (30,000 trees), piped drains not dug, hay meadows as long grass
-  - [ ] Real courses: the real land to the horizon (Landscape) coloured from land cover, car parks as tarmac, hedges
+  - [x] Real courses: playable and solid everywhere: greens that hold, level tees, clear lines of play, the right course found and clubs parted into their courses, no freezes, the real land and sea to the horizon ([real-courses.md](docs/real-courses.md#playable-and-solid-on-every-course))
+  - [ ] Real courses: the land to the horizon coloured from land cover, car parks as tarmac, hedges
   - [x] Crisp surface edges (splat map) on designed and real courses
   - [x] Hazard stakes round ponds and out of bounds, and a built-in bush
   - [ ] Free built-in buildings, per-course skies

@@ -25,6 +25,13 @@ const ROW_SPACING := 7.0  ## metres between trees in a tree row
 const LOW_GROUND := -12.0  ## heights below this (sea floor) are raised to it
 const MAX_POINTS := 90  ## control points per area at most
 const STREAM_PIECE := 60.0  ## streams are split so each piece has its own water line
+## Metres either side of a hole's line of play kept free of found trees
+## (crowns the lidar or photo put on the line: Hirono's 12th had 93).
+const LINE_CLEAR := 8.0
+## Work per build step (build_steps): height samples, and buildings.
+const HEIGHT_SAMPLES_PER_STEP := 40000
+const BUILDINGS_PER_STEP := 120
+const MAX_GREEN_STEPS := 24  ## the greens are graded over this many steps
 const CREDITS := "Course layout from OpenStreetMap, (c) OpenStreetMap contributors, ODbL 1.0 (openstreetmap.org/copyright). Ground heights from the Terrain Tiles on AWS Open Data (Mapzen), which merge national lidar and open elevation data; see docs/real-courses.md for each source."
 
 ## Simplification tolerance per surface, metres.
@@ -90,6 +97,20 @@ var _guessed: Array[Dictionary] = []  ## CourseGuesser's shapes: {"ring", "box"}
 var course_filter := ""
 ## Extra credits for the data sources the fetcher used.
 var extra_credits: PackedStringArray = []
+## Metres to smooth the ground over: coarse open elevation tiles (no lidar)
+## are speckled and step at their tile edges (CoursePlayability).
+var ground_smooth := 0.0
+## What CoursePlayability changed in the last build: {"greens", "tees", "par3_tees"}.
+var playability := {}
+## Every golf course outline in the map: {"name", "box", "rings"}.
+var _all_boundaries: Array[Dictionary] = []
+## Lines of play (each tee along its route to the pin) kept clear of the
+## trees the lidar, photo or land cover found.
+var _lines := {}  ## line_cells() of them
+var _clear_cells := {}  ## box_cells() of the play areas and buildings trees keep off
+var _wood_cells := {}  ## box_cells() of the woods, for _leaf_at
+var _ground_cache := PackedFloat32Array()  ## the heights as read, for the club's other courses
+var _ground_base := 0.0
 var _rng := RandomNumberGenerator.new()
 var _near := {}  ## Vector2i cell -> planted tree points
 
@@ -104,10 +125,11 @@ func _init(data: Dictionary, lat: float, lon: float, p_name := "") -> void:
 	# is centred on the course so the area sits round the origin.
 	frame = GeoFrame.new(lat, lon)
 	var boundaries := _find_boundaries(elements)
+	_all_boundaries = boundaries
 	var box := Rect2()
 	var best := {}
 	if not boundaries.is_empty():
-		best = _pick_boundary(boundaries)
+		best = _pick_boundary(boundaries, elements, p_name)
 		box = best["box"]
 		if course_name.is_empty():
 			course_name = str(best["name"])
@@ -132,19 +154,135 @@ func _init(data: Dictionary, lat: float, lon: float, p_name := "") -> void:
 	if not best.is_empty():
 		for ring: PackedFloat64Array in best["geo_rings"]:
 			_boundary.append(_local_ring(ring))
+	for b in _all_boundaries:
+		var rings: Array[PackedVector2Array] = []
+		for ring: PackedFloat64Array in b["geo_rings"]:
+			rings.append(_local_ring(ring))
+		b["rings"] = rings
 	_read(elements)
+	_group_holes()
 
 
-## The courses at the club when its holes name more than one (each with at
-## least nine holes), most holes first; empty for a single course.
+## The courses at the club when its holes make up more than one (each with
+## at least nine holes), most holes first; empty for a single course. When
+## only one has nine holes, it alone is named, so the odd holes of another
+## course mapped alongside it stay out of it.
 func course_names() -> PackedStringArray:
 	var counts := {}
 	for d in _holes:
 		if not str(d["course"]).is_empty():
 			counts[d["course"]] = int(counts.get(d["course"], 0)) + 1
 	var names: Array = counts.keys().filter(func(n: String) -> bool: return counts[n] >= 9)
-	names.sort_custom(func(a: String, b: String) -> bool: return counts[a] > counts[b] or (counts[a] == counts[b] and a < b))
+	# Most holes first, then the longest (a club's championship course
+	# before its second eighteen, Royal County Down's before Annesley).
+	var length := {}
+	for d in _holes:
+		var line: PackedVector2Array = d["line"]
+		for k in line.size() - 1:
+			length[d["course"]] = float(length.get(d["course"], 0.0)) + line[k].distance_to(line[k + 1])
+	names.sort_custom(func(a: String, b: String) -> bool: return counts[a] > counts[b] or (counts[a] == counts[b] and (length[a] > length[b] or (length[a] == length[b] and a < b))))
+	if names.size() == 1 and int(counts[names[0]]) < _holes.size() and _duplicate_refs(_holes):
+		return PackedStringArray(names)
 	return PackedStringArray(names) if names.size() > 1 else PackedStringArray()
+
+
+## Mapped holes on the chosen course (all its courses for a club).
+func hole_count() -> int:
+	return _holes.size()
+
+
+## Gives holes without a golf:course:name the course they belong to, when
+## the club's holes repeat their numbers: from the hole's own name ("L'Aigle -
+## Trou n°3" at Golf National), a ref like "4/9" (Banff Springs' 9 beside its
+## 18), or the smaller course outline round it (Crans-sur-Sierre's two
+## courses inside the club's).
+func _group_holes() -> void:
+	var untagged: Array[Dictionary] = []
+	for d in _holes:
+		if str(d["course"]).is_empty():
+			untagged.append(d)
+	if untagged.size() < 10 or not _duplicate_refs(untagged):
+		return
+	for way: Callable in [_course_from_name, _course_from_ref, _course_from_outline]:
+		var keys := {}
+		for d in untagged:
+			var k: String = way.call(d)
+			if not k.is_empty():
+				keys[k] = int(keys.get(k, 0)) + 1
+		# Worth it when it parts the holes into courses without repeats.
+		var good := keys.size() >= 2 and keys.values().any(func(n: int) -> bool: return n >= 9)
+		if not good:
+			continue
+		for d in untagged:
+			d["course"] = way.call(d)
+		return
+
+
+static func _duplicate_refs(holes: Array[Dictionary]) -> bool:
+	var seen := {}
+	for d in holes:
+		var n := _ref_number(d["ref"])
+		if n < 1000 and seen.has(n):
+			return true
+		seen[n] = true
+	return false
+
+
+## The course part of a hole's name: "L'Albatros - Trou n°7" gives
+## "L'Albatros"; empty if the name has no number or nothing besides it.
+func _course_from_name(d: Dictionary) -> String:
+	var n := str(d.get("name", ""))
+	var digits := RegEx.create_from_string("\\d+")
+	if digits.search(n) == null:
+		return ""
+	var words := RegEx.create_from_string("(?i)\\b(hole|holes|trou|loch|hoyo|buca|hål|hul|bahn|green|no|nr|n°|#)\\b")
+	var rest := words.sub(digits.sub(n, "", true), "", true)
+	for ch in ["n°", "#", "°", ".", "(", ")"]:
+		rest = rest.replace(ch, " ")
+	rest = rest.strip_edges().trim_suffix("-").trim_suffix(":").trim_suffix(",").strip_edges()
+	rest = rest.trim_prefix("-").strip_edges()
+	if rest.length() < 2:
+		return ""
+	return "%s, %s" % [short_name(course_name), rest] if not rest.to_lower().contains(course_name.to_lower()) else rest
+
+
+## A club's name without the words every club has, to name its courses
+## by: "The Fairmont Banff Springs Golf Course" gives "Fairmont Banff
+## Springs".
+static func short_name(club: String) -> String:
+	var out := club.strip_edges()
+	for w in [" Golf Course", " Golf Club", " Golf Links", " Country Club", " Golf & Country Club", " Golf and Country Club", " Golf Resort"]:
+		if out.ends_with(w):
+			out = out.trim_suffix(w)
+	if out.begins_with("The ") and out.length() > 12:
+		out = out.substr(4)
+	return out
+
+
+## "4/9" gives "9 holes"; empty for a plain number.
+func _course_from_ref(d: Dictionary) -> String:
+	var ref := str(d["ref"])
+	if not ref.contains("/"):
+		return ""
+	var of := ref.get_slice("/", 1).strip_edges()
+	return "%s (%s holes)" % [short_name(course_name), of] if of.is_valid_int() else ""
+
+
+## The name of the smallest course outline round the hole's green that
+## isn't the whole club's.
+func _course_from_outline(d: Dictionary) -> String:
+	var line: PackedVector2Array = d["line"]
+	var end := line[line.size() - 1]
+	var best := ""
+	var best_area := INF
+	for b in _all_boundaries:
+		if str(b["name"]).is_empty() or b["rings"] == _boundary:
+			continue
+		for r: PackedVector2Array in b["rings"]:
+			if Geometry2D.is_point_in_polygon(end, r) and absf(_ring_area(r)) < best_area:
+				best_area = absf(_ring_area(r))
+				best = str(b["name"])
+	return best
 
 
 ## The box the ground heights are needed for: south, west, north, east.
@@ -158,6 +296,14 @@ func geo_box() -> Array[float]:
 ## The course. `height` is a Callable(lat, lon) -> metres above sea level
 ## (NAN where it has no data, filled from `fallback`).
 func build(height: Callable, fallback := Callable()) -> DesignedCourse:
+	var c := start_build()
+	for step in build_steps(c, height, fallback):
+		step.call()
+	return c
+
+
+## An empty course for build_steps to fill.
+func start_build() -> DesignedCourse:
 	var c := DesignedCourse.new()
 	c.course_name = (course_filter if not course_filter.is_empty() else course_name).substr(0, 40)
 	c.author = "OpenStreetMap contributors"
@@ -167,28 +313,82 @@ func build(height: Callable, fallback := Callable()) -> DesignedCourse:
 	c.source = {"kind": "openstreetmap", "lat": snappedf(frame.lat0, 0.0000001), "lon": snappedf(frame.lon0, 0.0000001)}
 	c.area = area
 	c._alloc()
-	_fill_heights(c, height, fallback)
-	if lidar_ground:
-		_streams = _streams.filter(func(d: Dictionary) -> bool: return not d["small"] or is_open_ditch(d["line"], d["width"], height, frame))
-	_add_shapes(c)
-	_add_holes(c)
-	# Paths first: sandy tracks found in the photo aren't bunkers.
-	_add_paths(c)
-	_add_walls(c)
-	_add_buildings(c, height)
-	_guessed.clear()
-	var detected := 0
-	for s in CourseGuesser.fill(c, hash(c.course_name), photo, details):
-		if s.found:
-			detected += 1
-		var ring := s.outline()
-		var r := Rect2(ring[0], Vector2.ZERO)
-		for p in ring:
-			r = r.expand(p)
-		_guessed.append({"ring": ring, "box": r})
-	_add_trees(c)
-	summary = {"holes": c.holes.size(), "areas": c.shapes.size(), "trees": c.objects.size(), "paths": c.paths.size(), "buildings": c.buildings.size(), "guessed": _guessed.size() - detected, "detected": detected}
 	return c
+
+
+## The build of `c` as steps of a fraction of a second each, called in
+## order, so the game can draw frames between them: a club the size of Golf
+## National built in one go held the game still for 8 seconds.
+func build_steps(c: DesignedCourse, height: Callable, fallback := Callable()) -> Array[Callable]:
+	var steps: Array[Callable] = []
+	var fill := {"gaps": PackedInt32Array(), "diff": 0.0, "n": 0}
+	# The other courses of a club share the ground: it is read once.
+	var cached := _ground_cache.size() == c.heights.size()
+	var rows := maxi(1, HEIGHT_SAMPLES_PER_STEP / c.cols)
+	if not cached:
+		for j0 in range(0, c.rows, rows):
+			steps.append(_fill_height_rows.bind(c, j0, mini(j0 + rows, c.rows), height, fallback, fill))
+	steps.append(func() -> void:
+		if cached:
+			c.heights = _ground_cache.duplicate()
+			c.source["base_height"] = _ground_base
+		else:
+			_finish_heights(c, fallback, fill)
+			if ground_smooth > 0.0:
+				CoursePlayability.smooth_ground(c, ground_smooth)
+			_ground_cache = c.heights.duplicate()
+			_ground_base = c.source["base_height"]
+		if lidar_ground:
+			_streams = _streams.filter(func(d: Dictionary) -> bool: return not d["small"] or is_open_ditch(d["line"], d["width"], height, frame))
+		_add_shapes(c)
+		_add_holes(c)
+		# Paths first: sandy tracks found in the photo aren't bunkers.
+		_add_paths(c)
+		_add_walls(c)
+		_region = ScannedSurfaces.region_for(Vector2(frame.lat0, frame.lon0), -1))
+	for k in range(0, _footprints.size(), BUILDINGS_PER_STEP):
+		steps.append(_add_buildings.bind(c, height, k, mini(k + BUILDINGS_PER_STEP, _footprints.size())))
+	var counts := {"detected": 0}
+	steps.append(func() -> void:
+		_guessed.clear()
+		for s in CourseGuesser.fill(c, hash(c.course_name), photo, details):
+			if s.found:
+				counts["detected"] += 1
+			var ring := s.outline()
+			var r := Rect2(ring[0], Vector2.ZERO)
+			for p in ring:
+				r = r.expand(p)
+			_guessed.append({"ring": ring, "box": r}))
+	# As a club's builder would have shaped it: greens that hold a ball
+	# (one a step: St Andrews' double greens are big), level tees, par 3s a
+	# driver reaches.
+	steps.append(func() -> void:
+		playability = {"greens": 0, "tees": CoursePlayability.level_tees(c), "par3_tees": CoursePlayability.trim_par3_tees(c)}
+		var greens: Array[CourseShape] = []
+		for s in c.shapes:
+			if s.surface == Surface.Type.GREEN:
+				greens.append(s)
+		playability["todo"] = greens)
+	for k in MAX_GREEN_STEPS:
+		steps.append(func() -> void:
+			var todo: Array[CourseShape] = playability["todo"]
+			for g in range(k, todo.size(), MAX_GREEN_STEPS):
+				if CoursePlayability.grade_green(c, todo[g]):
+					playability["greens"] += 1)
+	steps.append(func() -> void: playability.erase("todo"))
+	steps.append(func() -> void:
+		var lines: Array[PackedVector2Array] = []
+		for h in c.holes:
+			for t in h.tees:
+				var line := PackedVector2Array([t])
+				line.append_array(h.route)
+				line.append(h.pin)
+				lines.append(line)
+		_lines = line_cells(lines)
+		_add_trees(c)
+		var detected: int = counts["detected"]
+		summary = {"greens_graded": playability["greens"], "holes": c.holes.size(), "areas": c.shapes.size(), "trees": c.objects.size(), "paths": c.paths.size(), "buildings": c.buildings.size(), "guessed": _guessed.size() - detected, "detected": detected})
+	return steps
 
 
 # --- Reading the OpenStreetMap data --------------------------------------------
@@ -213,20 +413,59 @@ func _find_boundaries(elements: Array) -> Array[Dictionary]:
 	return out
 
 
-## The boundary containing the picked point (the origin of the first
-## frame), else the nearest one.
-func _pick_boundary(boundaries: Array[Dictionary]) -> Dictionary:
+## The course boundary meant: the one named like the place picked, else the
+## one with the most mapped holes (up to 18), then the smallest round the
+## picked point (the origin of the first frame), then the nearest; so a
+## clubhouse found by name next to a pitch-and-putt (Pebble Beach's lodge
+## beside The Hay) still gives the real course.
+func _pick_boundary(boundaries: Array[Dictionary], elements: Array, place := "") -> Dictionary:
+	var ends := PackedVector2Array()
+	for e: Variant in elements:
+		if e is Dictionary and str(_tags(e).get("golf", "")) == "hole":
+			var g := _geo_points(e)
+			if g.size() >= 4:
+				ends.append(frame.to_local(g[g.size() - 2], g[g.size() - 1]))
+	var words := name_words(place)
 	var best: Dictionary = boundaries[0]
-	var best_d := INF
+	var best_score := -INF
 	for b in boundaries:
-		var d := (b["box"] as Rect2).get_center().length()
+		var holes := 0
+		for p in ends:
+			for r: PackedVector2Array in b["rings"]:
+				if Geometry2D.is_point_in_polygon(p, r):
+					holes += 1
+					break
+		var inside := false
+		var d := INF
 		for r: PackedVector2Array in b["rings"]:
 			if Geometry2D.is_point_in_polygon(Vector2.ZERO, r):
-				d = -1.0 / maxf((b["box"] as Rect2).get_area(), 1.0)  # the smallest containing one
-		if d < best_d:
-			best_d = d
+				inside = true
+			for i in r.size():
+				d = minf(d, Geometry2D.get_closest_point_to_segment(Vector2.ZERO, r[i], r[(i + 1) % r.size()]).length())
+		var matched := 0
+		var own := name_words(str(b["name"]))
+		for w in words:
+			if w in own:
+				matched += 1
+		# Name first, then a real course, then round the point (the
+		# smallest), then the nearest.
+		var score := matched * 1e8 + mini(holes, 18) * 1e5
+		score += 5e4 - minf((b["box"] as Rect2).get_area() / 1e3, 4e4) if inside else -minf(d, 9e4)
+		if score > best_score:
+			best_score = score
 			best = b
 	return best
+
+
+## The distinctive words of a place's name (lower case, without the words
+## every club has), for matching it to a course's name.
+static func name_words(text: String) -> PackedStringArray:
+	var out := PackedStringArray()
+	var common := ["golf", "club", "course", "links", "country", "the", "and", "royal", "resort", "society", "championship"]
+	for w in text.to_lower().replace("-", " ").replace(",", " ").replace("&", " ").replace("'", " ").split(" ", false):
+		if w.length() >= 3 and not w in common:
+			out.append(w)
+	return out
 
 
 ## Bounds of the golf features within SEARCH_RADIUS of the picked point.
@@ -268,7 +507,7 @@ func _read(elements: Array) -> void:
 			var line := _local_line(_geo_points(e))
 			if line.size() >= 2 and _in_course(line):
 				_holes.append({"ref": str(t.get("ref", "")), "par": str(t.get("par", "")), "si": str(t.get("handicap", "")),
-					"course": str(t.get("golf:course:name", "")), "line": line})
+					"course": str(t.get("golf:course:name", "")), "name": str(t.get("name", "")), "line": line})
 		elif golf == "cartpath" or str(t.get("golf_cart", "")) == "designated":
 			if not closed:
 				_paths.append({"line": _local_line(_geo_points(e)), "width": maxf(_metres(t.get("width", "")), 2.5), "bridge": _is_bridge(t)})
@@ -337,8 +576,13 @@ func _add_poly(e: Dictionary, info: Dictionary) -> void:
 ## True when a hole line starts or ends inside the chosen course boundary
 ## (or there is no boundary).
 func _in_course(line: PackedVector2Array) -> bool:
+	# Both ends on the ground built (a huge club is cut to MAX_SIZE).
+	if not area.has_point(line[0]) or not area.has_point(line[line.size() - 1]):
+		return false
+	if line[0].distance_to(line[line.size() - 1]) < 20.0:
+		return false  # a stub, not a hole
 	if _boundary.is_empty():
-		return area.has_point(line[0]) and area.has_point(line[line.size() - 1])
+		return true
 	for r in _boundary:
 		if Geometry2D.is_point_in_polygon(line[0], r) or Geometry2D.is_point_in_polygon(line[line.size() - 1], r):
 			return true
@@ -470,11 +714,11 @@ static func _metres(v: Variant) -> float:
 ## water and some buildings, and stops at borders); those samples take the
 ## `fallback` heights, shifted by the mean difference between the two where
 ## both exist, so the seams don't step.
-func _fill_heights(c: DesignedCourse, height: Callable, fallback: Callable) -> void:
-	var gaps := PackedInt32Array()
-	var diff := 0.0
-	var diff_n := 0
-	for j in c.rows:
+func _fill_height_rows(c: DesignedCourse, j0: int, j1: int, height: Callable, fallback: Callable, fill: Dictionary) -> void:
+	var gaps: PackedInt32Array = fill["gaps"]
+	var diff: float = fill["diff"]
+	var diff_n: int = fill["n"]
+	for j in range(j0, j1):
 		for i in c.cols:
 			var p := c.sample_pos(i, j)
 			var lat := frame.lat_of(p)
@@ -488,6 +732,15 @@ func _fill_heights(c: DesignedCourse, height: Callable, fallback: Callable) -> v
 				diff += h - float(fallback.call(lat, lon))
 				diff_n += 1
 			c.heights[k] = h
+	fill["gaps"] = gaps
+	fill["diff"] = diff
+	fill["n"] = diff_n
+
+
+func _finish_heights(c: DesignedCourse, _fallback: Callable, fill: Dictionary) -> void:
+	var gaps: PackedInt32Array = fill["gaps"]
+	var diff: float = fill["diff"]
+	var diff_n: int = fill["n"]
 	if diff_n > 0:
 		var shift := diff / diff_n
 		for k in gaps:
@@ -547,6 +800,7 @@ func _add_holes(c: DesignedCourse) -> void:
 		return ra < rb if ra != rb else a["index"] < b["index"])
 	var greens := _rings_of(Surface.Type.GREEN)
 	var tees := _rings_of(Surface.Type.TEE)
+	var water := _rings_of(Surface.Type.WATER)
 	for d in order:
 		var line: PackedVector2Array = d["line"]
 		# Mappers draw holes tee to green; turn round any drawn backwards.
@@ -557,12 +811,22 @@ func _add_holes(c: DesignedCourse) -> void:
 		var end := line[line.size() - 1]
 		var g := _near_ring(greens, end, 40.0)
 		h.pin = end
+		if g < 0:
+			# No green mapped and the line ends in a pond (Leopard Creek's
+			# 11th): the green the guesser draws goes on the bank.
+			var back := line[line.size() - 2]
+			h.pin = off_greens(end, back, water, Vector2.INF, 10.0)
 		if g >= 0:
 			h.pin = _centroid(greens[g])
 			for p in _pins:
 				if Geometry2D.is_point_in_polygon(p, greens[g]):
 					h.pin = p
 		h.tees = _tees_for(line, h.pin, tees)
+		# Lines drawn from the last green's middle, with no tee mapped, put
+		# the tee (and the tee box guessed round it) on that green
+		# (Hilversum's 5th, Portrush's 16th): it goes on past the green.
+		for t in h.tees.size():
+			h.tees[t] = off_greens(h.tees[t], h.pin, greens, h.pin)
 		var bends := simplify_line(line, 8.0)
 		for k in range(1, bends.size() - 1):
 			if h.route.size() < 3:
@@ -572,6 +836,40 @@ func _add_holes(c: DesignedCourse) -> void:
 		# OpenStreetMap's handicap tag is the stroke index on the scorecard.
 		h.stroke_index = clampi(int(d["si"]), 0, 36) if str(d["si"]).is_valid_int() else 0
 		c.holes.append(h)
+
+
+## `p` moved toward `toward` until it is 6 m clear of every green but the
+## one round `pin`; as it was if it isn't on one, or the hole is too short.
+static func off_greens(p: Vector2, toward: Vector2, greens: Array[PackedVector2Array], pin: Vector2, clear := 6.0) -> Vector2:
+	var dir := (toward - p).normalized()
+	var length := p.distance_to(toward)
+	var q := p
+	var moved := 0.0
+	var boxes: Array[Rect2] = []
+	for r in greens:
+		var b := Rect2(r[0], Vector2.ZERO)
+		for v in r:
+			b = b.expand(v)
+		boxes.append(b.grow(clear))
+	while moved < length * 0.4:
+		var on := false
+		for k in greens.size():
+			var r := greens[k]
+			if boxes[k].has_point(q) and not (pin.is_finite() and Geometry2D.is_point_in_polygon(pin, r)) and (Geometry2D.is_point_in_polygon(q, r) or _ring_distance(r, q) < clear):
+				on = true
+				break
+		if not on:
+			return q
+		q += dir * 2.0
+		moved += 2.0
+	return p
+
+
+static func _ring_distance(r: PackedVector2Array, p: Vector2) -> float:
+	var best := INF
+	for i in r.size():
+		best = minf(best, p.distance_to(Geometry2D.get_closest_point_to_segment(p, r[i], r[(i + 1) % r.size()])))
+	return best
 
 
 ## Tee boxes along the start of a hole, back to forward (at most three).
@@ -637,9 +935,8 @@ const BUILDING_HEIGHTS := {
 ## The mapped buildings inside the area, as tall as the lidar sees them
 ## (surface minus ground) where it covers them, else as tagged or typical
 ## for their kind, with pitched roofs on houses and other small buildings.
-func _add_buildings(c: DesignedCourse, height: Callable) -> void:
-	_region = ScannedSurfaces.region_for(Vector2(frame.lat0, frame.lon0), -1)
-	for f in _footprints:
+func _add_buildings(c: DesignedCourse, height: Callable, from := 0, to := -1) -> void:
+	for f in _footprints.slice(from, to if to >= 0 else _footprints.size()):
 		var ring: PackedVector2Array = f["ring"]
 		if ring.size() >= 4 and ring[0].is_equal_approx(ring[ring.size() - 1]):
 			ring = ring.slice(0, ring.size() - 1)
@@ -860,13 +1157,15 @@ static func _is_bridge(t: Dictionary) -> bool:
 
 func _add_trees(c: DesignedCourse) -> void:
 	var clear := _play_rings()
+	_clear_cells = box_cells(clear + _buildings)
 	_near.clear()
+	# Mapped trees and tree rows are where they are, on the line or not.
 	for t in _trees:
-		_plant(c, t["p"], t["leaf"], t["height"], clear)
+		_plant(c, t["p"], t["leaf"], t["height"], clear, 0.0, false)
 	for r in _rows:
 		var line: PackedVector2Array = r["line"]
 		for p in _resample(line, ROW_SPACING):
-			_plant(c, p, r["leaf"], 0.0, clear)
+			_plant(c, p, r["leaf"], 0.0, clear, 0.0, false)
 	# Lidar crowns are real trees, typed by the wood they stand in (if any).
 	# A wooded course has tens of thousands, more than MAX_TREES, so the ones
 	# nearest the holes go in first and deep woods are left thinner.
@@ -935,11 +1234,7 @@ func _add_land_trees(c: DesignedCourse, clear: Array[Dictionary]) -> void:
 		return
 	var found: Array[Dictionary] = []
 	for p in land_trees:
-		var in_wood := false
-		for d in _polys:
-			if d.has("wood") and Geometry2D.is_point_in_polygon(p, d["ring"]):
-				in_wood = true
-				break
+		var in_wood := not _wood_at(p).is_empty()
 		var d := _hole_distance(p, c.holes)
 		# At 10 m, tree-lined fairways read as woods: keep the line of play
 		# clear even where its fairway isn't mapped.
@@ -963,18 +1258,35 @@ static func _hole_distance(p: Vector2, holes: Array[DesignedHole]) -> float:
 		if h.tees.is_empty():
 			continue
 		var prev := h.tees[0]
-		for q in h.route + PackedVector2Array([h.pin]):
-			best = minf(best, p.distance_to(Geometry2D.get_closest_point_to_segment(p, prev, q)))
+		for q in h.route:
+			best = minf(best, p.distance_squared_to(Geometry2D.get_closest_point_to_segment(p, prev, q)))
 			prev = q
-	return best
+		best = minf(best, p.distance_squared_to(Geometry2D.get_closest_point_to_segment(p, prev, h.pin)))
+	return sqrt(best)
 
 
 ## The leaf type of the wood a point is in, or "".
 func _leaf_at(p: Vector2) -> String:
-	for d in _polys:
-		if d.has("wood") and Geometry2D.is_point_in_polygon(p, d["ring"]):
-			return d["leaf"]
-	return ""
+	return str(_wood_at(p).get("leaf", ""))
+
+
+## The mapped wood round `p` ({"ring", "box", "leaf"}), or {}.
+func _wood_at(p: Vector2) -> Dictionary:
+	if _wood_cells.is_empty():
+		var woods: Array = []
+		for d in _polys:
+			if d.has("wood"):
+				var ring: PackedVector2Array = d["ring"]
+				var r := Rect2(ring[0], Vector2.ZERO)
+				for q in ring:
+					r = r.expand(q)
+				woods.append({"ring": ring, "box": r, "leaf": d["leaf"]})
+		_wood_cells = box_cells(woods)
+		_wood_cells[Vector2i(1 << 30, 0)] = []  # built, even with no woods
+	for d: Dictionary in _wood_cells.get(Vector2i((p / LINE_CELL).floor()), []):
+		if (d["box"] as Rect2).has_point(p) and Geometry2D.is_point_in_polygon(p, d["ring"]):
+			return d
+	return {}
 
 
 ## Course points on fairways, for the photo's grass colour.
@@ -989,13 +1301,13 @@ func grass_points() -> PackedVector2Array:
 
 ## Plants a tree unless it would stand on a fairway, green, tee, bunker or
 ## in water (OpenStreetMap woods often overlap the play areas a little).
-func _plant(c: DesignedCourse, p: Vector2, leaf: String, height: float, clear: Array[Dictionary], gap := 0.0) -> void:
+func _plant(c: DesignedCourse, p: Vector2, leaf: String, height: float, clear: Array[Dictionary], gap := 0.0, found := true) -> void:
 	if c.objects.size() >= max_trees or not area.grow(-2.0).has_point(p):
 		return
-	for d in clear:
-		if (d["box"] as Rect2).has_point(p) and Geometry2D.is_point_in_polygon(p, d["ring"]):
-			return
-	for d in _buildings:
+	if found and on_line_of_play(p, _lines):
+		return
+	# The play areas (`clear`) and buildings, by their cells.
+	for d: Dictionary in _clear_cells.get(Vector2i((p / LINE_CELL).floor()), []):
 		if (d["box"] as Rect2).has_point(p) and Geometry2D.is_point_in_polygon(p, d["ring"]):
 			return
 	# Keep `gap` metres from trees already planted (a lidar crown that is
@@ -1023,6 +1335,53 @@ func _plant(c: DesignedCourse, p: Vector2, leaf: String, height: float, clear: A
 
 
 ## The play areas trees keep off, grown 2 m, with their bounds.
+const LINE_CELL := 32.0
+
+## The lines of play's pieces by the LINE_CELL cells within LINE_CLEAR of
+## them: Vector2i -> [[a, b, tee], ...], so on_line_of_play looks at a few.
+static func line_cells(lines: Array[PackedVector2Array]) -> Dictionary:
+	var out := {}
+	for line in lines:
+		for k in line.size() - 1:
+			var a := line[k]
+			var b := line[k + 1]
+			var lo := ((a.min(b) - Vector2.ONE * LINE_CLEAR) / LINE_CELL).floor()
+			var hi := ((a.max(b) + Vector2.ONE * LINE_CLEAR) / LINE_CELL).floor()
+			for j in range(int(lo.y), int(hi.y) + 1):
+				for i in range(int(lo.x), int(hi.x) + 1):
+					var key := Vector2i(i, j)
+					if not out.has(key):
+						out[key] = []
+					out[key].append([a, b, line[0]])
+	return out
+
+
+## {"ring", "box"} areas by the LINE_CELL cells their boxes touch, so a
+## tree looks at a few rather than every green, bunker and house (Pebble
+## Beach has 77,000 trees in its photo and 600 such areas).
+static func box_cells(areas: Array) -> Dictionary:
+	var out := {}
+	for d: Dictionary in areas:
+		var b: Rect2 = d["box"]
+		for j in range(floori(b.position.y / LINE_CELL), floori(b.end.y / LINE_CELL) + 1):
+			for i in range(floori(b.position.x / LINE_CELL), floori(b.end.x / LINE_CELL) + 1):
+				var key := Vector2i(i, j)
+				if not out.has(key):
+					out[key] = []
+				out[key].append(d)
+	return out
+
+
+## True when `p` stands within LINE_CLEAR of a line of play (line_cells),
+## past the first 10 m from its tee.
+static func on_line_of_play(p: Vector2, cells: Dictionary) -> bool:
+	for seg: Array in cells.get(Vector2i((p / LINE_CELL).floor()), []):
+		var q := Geometry2D.get_closest_point_to_segment(p, seg[0], seg[1])
+		if q.distance_to(p) < LINE_CLEAR and q.distance_to(seg[2]) > 10.0:
+			return true
+	return false
+
+
 func _play_rings() -> Array[Dictionary]:
 	var out: Array[Dictionary] = _guessed.duplicate()
 	for d in _polys:
@@ -1084,11 +1443,14 @@ func detail_spots() -> PackedVector2Array:
 	return out
 
 
+## The hole number in a ref: its first run of digits ("4/9" is hole 4).
 static func _ref_number(ref: String) -> int:
 	var digits := ""
 	for ch in ref:
 		if ch >= "0" and ch <= "9":
 			digits += ch
+		elif not digits.is_empty():
+			break
 	return int(digits) if not digits.is_empty() else 1000
 
 

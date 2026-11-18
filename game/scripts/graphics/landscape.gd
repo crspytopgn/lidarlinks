@@ -87,11 +87,13 @@ static func build(terrain: DesignedTerrain) -> Node3D:
 ## from its datum, where the biome's figure applies.
 static func sea_level(course: DesignedCourse) -> float:
 	var l := Biome.land(course.biome)
-	if float(l.sea) < -9000.0:
+	# A real course by the sea says so (RealLandscape), whatever its biome.
+	var sea := float(course.source.get("sea", l.sea))
+	if sea < -9000.0:
 		return NAN
 	if course.source.has("base_height"):
-		return float(l.sea) - float(course.source["base_height"])
-	return float(l.sea)
+		return sea - float(course.source["base_height"])
+	return sea
 
 
 ## The shared material for `biome`'s land.

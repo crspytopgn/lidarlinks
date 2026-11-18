@@ -273,20 +273,34 @@ func find_trees(min_height := 3.0, spacing := 4.0) -> Array[Dictionary]:
 ## spacing cells already used. One chunk at a time lets the browser build
 ## (single-threaded) draw a frame between chunks.
 func trees_in(top: GeoRaster, out: Array[Dictionary], taken: Dictionary, min_height := 3.0, spacing := 4.0) -> void:
+	var chm := PackedFloat32Array()
+	chm.resize(top.width * top.height)
+	canopy_rows(top, chm, 0, top.height)
+	crowns_in_rows(top, chm, out, taken, 0, top.height, min_height, spacing)
+
+
+## Rows j0 to j1 of the canopy height model of `top` (surface minus ground)
+## into `chm` (top.width * top.height), so a big raster can be read a band
+## at a time between frames.
+func canopy_rows(top: GeoRaster, chm: PackedFloat32Array, j0: int, j1: int) -> void:
 	var ground := _matching(top)
 	var w := top.width
-	var h := top.height
-	var chm := PackedFloat32Array()
-	chm.resize(w * h)
-	for j in h:
+	for j in range(j0, j1):
 		for i in w:
 			var k := j * w + i
 			var g := ground.data[k] if ground != null else ground_at(top.pixel_lat(j), top.pixel_lon(i))
 			var t := top.data[k]
 			chm[k] = t - g if (t > -1000.0 and t < 9000.0 and g > -1000.0 and g < 9000.0) else 0.0
+
+
+## The crowns whose tops sit in rows j0 to j1 of `chm` (all of it filled by
+## canopy_rows), appended to `out`.
+func crowns_in_rows(top: GeoRaster, chm: PackedFloat32Array, out: Array[Dictionary], taken: Dictionary, j0: int, j1: int, min_height := 3.0, spacing := 4.0) -> void:
+	var w := top.width
+	var h := top.height
 	var m_px := maxf(top.dlat * 111000.0, 0.1)
 	var r := clampi(roundi(1.5 / m_px), 1, 4)
-	for j in range(r, h - r):
+	for j in range(maxi(j0, r), mini(j1, h - r)):
 		for i in range(r, w - r):
 			var c := chm[j * w + i]
 			if c < min_height or c > 60.0:

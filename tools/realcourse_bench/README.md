@@ -28,3 +28,14 @@ club's scorecard. `NODETAIL=1` leaves out the close-ups and `NOPHOTO=1` the cour
 `bench_view.gd` draws six holes: mapped shapes on the left, found ones on
 the right (`/tmp/bench/view_<slug>_<first hole>.png`). The fetch scripts
 need network access to Nominatim, the OSM API and the photo services.
+
+## End to end
+
+`e2e.sh slug "search words"` builds a course exactly as the game does
+(search, map, ground, lidar, photos, land) and audits it with
+`e2e_audit.gd`: each hole's tee and pin surfaces, the green's slope at the
+pin, par against length, trees on the line of play and the reach check the
+built-in courses get in CI (`game/tests/reach_tests.gd`), plus the longest
+frame gap during the build. Run it on a spread of clubs (big, small,
+several courses, no lidar, coast, mountain) after any builder change; see
+docs/real-courses.md for the list used in Nov 2026.
