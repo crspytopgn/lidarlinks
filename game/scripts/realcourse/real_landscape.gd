@@ -22,6 +22,9 @@ const BLEND := 160.0  ## metres outside the course over which the land eases int
 ## don't reach it; the sea floor a few kilometres out does).
 const SEA_SHARE := 0.02
 const SEA_DEPTH := -8.0
+## Or when this share of it is one flat surface at sea level: tiles without
+## a sea floor hold the sea at 0 (Barnbougle's Bass Strait, Al Mouj's Gulf).
+const SEA_FLAT_SHARE := 0.08
 ## A lake when this share of the land is one flat surface (to LAKE_FLAT
 ## metres) with hardly any land below it: the tiles hold big lakes level.
 const LAKE_SHARE := 0.03
@@ -78,7 +81,18 @@ func rows(j0: int, j1: int, height: Callable) -> void:
 
 ## True when the land holds a sea.
 func has_sea() -> bool:
-	return _deep >= heights.size() * SEA_SHARE
+	return _deep >= heights.size() * SEA_SHARE or flat_sea()
+
+
+## True when the sea is only a flat surface at 0 (no sea floor): it is let
+## down under its water like a lake's.
+func flat_sea() -> bool:
+	if _deep >= heights.size() * SEA_SHARE:
+		return false
+	var flat := 0
+	for k in range(-2, 3):
+		flat += int(_levels.get(k, 0))
+	return flat >= heights.size() * SEA_FLAT_SHARE
 
 
 ## The level of a big lake round the course (metres above sea level), or
@@ -108,7 +122,7 @@ func lake_level() -> float:
 
 ## Gives `c` (a course of the club, on the same frame) the land.
 func apply(c: DesignedCourse) -> void:
-	var lake := NAN if has_sea() else lake_level()
+	var lake := (0.0 if flat_sea() else NAN) if has_sea() else lake_level()
 	if not is_nan(lake) and not _lake_sunk:
 		# The lake's flat surface lowered under its water, so the two don't
 		# flicker through each other.
@@ -119,7 +133,11 @@ func apply(c: DesignedCourse) -> void:
 	var saved := encode()
 	c.landscape = DesignedCourse._decode_landscape(saved)
 	c._landscape_saved = saved
-	if has_sea() and dry(c):
+	if flat_sea():
+		if dry(c, 0.0, -1.0):
+			c.source["sea"] = 0.0
+			sink_lake(c, 0.0)
+	elif has_sea() and dry(c):
 		c.source["sea"] = 0.0
 	elif not is_nan(lake) and dry(c, lake, -1.0):
 		c.source["sea"] = lake

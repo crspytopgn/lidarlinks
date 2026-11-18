@@ -1533,6 +1533,17 @@ func _test_landscape() -> void:
 		var p := f.to_local(lat, lon)
 		return 12.0 if p.x < -1500.0 else 14.0 + p.x * 0.004)
 	check(is_nan(plain.lake_level()), "a flat plain on a whole metre isn't a lake")
+	# Tiles without a sea floor hold the sea flat at 0 (Barnbougle).
+	var bc := DesignedCourse.blank(Vector2(600, 400))
+	bc.source["base_height"] = 6.0
+	var shore := RealLandscape.new(f, bc)
+	shore.rows(0, shore.count, func(lat: float, lon: float) -> float:
+		var p := f.to_local(lat, lon)
+		return 0.0 if p.x < -1500.0 else 6.0 + p.x * 0.004)
+	check(shore.has_sea() and shore.flat_sea(), "a flat surface at sea level is the sea")
+	shore.apply(bc)
+	check(float(bc.source.get("sea", -1.0)) == 0.0, "the course gets the flat sea")
+	check(shore.heights[shore.count / 2 * shore.count + 2] + 6.0 < -1.0, "the flat sea's surface is let down under its water")
 
 
 static func _with_land(c: DesignedCourse, land: RealLandscape) -> Dictionary:

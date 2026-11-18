@@ -428,6 +428,20 @@ func _build(place: Dictionary) -> DesignedCourse:
 				cover = land.ground_image(builder.frame, builder.area)
 
 	builder.photo = photo
+	if photo == null and use_photos:
+		# No aerial photo: the satellite image, for the native grass only.
+		var sat := AerialPhotos.new(AerialPhotos.SATELLITE, gb)
+		var surls := sat.urls()
+		var sgot := await _fetch_all(surls, "Fetching the satellite image", TRIES)
+		if _cancelled:
+			return null
+		for i in surls.size():
+			if sgot[i][0] == 200:
+				sat.add_tile(i, sgot[i][1])
+		if sat.loaded * 2 >= surls.size():
+			await _step("Reading the satellite image...")
+			builder.native_photo = sat.course_photo(builder.frame, builder.area)
+			builder.extra_credits.append(AerialPhotos.SATELLITE["credit"])
 	if lidar == null:
 		# Open elevation tiles: speckled, and stepped at their edges.
 		builder.ground_smooth = clampf(tiles.pixel_metres(lat) * 2.0, 4.0, 10.0)

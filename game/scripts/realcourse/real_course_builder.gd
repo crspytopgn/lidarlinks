@@ -100,6 +100,9 @@ var land_trees := PackedVector2Array()
 ## The course photo (AerialPhotos.course_photo), for finding greens,
 ## fairways and bunkers the map lacks.
 var photo: Image
+## Without one, the satellite image (AerialPhotos.SATELLITE), for the
+## native grass only.
+var native_photo: Image
 ## Close-up photos round greens the map leaves unfinished, for finding the
 ## green and its bunkers: {"image", "area"} (see detail_spots()).
 var details: Array[Dictionary] = []
@@ -595,8 +598,9 @@ func build_steps(c: DesignedCourse, height: Callable, fallback := Callable()) ->
 	# The native grass between the holes, from the photo.
 	var native := {"grass": null, "count": 0}
 	steps.append(func() -> void:
-		if photo != null and not photo.is_empty():
-			native["grass"] = NativeGrass.new(photo, c.area, _boundary, grass_points()))
+		var img := photo if photo != null and not photo.is_empty() else native_photo
+		if img != null and not img.is_empty():
+			native["grass"] = NativeGrass.new(img, c.area, _boundary, grass_points()))
 	var native_rows := ceili(c.area.size.y / NativeGrass.CELL)
 	for j in range(0, native_rows, NATIVE_ROWS_PER_STEP):
 		steps.append(func() -> void:

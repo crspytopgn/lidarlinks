@@ -512,7 +512,21 @@ or not at all. What that found, and what the builder now does:
   `NativeGrass` reads 4 m cells of the course's aerial photo: ones a good
   deal yellower than its fairways (and not dark or grey) become deep
   rough, drawn as tall fescue, with the mapped play areas painted over
-  it. Parkland photos (Augusta, Oakmont) give none.
+  it. Parkland photos (Augusta, Oakmont) give none. Where there is no
+  aerial photo service, the Sentinel-2 cloudless satellite image (EOX,
+  CC BY 4.0, 10 m) is read for this alone.
+- **The sea held flat:** some elevation tiles carry no sea floor and hold
+  the sea flat at 0 m (Barnbougle's Bass Strait, Cape Kidnappers, Al
+  Mouj), so the sea test (2 % of the land 8 m under) missed it. A flat
+  sheet at 0 m over 8 % of the land is the sea too, let down under its
+  water like a lake.
+- **Checked against the real place from above:** `e2e.sh` ends with
+  `look_export.gd` and `look_check.py`, which read a satellite picture of
+  the same ground (a dev check only: it is cached in /tmp, never saved
+  into a course) and flag patches the built course gets wrong: water the
+  game has as land, straw fescue it has mown, bunkers it lacks. Winter
+  (dormant) pictures skip the grass tests, and the course edges, woods
+  and houses are left out. It writes picture | game | flags side by side.
 
 `tools/realcourse_bench/e2e.sh` builds a course the way the game does and
 audits it (each hole's tee and pin surfaces, green slope, par for its
