@@ -6,6 +6,8 @@ extends Control
 ## compass ring and the speed in a glass pill.
 
 const ARROW := Color(1.0, 0.95, 0.6)
+## Broadcast's one accent (as the score bug and hole card).
+const GOLD := Color(0.914, 0.78, 0.4)
 const PILL_H := 24.0
 
 ## The glass disc and speed pill (Broadcast presentation).
@@ -114,14 +116,20 @@ func _draw_modern() -> void:
 		var head := tip - dir * r * 0.32
 		# A soft dark under-stroke keeps the arrow crisp over a bright sky.
 		draw_line(tail, head, Color(0, 0, 0, 0.3), 6.0, true)
-		draw_line(tail, head, ARROW, 3.0, true)
-		draw_colored_polygon(PackedVector2Array([tip, head + side * r * 0.2, head - side * r * 0.2]), ARROW)
-		draw_circle(tail, 2.5, ARROW)
-		text = "%d MPH" % roundi(_mph)
-	var fs := 13
+		draw_line(tail, head, GOLD, 3.0, true)
+		draw_colored_polygon(PackedVector2Array([tip, head + side * r * 0.2, head - side * r * 0.2]), GOLD)
+		draw_circle(tail, 2.5, GOLD)
+		text = str(roundi(_mph))
+	# The speed as a broadcast number: big figures, small units.
+	font = GlassTheme.display_font(700)
+	var units := GlassTheme.display_font(600)
+	var fs := 19
+	var unit_text := "" if _calm else " MPH"
 	var w := font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x
-	var base := Vector2(pill.get_center().x - w * 0.5, pill.get_center().y + fs * 0.36)
-	draw_string(font, base, text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color(1, 1, 1, 0.95))
+	var uw := units.get_string_size(unit_text, HORIZONTAL_ALIGNMENT_LEFT, -1, 12).x
+	var base := Vector2(pill.get_center().x - (w + uw) * 0.5, pill.get_center().y + fs * 0.34)
+	draw_string(font, base, text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color.WHITE)
+	draw_string(units, base + Vector2(w, 0), unit_text, HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color(1, 1, 1, 0.7))
 
 
 func _pill(r: Rect2, col: Color) -> void:

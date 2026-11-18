@@ -11,6 +11,11 @@ const FREE_CLICK := "res://assets/sounds/ui_click.ogg"
 const MUSIC := "MUSIC1.WAV"
 const MUSIC_DB := -10.0
 const CLICK_DB := -4.0
+## The soft tick as focus or the pointer moves onto a button, as console
+## menus give: made here (a short, quickly damped 2.4 kHz blip), so it
+## needs no file. Not more than one per TICK_GAP_MS.
+const TICK_DB := -21.0
+const TICK_GAP_MS := 45
 
 var play_music := false
 var _path := ""
@@ -19,6 +24,8 @@ var _click: AudioStream
 var _music: AudioStreamWAV
 var _click_player: AudioStreamPlayer
 var _music_player: AudioStreamPlayer
+var _tick_player: AudioStreamPlayer
+var _last_tick := -1000
 
 
 ## The game's own sounds from SOUNDS.LS in the game folder, or the free
@@ -37,6 +44,10 @@ func _ready() -> void:
 	_click_player = AudioStreamPlayer.new()
 	_click_player.volume_db = CLICK_DB
 	add_child(_click_player)
+	_tick_player = AudioStreamPlayer.new()
+	_tick_player.volume_db = TICK_DB
+	_tick_player.stream = tick_stream()
+	add_child(_tick_player)
 	_music_player = AudioStreamPlayer.new()
 	_music_player.volume_db = MUSIC_DB + AudioSettings.music_db()
 	add_child(_music_player)
@@ -87,6 +98,33 @@ func click() -> void:
 		_click_player.play()
 
 
+## A focus tick, skipped while the click is playing or right after one.
+func tick() -> void:
+	var now := Time.get_ticks_msec()
+	if now - _last_tick < TICK_GAP_MS or _click_player.playing:
+		return
+	_last_tick = now
+	_tick_player.play()
+
+
+## 30 ms of a damped 2.4 kHz sine with a lower partial, 16-bit mono.
+static func tick_stream() -> AudioStreamWAV:
+	var rate := 44100
+	var n := int(rate * 0.03)
+	var data := PackedByteArray()
+	data.resize(n * 2)
+	for i in n:
+		var t := float(i) / rate
+		var env := exp(-t * 190.0) * minf(1.0, t * 4000.0)
+		var v := (sin(TAU * 2400.0 * t) * 0.7 + sin(TAU * 1200.0 * t) * 0.3) * env
+		data.encode_s16(i * 2, int(clampf(v, -1.0, 1.0) * 26000.0))
+	var w := AudioStreamWAV.new()
+	w.format = AudioStreamWAV.FORMAT_16_BITS
+	w.mix_rate = rate
+	w.data = data
+	return w
+
+
 func _hook_all(n: Node) -> void:
 	if n == null:
 		return
@@ -97,7 +135,12 @@ func _hook_all(n: Node) -> void:
 
 func _hook(n: Node) -> void:
 	if n is BaseButton and not (n as BaseButton).pressed.is_connected(click):
-		(n as BaseButton).pressed.connect(click)
+		var b := n as BaseButton
+		b.pressed.connect(click)
+		b.focus_entered.connect(tick)
+		b.mouse_entered.connect(func() -> void:
+			if not b.disabled:
+				tick())
 
 
 ## The WAV starts at its RIFF tag. Readers before the untagged-entry fix

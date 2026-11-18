@@ -3622,6 +3622,8 @@ func _test_free_sounds() -> void:
 		var s := load("res://assets/sounds/%s.ogg" % stem) as AudioStreamOggVorbis
 		_check(s != null and s.get_length() > 20.0, "%s is a long loop" % stem)
 	_check(load(MenuSounds.FREE_CLICK) is AudioStream, "free menu click")
+	var tick := MenuSounds.tick_stream()
+	_check(tick.data.size() == int(44100 * 0.03) * 2, "menu focus tick is 30 ms of 16-bit mono")
 	_check(FreeAmbience.setting_for(PlaceholderCourseLoader.NAME) == FreeAmbience.Setting.PARKLAND, "parkland by default")
 	_check(FreeAmbience.setting_for("Kiawah Island Ocean Course") == FreeAmbience.Setting.SEASIDE, "seaside")
 	_check(FreeAmbience.setting_for("Desert Mountain") == FreeAmbience.Setting.DESERT, "desert before mountain")

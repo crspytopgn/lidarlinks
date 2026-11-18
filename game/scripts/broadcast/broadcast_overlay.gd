@@ -31,6 +31,13 @@ const UNDER := Color(1.0, 0.45, 0.4)  ## scores under par, as on TV
 const TICKER_H := 28.0
 const CAPTION_LINE := 24.0
 const LOWER_THIRD_S := 4.5
+## Shot detail (lie, wind, elevation, the lie tile, the caddie's read, the
+## spin ball, the key hint) shows as a player steps up, then folds away after
+## this long, leaving club and distance to the pin, as console golf keeps
+## the screen clear. A club change or the I key brings it back; I again
+## keeps it on.
+const DETAIL_S := 5.0
+const DETAIL_FADE := 0.5
 const SHOT_CARD_S := 6.0
 const HOLE_CARD_S := 5.5
 const HOLE_CARD_FADE := 0.35  # the fade of _ease_in_out
@@ -45,6 +52,9 @@ var _body: Font
 var _time := 0.0
 var _lower := {}
 var _lower_t := -1.0
+var _detail_t := 0.0
+## Detail stays on (I key).
+var detail_pinned := false
 var _card := {}
 var _card_t := -1.0
 var _hole := {}
@@ -120,6 +130,25 @@ func set_status(s: Dictionary) -> void:
 func lower_third(name: String, line: String) -> void:
 	_lower = {"name": name, "line": line}
 	_lower_t = 0.0
+	show_detail()
+
+
+## Brings the shot detail back for another DETAIL_S.
+func show_detail() -> void:
+	_detail_t = 0.0
+
+
+## I: keeps the detail on, or lets it fold away again.
+func toggle_detail() -> void:
+	detail_pinned = not detail_pinned
+	_detail_t = 0.0
+
+
+## How much of the shot detail shows: 1 as a player steps up, fading to 0.
+func detail() -> float:
+	if detail_pinned:
+		return 1.0
+	return 1.0 - smoothstep(DETAIL_S, DETAIL_S + DETAIL_FADE, _detail_t)
 
 
 ## After a shot. Keys: title, carry, roll, total, height, lie, to_pin.
@@ -183,6 +212,7 @@ func wiping() -> bool:
 
 func _process(delta: float) -> void:
 	_time += delta
+	_detail_t += delta
 	for k in ["_lower_t", "_card_t", "_hole_t", "_caption_t", "_wipe_t"]:
 		var v: float = get(k)
 		if v >= 0.0:
@@ -271,6 +301,10 @@ func _draw_shot_panel() -> void:
 		["WIND", status.get("wind", "")],
 		["ELEV", status.get("elevation", "")],
 	]
+	# Past the first two cells is detail: it fades, then the strip closes up.
+	var k := detail()
+	var fade := clampf(k * 2.0 - 1.0, 0.0, 1.0)
+	var shut := clampf(k * 2.0, 0.0, 1.0)
 	var x := 16.0
 	var y := 86.0
 	var h := 62.0
@@ -278,17 +312,21 @@ func _draw_shot_panel() -> void:
 	var total := 0.0
 	for c: Array in cells:
 		var cw := maxf(_font.get_string_size(str(c[1]).to_upper(), HORIZONTAL_ALIGNMENT_LEFT, -1, _size(19)).x, 40.0) + 28.0
+		if widths.size() >= 2:
+			cw *= shut
 		widths.append(cw)
 		total += cw
 	_panel(Rect2(x, y, total + 8.0, h), PANEL)
 	var cx := x + 4.0
 	for i in cells.size():
-		if i > 0:
-			draw_line(Vector2(cx, y + 14), Vector2(cx, y + h - 14), Color(1, 1, 1, 0.14), 1.0)
-		_text(Vector2(cx + 14, y + 23), cells[i][0], 10, ACCENT if i == 0 else DIM)
-		_text(Vector2(cx + 14, y + 48), str(cells[i][1]).to_upper(), 19, TEXT)
+		var a := 1.0 if i < 2 else fade
+		if a > 0.0:
+			if i > 0:
+				draw_line(Vector2(cx, y + 14), Vector2(cx, y + h - 14), Color(1, 1, 1, 0.14 * a), 1.0)
+			_text(Vector2(cx + 14, y + 23), cells[i][0], 10, Color(ACCENT if i == 0 else DIM, (ACCENT if i == 0 else DIM).a * a))
+			_text(Vector2(cx + 14, y + 48), str(cells[i][1]).to_upper(), 19, Color(TEXT, TEXT.a * a))
 		cx += widths[i]
-	if status.has("lie_type"):
+	if status.has("lie_type") and k > 0.999:
 		_draw_lie_tile(Rect2(x + total + 16.0, y, 96, 96), int(status.lie_type), float(status.get("lie_power", 1.0)))
 
 

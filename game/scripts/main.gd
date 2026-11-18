@@ -34,7 +34,7 @@ const METER_LINGER_S := 1.5
 ## A putt missed from inside this many metres (8 ft) gets a slump.
 const SLUMP_PUTT := 2.5
 const COMPUTER_HOLE_PAUSE := 4.0  ## between holes when nobody is at the keyboard
-const HINT_AIM := "Left/Right or right-click: aim (Shift: fine)    Up/Down: club    Q/E/W/S or click the ball: spin    %s    D: drop    Tab: scorecard%s    Esc: menu"
+const HINT_AIM := "Left/Right or right-click: aim (Shift: fine)    Up/Down: club    Q/E/W/S or click the ball: spin    %s    D: drop    Tab: scorecard    I: details%s    Esc: menu"
 ## The object viewer needs the game folder, which browsers can't read.
 const HINT_OBJECTS := "    O: objects"
 const HINT_AIM_METER := "3-click swing: Space or click    K: use the mouse swing"
@@ -1213,6 +1213,11 @@ func _unhandled_input(event: InputEvent) -> void:
 					if _objects_viewable():
 						_visit("res://scenes/object_viewer.tscn")
 					return
+				KEY_I:
+					if broadcast:
+						hud.overlay.toggle_detail()
+						hud.show_message("Shot details stay on" if hud.overlay.detail_pinned else "Shot details fold away after a few seconds", 2.0)
+						return
 				KEY_TAB:
 					if hud.scorecard.visible:
 						hud.scorecard.visible = false
@@ -1818,6 +1823,7 @@ func _change_club(step: int) -> void:
 	if club_index != before:
 		sounds.play(&"club")
 		_tell_monitor()
+		hud.overlay.show_detail()
 	_place_golfer()  # the golfer takes the new club
 	_update_aim_marker()
 	_update_hud()

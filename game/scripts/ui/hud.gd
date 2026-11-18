@@ -262,6 +262,19 @@ func _process(delta: float) -> void:
 			at.y = maxf(8.0, minf(at.y, overlay.caption_top() - scorecard.size.y - 12.0))
 		scorecard.position = at
 	_clear_hints()
+	_fold_detail()
+
+
+## Broadcast folds the shot detail away a few seconds into each shot
+## (BroadcastOverlay.detail): the caddie's read and the key hint fade out,
+## and the spin ball dims but can still be clicked.
+func _fold_detail() -> void:
+	var k := overlay.detail() if broadcast else 1.0
+	for c in get_children():
+		if c is CaddieNote:
+			(c as Control).modulate.a = k
+	spin.modulate.a = lerpf(0.4, 1.0, k)
+	hint_tab.modulate.a = 0.7 * k
 
 
 ## The key hints wrap onto a second line on a narrower screen (anything
