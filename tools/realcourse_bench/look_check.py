@@ -132,7 +132,9 @@ def patches(mask):
                     stack.append((a, b))
         js = [c[0] for c in cells]
         is_ = [c[1] for c in cells]
-        out.append((len(cells), (int(np.mean(is_)), int(np.mean(js)))))
+        # How much of its box it fills: a path or a roof edge is a thin line.
+        fill = len(cells) / float((max(js) - min(js) + 1) * (max(is_) - min(is_) + 1))
+        out.append((len(cells), (int(np.mean(is_)), int(np.mean(js))), fill))
     return out
 
 
@@ -143,7 +145,8 @@ def main():
     if game.ndim == 3:
         game = game[..., 0]
     rough = game == 8
-    game = np.where(rough, 0, game)  # mapped rough is mown grass too
+    play = game == 9
+    game = np.where(rough | play, 0, game)  # mapped rough and play are mown grass
     cell = meta["cell"]
     area = cell * cell
     pic = picture(meta, ZOOM)
@@ -177,7 +180,7 @@ def main():
     # along the water is a beach (the ground tint draws it), not a bunker.
     shore = grow(g_water, 3)
     beach = grow(g_water, 5)
-    for n, (i, j) in patches(water & ~shore & (game != 4)):
+    for n, (i, j), _ in patches(water & ~shore & (game != 4)):
         if n * area >= WATER_PATCH:
             findings.append(f"water: the picture has {n * area / 1e4:.1f} ha of water at cell ({i}, {j}) where the game has land")
     mown = fescue & in_course & (game == 0)
@@ -186,10 +189,13 @@ def main():
         notes.append("the picture's grass is dormant, so fescue and sand aren't judged")
     elif pic_fescue.sum() * area >= FESCUE_MIN and mown.sum() > FESCUE_SHARE * pic_fescue.sum():
         findings.append(f"fescue: {mown.sum() * area / 1e4:.1f} of the picture's {pic_fescue.sum() * area / 1e4:.1f} ha of straw fescue is mown in the game ({(mown & rough).sum() * area / 1e4:.1f} ha of it mapped rough)")
-    bunkers = [p for p in patches(sand & in_course & ~beach) if SAND_PATCH <= p[0] * area <= 3000.0]
+    # Bunkers sit by the fairways and greens (bright ground further off is
+    # desert, paths and roofs) and fill their outline (a path is a line).
+    by_play = grow(play, 4)
+    bunkers = [p for p in patches(sand & in_course & ~beach & by_play) if SAND_PATCH <= p[0] * area <= 3000.0 and p[2] >= 0.4]
     missing = 0
     near_sand = grow(game == 2, 2)  # the map and the picture a few metres apart
-    for n, (i, j) in bunkers:
+    for n, (i, j), _ in bunkers:
         if not near_sand[j, i]:
             missing += 1
     if green and len(bunkers) >= 8 and missing > 0.5 * len(bunkers):
@@ -200,7 +206,7 @@ def main():
     flag = np.zeros(game.shape + (3,), np.uint8) + 40
     flag[water & ~shore & (game != 4)] = (60, 140, 255)
     flag[mown] = (255, 220, 60)
-    flag[sand & in_course & ~beach & (game != 2)] = (255, 255, 255) if green else (90, 90, 90)
+    flag[sand & in_course & ~beach & by_play & (game != 2)] = (255, 255, 255) if green else (90, 90, 90)
     # Rows run with +z (north) and columns with +x (west): flipped both
     # ways each panel reads north up, east right.
     side = np.concatenate([p[::-1, ::-1] for p in ((pic * 255).astype(np.uint8), gimg, flag)], 1)

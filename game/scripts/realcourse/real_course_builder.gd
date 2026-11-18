@@ -27,6 +27,7 @@ const MAX_POINTS := 90  ## control points per area at most
 const STREAM_PIECE := 60.0  ## streams are split so each piece has its own water line
 const STREAM_PIECE_DROP := 0.3  ## metres a piece's ground may fall along it
 const NATIVE_ROWS_PER_STEP := 120
+const NATIVE_ROUGH_SHARE := 0.5  ## of a mapped rough straw in the photo: native rough
 const LINKS_CUT := 12.0  ## metres of first cut round a links fairway  ## rows of NativeGrass cells read a step
 const CHAIN_REACH := 150.0  ## metres from a green to the next hole's tee, chaining unnumbered holes
 const CHAIN_REACH_FAR := 400.0  ## then joining what's left of the chains
@@ -596,29 +597,51 @@ func build_steps(c: DesignedCourse, height: Callable, fallback := Callable()) ->
 			for p in ring:
 				r = r.expand(p)
 			_guessed.append({"ring": ring, "box": r}))
-	# The native grass between the holes, from the photo.
-	var native := {"grass": null, "count": 0}
+	# The native grass between the holes, from the photo: straw (fescue)
+	# and, darker, scrub or heather.
+	var native := {"grass": null, "scrub": null, "count": 0}
 	steps.append(func() -> void:
 		var img := photo if photo != null and not photo.is_empty() else native_photo
 		if img != null and not img.is_empty():
-			native["grass"] = NativeGrass.new(img, c.area, _boundary, grass_points()))
+			native["grass"] = NativeGrass.new(img, c.area, _boundary, grass_points())
+			# Scrub only from a real aerial photo: the satellite image is too
+			# coarse and dark to tell it from woods.
+			if img == photo:
+				native["scrub"] = NativeGrass.new(img, c.area, _boundary, grass_points(), NativeGrass.Kind.SCRUB))
 	var native_rows := ceili(c.area.size.y / NativeGrass.CELL)
-	for j in range(0, native_rows, NATIVE_ROWS_PER_STEP):
-		steps.append(func() -> void:
-			var g: NativeGrass = native["grass"]
-			if g != null and g.ready():
-				g.rows(j, j + NATIVE_ROWS_PER_STEP))
+	for key: String in ["grass", "scrub"]:
+		for j in range(0, native_rows, NATIVE_ROWS_PER_STEP):
+			steps.append(func() -> void:
+				var g: NativeGrass = native[key]
+				if g != null and g.ready():
+					g.rows(j, j + NATIVE_ROWS_PER_STEP))
 	steps.append(func() -> void:
-		var g: NativeGrass = native["grass"]
-		if g == null or not g.ready():
-			return
-		var found := g.rings()
-		for ring: PackedVector2Array in found["rings"]:
-			c.shapes.append(CourseShape.new(Surface.Type.DEEP_ROUGH, ring))
-			native["count"] += 1
-		# Mown ground inside a patch stays mown.
-		for ring: PackedVector2Array in found["islands"]:
-			c.shapes.append(CourseShape.new(Surface.Type.ROUGH, ring)))
+		for key: String in ["grass", "scrub"]:
+			var g: NativeGrass = native[key]
+			if g == null or not g.ready():
+				continue
+			var found := g.rings()
+			for ring: PackedVector2Array in found["rings"]:
+				var s := CourseShape.new(Surface.Type.DEEP_ROUGH, ring)
+				if g.kind == NativeGrass.Kind.SCRUB:
+					s.cover = g.cover_of(ring)
+				c.shapes.append(s)
+				native["count"] += 1
+			# A mapped rough that is mostly straw is native rough (it would
+			# be painted over the native grass as mown).
+			if not found["rings"].is_empty():
+				for s in c.shapes:
+					if s.surface == Surface.Type.ROUGH and s.is_valid() and g.share_in(s) >= NATIVE_ROUGH_SHARE:
+						s.surface = Surface.Type.DEEP_ROUGH
+						s.changed()
+			# Mown ground inside a patch of straw stays mown (unless it is
+			# the scrub's: holes in scrub are left to what is under them).
+			if g.kind == NativeGrass.Kind.STRAW:
+				var scrub: NativeGrass = native["scrub"]
+				for ring: PackedVector2Array in found["islands"]:
+					var island := CourseShape.new(Surface.Type.ROUGH, ring)
+					if scrub == null or not scrub.ready() or scrub.share_in(island) < 0.5:
+						c.shapes.append(island))
 	# As a club's builder would have shaped it: greens that hold a ball
 	# (one a step: St Andrews' double greens are big), level tees, par 3s a
 	# driver reaches.

@@ -1253,6 +1253,24 @@ func _test_native_grass() -> void:
 		check(Geometry2D.is_point_in_polygon(Vector2(150, -150), rings[0]) and not Geometry2D.is_point_in_polygon(Vector2(-100, 0), rings[0]), "it covers the straw half, not the mown one")
 	var islands: Array[PackedVector2Array] = found["islands"]
 	check(islands.size() == 1 and Geometry2D.is_point_in_polygon(Vector2(90, 10), islands[0]), "the mown island inside it stays mown")
+	var straw_rough := CourseShape.new(Surface.Type.ROUGH, PackedVector2Array([Vector2(120, -150), Vector2(180, -150), Vector2(180, -90), Vector2(120, -90)]))
+	var mown_rough := CourseShape.new(Surface.Type.ROUGH, PackedVector2Array([Vector2(-150, -150), Vector2(-90, -150), Vector2(-90, -90), Vector2(-150, -90)]))
+	check(g.share_in(straw_rough) > 0.9 and g.share_in(mown_rough) < 0.1, "a mapped rough on the straw reads as native, one on the lawn doesn't")
+	# Dark brown canyon scrub (Torrey Pines) and purple heather.
+	var dark := Image.create(200, 200, false, Image.FORMAT_RGB8)
+	dark.fill(Color(0.36, 0.55, 0.25))
+	dark.fill_rect(Rect2i(0, 0, 100, 100), Color(0.30, 0.29, 0.24))
+	dark.fill_rect(Rect2i(0, 120, 100, 80), Color(0.30, 0.20, 0.24))
+	var sg := NativeGrass.new(dark, area, [] as Array[PackedVector2Array], grass, NativeGrass.Kind.SCRUB)
+	sg.rows(0, 1000)
+	var srings: Array[PackedVector2Array] = sg.rings()["rings"]
+	var covers := []
+	for r in srings:
+		covers.append(sg.cover_of(r))
+	covers.sort()
+	check(srings.size() >= 1 and covers.has("heath") and covers.has("scrub"), "dark scrub and purple heather are found (%s)" % [covers])
+	check(not NativeGrass.is_scrub(Color(0.12, 0.25, 0.10), sg.grass_sat, sg.grass_val), "dark green woods aren't scrub")
+	check(NativeGrass.is_scrub(Color.from_hsv(0.28, 0.2, 0.28), 0.37, 0.41), "Torrey's grey-green canyon sage is scrub")
 	var green := Image.create(200, 200, false, Image.FORMAT_RGB8)
 	green.fill(Color(0.36, 0.55, 0.25))
 	var none := NativeGrass.new(green, area, [] as Array[PackedVector2Array], grass)

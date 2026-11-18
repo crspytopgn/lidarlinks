@@ -49,6 +49,10 @@ func _initialize() -> void:
 					code = 4
 				elif s == Surface.Type.DEEP_ROUGH:
 					code = 1
+				elif s == Surface.Type.ROUGH:
+					code = 8
+				elif s in [Surface.Type.FAIRWAY, Surface.Type.GREEN, Surface.Type.TEE, Surface.Type.FRINGE] and near_play(c, p):
+					code = 9
 			else:
 				code = 5
 				if not is_nan(sea) and not land.is_empty() and _land_height(land, p) < sea:
@@ -87,7 +91,7 @@ func _initialize() -> void:
 	for j in h:
 		for i in w:
 			var code := img.get_pixel(i, j).r8
-			if (code <= 2 or code == 8) and near[j * w + i] == 0:
+			if (code <= 2 or code >= 8) and near[j * w + i] == 0:
 				img.set_pixel(i, j, Color8(7, 0, 0))
 	img.save_png(a[1] + ".png")
 	# Row 0 is box.position.y (south... whichever way +z runs): give the
@@ -118,3 +122,12 @@ static func _land_height(land: Dictionary, p: Vector2) -> float:
 	var i := clampi(roundi((p.x - o.x) / cell), 0, cols - 1)
 	var j := clampi(roundi((p.y - o.y) / cell), 0, rows - 1)
 	return hs[j * cols + i]
+
+
+## True inside a mapped fairway, green or tee (surface_at also calls the
+## unmapped ground between them fairway).
+static func near_play(c: DesignedCourse, p: Vector2) -> bool:
+	for s in c.shapes:
+		if s.surface in [Surface.Type.FAIRWAY, Surface.Type.GREEN, Surface.Type.TEE] and s.bounds().has_point(p) and s.contains(p):
+			return true
+	return false
