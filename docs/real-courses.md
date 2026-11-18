@@ -500,6 +500,45 @@ or not at all. What that found, and what the builder now does:
   tiles down in about 12 s, and Cancel stops a build within a second and
   a half at any step with nothing left running; the next build works.
   `tools/realcourse_bench/stress.sh` checks all three.
+- **Big lakes are water:** the elevation tiles hold a big lake's surface
+  dead flat (Lake Michigan at 176.8 m beside Whistling Straits), and it
+  showed as a flat field at the foot of the bluffs. `RealLandscape`
+  takes a flat sheet covering 3 % of the land, with hardly any land below
+  it and not on a whole metre (whole-metre tiles make river plains flat),
+  as a lake at that level, lets its surface down under the water, and
+  lowers the course's own flat lidar water surface along the shore too.
+- **Native grass from the photo:** the map seldom has the fescue between
+  the holes, so links and dune courses came out as bunkers on a mown lawn.
+  `NativeGrass` reads 4 m cells of the course's aerial photo: ones a good
+  deal yellower than its fairways (and not dark or grey) become deep
+  rough, drawn as tall fescue, with the mapped play areas painted over
+  it. Parkland photos (Augusta, Oakmont) give none. Where there is no
+  aerial photo service, the Sentinel-2 cloudless satellite image (EOX,
+  CC BY 4.0, 10 m) is read for this alone.
+- **The sea held flat:** some elevation tiles carry no sea floor and hold
+  the sea flat at 0 m (Barnbougle's Bass Strait, Cape Kidnappers, Al
+  Mouj), so the sea test (2 % of the land 8 m under) missed it. A flat
+  sheet at 0 m over 8 % of the land is the sea too, let down under its
+  water like a lake.
+- **The sea in the course's own box:** open tiles smear the land out over
+  the sea by a coast (Ballybunion's Atlantic was a field 10 m up, half of
+  Kingsbarns' box was dry North Sea). Low ground joined to the sea floor
+  is let down under the sea, and inside the box, water in the 10 m land
+  cover joined to its edge and away from the play areas is too
+  (`RealLandscape.sea_from_cover`). Whether the sea may come in at all is
+  judged on the fairways, greens and tees, not the whole box.
+- **Links fescue without a photo:** Scotland, Ireland and Wales have no
+  open aerial photos and the satellite image is too coarse there to tell
+  fescue from fairway, so a course with the sea within 1 km and no photo
+  gets deep rough (fescue) between the holes past a 12 m first cut round
+  each fairway (15 m round greens, 8 m round tees), as on any links.
+- **Checked against the real place from above:** `e2e.sh` ends with
+  `look_export.gd` and `look_check.py`, which read a satellite picture of
+  the same ground (a dev check only: it is cached in /tmp, never saved
+  into a course) and flag patches the built course gets wrong: water the
+  game has as land, straw fescue it has mown, bunkers it lacks. Winter
+  (dormant) pictures skip the grass tests, and the course edges, woods
+  and houses are left out. It writes picture | game | flags side by side.
 
 `tools/realcourse_bench/e2e.sh` builds a course the way the game does and
 audits it (each hole's tee and pin surfaces, green slope, par for its

@@ -39,3 +39,9 @@ built-in courses get in CI (`game/tests/reach_tests.gd`), plus the longest
 frame gap during the build. Run it on a spread of clubs (big, small,
 several courses, no lidar, coast, mountain) after any builder change; see
 docs/real-courses.md for the list used in Nov 2026.
+
+`look_export.gd` + `look_check.py` (run by `e2e.sh`, `LOOK=0` skips):
+the built course from above against a satellite picture of the real
+place, flagging missing water, fescue drawn mown and missing bunkers, with
+`/tmp/rc/look_<slug>_look.png` (picture | game | flags). The picture is
+fetched for the check only and cached in /tmp/rc/esri_cache.

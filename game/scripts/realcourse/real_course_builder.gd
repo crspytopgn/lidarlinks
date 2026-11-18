@@ -26,6 +26,8 @@ const LOW_GROUND := -12.0  ## heights below this (sea floor) are raised to it
 const MAX_POINTS := 90  ## control points per area at most
 const STREAM_PIECE := 60.0  ## streams are split so each piece has its own water line
 const STREAM_PIECE_DROP := 0.3  ## metres a piece's ground may fall along it
+const NATIVE_ROWS_PER_STEP := 120
+const LINKS_CUT := 12.0  ## metres of first cut round a links fairway  ## rows of NativeGrass cells read a step
 const CHAIN_REACH := 150.0  ## metres from a green to the next hole's tee, chaining unnumbered holes
 const CHAIN_REACH_FAR := 400.0  ## then joining what's left of the chains
 const GREEN_BANK := 3.0  ## metres of dry bank kept round a green in a pond
@@ -99,6 +101,9 @@ var land_trees := PackedVector2Array()
 ## The course photo (AerialPhotos.course_photo), for finding greens,
 ## fairways and bunkers the map lacks.
 var photo: Image
+## Without one, the satellite image (AerialPhotos.SATELLITE), for the
+## native grass only.
+var native_photo: Image
 ## Close-up photos round greens the map leaves unfinished, for finding the
 ## green and its bunkers: {"image", "area"} (see detail_spots()).
 var details: Array[Dictionary] = []
@@ -591,6 +596,29 @@ func build_steps(c: DesignedCourse, height: Callable, fallback := Callable()) ->
 			for p in ring:
 				r = r.expand(p)
 			_guessed.append({"ring": ring, "box": r}))
+	# The native grass between the holes, from the photo.
+	var native := {"grass": null, "count": 0}
+	steps.append(func() -> void:
+		var img := photo if photo != null and not photo.is_empty() else native_photo
+		if img != null and not img.is_empty():
+			native["grass"] = NativeGrass.new(img, c.area, _boundary, grass_points()))
+	var native_rows := ceili(c.area.size.y / NativeGrass.CELL)
+	for j in range(0, native_rows, NATIVE_ROWS_PER_STEP):
+		steps.append(func() -> void:
+			var g: NativeGrass = native["grass"]
+			if g != null and g.ready():
+				g.rows(j, j + NATIVE_ROWS_PER_STEP))
+	steps.append(func() -> void:
+		var g: NativeGrass = native["grass"]
+		if g == null or not g.ready():
+			return
+		var found := g.rings()
+		for ring: PackedVector2Array in found["rings"]:
+			c.shapes.append(CourseShape.new(Surface.Type.DEEP_ROUGH, ring))
+			native["count"] += 1
+		# Mown ground inside a patch stays mown.
+		for ring: PackedVector2Array in found["islands"]:
+			c.shapes.append(CourseShape.new(Surface.Type.ROUGH, ring)))
 	# As a club's builder would have shaped it: greens that hold a ball
 	# (one a step: St Andrews' double greens are big), level tees, par 3s a
 	# driver reaches.
@@ -622,7 +650,7 @@ func build_steps(c: DesignedCourse, height: Callable, fallback := Callable()) ->
 		_lines = line_cells(lines)
 		_add_trees(c)
 		var detected: int = counts["detected"]
-		summary = {"missing_holes": missing_holes(), "greens_graded": playability["greens"], "holes": c.holes.size(), "areas": c.shapes.size(), "trees": c.objects.size(), "paths": c.paths.size(), "buildings": c.buildings.size(), "guessed": _guessed.size() - detected, "detected": detected})
+		summary = {"missing_holes": missing_holes(), "greens_graded": playability["greens"], "holes": c.holes.size(), "areas": c.shapes.size(), "trees": c.objects.size(), "paths": c.paths.size(), "buildings": c.buildings.size(), "guessed": _guessed.size() - detected, "detected": detected, "native": native["count"]})
 	return steps
 
 
@@ -1966,6 +1994,37 @@ static func simplify_line(line: PackedVector2Array, tolerance: float) -> PackedV
 ## scaled back to the ring's own area. Even spacing also keeps the designer's
 ## spline from overshooting where a short side meets a long one. Wiggles
 ## shorter than a few spacings go; the bays and fingers of the shape stay.
+## A links course's native grass where there is no photo to read it from
+## (Scotland, Ireland, Wales have no open aerial photos, and the satellite
+## image is too coarse to tell fescue from fairway): the ground between the
+## holes, past a first cut round the fairways, greens and tees, becomes
+## deep rough, drawn as fescue, as on any links. `boundary` is the course
+## outline (its whole area without one). Returns the shapes added.
+static func links_fescue(c: DesignedCourse, boundary: Array[PackedVector2Array]) -> int:
+	var cut := {Surface.Type.FAIRWAY: LINKS_CUT, Surface.Type.GREEN: LINKS_CUT + 3.0, Surface.Type.TEE: LINKS_CUT - 4.0}
+	var added: Array[CourseShape] = []
+	if boundary.is_empty():
+		var r := c.area.grow(-2.0)
+		added.append(CourseShape.new(Surface.Type.DEEP_ROUGH, PackedVector2Array([r.position, Vector2(r.end.x, r.position.y), r.end, Vector2(r.position.x, r.end.y)])))
+	for ring in boundary:
+		added.append(CourseShape.new(Surface.Type.DEEP_ROUGH, ring))
+	for s in c.shapes:
+		if not s.is_valid() or not cut.has(s.surface):
+			continue
+		# The biggest piece is the outline grown (the rest are holes in it).
+		var best := PackedVector2Array()
+		var best_a := 0.0
+		for poly in Geometry2D.offset_polygon(s.points, float(cut[s.surface]), Geometry2D.JOIN_ROUND):
+			var a := absf(_ring_area(poly))
+			if a > best_a:
+				best_a = a
+				best = poly
+		if best.size() >= 3:
+			added.append(CourseShape.new(Surface.Type.ROUGH, best))
+	c.shapes.append_array(added)
+	return added.size()
+
+
 static func smooth_ring(ring: PackedVector2Array, spacing := 1.5, passes := 4) -> PackedVector2Array:
 	var n := ring.size()
 	if n >= 2 and ring[0].is_equal_approx(ring[n - 1]):

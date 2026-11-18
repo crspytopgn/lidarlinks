@@ -34,6 +34,7 @@ func run_all() -> Array[String]:
 	_test_missing_holes_counted()
 	_test_pin_off_a_bank()
 	_test_unlabelled_courses_parted()
+	_test_native_grass()
 	_test_playability_steps()
 	_test_courses_at_a_club()
 	_test_boundary_by_name()
@@ -679,6 +680,36 @@ func _test_land_cover() -> void:
 	var want_nw: Color = LandCover.COLORS[LandCover.TREES]
 	var want_ne: Color = LandCover.COLORS[LandCover.CROPS]
 	check(absf(nw.r - want_nw.r) + absf(nw.g - want_nw.g) < 0.02 and absf(ne.r - want_ne.r) + absf(ne.g - want_ne.g) < 0.02, "ground picture: woods to the north-west, fields to the north-east")
+	# The sea in the course's box (water in the east half) let in under
+	# ground the tiles left 10 m up; the west half stays.
+	var wv := PackedFloat32Array()
+	for j in 20:
+		for i in 20:
+			wv.append(LandCover.WATER if i >= 10 else LandCover.RANGELAND)
+	var wl := LandCover.new([50.98, -1.0, 51.0, -0.98])
+	wl.add(_tiff(wv, 20, 20, false, false, true))
+	var sc := DesignedCourse.blank(Vector2(600, 400))
+	sc.shapes.clear()
+	for k in sc.heights.size():
+		sc.heights[k] = 10.0
+	check(RealLandscape.sea_from_cover(sc, f, wl) == 0, "no sea, nothing let in")
+	sc.source["sea"] = 0.0
+	var mid := sc.area.get_center()
+	check(RealLandscape.sea_from_cover(sc, f, wl) > 0, "the sea in the box is let in")
+	check(sc.base_height(mid.x - 200.0, mid.y) < 0.0 and sc.base_height(mid.x + 200.0, mid.y) > 9.0, "under the water (east) only: %.1f, %.1f" % [sc.base_height(mid.x - 200.0, mid.y), sc.base_height(mid.x + 200.0, mid.y)])
+	# A links course with no photo: fescue between the holes, a first cut
+	# round the fairway.
+	var lk := DesignedCourse.blank(Vector2(600, 400))
+	lk.shapes.clear()
+	var fw := CourseShape.new(Surface.Type.FAIRWAY, PackedVector2Array([Vector2(-100, -20), Vector2(100, -20), Vector2(100, 20), Vector2(-100, 20)]))
+	lk.shapes.append(fw)
+	var none: Array[PackedVector2Array] = []
+	check(RealCourseBuilder.links_fescue(lk, none) == 2, "fescue over the area and a cut round the fairway")
+	var lt := lk.to_course_data().holes[0].terrain if not lk.holes.is_empty() else null
+	var deep := lk.shapes[1]
+	var cut := lk.shapes[2]
+	check(deep.surface == Surface.Type.DEEP_ROUGH and cut.surface == Surface.Type.ROUGH and cut.contains(Vector2(0, 28)) and not cut.contains(Vector2(0, 40)), "the first cut is 12 m wide")
+	check(lt == null or lt.surface_at(0, 60) == Surface.Type.DEEP_ROUGH, "past the cut is fescue")
 
 
 ## A hole mapped only as a line gets a green, a tee, a fairway and bunkers
@@ -1201,6 +1232,34 @@ func _test_pin_off_a_bank() -> void:
 	check(flat.pin.y > -15.0 + CoursePlayability.PIN_WATER - 0.01, "it keeps %.0f m from the water (%s)" % [CoursePlayability.PIN_WATER, flat.pin])
 
 
+## The straw-coloured fescue between the holes in the photo (Whistling
+## Straits) becomes deep rough, with the mown ground inside it left mown; a
+## photo that's green all over gives none.
+func _test_native_grass() -> void:
+	var area := Rect2(-200, -200, 400, 400)
+	var img := Image.create(200, 200, false, Image.FORMAT_RGB8)
+	img.fill(Color(0.36, 0.55, 0.25))  # mown grass
+	# Photo x runs from area.end.x, so columns 0 to 99 are x 200 down to 0.
+	img.fill_rect(Rect2i(0, 0, 100, 200), Color(0.62, 0.58, 0.40))  # fescue
+	img.fill_rect(Rect2i(40, 80, 30, 30), Color(0.36, 0.55, 0.25))  # a mown island
+	var grass := PackedVector2Array([Vector2(-100, 0), Vector2(-120, 50)])
+	var g := NativeGrass.new(img, area, [] as Array[PackedVector2Array], grass)
+	check(g.ready(), "native grass reads the photo")
+	g.rows(0, 1000)
+	var found := g.rings()
+	var rings: Array[PackedVector2Array] = found["rings"]
+	check(rings.size() == 1, "one patch of fescue (%d)" % rings.size())
+	if rings.size() == 1:
+		check(Geometry2D.is_point_in_polygon(Vector2(150, -150), rings[0]) and not Geometry2D.is_point_in_polygon(Vector2(-100, 0), rings[0]), "it covers the straw half, not the mown one")
+	var islands: Array[PackedVector2Array] = found["islands"]
+	check(islands.size() == 1 and Geometry2D.is_point_in_polygon(Vector2(90, 10), islands[0]), "the mown island inside it stays mown")
+	var green := Image.create(200, 200, false, Image.FORMAT_RGB8)
+	green.fill(Color(0.36, 0.55, 0.25))
+	var none := NativeGrass.new(green, area, [] as Array[PackedVector2Array], grass)
+	none.rows(0, 1000)
+	check((none.rings()["rings"] as Array).is_empty(), "a green photo gives no fescue")
+
+
 ## A club whose 27 holes have no numbers or course names (Royal Golf Dar
 ## Es Salam) is parted by how its holes follow on, green to next tee, and
 ## numbered in that order; holes numbered 1A to 18A and 1C to 18C (Jockey
@@ -1476,6 +1535,14 @@ func _test_landscape() -> void:
 	var again := DesignedCourse.from_json(c.to_json())
 	land.apply(again)
 	check(again.landscape.get("cols", 0) == land.count and float(again.source.get("sea", -1.0)) == 0.0, "the land and the sea are set")
+	# The tiles' noisy sea surface over 0 by the shore is the sea too.
+	var noisy := RealLandscape.new(f, DesignedCourse.from_json(c.to_json()))
+	noisy.rows(0, noisy.count, func(lat: float, lon: float) -> float:
+		var p := f.to_local(lat, lon)
+		return -20.0 if p.x < -4000.0 else (0.8 if p.x < -2000.0 else 15.0 + p.x * 0.01))
+	noisy.apply(DesignedCourse.from_json(c.to_json()))
+	var shallow := noisy.heights[noisy.count / 2 * noisy.count + (noisy.count / 2 - roundi(3000.0 / RealLandscape.CELL))]
+	check(shallow + float(c.source.get("base_height", 0.0)) <= RealLandscape.SEA_FLOOR + 0.01, "a noisy sea surface by the shore is let down (%.1f)" % shallow)
 	var edge := land.heights[land.count / 2 * land.count + land.count / 2]
 	check(absf(edge - 2.0) < 0.2, "inside the course it follows the course's ground (%.2f)" % edge)
 	var round := DesignedCourse.from_json(JSON.stringify(_with_land(c, land)))
@@ -1485,6 +1552,45 @@ func _test_landscape() -> void:
 		var far := land.count - 2
 		check(absf(hs[land.count / 2 * land.count + far] - land.heights[land.count / 2 * land.count + far]) < 0.11, "heights keep to a decimetre")
 	check(not is_nan(Landscape.sea_level(again)), "the course draws its sea")
+	# A big lake's flat surface (Lake Michigan at 176.8 m by Whistling
+	# Straits) gives the course the lake at its level, its surface let down
+	# under the water; a flat plain on a whole metre doesn't.
+	var lc := DesignedCourse.blank(Vector2(600, 400))
+	lc.source["base_height"] = 190.0
+	var lakeside := RealLandscape.new(f, lc)
+	lakeside.rows(0, lakeside.count, func(lat: float, lon: float) -> float:
+		var p := f.to_local(lat, lon)
+		return 176.76 if p.x < -1500.0 else 190.0 + p.x * 0.004)
+	check(not lakeside.has_sea() and absf(lakeside.lake_level() - 176.75) < 0.06, "a lake's flat surface is found (%.2f)" % lakeside.lake_level())
+	lakeside.apply(lc)
+	check(absf(float(lc.source.get("sea", -1.0)) - 176.75) < 0.06, "the course gets the lake")
+	var far_east := lakeside.heights[lakeside.count / 2 * lakeside.count + 2]
+	check(far_east + 190.0 < 176.76 - 1.5, "the lake's surface is let down under its water (%.1f)" % (far_east + 190.0))
+	var plain := RealLandscape.new(f, lc)
+	plain.rows(0, plain.count, func(lat: float, lon: float) -> float:
+		var p := f.to_local(lat, lon)
+		return 12.0 if p.x < -1500.0 else 14.0 + p.x * 0.004)
+	check(is_nan(plain.lake_level()), "a flat plain on a whole metre isn't a lake")
+	# Tiles without a sea floor hold the sea flat at 0 (Barnbougle).
+	var bc := DesignedCourse.blank(Vector2(600, 400))
+	bc.source["base_height"] = 6.0
+	var shore := RealLandscape.new(f, bc)
+	shore.rows(0, shore.count, func(lat: float, lon: float) -> float:
+		var p := f.to_local(lat, lon)
+		return 0.0 if p.x < -1500.0 else 6.0 + p.x * 0.004)
+	check(shore.has_sea() and shore.flat_sea(), "a flat surface at sea level is the sea")
+	shore.apply(bc)
+	check(float(bc.source.get("sea", -1.0)) == 0.0, "the course gets the flat sea")
+	check(shore.heights[shore.count / 2 * shore.count + 2] + 6.0 < -1.0, "the flat sea's surface is let down under its water")
+	var dc := DesignedCourse.blank(Vector2(600, 400))
+	dc.source["base_height"] = 6.0
+	var datum := RealLandscape.new(f, dc)
+	datum.rows(0, datum.count, func(lat: float, lon: float) -> float:
+		var p := f.to_local(lat, lon)
+		return -1.8 if p.x < -1500.0 else 6.0 + p.x * 0.004)
+	check(absf(datum.flat_sea_level() + 1.8) < 0.06, "a flat sea on the tiles' own datum (-1.8 m) is the sea (%.2f)" % datum.flat_sea_level())
+	datum.apply(dc)
+	check(absf(float(dc.source.get("sea", 9.0)) + 1.8) < 0.06, "the course gets the sea at that level")
 
 
 static func _with_land(c: DesignedCourse, land: RealLandscape) -> Dictionary:

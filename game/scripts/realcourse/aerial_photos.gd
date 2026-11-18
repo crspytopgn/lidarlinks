@@ -143,6 +143,17 @@ const SOURCES := [
 	},
 ]
 
+## Sentinel-2 cloudless (2016, the CC BY 4.0 year), 10 m a pixel, the
+## world over: too coarse for greens, bunkers or trees, so not in SOURCES,
+## but enough to tell the straw fescue between the holes from the mown
+## grass (NativeGrass) where no aerial photo service covers the course.
+const SATELLITE := {
+	"id": "s2", "name": "Sentinel-2 cloudless",
+	"url": "https://tiles.maps.eox.at/wmts/1.0.0/s2cloudless_3857/default/g/{z}/{y}/{x}.jpg",
+	"max_zoom": 15,
+	"credit": "Sentinel-2 cloudless 2016 (s2maps.eu) by EOX IT Services GmbH, contains modified Copernicus Sentinel data 2016, CC BY 4.0",
+}
+
 ## Esri World Imagery, for the designer's satellite guide only: shown live
 ## under the course to check it against, never saved, traced or detected
 ## from (Esri's terms allow showing it with its credit, not copying it).
