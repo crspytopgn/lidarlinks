@@ -31,9 +31,19 @@ const COMPAT_FILL_LIFT := 1.6
 ## brightness, saturation above the horizon band (photo_sky.gdshader
 ## sky_depth) and how much distance haze lies over it. Fitted so the top of
 ## the tee view lands near 2K25's and real tee shots' deep blue.
-const COMPAT_SKY_ENERGY := 0.95
-const COMPAT_SKY_DEPTH := 1.1
+## 2026-11-18 quality pass: the tee view's sky top had sunk to a navy
+## (44, 55, 83) on the web and (74, 107, 150) on desktop against 2K25's
+## pale (97, 159, 205); a deep, saturated sky behind bright cumulus read
+## as a painted backdrop.
+const COMPAT_SKY_ENERGY := 2.1
+const COMPAT_SKY_DEPTH := 0.8
 const COMPAT_SKY_FOG := 0.08
+const FORWARD_SKY_ENERGY := 1.0
+const FORWARD_SKY_DEPTH := 1.2
+## The sun's size for soft shadows (degrees), and its shadow normal bias
+## (1.5 lifted the golfer's shadow off his feet).
+const SUN_ANGLE := 0.15
+const SUN_NORMAL_BIAS := 0.8
 ## Forward+ only: how much brighter the photo sky's clouds are drawn
 ## (photo_sky.gdshader cloud_lift), so they read white under AgX.
 const FORWARD_CLOUD_LIFT := 1.2
@@ -189,7 +199,7 @@ func _init() -> void:
 	sun.light_energy = SUN_ENERGY
 	sun.shadow_enabled = true
 	sun.shadow_bias = 0.04
-	sun.shadow_normal_bias = 1.5
+	sun.shadow_normal_bias = SUN_NORMAL_BIAS
 	sun.directional_shadow_blend_splits = true
 	add_child(sun)
 
@@ -201,7 +211,10 @@ func apply(settings: GraphicsSettings) -> void:
 	sun.directional_shadow_max_distance = settings.shadow_distance()
 	sun.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_2_SPLITS if q == GraphicsSettings.Quality.LOW else DirectionalLight3D.SHADOW_PARALLEL_4_SPLITS
 	# Angular size of the sun gives contact-hardening soft shadows (Forward+).
-	sun.light_angular_distance = 0.6 if fwd and q >= GraphicsSettings.Quality.HIGH else 0.0
+	# Kept small: at 0.6 degrees the soft-shadow filter, over the far
+	# splits' big texels, blurred the golfer's and the bag's shadows to a
+	# faint smudge, so the golfer looked pasted on the tee (2K25 pass 3).
+	sun.light_angular_distance = SUN_ANGLE if fwd and q >= GraphicsSettings.Quality.HIGH else 0.0
 	sun.light_energy = PHOTO_SUN_ENERGY if photo else SUN_ENERGY
 	sun.light_color = Color(1.0, 0.94, 0.84) if photo else Color(1.0, 0.95, 0.86)
 	if photo:
@@ -367,8 +380,8 @@ func _pick_sky() -> void:
 			sky_mat.set_shader_parameter("panorama", grey if grey != null else FreeAssets.sky())
 			# Compatibility has no sky fill light, so its sky is drawn a
 			# little brighter than Forward+'s, but no longer pale and milky.
-			sky_mat.set_shader_parameter("energy", 0.8 if GraphicsSettings.is_forward_plus() else COMPAT_SKY_ENERGY)
-			sky_mat.set_shader_parameter("sky_depth", 1.4 if GraphicsSettings.is_forward_plus() else COMPAT_SKY_DEPTH)
+			sky_mat.set_shader_parameter("energy", FORWARD_SKY_ENERGY if GraphicsSettings.is_forward_plus() else COMPAT_SKY_ENERGY)
+			sky_mat.set_shader_parameter("sky_depth", FORWARD_SKY_DEPTH if GraphicsSettings.is_forward_plus() else COMPAT_SKY_DEPTH)
 			sky_mat.set_shader_parameter("cloud_lift", FORWARD_CLOUD_LIFT if GraphicsSettings.is_forward_plus() else 0.0)
 			sky_mat.set_shader_parameter("tint", _time.sky)
 			sky_mat.set_shader_parameter("horizon_tint", _time.horizon)
