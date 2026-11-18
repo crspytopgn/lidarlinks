@@ -66,6 +66,8 @@ const LIGHT_MAX_TREES := 2500
 const FRAME_BUDGET_MS := 60
 ## Lidar pixels read per step when finding the trees.
 const LIDAR_PIXELS_PER_STEP := 60000
+## Metres round the course the land cover is read for the sea under cliffs.
+const SHORE_REACH := 2500.0
 ## Land samples shaped per step (RealLandscape).
 const LAND_SAMPLES_PER_STEP := 20000
 ## Goes up whenever a build gives a better course (new detection, trees,
@@ -535,6 +537,18 @@ func _add_landscape(builder: RealCourseBuilder, courses: Array) -> void:
 	if tiles.loaded * 4 < urls.size() * 3:
 		return  # a patchwork horizon is worse than none
 	tiles.fill_missing()
+	# The land cover along the shore round the course, for the sea under
+	# cliffs (RealLandscape.sea_from_land_cover).
+	if use_land_cover:
+		var r := courses[0].area.grow(SHORE_REACH) as Rect2
+		var lats := [builder.frame.lat_of(r.position), builder.frame.lat_of(r.end)]
+		var lons := [builder.frame.lon_of(r.position), builder.frame.lon_of(r.end)]
+		var shore := LandCover.new([lats.min(), lons.min(), lats.max(), lons.max()])
+		var sgot := await _fetch_all(PackedStringArray([shore.url()]), "Fetching the shore", TRIES)
+		if _cancelled:
+			return
+		if sgot[0][0] == 200 and shore.add(sgot[0][1]):
+			land.cover = shore
 	await _step("Shaping the land round the course...")
 	var band := maxi(1, LAND_SAMPLES_PER_STEP / land.count)
 	for j in range(0, land.count, band):

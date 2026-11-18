@@ -1571,6 +1571,29 @@ func _test_landscape() -> void:
 		var p := f.to_local(lat, lon)
 		return 12.0 if p.x < -1500.0 else 14.0 + p.x * 0.004)
 	check(is_nan(plain.lake_level()), "a flat plain on a whole metre isn't a lake")
+	# A cliff the tiles smear 20 m up over the sea: the land cover's water
+	# joined to the sea goes under it (Mauna Kea).
+	var cliff_x := f.lon_of(Vector2(-2000.0, 0.0))
+	var cv := PackedFloat32Array()
+	for j in 40:
+		for i in 40:
+			cv.append(LandCover.WATER if -2.90 + (i + 0.5) * 0.005 > cliff_x else LandCover.RANGELAND)
+	var cliffs := RealLandscape.new(f, DesignedCourse.from_json(c.to_json()))
+	cliffs.cover = LandCover.new([56.30, -2.90, 56.38, -2.70])
+	check(cliffs.cover.add(_tiff(cv, 40, 40, false, false, true)), "shore land cover loads")
+	# (_tiff places its raster by Sussex: put this one on the cliffs' box.)
+	cliffs.cover.raster.west = -2.90
+	cliffs.cover.raster.north = 56.38
+	cliffs.cover.raster.dlon = 0.005
+	cliffs.cover.raster.dlat = 0.002
+	cliffs.rows(0, cliffs.count, func(lat: float, lon: float) -> float:
+		var p := f.to_local(lat, lon)
+		return -20.0 if p.x < -4000.0 else (20.0 if p.x < -1000.0 else 30.0))
+	cliffs.apply(DesignedCourse.from_json(c.to_json()))
+	var mid_row := cliffs.count / 2 * cliffs.count
+	var over_sea := cliffs.heights[mid_row + cliffs.count / 2 - roundi(3000.0 / RealLandscape.CELL)] + 10.0
+	var on_cliff := cliffs.heights[mid_row + cliffs.count / 2 - roundi(1500.0 / RealLandscape.CELL)] + 10.0
+	check(over_sea < 0.0 and on_cliff > 19.0, "the sea under a smeared cliff is let in, the cliff stays (%.1f, %.1f)" % [over_sea, on_cliff])
 	# Tiles without a sea floor hold the sea flat at 0 (Barnbougle).
 	var bc := DesignedCourse.blank(Vector2(600, 400))
 	bc.source["base_height"] = 6.0
