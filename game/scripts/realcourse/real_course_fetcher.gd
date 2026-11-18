@@ -18,10 +18,10 @@ signal failed(text: String)
 ## search() couldn't reach the search service (rather than finding nothing).
 signal search_failed(text: String)
 
-const NOMINATIM := "https://nominatim.openstreetmap.org/search?format=jsonv2&limit=10&q=%s"
+const NOMINATIM := "https://nominatim.openstreetmap.org/search?format=jsonv2&limit=10&accept-language=en&q=%s"
 ## Golf courses within a box (west, north, east, south), for a name that
 ## finds the club's buildings rather than its course.
-const NOMINATIM_NEAR := "https://nominatim.openstreetmap.org/search?format=jsonv2&limit=10&q=golf%%20course&bounded=1&viewbox=%.5f,%.5f,%.5f,%.5f"
+const NOMINATIM_NEAR := "https://nominatim.openstreetmap.org/search?format=jsonv2&limit=10&accept-language=en&q=golf%%20course&bounded=1&viewbox=%.5f,%.5f,%.5f,%.5f"
 ## Places found by name that are looked round for golf courses, and how far
 ## (degrees of latitude; about 2.2 km).
 const NEAR_LOOKUPS := 2
@@ -125,14 +125,18 @@ func search(query: String) -> void:
 		search_failed.emit("Couldn't reach OpenStreetMap's search. Check the connection and try again.")
 		return
 	var short := RealCourseBuilder.short_name(q)
-	if (results as Array).is_empty() and short != q and not short.is_empty():
+	if (results as Array).is_empty() and not short.is_empty():
 		# The club's full name may not be on the map at all: "Royal County
 		# Down Golf Club" finds nothing, its course is "Royal County Down
 		# Golf Course" (and "Royal County Down" alone finds roads in
 		# America). Other endings first, then the bare name.
-		for name: String in [short + " Golf Course", short + " Golf Club", short + " Golf Links", short]:
-			if name.to_lower() == q.to_lower():
+		# Then its distinctive words as a golf club ("Real Club Valderrama"
+		# finds nothing; "Valderrama Golf Club" finds the course).
+		var tried := {q.to_lower(): true}
+		for name: String in search_names(q):
+			if tried.has(name.to_lower()):
 				continue
+			tried[name.to_lower()] = true
 			var other: Variant = await _search_once(name)
 			if other != null and not (other as Array).is_empty():
 				results = other
@@ -167,6 +171,27 @@ func search(query: String) -> void:
 	found.emit(rank(results, q))
 
 
+## Other names to search for a club whose name found nothing, best first:
+## its name with the usual endings, alone, then its distinctive words as a
+## golf club or course.
+static func search_names(q: String) -> PackedStringArray:
+	var short := RealCourseBuilder.short_name(q)
+	var core := " ".join(RealCourseBuilder.name_words(q))
+	var out := PackedStringArray()
+	var names := [short + " Golf Course", short + " Golf Club", short + " Golf Links", short, core + " Golf Club", core + " Golf Course"]
+	# Each word alone, the last (often the town) first: the search wants
+	# every word in the name, and "Engadine Golf Club Samedan" is mapped as
+	# "Golfcourse Samedan".
+	var words := RealCourseBuilder.name_words(q)
+	if words.size() >= 2:
+		for k in range(words.size() - 1, maxi(words.size() - 4, -1), -1):
+			names.append(words[k] + " golf course")
+	for name: String in names:
+		if not core.is_empty() and not name in out:
+			out.append(name)
+	return out
+
+
 ## Golf courses first, those named most like the query first among them,
 ## else in the order found (a stable sort: sort_custom alone shuffled equal
 ## places, and once offered the course next door first).
@@ -181,6 +206,12 @@ static func rank(results: Array, query: String) -> Array:
 			if w in own:
 				matched += 1
 		var score := (1000 if r["golf"] else 0) + matched * 10 + (0 if str(r["name"]).is_empty() else 1)
+		# A club's main course, when its courses all match the query
+		# ("Carnoustie Golf Links" found the Burnside before the
+		# Championship).
+		var lower := str(r["name"])
+		if r["golf"] and RealCourseBuilder.is_main_course(lower):
+			score += 5
 		keyed.append([score, i, r])
 	keyed.sort_custom(func(a: Array, b: Array) -> bool: return a[0] > b[0] or (a[0] == b[0] and a[1] < b[1]))
 	return keyed.map(func(k: Array) -> Dictionary: return k[2])

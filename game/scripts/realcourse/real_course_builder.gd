@@ -26,6 +26,8 @@ const LOW_GROUND := -12.0  ## heights below this (sea floor) are raised to it
 const MAX_POINTS := 90  ## control points per area at most
 const STREAM_PIECE := 60.0  ## streams are split so each piece has its own water line
 const STREAM_PIECE_DROP := 0.3  ## metres a piece's ground may fall along it
+const CHAIN_REACH := 150.0  ## metres from a green to the next hole's tee, chaining unnumbered holes
+const CHAIN_REACH_FAR := 400.0  ## then joining what's left of the chains
 const GREEN_BANK := 3.0  ## metres of dry bank kept round a green in a pond
 const TEE_BANK := 2.0
 const BRIDGE := 3.0  ## metres: the causeway out to a green inside a pond
@@ -192,10 +194,46 @@ func course_names() -> PackedStringArray:
 		var line: PackedVector2Array = d["line"]
 		for k in line.size() - 1:
 			length[d["course"]] = float(length.get(d["course"], 0.0)) + line[k].distance_to(line[k + 1])
-	names.sort_custom(func(a: String, b: String) -> bool: return counts[a] > counts[b] or (counts[a] == counts[b] and (length[a] > length[b] or (length[a] == length[b] and a < b))))
+	# Of two full courses, the one named as the club's main course first
+	# (Sunningdale's Old before its longer New).
+	var main := {}
+	for n: String in names:
+		main[n] = 1 if is_main_course(n) else 0
+	names.sort_custom(func(a: String, b: String) -> bool:
+		if counts[a] != counts[b]:
+			return counts[a] > counts[b]
+		if main[a] != main[b]:
+			return main[a] > main[b]
+		return length[a] > length[b] or (length[a] == length[b] and a < b))
 	if names.size() == 1 and int(counts[names[0]]) < _holes.size() and _duplicate_refs(_holes):
 		return PackedStringArray(names)
 	return PackedStringArray(names) if names.size() > 1 else PackedStringArray()
+
+
+## A map feature's name for the game's English text: its own name, or its
+## name:en where the own name is in another script (Dubai Creek's is
+## Arabic, with an English name beside it).
+static func display_name(t: Dictionary) -> String:
+	var own := str(t.get("name", ""))
+	var en := str(t.get("name:en", ""))
+	if en.is_empty() or own.is_empty():
+		return own if not own.is_empty() else en
+	var latin := 0
+	var other := 0
+	for i in own.length():
+		var u := own.unicode_at(i)
+		if u > 0x24F and u != 0x2019 and u != 0x2013:
+			other += 1
+		elif u > 0x40:
+			latin += 1
+	return en if other > latin else own
+
+
+## True for a name a club gives its main course: its Championship or Old
+## course.
+static func is_main_course(name: String) -> bool:
+	var words := name.to_lower().replace("-", " ").split(" ", false)
+	return "championship" in words or "old" in words
 
 
 ## Mapped holes on the chosen course (all its courses for a club).
@@ -213,9 +251,10 @@ func _group_holes() -> void:
 	for d in _holes:
 		if str(d["course"]).is_empty():
 			untagged.append(d)
-	if untagged.size() < 10 or not _duplicate_refs(untagged):
+	var numbered := untagged.any(func(d: Dictionary) -> bool: return _ref_number(str(d["ref"])) < 1000)
+	if untagged.size() < 10 or not (_duplicate_refs(untagged) or (untagged.size() > 18 and not numbered)):
 		return
-	for way: Callable in [_course_from_name, _course_from_ref, _course_from_outline]:
+	for way: Callable in [_course_from_name, _course_from_ref, _course_from_letter, _course_from_outline]:
 		var keys := {}
 		for d in untagged:
 			var k: String = way.call(d)
@@ -228,6 +267,163 @@ func _group_holes() -> void:
 		for d in untagged:
 			d["course"] = way.call(d)
 		return
+	if numbered and _duplicate_refs(untagged) and _course_from_numbers(untagged):
+		return
+	_course_from_chains(untagged)
+
+
+## Parts a club whose courses are both numbered 1 to 18 with nothing else
+## to tell them apart (Whistling Straits, Los Angeles Country Club): each
+## number 1 starts a course, and each next number goes to the course whose
+## last green is nearest its tee. False when there aren't 2 or more 1sts.
+func _course_from_numbers(holes: Array[Dictionary]) -> bool:
+	var by_number := {}
+	var top := 0
+	for d in holes:
+		var n := _ref_number(str(d["ref"]))
+		if n >= 1000:
+			continue
+		if not by_number.has(n):
+			by_number[n] = []
+		(by_number[n] as Array).append(d)
+		top = maxi(top, n)
+	var firsts: Array = by_number.get(1, [])
+	if firsts.size() < 2:
+		return false
+	var names: Array[String] = []
+	var last: Array[Vector2] = []
+	for k in firsts.size():
+		var name := "%s (course %s)" % [short_name(course_name), "ABCDEFGH"[mini(k, 7)]]
+		names.append(name)
+		var line: PackedVector2Array = firsts[k]["line"]
+		last.append(line[line.size() - 1])
+		firsts[k]["course"] = name
+	for n in range(2, top + 1):
+		var left: Array = (by_number.get(n, []) as Array).duplicate()
+		var taken := {}
+		while not left.is_empty():
+			var best := INF
+			var bi := 0
+			var bc := 0
+			for i in left.size():
+				var tee: Vector2 = (left[i]["line"] as PackedVector2Array)[0]
+				for c in names.size():
+					if taken.has(c) and taken.size() < names.size():
+						continue
+					var d := last[c].distance_to(tee)
+					if d < best:
+						best = d
+						bi = i
+						bc = c
+			var hole: Dictionary = left[bi]
+			hole["course"] = names[bc]
+			var line: PackedVector2Array = hole["line"]
+			last[bc] = line[line.size() - 1]
+			taken[bc] = true
+			left.remove_at(bi)
+	for d in holes:
+		if str(d["course"]).is_empty():
+			d["course"] = names[0]
+	return true
+
+
+## Parts holes with nothing to tell their courses apart (Royal Golf Dar
+## Es Salam's 45 have no numbers or names) by how they follow on: each
+## green leads to the nearest tee not yet taken within CHAIN_REACH, so the
+## holes join into the courses' rounds, numbered in playing order. Chains
+## of at least 9 holes become courses; the rest stay with the first.
+func _course_from_chains(holes: Array[Dictionary]) -> void:
+	var n := holes.size()
+	var next := PackedInt32Array()
+	var prev := PackedInt32Array()
+	next.resize(n)
+	prev.resize(n)
+	next.fill(-1)
+	prev.fill(-1)
+	# The near links first, then the broken chains joined up over a longer
+	# walk (Dar Es Salam's walks from green to tee run to 220 m).
+	for reach in [CHAIN_REACH, CHAIN_REACH_FAR]:
+		var pairs: Array = []
+		for i in n:
+			if next[i] >= 0:
+				continue
+			var li: PackedVector2Array = holes[i]["line"]
+			var end := li[li.size() - 1]
+			for j in n:
+				if i == j or prev[j] >= 0:
+					continue
+				var lj: PackedVector2Array = holes[j]["line"]
+				var d := end.distance_to(lj[0])
+				if d < reach:
+					pairs.append([d, i, j])
+		pairs.sort_custom(func(a: Array, b: Array) -> bool: return a[0] < b[0])
+		for p: Array in pairs:
+			var i: int = p[1]
+			var j: int = p[2]
+			if next[i] >= 0 or prev[j] >= 0:
+				continue
+			# No loops: j's chain mustn't already lead to i.
+			var k := j
+			while k >= 0 and k != i:
+				k = next[k]
+			if k == i:
+				continue
+			next[i] = j
+			prev[j] = i
+	var chains: Array = []
+	for i in n:
+		if prev[i] < 0:
+			var chain: Array[int] = []
+			var k := i
+			while k >= 0:
+				chain.append(k)
+				k = next[k]
+			chains.append(chain)
+	# A chain can run on from one course's 18th green to another's 1st tee:
+	# longer chains are cut into rounds of 18, a short end kept on the last.
+	var rounds: Array = []
+	for chain: Array in chains:
+		var k := 0
+		while chain.size() - k >= 9:
+			var size := 18 if chain.size() - k >= 27 else chain.size() - k
+			rounds.append(chain.slice(k, k + size))
+			k += size
+	chains = rounds
+	chains.sort_custom(func(a: Array, b: Array) -> bool: return a.size() > b.size())
+	var in_rounds := 0
+	for chain: Array in chains:
+		in_rounds += chain.size()
+	if chains.is_empty() or (chains.size() < 2 and n - in_rounds < 9):
+		return
+	var letter := 0
+	for chain: Array in chains:
+		if chain.size() < 9:
+			continue
+		var name := "%s (course %s)" % [short_name(course_name), "ABCDEFGH"[mini(letter, 7)]]
+		letter += 1
+		for k in chain.size():
+			holes[chain[k]]["course"] = name
+			holes[chain[k]]["ref"] = str(k + 1)
+	# Short leftovers make one more course when there are 9 of them (the
+	# third nine), or join the first.
+	var spare: Array[Dictionary] = []
+	for d in holes:
+		if str(d["course"]).is_empty():
+			spare.append(d)
+	var rest: String = holes[(chains[0] as Array)[0]]["course"]
+	if spare.size() >= 9:
+		rest = "%s (course %s)" % [short_name(course_name), "ABCDEFGH"[mini(letter, 7)]]
+	for k in spare.size():
+		spare[k]["course"] = rest
+		if spare.size() >= 9:
+			spare[k]["ref"] = str(k + 1)
+
+
+## "12A" gives the club's "A" course (Jockey Club Argentino numbers its
+## two courses' holes 1A to 18A and 1C to 18C); empty for a plain number.
+func _course_from_letter(d: Dictionary) -> String:
+	var m := RegEx.create_from_string("^\\s*\\d+\\s*([A-Za-z]{1,2})\\s*$").search(str(d["ref"]))
+	return "%s (course %s)" % [short_name(course_name), m.get_string(1).to_upper()] if m != null else ""
 
 
 static func _duplicate_refs(holes: Array[Dictionary]) -> bool:
@@ -412,7 +608,9 @@ func build_steps(c: DesignedCourse, height: Callable, fallback := Callable()) ->
 			for g in range(k, todo.size(), MAX_GREEN_STEPS):
 				if CoursePlayability.grade_green(c, todo[g]):
 					playability["greens"] += 1)
-	steps.append(func() -> void: playability.erase("todo"))
+	steps.append(func() -> void:
+		playability.erase("todo")
+		playability["pins"] = CoursePlayability.place_pins(c))
 	steps.append(func() -> void:
 		var lines: Array[PackedVector2Array] = []
 		for h in c.holes:
@@ -424,7 +622,7 @@ func build_steps(c: DesignedCourse, height: Callable, fallback := Callable()) ->
 		_lines = line_cells(lines)
 		_add_trees(c)
 		var detected: int = counts["detected"]
-		summary = {"greens_graded": playability["greens"], "holes": c.holes.size(), "areas": c.shapes.size(), "trees": c.objects.size(), "paths": c.paths.size(), "buildings": c.buildings.size(), "guessed": _guessed.size() - detected, "detected": detected})
+		summary = {"missing_holes": missing_holes(), "greens_graded": playability["greens"], "holes": c.holes.size(), "areas": c.shapes.size(), "trees": c.objects.size(), "paths": c.paths.size(), "buildings": c.buildings.size(), "guessed": _guessed.size() - detected, "detected": detected})
 	return steps
 
 
@@ -446,7 +644,7 @@ func _find_boundaries(elements: Array) -> Array[Dictionary]:
 		for l in local:
 			for p in l:
 				box = box.expand(p)
-		out.append({"name": str(_tags(e).get("name", "")), "box": box, "geo_rings": rings, "rings": local})
+		out.append({"name": display_name(_tags(e)), "box": box, "geo_rings": rings, "rings": local})
 	return out
 
 
@@ -498,7 +696,7 @@ func _pick_boundary(boundaries: Array[Dictionary], elements: Array, place := "")
 ## every club has), for matching it to a course's name.
 static func name_words(text: String) -> PackedStringArray:
 	var out := PackedStringArray()
-	var common := ["golf", "club", "course", "links", "country", "the", "and", "royal", "resort", "society", "championship"]
+	var common := ["golf", "club", "course", "links", "country", "the", "and", "royal", "resort", "society", "championship", "real", "campo", "golfe", "golfclub", "des", "del", "los", "las"]
 	for w in text.to_lower().replace("-", " ").replace(",", " ").replace("&", " ").replace("'", " ").split(" ", false):
 		if w.length() >= 3 and not w in common:
 			out.append(w)
@@ -887,6 +1085,9 @@ func _add_holes(c: DesignedCourse) -> void:
 				h.route.append(bends[k])
 		var par := int(d["par"]) if str(d["par"]).is_valid_int() else 0
 		h.par = clampi(par, 3, 6) if par > 0 else DesignedHole.par_for_length(h.length_m())
+		if not par_fits(h.par, h.length_m()):
+			# A mistagged par: Teeth of the Dog's 175 m 13th is mapped as a 4.
+			h.par = DesignedHole.par_for_length(h.length_m())
 		# OpenStreetMap's handicap tag is the stroke index on the scorecard.
 		h.stroke_index = clampi(int(d["si"]), 0, 36) if str(d["si"]).is_valid_int() else 0
 		c.holes.append(h)
@@ -1609,6 +1810,35 @@ static func ribbon(line: PackedVector2Array, width: float) -> PackedVector2Array
 	# which overshot across a thin ribbon where an arc's short steps met a
 	# long side.
 	return smooth_ring(best, clampf(width * 0.5, 0.75, 3.0), 0) if best.size() > 3 else best
+
+
+## Whether a mapped par could be right for a hole this long (metres):
+## the longest par 3s and shortest par 4s and 5s of real courses, with room.
+static func par_fits(par: int, length: float) -> bool:
+	match par:
+		3:
+			return length <= 270.0
+		4:
+			return length >= 200.0 and length <= 520.0
+		5:
+			return length >= 380.0
+	return true
+
+
+## How many holes of the course aren't on the map: of 18 (or 9, when no
+## hole is numbered past 9) by the mapped holes' numbers; 0 when none is
+## numbered. Bandon Dunes has 4 of its 18 mapped.
+func missing_holes() -> int:
+	var seen := {}
+	for d in _holes:
+		if course_filter.is_empty() or d["course"] == course_filter:
+			var n := _ref_number(str(d["ref"]))
+			if n >= 1 and n <= 18:
+				seen[n] = true
+	if seen.is_empty():
+		return 0
+	var of := 18 if seen.keys().max() > 9 or seen.size() > 9 else 9
+	return of - seen.size()
 
 
 ## Respaces the points of every shape whose drawn outline crosses itself

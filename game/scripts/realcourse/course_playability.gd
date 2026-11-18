@@ -36,6 +36,10 @@ const MAX_TEE_TILT := 0.015
 const TERRACE_RADII := [16.0, 40.0, 100.0, 200.0]
 const TERRACE_WIDTHS := 1.5
 const TERRACE_SLOPE_SPAN := 16.0
+const MAX_PIN_SLOPE := 0.035  ## a pin on steeper ground is moved (place_pins)
+const PIN_SEARCH := 14.0  ## metres from the mapped pin it may move
+const PIN_EDGE := 3.0  ## metres it keeps from the green's edge
+const PIN_WATER := 9.0  ## and from water (DesignedTerrain.WATER_BANK runs into the green)
 const LONGEST_PAR3 := 220.0  ## metres: a driver carries about 224 m (Club.standard_set)
 
 
@@ -268,6 +272,51 @@ static func trim_par3_tees(c: DesignedCourse) -> int:
 	return dropped
 
 
+## Moves each pin standing on ground steeper than MAX_PIN_SLOPE to the
+## gentlest spot of its green within PIN_SEARCH metres, at least
+## PIN_EDGE from the edge (a green can hold a ball overall and still have
+## its mapped pin on a bank: St George's 11th sat at 5.5 %), and at least
+## PIN_WATER from water, whose bank runs down into a green that's mapped to
+## the shore (Medinah's 17th); returns how many moved.
+static func place_pins(c: DesignedCourse) -> int:
+	var moved := 0
+	for h in c.holes:
+		var green: CourseShape = null
+		for s in c.shapes:
+			if s.surface == Surface.Type.GREEN and s.bounds().has_point(h.pin) and Geometry2D.is_point_in_polygon(h.pin, s.outline()):
+				green = s
+				break
+		if green == null:
+			continue
+		var gb := green.bounds().grow(PIN_WATER)
+		var waters: Array[PackedVector2Array] = []
+		for s in c.shapes:
+			if s.surface == Surface.Type.WATER and s.is_valid() and s.bounds().intersects(gb):
+				waters.append(s.outline())
+		var at := c.cell_of(h.pin)
+		if _slope(c, at.x, at.y) <= MAX_PIN_SLOPE and not _near_water(waters, h.pin):
+			continue
+		var ring := RealCourseBuilder.simplify_ring(green.outline(), 0.5)
+		var best := h.pin
+		var best_score := INF
+		var r := ceili(PIN_SEARCH / DesignedCourse.CELL)
+		for dj in range(-r, r + 1):
+			for di in range(-r, r + 1):
+				var i := clampi(at.x + di, 1, c.cols - 2)
+				var j := clampi(at.y + dj, 1, c.rows - 2)
+				var p := c.sample_pos(i, j)
+				if p.distance_to(h.pin) > PIN_SEARCH or not Geometry2D.is_point_in_polygon(p, ring) or _edge_distance(ring, p) < PIN_EDGE or _near_water(waters, p):
+					continue
+				var score := _slope(c, i, j) + p.distance_to(h.pin) * 0.0005
+				if score < best_score:
+					best_score = score
+					best = p
+		if best != h.pin:
+			h.pin = best
+			moved += 1
+	return moved
+
+
 ## Unit (x, z) from a green toward where its hole comes in from; zero if no
 ## hole ends there.
 static func _front(c: DesignedCourse, centre: Vector2) -> Vector2:
@@ -298,6 +347,13 @@ static func _slope(c: DesignedCourse, i: int, j: int) -> float:
 	var gx := (c.heights[j * c.cols + i1] - c.heights[j * c.cols + i0]) / ((i1 - i0) * DesignedCourse.CELL)
 	var gz := (c.heights[j1 * c.cols + i] - c.heights[j0 * c.cols + i]) / ((j1 - j0) * DesignedCourse.CELL)
 	return Vector2(gx, gz).length()
+
+
+static func _near_water(waters: Array[PackedVector2Array], p: Vector2) -> bool:
+	for w in waters:
+		if Geometry2D.is_point_in_polygon(p, w) or _edge_distance(w, p) < PIN_WATER:
+			return true
+	return false
 
 
 static func _edge_distance(ring: PackedVector2Array, p: Vector2) -> float:

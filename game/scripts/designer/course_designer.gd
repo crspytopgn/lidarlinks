@@ -1209,8 +1209,20 @@ func _on_real_built(c: DesignedCourse, summary: Dictionary) -> void:
 		int(summary.get("areas", 0)), int(summary.get("trees", 0)),
 		_filled_note(summary) + (", %d steep greens graded to hold a ball" % int(summary["greens_graded"]) if int(summary.get("greens_graded", 0)) > 0 else ""),
 		(", ground every %.1f m" % float(summary.get("metres_per_pixel", 0))) if summary.has("metres_per_pixel") else "",
-		_lidar_note(summary) + ("Saved; polish it here, then play it." if saved else "Save it to keep it.") +
+		_lidar_note(summary) + _missing_note(summary) + ("Saved; polish it here, then play it." if saved else "Save it to keep it.") +
 		(" Also saved: %s (Open)." % ", ".join(others.map(func(o: DesignedCourse) -> String: return o.course_name)) if not others.is_empty() else "")])
+
+
+## Says when holes of the course aren't on the map, so a short course
+## isn't taken for a fault (RealCourseBuilder.missing_holes).
+static func _missing_note(summary: Dictionary) -> String:
+	var n := int(summary.get("missing_holes", 0))
+	var holes := int(summary.get("holes", 0))
+	if n <= 0 and holes > 0 and holes < 9:
+		return "Only %d holes are on OpenStreetMap, so the rest are left out (draw them here, or add them to the map and build it again). " % holes
+	if n <= 0:
+		return ""
+	return "%d of its holes aren't on OpenStreetMap yet, so they're left out (draw them here, or add them to the map and build it again). " % n
 
 
 ## Warns when the lidar service didn't send all of the ground, so coarse
