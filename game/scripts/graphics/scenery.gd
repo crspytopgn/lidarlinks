@@ -611,7 +611,7 @@ func _apply_weather() -> void:
 ## has no sky light, and its tone curve and grade push the darks down, so
 ## with only the flat fill its shade came out near black (about 10%); 0.75
 ## here gives the photos' 55% on screen.
-const COMPAT_SHADE_RATIO := 0.75
+const COMPAT_SHADE_RATIO := 0.5
 ## The same for Forward+. Its sky light fills the shade, but under the
 ## grade and SSAO tree shade still came out near black beside sunlit
 ## grass; 0.35 brings it to a darker green as in the photos (tuned on

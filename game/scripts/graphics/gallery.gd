@@ -300,8 +300,8 @@ static func _tube(st: SurfaceTool, path: PackedVector3Array) -> void:
 ## galleries gather in knots (behind the flag, by a walkway) with thin gaps
 ## between, never one even ring; this is a smooth pattern about 10 to 20 m
 ## across, different for each seed.
-const CLUMP_FLOOR := 0.12  ## the chance a spot in the thinnest gap still gets someone
-const CLUMP_DEEP := 1.3  ## thick knots of cards stand this much deeper than CARD_FAR
+const CLUMP_FLOOR := 0.08  ## the chance a spot in the thinnest gap still gets someone
+const CLUMP_DEEP := 1.6  ## thick knots of cards stand this much deeper than CARD_FAR
 static func clump(p: Vector3, seed_value: int) -> float:
 	var s := float(seed_value % 97) * 1.37
 	var n := sin(p.x * 0.31 + s) * cos(p.z * 0.27 - s * 0.7)
@@ -528,7 +528,7 @@ func watch_point(at: Vector3) -> void:
 ## Past the 3D people the gallery goes on as crowd cards
 ## (shaders/crowd_card.gdshader): flat camera-facing figures, two or three
 ## deep behind the ropes, hundreds in one draw call. From Low to Ultra.
-const CARDS_BY_QUALITY: Array[int] = [80, 160, 260, 360]
+const CARDS_BY_QUALITY: Array[int] = [80, 180, 300, 440]
 const CARD_WIDTH := 0.62  ## metres, for a 1.8 m person
 const CARD_SPACING := 0.7
 const CARD_NEAR := 1.2

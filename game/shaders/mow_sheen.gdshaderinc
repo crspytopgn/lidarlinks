@@ -23,7 +23,13 @@ float mow_sheen(vec2 along, vec3 from_eye) {
 	// differ a little), and the sheen grows as the view lowers.
 	// (1.4 before the 2K25 quality pass: the bands read as painted-on
 	// stripes, far bolder than TV golf or 2K25 show them.)
-	return (0.2 + 0.9 * facing) * mix(0.6, 1.0, level);
+	float k = (0.2 + 0.9 * facing) * mix(0.6, 1.0, level);
+#if CURRENT_RENDERER == RENDERER_COMPATIBILITY
+	// The web's finish contrast (PostProcess.COMPAT_FINISH_CONTRAST) and
+	// flatter fill drew the same bands about a third bolder than Forward+.
+	k *= 0.7;
+#endif
+	return k;
 }
 
 // The mowing line where stripes are bands of a coordinate `u` interpolated
