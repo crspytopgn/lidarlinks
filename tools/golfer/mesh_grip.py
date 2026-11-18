@@ -171,6 +171,7 @@ class Grip:
         return out
 
 
+FINGER_HALF = 0.009  # a gloved finger's half thickness
 TOUCH = 0.0015  # skin held this far off the grip (glove, grip texture)
 
 
@@ -187,17 +188,23 @@ def pose_unit(v):
     return v / np.linalg.norm(v)
 
 
-def _hinge(rig, pose, chain, i, n, s):
-    """Segment i's hinge (turning it to the palm) and its bend from its
-    parent's line, in degrees (> 0 to the palm)."""
+def _hinge(rig, pose, chain, i, n, s, tip=None):
+    """Segment i's hinge (the knuckle line, turning the fingers to the
+    palm) and its bend from its parent's line about it, in degrees (> 0
+    towards the palm)."""
+    x = lambda b: pose.P[rig.index[f"{b}_{s}"]]  # noqa: E731
     j = chain[i]
-    tip = pose.P[chain[i + 1]] if i < 2 else pose.P[j] + (pose.P[j] - pose.P[chain[i - 1]])
+    if tip is None:
+        tip = pose.P[chain[i + 1]] if i < 2 else pose.P[j] + (pose.P[j] - pose.P[chain[i - 1]])
     seg = pose_unit(tip - pose.P[j])
     parent = pose_unit(pose.P[j] - (pose.P[chain[i - 1]] if i else pose.P[rig.index["hand_" + s]]))
-    h = pose_unit(np.cross(seg, n))
-    if np.dot(rot(h, 5.0) @ seg - seg, n) < 0:
+    if rig.names[j].startswith("thumb"):
+        h = pose_unit(np.cross(seg, n))
+    else:
+        h = pose_unit(x("pinky_01") - x("index_01"))
+    f = pose_unit(x("middle_01") - x("hand"))
+    if np.dot(rot(h, 10.0) @ f - f, n) < 0:
         h = -h
-    # The bend as the hinge sees it: the turn about h from the parent line.
     p = parent - h * np.dot(parent, h)
     q = seg - h * np.dot(seg, h)
     bend = np.degrees(np.arctan2(np.dot(np.cross(p, q), h), np.dot(p, q)))
@@ -271,6 +278,13 @@ class HandFit:
         for f in ("index", "middle", "ring", "pinky", "thumb"):
             chain = [rig.index[f"{f}_0{i}_{s}"] for i in (1, 2, 3)]
             self.chains.append(chain)
+        # Each fingertip: the end bone's skin farthest from its joint, as
+        # the middle of the pad (in the bone's frame).
+        self.tip = {}
+        for c in self.chains:
+            v = hand.local[c[2]]
+            far = v[np.argsort(np.linalg.norm(v, axis=1))[-max(3, len(v) // 10):]]
+            self.tip[c[2]] = far.mean(axis=0) * 0.8
         # Each finger bone's rest in its parent and its hinge (own frame).
         self.local, self.hinge, self.bend0, self.spread = {}, {}, {}, {}
         for chain in self.chains:
@@ -278,7 +292,8 @@ class HandFit:
             for i, j in enumerate(chain):
                 p = rig.parents[j]
                 self.local[j] = (pose.R[p].T @ pose.R[j], pose.R[p].T @ (pose.P[j] - pose.P[p]))
-                h, bend = _hinge(rig, pose, chain, i, n, s)
+                tip = pose.P[j] + pose.R[j] @ self.tip[j] if j in self.tip else None
+                h, bend = _hinge(rig, pose, chain, i, n, s, tip)
                 self.hinge[j] = pose.R[j].T @ h
                 self.bend0[j] = bend
                 if thumb and i == 0:
@@ -288,7 +303,9 @@ class HandFit:
         self.limits = {}
         for chain in self.chains:
             for i, j in enumerate(chain):
-                self.limits[j] = ((-5.0, 95.0), (-5.0, 105.0), (-5.0, 80.0))[i]
+                # Holding a grip: the middle and end joints bend together
+                # (no finger flicks straight at the tip).
+                self.limits[j] = ((0.0, 95.0), (25.0, 105.0), (20.0, 80.0))[i]
                 if chain[0] == rig.index["thumb_01_" + s]:
                     self.limits[j] = ((-40.0, 60.0), (-10.0, 60.0), (-10.0, 80.0))[i]
         # Segments that should rest on the grip.
@@ -344,6 +361,15 @@ class HandFit:
                 t = (v - self.grip.o) @ self.grip.a
                 m = np.min(np.linalg.norm(v - self.grip.o - np.outer(t, self.grip.a), axis=1)) + 0.02
             c += 3.0 * (max(m - TOUCH, 0.0) / 0.002) ** 2
+        # The finger joints and tips hug the grip (a finger's half
+        # thickness off its surface), so the fingers curl right round it
+        # instead of leaving it at a tangent.
+        for chain in self.chains[:4]:
+            pts = [P[j] for j in chain[1:]] + [P[chain[2]] + R[chain[2]] @ self.tip[chain[2]]]
+            for q in pts:
+                t = (q - self.grip.o) @ self.grip.a
+                d = np.linalg.norm(q - self.grip.o - t * self.grip.a)
+                c += 0.5 * ((d - G.grip_radius(t) - FINGER_HALF) / 0.003) ** 2
         if self.angle is not None:
             # The grip across the fingers at the hand's angle (degrees from
             # the line wrist to middle knuckle).
@@ -358,7 +384,7 @@ class HandFit:
         for j in self.bones:
             lo, hi = self.limits[j]
             b = self.bend0[j] + x[k]
-            c += 0.01 * (max(0.0, lo - b) ** 2 + max(0.0, b - hi) ** 2) + 1e-4 * x[k] ** 2
+            c += 0.2 * (max(0.0, lo - b) ** 2 + max(0.0, b - hi) ** 2) + 1e-4 * x[k] ** 2
             k += 1
         return c
 
@@ -416,6 +442,9 @@ def fit(glb, rig, skin, club_dir, ref, base_offsets):
     out = {}
     lf = HandFit(rig, pose, left, grip, "l", angle=LEFT_ANGLE, patches=landmarks(rig, "l"))
     x = lf.solve()
+    if os.environ.get("GRIP_DEBUG"):
+        for k, j in enumerate(lf.bones):
+            print("    %-12s bend %6.1f (was %6.1f, limits %s)" % (rig.names[j], lf.bend0[j] + x[6 + k], lf.bend0[j], lf.limits[j]))
     Rl, Pl = lf.apply(x)
     C_R, C_P = pose.R[cj], pose.P[cj]
     out["club_local"] = (Rl[hl].T @ C_R, Rl[hl].T @ (C_P - Pl[hl]))
