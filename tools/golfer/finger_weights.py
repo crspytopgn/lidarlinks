@@ -24,8 +24,8 @@ import rocketbox  # noqa: E402
 from golf_shoes import load, save  # noqa: E402
 
 CHAINS = ("thumb", "index", "middle", "ring", "pinky")
-BLEND = 0.004  # metres either side of a finger joint
-BLEND_ROOT = 0.008  # at the knuckles, where the palm meets the finger
+BLEND = 0.008  # metres either side of a finger joint
+BLEND_ROOT = 0.016  # at the knuckles, where the palm meets the finger
 BLEND_THUMB_ROOT = 0.014
 
 
