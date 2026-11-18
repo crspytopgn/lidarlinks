@@ -71,7 +71,7 @@ const LAND_SAMPLES_PER_STEP := 20000
 ## Goes up whenever a build gives a better course (new detection, trees,
 ## walls...): courses built before it offer "Update" on the Courses page.
 ## Saved in each course's source as "builder" (RealCourseUpdate).
-const BUILDER_VERSION := 4  ## 4: Mapterhorn lidar, more aerial photos
+const BUILDER_VERSION := 5  ## 5: big lakes as water, native grass from the photo
 
 var busy := false
 ## Use national lidar and aerial photos where they cover the course.

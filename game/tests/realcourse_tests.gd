@@ -34,6 +34,7 @@ func run_all() -> Array[String]:
 	_test_missing_holes_counted()
 	_test_pin_off_a_bank()
 	_test_unlabelled_courses_parted()
+	_test_native_grass()
 	_test_playability_steps()
 	_test_courses_at_a_club()
 	_test_boundary_by_name()
@@ -1201,6 +1202,34 @@ func _test_pin_off_a_bank() -> void:
 	check(flat.pin.y > -15.0 + CoursePlayability.PIN_WATER - 0.01, "it keeps %.0f m from the water (%s)" % [CoursePlayability.PIN_WATER, flat.pin])
 
 
+## The straw-coloured fescue between the holes in the photo (Whistling
+## Straits) becomes deep rough, with the mown ground inside it left mown; a
+## photo that's green all over gives none.
+func _test_native_grass() -> void:
+	var area := Rect2(-200, -200, 400, 400)
+	var img := Image.create(200, 200, false, Image.FORMAT_RGB8)
+	img.fill(Color(0.36, 0.55, 0.25))  # mown grass
+	# Photo x runs from area.end.x, so columns 0 to 99 are x 200 down to 0.
+	img.fill_rect(Rect2i(0, 0, 100, 200), Color(0.62, 0.58, 0.40))  # fescue
+	img.fill_rect(Rect2i(40, 80, 30, 30), Color(0.36, 0.55, 0.25))  # a mown island
+	var grass := PackedVector2Array([Vector2(-100, 0), Vector2(-120, 50)])
+	var g := NativeGrass.new(img, area, [] as Array[PackedVector2Array], grass)
+	check(g.ready(), "native grass reads the photo")
+	g.rows(0, 1000)
+	var found := g.rings()
+	var rings: Array[PackedVector2Array] = found["rings"]
+	check(rings.size() == 1, "one patch of fescue (%d)" % rings.size())
+	if rings.size() == 1:
+		check(Geometry2D.is_point_in_polygon(Vector2(150, -150), rings[0]) and not Geometry2D.is_point_in_polygon(Vector2(-100, 0), rings[0]), "it covers the straw half, not the mown one")
+	var islands: Array[PackedVector2Array] = found["islands"]
+	check(islands.size() == 1 and Geometry2D.is_point_in_polygon(Vector2(90, 10), islands[0]), "the mown island inside it stays mown")
+	var green := Image.create(200, 200, false, Image.FORMAT_RGB8)
+	green.fill(Color(0.36, 0.55, 0.25))
+	var none := NativeGrass.new(green, area, [] as Array[PackedVector2Array], grass)
+	none.rows(0, 1000)
+	check((none.rings()["rings"] as Array).is_empty(), "a green photo gives no fescue")
+
+
 ## A club whose 27 holes have no numbers or course names (Royal Golf Dar
 ## Es Salam) is parted by how its holes follow on, green to next tee, and
 ## numbered in that order; holes numbered 1A to 18A and 1C to 18C (Jockey
@@ -1485,6 +1514,25 @@ func _test_landscape() -> void:
 		var far := land.count - 2
 		check(absf(hs[land.count / 2 * land.count + far] - land.heights[land.count / 2 * land.count + far]) < 0.11, "heights keep to a decimetre")
 	check(not is_nan(Landscape.sea_level(again)), "the course draws its sea")
+	# A big lake's flat surface (Lake Michigan at 176.8 m by Whistling
+	# Straits) gives the course the lake at its level, its surface let down
+	# under the water; a flat plain on a whole metre doesn't.
+	var lc := DesignedCourse.blank(Vector2(600, 400))
+	lc.source["base_height"] = 190.0
+	var lakeside := RealLandscape.new(f, lc)
+	lakeside.rows(0, lakeside.count, func(lat: float, lon: float) -> float:
+		var p := f.to_local(lat, lon)
+		return 176.76 if p.x < -1500.0 else 190.0 + p.x * 0.004)
+	check(not lakeside.has_sea() and absf(lakeside.lake_level() - 176.75) < 0.06, "a lake's flat surface is found (%.2f)" % lakeside.lake_level())
+	lakeside.apply(lc)
+	check(absf(float(lc.source.get("sea", -1.0)) - 176.75) < 0.06, "the course gets the lake")
+	var far_east := lakeside.heights[lakeside.count / 2 * lakeside.count + 2]
+	check(far_east + 190.0 < 176.76 - 2.0, "the lake's surface is let down under its water (%.1f)" % (far_east + 190.0))
+	var plain := RealLandscape.new(f, lc)
+	plain.rows(0, plain.count, func(lat: float, lon: float) -> float:
+		var p := f.to_local(lat, lon)
+		return 12.0 if p.x < -1500.0 else 14.0 + p.x * 0.004)
+	check(is_nan(plain.lake_level()), "a flat plain on a whole metre isn't a lake")
 
 
 static func _with_land(c: DesignedCourse, land: RealLandscape) -> Dictionary:

@@ -500,6 +500,19 @@ or not at all. What that found, and what the builder now does:
   tiles down in about 12 s, and Cancel stops a build within a second and
   a half at any step with nothing left running; the next build works.
   `tools/realcourse_bench/stress.sh` checks all three.
+- **Big lakes are water:** the elevation tiles hold a big lake's surface
+  dead flat (Lake Michigan at 176.8 m beside Whistling Straits), and it
+  showed as a flat field at the foot of the bluffs. `RealLandscape`
+  takes a flat sheet covering 3 % of the land, with hardly any land below
+  it and not on a whole metre (whole-metre tiles make river plains flat),
+  as a lake at that level, lets its surface down under the water, and
+  lowers the course's own flat lidar water surface along the shore too.
+- **Native grass from the photo:** the map seldom has the fescue between
+  the holes, so links and dune courses came out as bunkers on a mown lawn.
+  `NativeGrass` reads 4 m cells of the course's aerial photo: ones a good
+  deal yellower than its fairways (and not dark or grey) become deep
+  rough, drawn as tall fescue, with the mapped play areas painted over
+  it. Parkland photos (Augusta, Oakmont) give none.
 
 `tools/realcourse_bench/e2e.sh` builds a course the way the game does and
 audits it (each hole's tee and pin surfaces, green slope, par for its
