@@ -94,7 +94,11 @@ func apply(s: GraphicsSettings) -> void:
 	_mat.set_shader_parameter("punch_black", punch[1])
 	_mat.set_shader_parameter("punch_gamma", punch[2])
 	_mat.set_shader_parameter("punch_sat", punch[3])
-	_mat.set_shader_parameter("sharpen", GraphicsSettings.SHARPEN_LEVELS[s.sharpen])
+	var sharp: float = GraphicsSettings.SHARPEN_LEVELS[s.sharpen]
+	if GraphicsSettings.is_forward_plus() and s.upscaler == GraphicsSettings.Upscaler.FSR2:
+		# FSR 2 sharpens already; both together look crunchy.
+		sharp *= GraphicsSettings.FSR2_OUR_SHARPEN
+	_mat.set_shader_parameter("sharpen", sharp)
 	_mat.set_shader_parameter("exposure", g[0])
 	_mat.set_shader_parameter("contrast", g[1])
 	_mat.set_shader_parameter("saturation", g[2])

@@ -2463,6 +2463,13 @@ func _test_gallery() -> void:
 		for j in i:
 			placed = placed and p.distance_to(spots[j][0]) >= Gallery.CROWD_SPACING - 1e-3
 	_check(placed, "spectators off the greens and bunkers, not on top of each other")
+	var lo := 1.0
+	var hi := 0.0
+	for k in 120:
+		var c := Gallery.clump(hole.pin + Vector3(sin(k * 0.05), 0, cos(k * 0.05)) * 20.0, 7)
+		lo = minf(lo, c)
+		hi = maxf(hi, c)
+	_check(lo >= 0.0 and hi <= 1.0 and lo < 0.3 and hi > 0.7, "the gallery bunches in knots with gaps, not an even ring (%.2f to %.2f)" % [lo, hi])
 	var g := Gallery.build(hole, hole.pin, 3, 7, true)
 	root.add_child(g)
 	_check(g.crowd_count() <= 3, "the crowd keeps to its count")
