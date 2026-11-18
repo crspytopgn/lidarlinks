@@ -22,7 +22,8 @@ place in the left hand (the hand turns on the wrist so the club keeps its
 place in the world, the roll part going to the forearm), the finger turns,
 the bodies slid the few millimetres the club moved, and the right arm of
 the ref clips, where GolferHands reads the right hand's place on the club.
-The putter's palm grip is left as it is. Runs once per glb (extras.mesh_grip).
+The putter's palm grip is fitted the same way (STYLES). Runs once per glb
+(extras.mesh_grip, mesh_grip_putt).
 GRIP_DEBUG=1 prints each bone's contact, GRIP_PICTURE=path draws them.
 """
 
@@ -459,7 +460,8 @@ def fit(glb, rig, skin, club_dir, ref, base_offsets):
     if os.environ.get("GRIP_PICTURE"):
         picture(os.environ["GRIP_PICTURE"] + "_before_" + ref + ".png", rig, pose, (left, right), grip)
     out = {}
-    lf = HandFit(rig, pose, left, grip, "l", angle=LEFT_ANGLE, patches=landmarks(rig, "l"))
+    st = STYLES[ref]
+    lf = HandFit(rig, pose, left, grip, "l", angle=st["left_angle"], patches=st["landmarks"](rig, "l"))
     x = lf.solve()
     if os.environ.get("GRIP_DEBUG"):
         for k, j in enumerate(lf.bones):
@@ -478,8 +480,9 @@ def fit(glb, rig, skin, club_dir, ref, base_offsets):
     grip = Grip(pose.P[cj], pose.R[cj] @ club_dir)
     lpts = np.concatenate([left.verts(pose, [b]) for b in [hl] + lf.bones if len(left.local[b])])
     li = (pose.P[rig.index["index_02_l"]] - grip.o) @ grip.a
-    rf = HandFit(rig, pose, right, grip, "r", others=(Blob(lpts),), angle=RIGHT_ANGLE, patches=landmarks(rig, "r"),
-                 axial={rig.index["pinky_02_r"]: li + RIGHT_OVERLAP}, wrist=RIGHT_WRIST)
+    rf = HandFit(rig, pose, right, grip, "r", others=(Blob(lpts),), angle=st["right_angle"],
+                 patches=st["landmarks"](rig, "r"), axial={rig.index["pinky_02_r"]: li + st["overlap"]},
+                 wrist=st["right_wrist"])
     R0, P0 = rf.apply(np.zeros(rf.nvar))
     print("  right wrist bend before %.1f deg" % rf.deviation(R0, P0))
     x = rf.solve()
@@ -526,6 +529,31 @@ RIGHT_OVERLAP = 0.0
 # toward the little finger (tour setups), not bent so the wrist knuckle
 # sticks out: degrees, thumb-ward +.
 RIGHT_WRIST = (-2.0, 4.0)
+# The putter's palm grip: the right wrist hangs a little more toward the
+# little finger, the hand wrapped right round the grip.
+PUTT_WRIST = (-14.0, 4.0)
+
+
+def palm_landmarks(rig, s):
+    """The putter's palm grip (putt_posture.palm_grip): the grip runs up the
+    middle of each palm, from the heel pad to the base of the index finger."""
+    i = lambda n: rig.index[f"{n}_{s}"]  # noqa: E731
+    return [(f"hand_{s}", _mix(i("hand"), i("middle_01"), 0.55)),
+            (f"hand_{s}", _mix(i("hand"), i("pinky_01"), 0.25)),
+            (f"index_01_{s}", _mix(i("index_01"), i("index_02"), 0.3))]
+
+
+# Each grip style: the grip's angle across each hand, where it rests, the
+# right little finger's place along the shaft past the left index finger,
+# and the right wrist's sideways bend (None: free). The putter's palm grip
+# runs nearly along the hands; the hands sit apart, the right below.
+STYLES = {
+    "ref_address": {"left_angle": LEFT_ANGLE, "right_angle": RIGHT_ANGLE, "landmarks": landmarks,
+                    "overlap": RIGHT_OVERLAP, "right_wrist": RIGHT_WRIST},
+    "ref_address_putt": {"left_angle": 25.0, "right_angle": 25.0, "landmarks": palm_landmarks,
+                         "overlap": 0.025, "right_wrist": PUTT_WRIST},
+}
+FLAGS = {"ref_address": "mesh_grip", "ref_address_putt": "mesh_grip_putt"}
 
 
 def picture(path, rig, pose, hands, grip):
@@ -712,10 +740,10 @@ def main():
     rig.offsets = B.person_rig(rig, PACK, turns["person"])
     skin = Skin(rig, PACK, turns["person"])
     club_dir = M.club_direction(glb, rig)
-    if glb.doc.get("extras", {}).get("mesh_grip"):
-        sys.exit("already fitted (extras.mesh_grip): run on the committed glb")
-    # The putter's palm grip (putt_posture.palm_grip) is left as it is.
-    for ref in ("ref_address",):
+    refs = [r for r in STYLES if not glb.doc.get("extras", {}).get(FLAGS[r])]
+    if not refs:
+        sys.exit("already fitted (extras.mesh_grip, mesh_grip_putt)")
+    for ref in refs:
         print(ref)
         cache = os.environ.get("GRIP_CACHE")
         if cache and os.path.exists(cache + ref):
@@ -729,7 +757,8 @@ def main():
         if not args.dry:
             write(glb, rig, base, ref, out)
     if not args.dry:
-        glb.doc.setdefault("extras", {})["mesh_grip"] = 1
+        for ref in refs:
+            glb.doc.setdefault("extras", {})[FLAGS[ref]] = 1
         glb.save(args.out or args.glb)
 
 
