@@ -272,16 +272,21 @@ func _test_national_lidar() -> void:
 	check(str(NationalLidar.source_for(51.4, -0.3).get("id", "")) == "ea", "England uses the Environment Agency")
 	check(str(NationalLidar.source_for(52.2, 5.2).get("id", "")) == "ahn", "the Netherlands use AHN")
 	check(str(NationalLidar.source_for(36.57, -121.95).get("id", "")) == "3dep", "California uses 3DEP")
-	check(NationalLidar.source_for(-33.9, 151.2).is_empty(), "no service for Sydney yet")
+	check(str(NationalLidar.source_for(-33.9, 151.2).get("id", "")) == "mapterhorn", "Sydney tries Mapterhorn")
+	check(str(NationalLidar.source_for(56.34, -2.80).get("id", "")) == "mapterhorn", "St Andrews uses Mapterhorn")
+	var eng := NationalLidar.sources_for(51.4, -0.3)
+	check(eng.size() == 2 and eng[1]["id"] == "mapterhorn", "England falls back to Mapterhorn")
 	check(str(NationalLidar.source_for(51.3, 4.55).get("id", "")) == "vl", "Flanders uses DHMV")
 	check(str(NationalLidar.source_for(51.23, 6.85).get("id", "")) == "nrw", "Duesseldorf uses Geobasis NRW")
 	check(str(NationalLidar.source_for(59.93, 10.75).get("id", "")) == "no", "Oslo uses Kartverket")
 	check(str(NationalLidar.source_for(35.6, 139.7).get("id", "")) == "gsi", "Tokyo uses the GSI tiles")
 	var both := NationalLidar.sources_for(51.4, 3.8)
-	check(both.size() == 2 and both[1]["id"] == "ahn", "Zeeland falls back from Flanders to AHN")
+	check(both.size() == 3 and both[1]["id"] == "ahn", "Zeeland falls back from Flanders to AHN")
 	var vl := NationalLidar.new(_lidar_source("vl"), [51.30, 4.55, 51.302, 4.553])
 	check(vl.url(vl.chunks[0], false).contains("BBOX=4.5500000,51.3000000,4.5530000,51.3020000"), "WCS 1.0 box is west, south, east, north")
 	_test_gsi_tiles()
+	_test_mapterhorn_tiles()
+	_test_canopy_heights()
 	var l := NationalLidar.new(NationalLidar.source_for(51.4, -0.3), [51.40, -0.31, 51.42, -0.28])
 	# About 2.1 km by 2.2 km at 1 m: 3 x 3 requests of at most 1000 px.
 	check(l.chunks.size() == 9, "chunks: %d" % l.chunks.size())
@@ -363,6 +368,100 @@ func _test_gsi_tiles() -> void:
 	check(l.coverage() > 0.2, "coverage from the coarse tile: %f" % l.coverage())
 
 
+## Mapterhorn: 512 px Terrarium WebP tiles, counted four to a 256 px
+## tile against the cap.
+func _test_mapterhorn_tiles() -> void:
+	var box := [56.340, -2.810, 56.350, -2.795]
+	var l := NationalLidar.new(_lidar_source("mapterhorn"), box)
+	check(not l.chunks.is_empty() and int(l.chunks[0]["cols"]) == 512, "512 px tile chunks")
+	check(l.url(l.chunks[0], false).begins_with("https://tiles.mapterhorn.com/16/"), "zoom 16 first")
+	var big := NationalLidar.new(_lidar_source("mapterhorn"), [56.30, -2.90, 56.40, -2.70])
+	for c in big.chunks:
+		check((c["tile"] as Vector3i).z == 15, "a big box skips zoom 16")
+		break
+	# Height 12.5 m: 32780.5 = R 128, G 12, B 128.
+	var img := Image.create(512, 512, false, Image.FORMAT_RGB8)
+	img.fill(Color8(128, 12, 128))
+	var c0: Dictionary = l.chunks[0]
+	check(l.add(c0, img.save_webp_to_buffer(false), false), "WebP Terrarium tile loads")
+	var b: Array = c0["box"]
+	var h := l.ground_at(lerpf(b[0], b[2], 0.5), lerpf(b[1], b[3], 0.5))
+	check(absf(h - 12.5) < 0.01, "Terrarium height: %f" % h)
+	check(GeoRaster.from_terrarium(PackedByteArray([1, 2, 3]), b) == null, "junk is no tile")
+
+
+## The canopy height map: which file and rows a course needs, the BigTIFF
+## header, and a row round trip through Deflate and the predictor.
+func _test_canopy_heights() -> void:
+	check(CanopyHeights.quadkey(250, 158, 9) == "031133230", "quadkey for Gleneagles")
+	var c := CanopyHeights.new([56.278, -3.760, 56.292, -3.735])
+	check(c.parts.size() == 1 and c.parts[0]["key"] == "031133230", "one file for a course")
+	var part: Dictionary = c.parts[0]
+	var rows := int(part["r1"]) - int(part["r0"]) + 1
+	check(rows > 2000 and rows < 3000, "rows for 1.6 km at 0.66 m: %d" % rows)
+	# A BigTIFF header like the map's: 65536 px, 8 bit, Deflate, a strip a row.
+	var h := PackedByteArray()
+	h.resize(CanopyHeights.HEADER_BYTES)
+	h.encode_u16(0, 0x4949)
+	h.encode_u16(2, 43)
+	h.encode_u64(8, 16)
+	var tags := [[256, 4, 65536], [257, 4, 65536], [258, 3, 8], [259, 3, 8], [273, 16, 5000], [278, 3, 1], [279, 16, 9000], [317, 3, 2]]
+	h.encode_u64(16, tags.size())
+	for k in tags.size():
+		var p := 24 + k * 20
+		h.encode_u16(p, tags[k][0])
+		h.encode_u16(p + 2, tags[k][1])
+		h.encode_u64(p + 4, 1 if tags[k][1] != 16 else 65536)
+		h.encode_u64(p + 12, tags[k][2])
+	var header := CanopyHeights.parse_header(h)
+	check(int(header.get("offsets", 0)) == 5000 and int(header.get("counts", 0)) == 9000, "header: %s" % header)
+	check(CanopyHeights.offsets_range(header, part).x == 5000 + 8 * int(part["r0"]), "offset index range")
+	h.encode_u64(24 + 2 * 20 + 12, 16)
+	check(CanopyHeights.parse_header(h).is_empty(), "16-bit maps are refused")
+	# Two rows: a 12 m tree at the part's first column, else bare.
+	var c0 := int(part["c0"])
+	var blob := PackedByteArray()
+	var counts := PackedByteArray()
+	var offsets := PackedByteArray()
+	counts.resize(16)
+	offsets.resize(16)
+	for j in 2:
+		var row := PackedByteArray()
+		row.resize(CanopyHeights.SIZE)
+		row[c0] = 12  # the predictor stores differences
+		row[c0 + 1] = 256 - 12
+		var z := row.compress(FileAccess.COMPRESSION_DEFLATE)
+		offsets.encode_u64(j * 8, 100 + blob.size())
+		counts.encode_u64(j * 8, z.size())
+		blob.append_array(z)
+	var block := CanopyHeights.rows_block(offsets, counts)
+	check(int(block.get("start", 0)) == 100 and int(block.get("end", 0)) == 99 + blob.size(), "rows are one block")
+	var small := part.duplicate()
+	small["r1"] = int(small["r0"]) + 1
+	var raster := CanopyHeights.raster_for(small)
+	check(CanopyHeights.decode_rows(small, header, counts, blob, [0], raster, 0, 2), "rows decode")
+	check(raster.data[0] == 12.0 and raster.data[1] == 0.0 and raster.data[raster.width] == 12.0, "predictor undone: %s %s" % [raster.data[0], raster.data[1]])
+	check(absf(raster.west - TerrainTiles.tile_lon(250.0 + c0 / 65536.0, 9)) < 1e-9, "raster placed at its columns")
+	# A cone-shaped crown is found once, at its top.
+	var t := GeoRaster.new()
+	t.width = 30
+	t.height = 30
+	t.west = -3.75
+	t.north = 56.28
+	t.dlon = 0.00001
+	t.dlat = 0.000006
+	t.data.resize(900)
+	for j in 30:
+		for i in 30:
+			t.data[j * 30 + i] = maxf(0.0, 14.0 - roundf(Vector2(i - 15, j - 15).length()))
+	var sm := PackedFloat32Array()
+	sm.resize(900)
+	CanopyHeights.smooth_rows(t, sm, 0, 30)
+	var out: Array[Dictionary] = []
+	CanopyHeights.crowns_in_rows(t, sm, out, {}, 0, 30)
+	check(out.size() == 1 and float(out[0]["height"]) > 12.0, "one crown at the top (%d)" % out.size())
+
+
 func _test_photo_trees() -> void:
 	# A 100 x 100 m photo at 1 m: light fairway grass with a dark green
 	# 12 m clump of trees in the middle.
@@ -377,6 +476,24 @@ func _test_photo_trees() -> void:
 	check(AerialPhotos.source_for(52.2, 5.2).get("id", "") == "pdok", "Dutch photos from PDOK")
 	check(AerialPhotos.source_for(48.2, 16.3).get("id", "") == "basemap", "Vienna photos from basemap.at")
 	check(AerialPhotos.source_for(35.6, 139.7).get("id", "") == "gsi", "Tokyo photos from GSI")
+	check(AerialPhotos.source_for(48.1, 11.6).get("id", "") == "by", "Munich photos from Bavaria")
+	check(AerialPhotos.source_for(52.2, 21.0).get("id", "") == "pl", "Warsaw photos from GUGiK")
+	check(AerialPhotos.source_for(50.5, 4.9).get("id", "") == "wal", "Namur photos from Wallonia")
+	check(AerialPhotos.source_for(-33.87, 151.2).get("id", "") == "nsw", "Sydney photos from NSW")
+	check(AerialPhotos.source_for(-37.95, 145.05).get("id", "") == "vic", "Melbourne photos from Vicmap")
+	check(AerialPhotos.source_for(-27.5, 153.0).get("id", "") == "qld", "Brisbane photos from Queensland")
+	check(AerialPhotos.source_for(50.08, 14.42).get("id", "") == "cz", "Prague photos from CUZK")
+	check(AerialPhotos.source_for(37.1, -8.2).get("id", "") == "pt", "Algarve photos from DGT")
+	var us := AerialPhotos.sources_for(36.57, -121.95)
+	check(us.size() == 2 and us[0]["id"] == "naip" and us[1]["id"] == "usgs", "US: full NAIP, then the basemap")
+	for src in AerialPhotos.SOURCES:
+		check(src["id"] != AerialPhotos.GUIDE["id"], "the Esri guide is never a build source")
+	var guide := AerialPhotos.new(AerialPhotos.GUIDE, [56.340, -2.810, 56.345, -2.800])
+	check(guide.urls()[0].contains("World_Imagery/MapServer/tile/%d/%d/%d" % [guide.zoom, guide.origin.y, guide.origin.x]), "guide tile url")
+	var ee := AerialPhotos.new(AerialPhotos.source_for(59.437, 24.75), [59.436, 24.749, 59.438, 24.752])
+	var eu := ee.urls()[0]
+	var ty := (1 << ee.zoom) - 1 - ee.origin.y
+	check(eu.ends_with("/%d/%d/%d.jpg" % [ee.zoom, ee.origin.x, ty]), "Estonia TMS rows from the south: " + eu)
 	var vl := AerialPhotos.new(AerialPhotos.source_for(51.30, 4.55), [51.300, 4.550, 51.302, 4.553])
 	var u := vl.urls()[0]
 	var bb := u.get_slice("BBOX=", 1).get_slice("&", 0).split(",")

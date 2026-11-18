@@ -17,7 +17,8 @@ const DETAIL_ZOOM := 18
 const DETAIL_RES := 0.4  ## metres per pixel
 const DETAIL_HALF := 70.0  ## metres either side of the green
 
-## URL placeholders: {z} {x} {y} (web mercator tile), or {bbox} (the
+## URL placeholders: {z} {x} {y} (web mercator tile; {ty} is y counted
+## from the south, for TMS services), or {bbox} (the
 ## tile's web mercator box in metres, for WMS services). Smaller areas come
 ## first: where boxes overlap, the first service with photos of the course
 ## is used.
@@ -29,10 +30,34 @@ const SOURCES := [
 		"credit": "Aerial photo: Digitaal Vlaanderen, Modellicentie Gratis Hergebruik",
 	},
 	{
+		"id": "ee", "name": "Maa-amet orthophoto, Estonia",
+		"boxes": [[57.5, 21.7, 59.8, 28.3]],
+		"url": "https://tiles.maaamet.ee/tm/tms/1.0.0/foto@GMC/{z}/{x}/{ty}.jpg",
+		"credit": "Aerial photo: Estonian Land Board (Maa-amet), open data with credit",
+	},
+	{
+		"id": "wal", "name": "SPW orthophoto, Wallonia",
+		"boxes": [[49.49, 2.84, 50.82, 6.41]],
+		"url": "https://geoservices.wallonie.be/arcgis/rest/services/IMAGERIE/ORTHO_LAST/MapServer/export?bbox={bbox}&bboxSR=3857&imageSR=3857&size=256,256&format=jpg&f=image",
+		"credit": "Aerial photo: Service public de Wallonie (SPW), open data with credit",
+	},
+	{
 		"id": "nrw", "name": "Geobasis NRW orthophoto, North Rhine-Westphalia",
 		"boxes": [[50.32, 5.86, 52.53, 9.46]],
 		"url": "https://www.wms.nrw.de/geobasis/wms_nw_dop?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap&LAYERS=nw_dop_rgb&STYLES=&CRS=EPSG:3857&BBOX={bbox}&WIDTH=256&HEIGHT=256&FORMAT=image/jpeg",
 		"credit": "Aerial photo: Geobasis NRW, dl-de/zero-2-0",
+	},
+	{
+		"id": "by", "name": "Bayerische Vermessungsverwaltung DOP 40 cm, Bavaria",
+		"boxes": [[47.27, 8.97, 50.57, 13.84]],
+		"url": "https://geoservices.bayern.de/od/wms/dop/v1/dop40?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap&LAYERS=by_dop40c&STYLES=&CRS=EPSG:3857&BBOX={bbox}&WIDTH=256&HEIGHT=256&FORMAT=image/jpeg",
+		"credit": "Aerial photo: Bayerische Vermessungsverwaltung, CC BY 4.0",
+	},
+	{
+		"id": "cz", "name": "CUZK orthophoto, Czechia",
+		"boxes": [[48.5, 12.0, 51.1, 18.9]],
+		"url": "https://ags.cuzk.cz/arcgis1/services/ORTOFOTO/MapServer/WMSServer?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap&LAYERS=0&STYLES=&CRS=EPSG:3857&BBOX={bbox}&WIDTH=256&HEIGHT=256&FORMAT=image/jpeg",
+		"credit": "Aerial photo: CUZK (Czech Office for Surveying, Mapping and Cadastre), CC BY 4.0",
 	},
 	{
 		"id": "pdok", "name": "PDOK aerial photo, Netherlands",
@@ -59,16 +84,54 @@ const SOURCES := [
 		"credit": "Aerial photo: IGN (Geoplateforme), Licence Ouverte 2.0",
 	},
 	{
+		"id": "pt", "name": "DGT OrtoSat 2023, Portugal",
+		"boxes": [[36.9, -9.6, 42.2, -6.1]],
+		"url": "https://ortos.dgterritorio.gov.pt/wms/ortosat2023?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap&LAYERS=ortoSat2023-CorVerdadeira&STYLES=&CRS=EPSG:3857&BBOX={bbox}&WIDTH=256&HEIGHT=256&FORMAT=image/jpeg",
+		"credit": "Aerial photo: Direcao-Geral do Territorio (DGT), OrtoSat 2023, CC BY 4.0",
+	},
+	{
 		"id": "pnoa", "name": "PNOA aerial photo, Spain",
 		"boxes": [[35.9, -9.4, 43.9, 4.4], [27.6, -18.2, 29.5, -13.4]],
 		"url": "https://www.ign.es/wmts/pnoa-ma?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=OI.OrthoimageCoverage&STYLE=default&TILEMATRIXSET=GoogleMapsCompatible&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}&FORMAT=image/jpeg",
 		"credit": "Aerial photo: PNOA (c) Instituto Geografico Nacional de Espana, CC BY 4.0",
 	},
 	{
+		"id": "pl", "name": "GUGiK orthophoto, Poland",
+		"boxes": [[49.0, 14.1, 54.9, 24.2]],
+		"url": "https://mapy.geoportal.gov.pl/wss/service/PZGIK/ORTO/WMS/StandardResolution?SERVICE=WMS&VERSION=1.1.1&REQUEST=GetMap&LAYERS=Raster&STYLES=&SRS=EPSG:3857&BBOX={bbox}&WIDTH=256&HEIGHT=256&FORMAT=image/jpeg",
+		"credit": "Aerial photo: GUGiK (geoportal.gov.pl), open data",
+	},
+	{
+		"id": "vic", "name": "Vicmap aerial, Victoria",
+		"boxes": [[-39.2, 140.9, -33.9, 150.0]],
+		"url": "https://base.maps.vic.gov.au/wmts/AERIAL_WM_256/EPSG:3857:256/{z}/{x}/{y}.png",
+		"credit": "Aerial photo: Vicmap Basemap, State of Victoria (DEECA), CC BY 4.0",
+	},
+	{
+		"id": "qld", "name": "Queensland Government aerial, Queensland",
+		"boxes": [[-29.2, 137.9, -9.0, 153.6]],
+		"url": "https://spatial-img.information.qld.gov.au/arcgis/rest/services/Basemaps/LatestStateProgram_AllUsers/ImageServer/tile/{z}/{y}/{x}",
+		"credit": "Aerial photo: State of Queensland, CC BY 4.0",
+	},
+	{
+		"id": "nsw", "name": "NSW Imagery, New South Wales",
+		"boxes": [[-37.6, 140.9, -28.1, 153.7]],
+		"url": "https://maps.six.nsw.gov.au/arcgis/rest/services/public/NSW_Imagery/MapServer/tile/{z}/{y}/{x}",
+		"credit": "Aerial photo: (c) Spatial Services NSW, CC BY 4.0",
+	},
+	{
 		"id": "gsi", "name": "GSI seamless photo, Japan",
 		"boxes": [[24.0, 122.9, 45.6, 146.0]],
 		"url": "https://cyberjapandata.gsi.go.jp/xyz/seamlessphoto/{z}/{x}/{y}.jpg",
 		"credit": "Aerial photo: Geospatial Information Authority of Japan (GSI tiles)",
+	},
+	{
+		# The full NAIP mosaic (0.6 m): the cached basemap below stops at
+		# about 2 m.
+		"id": "naip", "name": "USDA NAIP orthoimagery (0.6 m), United States",
+		"boxes": [[24.4, -125.0, 49.5, -66.9]],
+		"url": "https://imagery.nationalmap.gov/arcgis/rest/services/USGSNAIPImagery/ImageServer/exportImage?bbox={bbox}&bboxSR=3857&imageSR=3857&size=256,256&format=jpg&f=image",
+		"credit": "Aerial photo: USDA NAIP via USGS The National Map, public domain",
 	},
 	{
 		"id": "usgs", "name": "USGS/USDA NAIP orthoimagery, United States",
@@ -78,6 +141,16 @@ const SOURCES := [
 		"credit": "Aerial photo: USGS The National Map / USDA NAIP, public domain",
 	},
 ]
+
+## Esri World Imagery, for the designer's satellite guide only: shown live
+## under the course to check it against, never saved, traced or detected
+## from (Esri's terms allow showing it with its credit, not copying it).
+## Not in SOURCES, so the builder never uses it.
+const GUIDE := {
+	"id": "esri", "name": "Esri World Imagery",
+	"url": "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+	"credit": "Satellite guide: Powered by Esri. Source: Esri, Maxar, Earthstar Geographics, and the GIS User Community",
+}
 
 var source: Dictionary
 var zoom := MAX_ZOOM
@@ -133,7 +206,8 @@ func urls() -> PackedStringArray:
 			var x0 := x * size - world * 0.5
 			var y1 := world * 0.5 - y * size
 			var bbox := "%.3f,%.3f,%.3f,%.3f" % [x0, y1 - size, x0 + size, y1]
-			out.append(str(source["url"]).format({"z": zoom, "x": x, "y": y, "bbox": bbox}))
+			var ty := (1 << zoom) - 1 - y
+			out.append(str(source["url"]).format({"z": zoom, "x": x, "y": y, "ty": ty, "bbox": bbox}))
 	return out
 
 

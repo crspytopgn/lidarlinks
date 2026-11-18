@@ -115,6 +115,35 @@ static func from_gsi_png(bytes: PackedByteArray, box: Array) -> GeoRaster:
 	return r
 
 
+## A Terrarium-coded height tile (PNG or WebP, any square size), as
+## Mapterhorn serves them: height = R * 256 + G + B / 256 - 32768 m. Null
+## for anything else. `box` is the tile's south, west, north, east.
+static func from_terrarium(bytes: PackedByteArray, box: Array) -> GeoRaster:
+	var img := Image.new()
+	var err := ERR_FILE_UNRECOGNIZED
+	if bytes.size() > 12 and bytes.slice(0, 4) == PackedByteArray([0x89, 0x50, 0x4E, 0x47]):
+		err = img.load_png_from_buffer(bytes)
+	elif bytes.size() > 12 and bytes.slice(0, 4) == PackedByteArray([0x52, 0x49, 0x46, 0x46]) and bytes.slice(8, 12) == PackedByteArray([0x57, 0x45, 0x42, 0x50]):
+		err = img.load_webp_from_buffer(bytes)
+	if err != OK or img.get_width() < 2 or img.get_width() != img.get_height():
+		return null
+	img.convert(Image.FORMAT_RGB8)
+	var rgb := img.get_data()
+	var n := img.get_width()
+	var r := GeoRaster.new()
+	r.width = n
+	r.height = n
+	r.nodata = -9999.0
+	r.data.resize(n * n)
+	for k in n * n:
+		r.data[k] = rgb[k * 3] * 256.0 + rgb[k * 3 + 1] + rgb[k * 3 + 2] / 256.0 - 32768.0
+	r.west = box[1]
+	r.north = box[2]
+	r.dlon = (float(box[3]) - float(box[1])) / n
+	r.dlat = (float(box[2]) - float(box[0])) / n
+	return r
+
+
 ## A single-band GeoTIFF in EPSG:4326: either byte order, 32-bit float or
 ## 16-bit integer or 8-bit unsigned samples, uncompressed or Deflate, in strips or tiles, with
 ## its position from ModelPixelScale + ModelTiepoint or ModelTransformation.

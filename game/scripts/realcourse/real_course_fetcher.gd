@@ -71,12 +71,14 @@ const LAND_SAMPLES_PER_STEP := 20000
 ## Goes up whenever a build gives a better course (new detection, trees,
 ## walls...): courses built before it offer "Update" on the Courses page.
 ## Saved in each course's source as "builder" (RealCourseUpdate).
-const BUILDER_VERSION := 3
+const BUILDER_VERSION := 4  ## 4: Mapterhorn lidar, more aerial photos
 
 var busy := false
 ## Use national lidar and aerial photos where they cover the course.
 var use_lidar := true
 var use_photos := true
+## Use the global canopy height map for trees where lidar has none (desktop).
+var use_canopy := true
 var use_land_cover := true
 ## Draw the real land round the course to the horizon (RealLandscape).
 var use_landscape := true
@@ -293,7 +295,8 @@ func _build(place: Dictionary) -> DesignedCourse:
 			return null
 		var dtm_missing := 0
 		for i in lidar.chunks.size():
-			if got[i][0] != 200:
+			# A tile service has no tile where it has no data.
+			if got[i][0] != 200 and not (lidar.chunks[i].has("tile") and got[i][0] == 404):
 				dtm_missing += 1
 		for i in got.size():
 			if got[i][0] == 200:
@@ -337,6 +340,15 @@ func _build(place: Dictionary) -> DesignedCourse:
 				builder.surface = lidar.surface_at
 			break
 		lidar = null
+
+	# Trees from the global canopy height map where the lidar found none.
+	if use_canopy and builder.lidar_trees.is_empty() and CanopyHeights.available():
+		var crowns := await _canopy_trees(gb)
+		if _cancelled:
+			return null
+		if not crowns.is_empty():
+			builder.lidar_trees = crowns
+			builder.extra_credits.append(CanopyHeights.CREDIT)
 
 	# Aerial photos: the first open service with photos of the course.
 	var photo: Image = null
@@ -709,6 +721,72 @@ static func overpass_status(answers: Array, reqs: Array, secs: float) -> String:
 ## Fetches every URL, PARALLEL at a time; [[code, bytes], ...] in order.
 ## Over `tries` rounds, the ones that failed (no answer, or a server error
 ## or rate limit) are asked for again; `timeout` is seconds per request.
+## Tree crowns from CanopyHeights for the box (south, west, north, east):
+## only the course's rows are downloaded, and read a band at a time between
+## frames. Empty if the map can't be read.
+func _canopy_trees(box: Array) -> Array[Dictionary]:
+	var crowns: Array[Dictionary] = []
+	var taken := {}
+	var canopy := CanopyHeights.new(box)
+	for part in canopy.parts:
+		var url: String = part["url"]
+		await _step("Fetching the tree heights...")
+		var head := await fetch_range(url, Vector2i(0, CanopyHeights.HEADER_BYTES - 1))
+		var header := CanopyHeights.parse_header(head)
+		if header.is_empty():
+			return crowns
+		var offsets := await fetch_range(url, CanopyHeights.offsets_range(header, part))
+		var counts := await fetch_range(url, CanopyHeights.counts_range(header, part))
+		var block := CanopyHeights.rows_block(offsets, counts)
+		if block.is_empty() or _cancelled:
+			return crowns
+		progress.emit("Fetching the tree heights (%.0f MB)..." % ((int(block["end"]) - int(block["start"])) / 1e6))
+		var rows := await fetch_range(url, Vector2i(int(block["start"]), int(block["end"])), 300.0)
+		if rows.size() != int(block["end"]) - int(block["start"]) + 1 or _cancelled:
+			return crowns
+		var raster := CanopyHeights.raster_for(part)
+		var band := maxi(1, LIDAR_PIXELS_PER_STEP / 4 / maxi(raster.width, 1) * 4)
+		var pos := [0]
+		for j in range(0, raster.height, band):
+			if j % (band * 8) == 0:
+				await _step("Reading the tree heights (%d%%)..." % (100 * j / raster.height))
+			if not CanopyHeights.decode_rows(part, header, counts, rows, pos, raster, j, mini(j + band, raster.height)):
+				return crowns
+			await _breathe()
+			if _cancelled:
+				return crowns
+		rows = PackedByteArray()
+		var smooth := PackedFloat32Array()
+		smooth.resize(raster.width * raster.height)
+		await _step("Finding the trees in the tree heights...")
+		for j in range(0, raster.height, band):
+			CanopyHeights.smooth_rows(raster, smooth, j, mini(j + band + 1, raster.height))
+			await _breathe()
+		for j in range(0, raster.height, band):
+			CanopyHeights.crowns_in_rows(raster, smooth, crowns, taken, j, mini(j + band, raster.height))
+			await _breathe()
+			if _cancelled:
+				return crowns
+	return crowns
+
+
+## Bytes `r.x` to `r.y` (inclusive) of `url`, or empty on any failure.
+func fetch_range(url: String, r: Vector2i, timeout := LIDAR_TIMEOUT) -> PackedByteArray:
+	for attempt in TRIES:
+		var got := await _request(url, HTTPClient.METHOD_GET, "", ["Range: bytes=%d-%d" % [r.x, r.y]], timeout)
+		if int(got[0]) == 206 and (got[1] as PackedByteArray).size() == r.y - r.x + 1:
+			return got[1]
+		if int(got[0]) != 0 and int(got[0]) < 500:
+			break
+	return PackedByteArray()
+
+
+## Downloads `urls` a few at a time, asking again for failures: one
+## [code, bytes] per url (the designer's satellite guide uses it).
+func fetch_urls(urls: PackedStringArray, label: String) -> Array:
+	return await _fetch_all(urls, label, TRIES)
+
+
 func _fetch_all(urls: PackedStringArray, label: String, tries := 1, timeout := 120.0) -> Array:
 	var out: Array = []
 	out.resize(urls.size())

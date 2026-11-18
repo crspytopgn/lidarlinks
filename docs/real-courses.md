@@ -82,12 +82,20 @@ later.
 | Norway | Kartverket national lidar (NHM), WCS 1.0 | 1 m DTM | 1 m DOM | CC BY 4.0 |
 | Japan | GSI elevation tiles (PNG, height in centimetres): DEM1A at zoom 17 where flown, else DEM5A (zoom 15), else DEM10B (zoom 14) | 1 to 10 m | none | GSI terms (credit) |
 | United States | USGS 3DEP ImageServer exportImage | 1 to 10 m, best available | none | Public domain |
+| Everywhere else, and the fallback after the ones above | Mapterhorn terrain tiles (512 px Terrarium WebP), zoom 16 then 15 only | about 1 to 2 m where a country's lidar is open: Scotland, Wales, Denmark, Sweden, Finland, Poland, Germany, Canada, New Zealand and more | none | per source, all open (CC BY 4.0, OGL, public domain and similar; mapterhorn.com/attribution) |
+
+Mapterhorn's coarser zooms (14 and below) come from 5 to 30 m models, no
+better than the Terrain Tiles, so they aren't asked for: where it has no
+zoom 15 tile (Ireland, Northern Ireland, most of Australia and Italy in
+Nov 2026) the course keeps the Terrain Tiles. A tile service answers 404
+where it has no data; that isn't counted as a failed download. Found
+through the God's Eye View project's source list (2026-11-18).
 
 `GeoRaster` reads what they send: GeoTIFF in either byte order, float32 or
 int16, uncompressed or Deflate with the floating-point predictor, in
 strips or tiles, placed by ModelPixelScale and ModelTiepoint or
 ModelTransformation; the raw float BIL from WMS; and GSI's colour-coded
-PNG tiles.
+PNG tiles, and Terrarium PNG or WebP tiles (Mapterhorn).
 
 **Trees from lidar:** the canopy height is the surface model minus the
 ground. Every local peak at least 3 m tall is a tree, its height the peak
@@ -109,6 +117,22 @@ the holes (Hilversum has 40,000 crowns). On Hilversum, 30,000 trees cost
 about the same draw calls as the old 6,000 and a fifth more triangles from
 the first tee, and fewer from inside the woods.
 
+### Tree heights everywhere else (desktop)
+
+Where the lidar has no surface model (Scotland, Wales and everywhere else
+Mapterhorn covers, the US, Japan) or there is no lidar, `CanopyHeights`
+(`game/scripts/realcourse/canopy_heights.gd`) reads Meta and the World
+Resources Institute's global 1 m canopy height map (CC BY 4.0, on AWS Open
+Data). Each file is a 65536 px square per zoom 9 web mercator tile (about
+500 MB), one Deflate row per strip, heights in whole metres. Only the
+course's rows are downloaded, with range requests: the 1 KB header, the
+rows' offsets and sizes, then the rows as one block (7 MB for Gleneagles,
+up to about 35 MB for a big wooded course, since each row spans the whole
+tile). The heights are smoothed over a plus of pixels, and each highest
+pixel within 1.5 m at least 3 m tall is a crown, one per 4 m, planted like
+lidar trees. Gleneagles: 2,461 crowns in 7 s, on the trees in the photo.
+The bucket sends no cross-site headers, so the web build skips it.
+
 ### Aerial photos
 
 `AerialPhotos` (`game/scripts/realcourse/aerial_photos.gd`) fetches web
@@ -128,7 +152,25 @@ photo**), to check and trace the course against.
 | France | IGN BD ORTHO via the Geoplateforme | Licence Ouverte 2.0 |
 | Spain | PNOA (IGN Espana) | CC BY 4.0 |
 | Japan | GSI seamless photo | GSI terms (credit) |
-| United States | USGS The National Map orthoimagery (NAIP), zoom 16 at most | Public domain |
+| United States | USDA NAIP full mosaic (0.6 m) from the USGS ImageServer, then the cached National Map basemap (zoom 16 at most) | Public domain |
+| Bavaria (Germany) | Bayerische Vermessungsverwaltung DOP 40 cm (WMS) | CC BY 4.0 |
+| Wallonia (Belgium) | SPW ORTHO_LAST (ArcGIS export) | open data with credit |
+| Poland | GUGiK orthophoto (WMS) | open data (Prawo geodezyjne art. 40a) |
+| Estonia | Maa-amet orthophoto (TMS) | open data with credit |
+| New South Wales (Australia) | Spatial Services NSW Imagery | CC BY 4.0 |
+| Victoria (Australia) | Vicmap Basemap aerial | CC BY 4.0 |
+| Queensland (Australia) | Queensland Government latest state imagery | CC BY 4.0 |
+| Czechia | CUZK orthophoto (WMS) | CC BY 4.0 |
+| Portugal | DGT OrtoSat 2023 (WMS) | CC BY 4.0 |
+
+**Satellite guide (designer only):** on a real course the designer also
+offers **Show the satellite guide (Esri)**. It streams Esri World Imagery
+for the course area into memory and lays it over the ground in place of
+the photo, with Esri's credit shown under the course credits. It is never
+saved, never used for detection or ground colours, and isn't in
+`AerialPhotos.SOURCES` (it is `AerialPhotos.GUIDE`): Esri's terms allow
+showing the imagery with its credit, not copying it. It is the only photo
+to check English, Scottish, Welsh and Irish courses against.
 
 WMS services are asked for each web mercator tile's box. Services answer
 white or empty tiles outside their country; those don't count, and the next
@@ -166,20 +208,16 @@ grass and scrub). It is used where the finer data is missing:
 
 ### Not covered yet
 
-England has no open aerial photo service. These were checked on
-2026-10-31 and don't work from a web page yet, so courses there use the
-Terrain Tiles (see the table above) and OpenStreetMap's trees:
+England, Scotland, Wales and Ireland have no open aerial photo service a
+web page can read (the Environment Agency's vertical photos are project
+by project ECW downloads; Google, Bing, Apple and Esri imagery can't be
+saved into courses under their terms). Since 2026-11-18 Mapterhorn covers
+the lidar of Scotland, Wales, Denmark, Canada, New Zealand, Sweden,
+Finland and Germany's other states, whose own services a web page
+couldn't read. Still missing:
 
-- Scotland (remotesensingdata.gov.scot): its WCS is switched off.
-- Wales (DataMapWales): the GeoServer has no lidar coverage.
-- Ireland (GSI/OPW): lidar coverage maps only, no height service.
-- Denmark (Dataforsyningen): needs a free account token.
-- Canada (NRCan HRDEM): the WCS rejects requests in latitude and longitude.
-- Australia (ELVIS): no open height service.
-- New Zealand (LINZ): needs a key.
-- Wallonia, Germany's other states, Switzerland's swissALTI3D, Sweden,
-  Finland: answer only in their national projection, or with no
-  cross-site access.
+- Ireland and Northern Ireland: no open fine height model anywhere yet.
+- Most of Australia and Italy: Mapterhorn has only 5 m or coarser there.
 - Spain's 5 m model: whole metres only.
 
 ### Scorecards
