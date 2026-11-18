@@ -409,6 +409,10 @@ func _test_photo_trees() -> void:
 	check(AerialPhotos.source_for(-33.87, 151.2).get("id", "") == "nsw", "Sydney photos from NSW")
 	var us := AerialPhotos.sources_for(36.57, -121.95)
 	check(us.size() == 2 and us[0]["id"] == "naip" and us[1]["id"] == "usgs", "US: full NAIP, then the basemap")
+	for src in AerialPhotos.SOURCES:
+		check(src["id"] != AerialPhotos.GUIDE["id"], "the Esri guide is never a build source")
+	var guide := AerialPhotos.new(AerialPhotos.GUIDE, [56.340, -2.810, 56.345, -2.800])
+	check(guide.urls()[0].contains("World_Imagery/MapServer/tile/%d/%d/%d" % [guide.zoom, guide.origin.y, guide.origin.x]), "guide tile url")
 	var ee := AerialPhotos.new(AerialPhotos.source_for(59.437, 24.75), [59.436, 24.749, 59.438, 24.752])
 	var eu := ee.urls()[0]
 	var ty := (1 << ee.zoom) - 1 - ee.origin.y

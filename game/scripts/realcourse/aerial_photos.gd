@@ -118,6 +118,16 @@ const SOURCES := [
 	},
 ]
 
+## Esri World Imagery, for the designer's satellite guide only: shown live
+## under the course to check it against, never saved, traced or detected
+## from (Esri's terms allow showing it with its credit, not copying it).
+## Not in SOURCES, so the builder never uses it.
+const GUIDE := {
+	"id": "esri", "name": "Esri World Imagery",
+	"url": "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+	"credit": "Satellite guide: Powered by Esri. Source: Esri, Maxar, Earthstar Geographics, and the GIS User Community",
+}
+
 var source: Dictionary
 var zoom := MAX_ZOOM
 var origin := Vector2i.ZERO

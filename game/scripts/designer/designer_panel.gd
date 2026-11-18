@@ -13,6 +13,7 @@ signal par_changed(par: int)
 signal name_changed(text: String)
 signal tournament_toggled(on: bool)
 signal photo_toggled(on: bool)
+signal guide_toggled(on: bool)
 
 enum Tool { SELECT, SHAPE, RAISE, LOWER, SMOOTH, FLATTEN, TREES, TEE, PIN, AIM, OBJECTS, PATH }
 
@@ -41,6 +42,7 @@ var course_name: LineEdit
 var tournament: CheckBox
 var credits: Label
 var photo: CheckBox
+var guide: CheckBox
 var surface: OptionButton
 var brush_size: HSlider
 var strength: HSlider
@@ -105,6 +107,14 @@ func _ready() -> void:
 		if not _quiet:
 			photo_toggled.emit(on))
 	box.add_child(photo)
+	guide = CheckBox.new()
+	guide.text = "Show the satellite guide (Esri)"
+	guide.tooltip_text = "Stream Esri's satellite photo under the course, to check it against where there is no open aerial photo (England, Scotland, Wales, Ireland). Shown only, never saved into the course."
+	guide.visible = false
+	guide.toggled.connect(func(on: bool) -> void:
+		if not _quiet:
+			guide_toggled.emit(on))
+	box.add_child(guide)
 	box.add_child(_button_row([["New", "new"], ["Open", "open"], ["Save", "save"]]))
 	box.add_child(_button_row([["Import", "import"], ["Export", "export"]]))
 	var real := MenuStyle.button("Real course...")
@@ -262,6 +272,14 @@ func show_photo_option(available: bool, on: bool) -> void:
 	_quiet = true
 	photo.visible = available
 	photo.button_pressed = on
+	_quiet = false
+
+
+## Offers the satellite guide toggle on real courses.
+func show_guide_option(available: bool, on: bool) -> void:
+	_quiet = true
+	guide.visible = available
+	guide.button_pressed = on
 	_quiet = false
 
 

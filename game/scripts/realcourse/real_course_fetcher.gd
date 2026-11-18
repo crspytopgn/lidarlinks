@@ -710,6 +710,12 @@ static func overpass_status(answers: Array, reqs: Array, secs: float) -> String:
 ## Fetches every URL, PARALLEL at a time; [[code, bytes], ...] in order.
 ## Over `tries` rounds, the ones that failed (no answer, or a server error
 ## or rate limit) are asked for again; `timeout` is seconds per request.
+## Downloads `urls` a few at a time, asking again for failures: one
+## [code, bytes] per url (the designer's satellite guide uses it).
+func fetch_urls(urls: PackedStringArray, label: String) -> Array:
+	return await _fetch_all(urls, label, TRIES)
+
+
 func _fetch_all(urls: PackedStringArray, label: String, tries := 1, timeout := 120.0) -> Array:
 	var out: Array = []
 	out.resize(urls.size())

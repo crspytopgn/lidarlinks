@@ -87,6 +87,12 @@ var _open_dialog: ConfirmationDialog
 var _real: RealCourseDialog
 var _photo_material: ShaderMaterial  ## null when the course has no aerial photo
 var _photo_on := true
+## The satellite guide (AerialPhotos.GUIDE): fetched on demand, kept in
+## memory only, never saved with the course.
+var _guide_material: ShaderMaterial
+var _guide_on := false
+var _guide_fetcher: RealCourseFetcher
+var _guide_fetching := false
 var _open_list: ItemList
 var _discard_dialog: ConfirmationDialog
 var _after_discard: Callable
@@ -157,8 +163,11 @@ func _set_course(c: DesignedCourse, p_path: String) -> void:
 	_overlay_dirty = true
 	_markers_dirty = true
 	panel.show_course_name(course.course_name, course.tournament)
-	panel.show_credits(course.credits)
+	_guide_material = null
+	_guide_on = false
+	_show_credits()
 	panel.show_photo_option(_photo_material != null, _photo_on)
+	panel.show_guide_option(_has_place(), false)
 	_show_holes()
 	if hole_index >= 0:
 		_focus_hole()
@@ -187,7 +196,7 @@ func _build_ground() -> void:
 		for ci in n.x:
 			var inst := MeshInstance3D.new()
 			inst.material_override = terrain.material()
-			inst.material_overlay = _photo_material if _photo_on else null
+			inst.material_overlay = _overlay()
 			_ground.add_child(inst)
 			_chunks[Vector2i(ci, cj)] = inst
 	_ground_dirty = true
@@ -1234,15 +1243,84 @@ static func _filled_note(summary: Dictionary) -> String:
 func _load_photo() -> void:
 	_photo_material = null
 	var photo := course.photo_image()
-	if photo == null:
-		return
+	if photo != null:
+		_photo_material = _photo_overlay(photo)
+
+
+func _photo_overlay(photo: Image) -> ShaderMaterial:
 	var img: Image = photo.duplicate()
 	img.generate_mipmaps()
-	_photo_material = ShaderMaterial.new()
-	_photo_material.shader = load("res://shaders/aerial_photo.gdshader")
-	_photo_material.set_shader_parameter("photo", ImageTexture.create_from_image(img))
+	var m := ShaderMaterial.new()
+	m.shader = load("res://shaders/aerial_photo.gdshader")
+	m.set_shader_parameter("photo", ImageTexture.create_from_image(img))
 	var a := course.area
-	_photo_material.set_shader_parameter("area", Vector4(a.position.x, a.position.y, a.size.x, a.size.y))
+	m.set_shader_parameter("area", Vector4(a.position.x, a.position.y, a.size.x, a.size.y))
+	return m
+
+
+## The ground overlay: the satellite guide when on, else the photo.
+func _overlay() -> ShaderMaterial:
+	if _guide_on and _guide_material != null:
+		return _guide_material
+	return _photo_material if _photo_on else null
+
+
+func _apply_overlay() -> void:
+	var m := _overlay()
+	for c: Vector2i in _chunks:
+		(_chunks[c] as MeshInstance3D).material_overlay = m
+
+
+## A real course knows where on Earth it is.
+func _has_place() -> bool:
+	return course != null and str(course.source.get("kind", "")) == "openstreetmap" and course.source.has("lat") and course.source.has("lon")
+
+
+func _show_credits() -> void:
+	var text := course.credits
+	if _guide_on:
+		text = (text + "\n" if not text.is_empty() else "") + str(AerialPhotos.GUIDE["credit"])
+	panel.show_credits(text)
+
+
+func _on_guide_toggled(on: bool) -> void:
+	_guide_on = on
+	_show_credits()
+	if on and _guide_material == null:
+		_fetch_guide()
+	_apply_overlay()
+
+
+## Fetches Esri's satellite photo of the course area into memory.
+func _fetch_guide() -> void:
+	var c := course
+	var frame := GeoFrame.new(float(c.source["lat"]), float(c.source["lon"]))
+	var photos := AerialPhotos.new(AerialPhotos.GUIDE, AerialPhotos.geo_box_of(frame, c.area))
+	if _guide_fetcher == null:
+		_guide_fetcher = RealCourseFetcher.new()
+		add_child(_guide_fetcher)
+	if _guide_fetching:
+		return
+	_guide_fetching = true
+	_set_status("Fetching the satellite guide...")
+	var urls := photos.urls()
+	var got: Array = await _guide_fetcher.fetch_urls(urls, "Fetching the satellite guide")
+	_guide_fetching = false
+	if course != c:
+		return  # another course was opened meanwhile
+	for i in got.size():
+		if got[i] is Array and int(got[i][0]) == 200:
+			photos.add_tile(i, got[i][1])
+	var img: Image = photos.course_photo(frame, c.area) if photos.loaded * 2 >= urls.size() else null
+	if img == null:
+		_set_status("The satellite guide couldn't be fetched; try again later.")
+		_guide_on = false
+		panel.show_guide_option(true, false)
+		_show_credits()
+		return
+	_guide_material = _photo_overlay(img)
+	_apply_overlay()
+	_set_status("Satellite guide shown (Esri, not saved with the course).")
 
 
 func _confirm_discard(then: Callable) -> void:
@@ -1282,8 +1360,8 @@ func _build_ui() -> void:
 			_holes_changed())
 	panel.photo_toggled.connect(func(on: bool) -> void:
 		_photo_on = on
-		for c: Vector2i in _chunks:
-			(_chunks[c] as MeshInstance3D).material_overlay = _photo_material if on else null)
+		_apply_overlay())
+	panel.guide_toggled.connect(_on_guide_toggled)
 	panel.name_changed.connect(func(t: String) -> void:
 		course.course_name = t
 		_changed())

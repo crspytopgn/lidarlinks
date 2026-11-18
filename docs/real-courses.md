@@ -143,6 +143,15 @@ photo**), to check and trace the course against.
 | Estonia | Maa-amet orthophoto (TMS) | open data with credit |
 | New South Wales (Australia) | Spatial Services NSW Imagery | CC BY 4.0 |
 
+**Satellite guide (designer only):** on a real course the designer also
+offers **Show the satellite guide (Esri)**. It streams Esri World Imagery
+for the course area into memory and lays it over the ground in place of
+the photo, with Esri's credit shown under the course credits. It is never
+saved, never used for detection or ground colours, and isn't in
+`AerialPhotos.SOURCES` (it is `AerialPhotos.GUIDE`): Esri's terms allow
+showing the imagery with its credit, not copying it. It is the only photo
+to check English, Scottish, Welsh and Irish courses against.
+
 WMS services are asked for each web mercator tile's box. Services answer
 white or empty tiles outside their country; those don't count, and the next
 service is tried when fewer than half the tiles have a photo.
