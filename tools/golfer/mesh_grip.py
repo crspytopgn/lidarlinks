@@ -14,6 +14,7 @@ person, posed at ref_address) by least squares:
 - the left grip running diagonally from the index finger's first bone to
   the heel pad, the right across the base of the fingers, its little
   finger over the left index finger, clear of the left hand's skin;
+- the right wrist hanging nearly straight down the club (RIGHT_WRIST);
 - the hands moved and turned as little as that allows.
 
 The result goes into every clip that holds the club that way: the club's
@@ -255,8 +256,12 @@ class HandFit:
     THUMB = ("thumb_01", "thumb_02", "thumb_03")
 
     def __init__(self, rig, pose, hand, grip, s, turn=True, contact=None, others=(), angle=None, axial=None,
-                 patches=()):
+                 patches=(), wrist=None):
         self.rig, self.hand, self.grip, self.s = rig, hand, grip, s
+        # (lo, hi): the wrist's sideways bend held in that band, degrees,
+        # thumb-ward +, about the elbow as it stands.
+        self.wrist = wrist
+        self.elbow = pose.P[rig.index["lowerarm_" + s]]
         self.angle, self.axial = angle, axial or {}
         # Patches of skin that rest on the grip: (bone, its vertex rows),
         # picked on the palm side within PATCH_R of a landmark.
@@ -376,6 +381,10 @@ class HandFit:
             f = pose_unit(P[self.rig.index["middle_01_" + self.s]] - P[self.hj])
             ang = np.degrees(np.arccos(np.clip(np.dot(f, self.grip.a), -1, 1)))
             c += ((ang - self.angle) / 4.0) ** 2
+        if self.wrist is not None:
+            dev = self.deviation(R, P)
+            lo, hi = self.wrist
+            c += (max(lo - dev, 0.0, dev - hi) / 0.5) ** 2
         for b, want in self.axial.items():
             t = (P[b] - self.grip.o) @ self.grip.a
             c += ((t - want) / 0.005) ** 2
@@ -387,6 +396,16 @@ class HandFit:
             c += 0.2 * (max(0.0, lo - b) ** 2 + max(0.0, b - hi) ** 2) + 1e-4 * x[k] ** 2
             k += 1
         return c
+
+    def deviation(self, R, P):
+        """The wrist's sideways bend: the hand's line (wrist to middle
+        knuckle) against the forearm's (elbow to wrist), toward the thumb +."""
+        i = lambda n: self.rig.index[f"{n}_{self.s}"]  # noqa: E731
+        f = pose_unit(P[self.hj] - self.elbow)
+        h = pose_unit(P[i("middle_01")] - P[self.hj])
+        across = P[i("index_01")] - P[i("pinky_01")]
+        across = pose_unit(across - f * np.dot(across, f))
+        return np.degrees(np.arctan2(np.dot(h, across), np.dot(h, f)))
 
     def solve(self):
         from scipy.optimize import minimize
@@ -460,8 +479,11 @@ def fit(glb, rig, skin, club_dir, ref, base_offsets):
     lpts = np.concatenate([left.verts(pose, [b]) for b in [hl] + lf.bones if len(left.local[b])])
     li = (pose.P[rig.index["index_02_l"]] - grip.o) @ grip.a
     rf = HandFit(rig, pose, right, grip, "r", others=(Blob(lpts),), angle=RIGHT_ANGLE, patches=landmarks(rig, "r"),
-                 axial={rig.index["pinky_02_r"]: li + RIGHT_OVERLAP})
+                 axial={rig.index["pinky_02_r"]: li + RIGHT_OVERLAP}, wrist=RIGHT_WRIST)
+    R0, P0 = rf.apply(np.zeros(rf.nvar))
+    print("  right wrist bend before %.1f deg" % rf.deviation(R0, P0))
     x = rf.solve()
+    print("  right wrist bend after %.1f deg" % rf.deviation(*rf.apply(x)))
     Rr, Pr = rf.apply(x)
     pose.turn(hr, Rr[hr] @ pose.R[hr].T)
     pose.move(hr, Pr[hr] - pose.P[hr])
@@ -500,6 +522,10 @@ def landmarks(rig, s):
                 ("index_01_l", _mix(i("index_01"), i("index_02"), 0.5))]
     return [(f"{f}_01_r", _mix(i(f + "_01"), i(f + "_02"), 0.4)) for f in ("index", "middle", "ring")]
 RIGHT_OVERLAP = 0.0
+# The right wrist at address hangs nearly straight down the club, a little
+# toward the little finger (tour setups), not bent so the wrist knuckle
+# sticks out: degrees, thumb-ward +.
+RIGHT_WRIST = (-2.0, 4.0)
 
 
 def picture(path, rig, pose, hands, grip):
