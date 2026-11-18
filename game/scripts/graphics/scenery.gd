@@ -61,9 +61,9 @@ const TIMES := {
 	"midday": {elevation = 62.0, bearing = 160.0, sun = Color(1.0, 0.97, 0.93), energy = 1.0, fill = 1.0, fill_fwd = 1.0,
 		ambient = Color(0.66, 0.70, 0.76), sky = Color(1.0, 1.0, 1.02), horizon = Color(1.0, 1.0, 1.0), glow = 0.0,
 		haze = Color(0.70, 0.78, 0.88), fog = 0.9, exposure = 0.95, scatter = 0.05, warm = Color(1.02, 1.0, 0.96), cool = Color(0.98, 1.0, 1.03), pop = 1.04},
-	"afternoon": {elevation = 28.0, bearing = 145.0, sun = Color(1.0, 0.9, 0.76), energy = 1.15, fill = 1.0, fill_fwd = 1.0,
-		ambient = Color(0.66, 0.70, 0.76), sky = Color(1.0, 1.0, 1.0), horizon = Color(1.06, 1.0, 0.93), glow = 0.2,
-		haze = Color(0.74, 0.78, 0.82), fog = 1.4, exposure = 1.0, scatter = 0.2, warm = Color(1.02, 1.0, 0.97), cool = Color(0.97, 1.0, 1.04), pop = 1.1},
+	"afternoon": {elevation = 28.0, bearing = 145.0, sun = Color(1.0, 0.9, 0.76), energy = 1.15, fill = 1.0, fill_fwd = 0.6,
+		ambient = Color(0.58, 0.68, 0.82), sky = Color(1.0, 1.0, 1.0), horizon = Color(1.06, 1.0, 0.93), glow = 0.2,
+		haze = Color(0.70, 0.77, 0.86), fog = 0.8, exposure = 1.0, scatter = 0.2, warm = Color(1.02, 1.0, 0.97), cool = Color(0.93, 1.0, 1.08), pop = 1.15},
 	"golden": {elevation = 9.0, bearing = 205.0, sun = Color(1.0, 0.74, 0.5), energy = 1.3, fill = 0.55, fill_fwd = 4.2,
 		ambient = Color(0.68, 0.7, 0.74), sky = Color(1.0, 0.96, 0.92), horizon = Color(1.08, 0.98, 0.88), glow = 0.5,
 		haze = Color(0.82, 0.78, 0.72), fog = 1.6, exposure = 1.6, scatter = 0.45, warm = Color(1.08, 0.99, 0.84), cool = Color(0.94, 0.98, 1.08), pop = 1.1},
@@ -227,7 +227,10 @@ func apply(settings: GraphicsSettings) -> void:
 	# clouds): a whole-image bloom lays a milky veil over the course that
 	# reads as haze and greys the sky, most of all in Forward+.
 	environment.glow_bloom = bloom * 0.15 if not photo else 0.0
-	environment.glow_hdr_threshold = 1.0 if photo else 1.2
+	# Photoreal at 1.0 caught sunlit cloth too: a wide yellow halo round
+	# the golfer's khaki trousers on the turf behind (2K25 quality pass).
+	# Only the sun on sand, white caps and clouds should glow.
+	environment.glow_hdr_threshold = 1.8 if photo else 1.2
 	environment.ssao_enabled = fwd and settings.ssao
 	environment.ssil_enabled = fwd and settings.ssao and q >= GraphicsSettings.Quality.ULTRA
 	# Low sun-lit haze that thickens with distance, and light shafts near

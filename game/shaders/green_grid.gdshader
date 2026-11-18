@@ -49,7 +49,10 @@ void vertex() {
 	// The line's width in pixels where it is.
 	float px = width * UV.y * PROJECTION_MATRIX[1][1] * size.y * 0.5 / max(clip.w, 1e-4);
 	float drawn = max(px, min_pixels);
-	coverage = mix(0.8, 1.0, clamp(px / min_pixels, 0.0, 1.0));
+	// Far lines held at min_pixels fade well back: drawn near full strength
+	// (0.8) the far side of the green became a dense white wire mesh, where
+	// 2K25's and TV's grids fade into the turf with distance.
+	coverage = mix(0.35, 1.0, clamp(px / min_pixels, 0.0, 1.0));
 	half_px = drawn * 0.5;
 	// One pixel more each side for the soft edge.
 	float out_px = half_px + 1.0;

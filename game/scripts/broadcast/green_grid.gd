@@ -30,8 +30,8 @@ const PIECES := 4
 ## wide however far off they are.
 const LINE_WIDTH := 0.02
 const SHADER := preload("res://shaders/green_grid.gdshader")
-const FLAT := Color(1.0, 1.0, 1.0, 0.28)
-const MEDIUM := Color(1.0, 0.88, 0.6, 0.36)
+const FLAT := Color(1.0, 1.0, 1.0, 0.2)
+const MEDIUM := Color(1.0, 0.88, 0.6, 0.3)
 const STEEP := Color(0.95, 0.5, 0.38, 0.5)
 const STEEP_PERCENT := 4.0
 ## The flowing dots: one streamline seeded in each square, followed

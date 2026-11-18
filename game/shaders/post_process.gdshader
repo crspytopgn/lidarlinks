@@ -42,8 +42,40 @@ uniform float finish_contrast = 1.0;
 // leave the picture as it is.
 global uniform vec4 grade_warm;
 global uniform vec3 grade_cool;
+// The broadcast finish (Photoreal), after everything else in the grade:
+// TV golf and PGA Tour 2K25 show a clean, fresh green with deep shade, where
+// our frames read olive and milky (quality pass, 2026-11-17: 2K25's shaded
+// turf measures about 0.16 luminance with a blue-green cast, ours about
+// 0.35). `punch_green` turns yellow-greens (turf, leaves) towards green, as
+// a fraction of the hue circle; `punch_black` sets the black point (the
+// milky veil lifted); `punch_gamma` deepens the mid-darks; `punch_sat`
+// puts back the colour the darker shade takes. All 0 or 1 = off.
+uniform float punch_green = 0.0;
+uniform float punch_black = 0.0;
+uniform float punch_gamma = 1.0;
+uniform float punch_sat = 1.0;
+
+vec3 rgb2hsv(vec3 c) {
+	vec4 K = vec4(0.0, -1.0 / 3.0, 2.0 / 3.0, -1.0);
+	vec4 p = mix(vec4(c.bg, K.wz), vec4(c.gb, K.xy), step(c.b, c.g));
+	vec4 q = mix(vec4(p.xyw, c.r), vec4(c.r, p.yzx), step(p.x, c.r));
+	float d = q.x - min(q.w, q.y);
+	float e = 1.0e-10;
+	return vec3(abs(q.z + (q.w - q.y) / (6.0 * d + e)), d / (q.x + e), q.x);
+}
+
+vec3 hsv2rgb(vec3 c) {
+	vec4 K = vec4(1.0, 2.0 / 3.0, 1.0 / 3.0, 3.0);
+	vec3 p = abs(fract(c.xxx + K.xyz) * 6.0 - K.www);
+	return c.z * mix(K.xxx, clamp(p - K.xxx, 0.0, 1.0), c.y);
+}
+
 // The least of the drawn colour the grade keeps in the darks.
 const float DARK_FLOOR = 0.5;
+// With the broadcast finish on, the floor drops to this, so the shade can
+// deepen (the hard black streak it guards against came from stacking the
+// S-curve and finish contrast at full strength).
+const float PUNCH_DARK_FLOOR = 0.3;
 
 float hash(vec2 p) {
 	vec3 p3 = fract(vec3(p.xyx) * 0.1031);
@@ -135,11 +167,27 @@ void fragment() {
 		g = mix(vec3(lg), g, mix(grade_warm.a, 1.0, sky));
 		c = max(g * (l / max(dot(g, W), 1e-4)), vec3(0.0));
 	}
+	if (punch_green > 0.0) {
+		// Yellow-greens (hue near 72 degrees, 47 to 97) turn greener; greys, skin,
+		// sand and sky are left alone.
+		vec3 h = rgb2hsv(c);
+		float w = clamp(1.0 - abs(h.x - 0.2) / 0.07, 0.0, 1.0) * clamp(h.y * 3.0, 0.0, 1.0);
+		h.x += punch_green * w;
+		c = hsv2rgb(h);
+	}
+	if (punch_black > 0.0 || punch_gamma != 1.0 || punch_sat != 1.0) {
+		const vec3 W = vec3(0.2126, 0.7152, 0.0722);
+		float l = max(dot(c, W), 1e-4);
+		float lt = pow(clamp((l - punch_black) / (1.0 - punch_black), 0.0, 1.0), punch_gamma);
+		c *= lt / l;
+		float l2 = dot(c, W);
+		c = max(vec3(l2) + (c - vec3(l2)) * punch_sat, vec3(0.0));
+	}
 	// The grade deepens the darks, but no further than DARK_FLOOR of what
 	// the renderer drew: the S-curve, the learned grade and the finish
 	// contrast together took the shaded side of the golfer's trousers from
 	// about 0.1 to pure black, a hard black streak down the leg.
-	c = max(c, c0 * DARK_FLOOR);
+	c = max(c, c0 * (punch_black > 0.0 ? PUNCH_DARK_FLOOR : DARK_FLOOR));
 	vec2 d = uv - 0.5;
 	c *= 1.0 - vignette * smoothstep(0.15, 0.75, dot(d, d) * 2.0);
 	c += (hash(FRAGCOORD.xy + fract(TIME) * 913.0) - 0.5) * grain;

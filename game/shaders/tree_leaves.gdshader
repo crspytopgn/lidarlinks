@@ -136,7 +136,10 @@ void fragment() {
 		vec2 texels = vec2(textureSize(scan_opacity, 0));
 		float lod = log2(max(max(length(dFdx(UV) * texels), length(dFdy(UV) * texels)), 1.0));
 		alpha = o * (1.0 + lod * 0.3);
-		col = sc.rgb * scan_tint * mix(0.85, 1.1, info.r);
+		// Each scanned card is a cluster of leaves turned its own way: some
+		// face the sun, some the sky, some are deep in the crown. 0.85 to
+		// 1.1 left a crown one flat, brush-stroked mass (2K25 quality pass).
+		col = sc.rgb * scan_tint * mix(0.68, 1.2, info.r);
 	} else if (core && has_spray && !needles) {
 		// The crown's shaded middle: solid inside a round outline that the
 		// spray's leaves make ragged.
@@ -335,6 +338,14 @@ void fragment() {
 	if (!core && !scanned && !(has_spray && !needles)) {
 		// Faded with distance like the leaf shading above (dot pattern).
 		NORMAL = normalize(NORMAL + (vec3(h, h2, fract(h * 7.31 + h2)) - 0.5) * 1.1 * (1.0 - far));
+	}
+	if (scanned && !bake) {
+		// A scanned card is one leaf cluster: tilt it its own way off the
+		// crown's normal (from its own random value), so sunlit crowns
+		// break into lit and shaded clusters like a photo, not one smooth
+		// painted blob.
+		float r = info.r;
+		NORMAL = normalize(NORMAL + (vec3(fract(r * 7.31), fract(r * 13.17), fract(r * 3.71)) - 0.5) * 0.9);
 	}
 	if (bake_normal) {
 		ALBEDO = vec3(0.0);

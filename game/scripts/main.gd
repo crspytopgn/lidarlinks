@@ -1443,11 +1443,13 @@ func aim_at(spot: Vector3) -> void:
 	_update_green_aids()
 
 
-## The Broadcast and Tour presentations fold the key hints away from the
-## second hole on, unless F1 brings them back.
+## The Broadcast and Tour presentations fold the key hints away once the
+## first shot of the round is played (to a small "F1: controls" tab), unless
+## F1 brings them back: two lines of key help along the bottom of every
+## shot read as a debug screen next to 2K25's clean frame.
 func _fold_hints() -> void:
 	if hud != null and hud.is_node_ready():
-		hud.fold_hints(graphics.broadcast() and hole_index > 0 and not _show_controls)
+		hud.fold_hints(graphics.broadcast() and (hole_index > 0 or strokes > 0) and not _show_controls)
 
 
 ## Settings > Captions: the golfer's spoken line.
@@ -2120,6 +2122,7 @@ func _prepare_shot(snap_camera: bool) -> void:
 	hud.hint.text = _aim_hint()
 	if hole.terrain.free_drop_at(ball_at.x, ball_at.z):
 		hud.hint.text += HINT_FREE_DROP
+	_fold_hints()
 	_place_ball(ball_at)
 	_place_golfer()
 	_touch_index = -1
@@ -3844,38 +3847,56 @@ func _add_flag() -> void:
 	hole_root.add_child(cup)
 
 
-## The tee markers: a pair of spherical plastic markers 127 mm across
-## (tools/props/build_props.py, from the maker's photos), set square to the
+## The tee markers: a pair of turned-wood log markers (the kind members'
+## clubs set out, about 22 cm long and 12 cm across), lying square to the
 ## line of the hole either side of the tee, as on a real tee box (Rule
-## 6.2b: the teeing area runs back two club-lengths from them).
+## 6.2b: the teeing area runs back two club-lengths from them). The glossy
+## red plastic balls they replaced read as toys in the tee view, the first
+## thing a round shows (2K25 quality pass, 2026-11-17).
 const TEE_MARKER_GAP := 5.5  ## metres between the two markers
 const TEE_MARKER_AHEAD := 0.6  ## how far in front of the ball they stand
-const TEE_MARKER_COLOUR := Color(0.8, 0.1, 0.08)
+const TEE_MARKER_COLOUR := Color(0.36, 0.23, 0.13)
+const TEE_MARKER_END := Color(0.78, 0.66, 0.5)
+const TEE_MARKER_LENGTH := 0.22
+const TEE_MARKER_RADIUS := 0.06
 
 
 func _add_tee_markers() -> void:
-	var model := CourseProps.mesh("tee_marker")
-	var mesh: Mesh = model
-	var mat: StandardMaterial3D
-	if model != null:
-		var base := model.surface_get_material(0) as StandardMaterial3D
-		mat = base.duplicate() as StandardMaterial3D if base != null else StandardMaterial3D.new()
-		mat.albedo_color = TEE_MARKER_COLOUR
-	else:
-		# Without the model: a ball of the same size.
-		var s := SphereMesh.new()
-		s.radius = 0.0635
-		s.height = 0.127
-		mesh = s
-		mat = StandardMaterial3D.new()
-		mat.albedo_color = TEE_MARKER_COLOUR
-		mat.roughness = 0.35
+	var body := CylinderMesh.new()
+	body.top_radius = TEE_MARKER_RADIUS
+	body.bottom_radius = TEE_MARKER_RADIUS
+	body.height = TEE_MARKER_LENGTH
+	body.radial_segments = 16
+	body.rings = 1
+	var bark := StandardMaterial3D.new()
+	bark.albedo_color = TEE_MARKER_COLOUR
+	bark.roughness = 0.85
+	body.material = bark
+	# The sawn ends, paler wood.
+	var ends := CylinderMesh.new()
+	ends.top_radius = TEE_MARKER_RADIUS * 0.9
+	ends.bottom_radius = TEE_MARKER_RADIUS * 0.9
+	ends.height = TEE_MARKER_LENGTH + 0.004
+	ends.radial_segments = 16
+	ends.rings = 1
+	var cut := StandardMaterial3D.new()
+	cut.albedo_color = TEE_MARKER_END
+	cut.roughness = 0.9
+	ends.material = cut
+	var dir := Vector3(_first_leg().x - hole.tee.x, 0.0, _first_leg().z - hole.tee.z)
+	dir = Vector3(0, 0, 1) if dir.length() < 0.01 else dir.normalized()
+	var side := Vector3.UP.cross(dir)
 	for p in tee_marker_spots(hole.tee, _first_leg()):
-		var m := MeshInstance3D.new()
-		m.mesh = mesh
-		m.material_override = mat
-		p.y = hole.terrain.height_at(p.x, p.z) - 0.005 + (0.0 if model != null else 0.05)
+		var m := Node3D.new()
+		p.y = hole.terrain.height_at(p.x, p.z) + TEE_MARKER_RADIUS * 0.8
 		m.position = p
+		# Lying on its side, its length across the hole.
+		# (The cylinder's axis is its local y: lay it along `side`.)
+		m.basis = Basis(dir, side, Vector3.UP)
+		for mesh: Mesh in [body, ends]:
+			var mi := MeshInstance3D.new()
+			mi.mesh = mesh
+			m.add_child(mi)
 		hole_root.add_child(m)
 
 
@@ -4365,15 +4386,10 @@ func _ticker_text() -> String:
 		parts.append("LEADERBOARD")
 		parts.append_array(leaderboard_lines(scoring.standings()))
 	else:
-		parts.append(course.course_name.to_upper())
-		parts.append(GameModes.MODE_NAMES[round_setup.mode].to_upper())
-		parts.append("HOLE %d OF %d" % [hole_index + 1, holes.size()])
-		var thru := card.holes_played()
-		if thru > 0:
-			parts.append("ROUND %d (%s) THRU %d" % [card.total_strokes(), Scorecard.format_to_par(card.to_par()), thru])
-		parts.append("WIND %s" % wind.describe(aim_deg).to_upper())
-		if _weather_shown():
-			parts.append(weather.describe().to_upper())
+		# A round on your own has no field to scroll: the course, hole,
+		# score and wind are all on the score bug and the wind dial already,
+		# and a ticker repeating them read as clutter (2K25 quality pass).
+		return ""
 	return "      \u00b7      ".join(parts)
 
 
