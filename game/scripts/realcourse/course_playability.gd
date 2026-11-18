@@ -14,6 +14,8 @@ extends RefCounted
 ##   plate falling 2 % toward its front, keeping a softened share of its own
 ##   contours, and the ground round it eased onto it. Crans-sur-Sierre's
 ##   greens follow the mountain at 8 to 13 %, where no ball stops.
+## - unterrace: ground rounded to whole metres (SRTM) stands in terraces
+##   on flat land, which read as fairways in steps; they are eased out.
 ## - level_tees: tee boxes are flat, eased into the ground round them.
 ## - trim_par3_tees: a par 3 tee further than a driver carries is dropped
 ##   while the hole has another.
@@ -28,6 +30,12 @@ const CONTOUR_KEEP := 0.35  ## share of the green's own contours kept
 const CONTOUR_MAX := 0.15  ## metres either side of the plate
 const TEE_BLEND := 6.0  ## metres over which a levelled tee eases into the ground
 const MAX_TEE_TILT := 0.015
+## unterrace: the ground smoothed over these widths (metres) to choose from;
+## a sample takes the width of its terrace (TERRACE_WIDTHS steps over the
+## slope, read over TERRACE_SLOPE_SPAN either side).
+const TERRACE_RADII := [16.0, 40.0, 100.0, 200.0]
+const TERRACE_WIDTHS := 1.5
+const TERRACE_SLOPE_SPAN := 16.0
 const LONGEST_PAR3 := 220.0  ## metres: a driver carries about 224 m (Club.standard_set)
 
 
@@ -41,6 +49,60 @@ static func smooth_ground(c: DesignedCourse, metres: float) -> void:
 	img.resize(maxi(c.cols / f, 2), maxi(c.rows / f, 2), Image.INTERPOLATE_LANCZOS)
 	img.resize(c.cols, c.rows, Image.INTERPOLATE_CUBIC)
 	c.heights = img.get_data().to_float32_array()
+
+
+## Eases out the terraces of ground rounded to `step` metres (SRTM and the
+## like, TerrainTiles.height_step): on flat land a whole-metre rounding is a
+## run of flat shelves tens of metres wide with a step between them, which
+## read as fairways in stairs (Royal County Down's links, a metre or two
+## above the sea). The terraces are as wide as `step` over the slope, so each
+## sample takes the ground smoothed over about that width: wide on the flat,
+## where the rounding has kept nothing finer, and only lightly on slopes.
+static func unterrace(c: DesignedCourse, step: float) -> void:
+	var levels: Array[PackedFloat32Array] = [c.heights]
+	var radii := PackedFloat32Array([0.0])
+	for r in TERRACE_RADII:
+		var f := roundi(r / DesignedCourse.CELL)
+		if c.cols < f * 4 or c.rows < f * 4:
+			break
+		levels.append(_smoothed(c, f))
+		radii.append(r)
+	if levels.size() < 2:
+		return
+	# The slope, read off the smoothest ground so the choice is smooth too.
+	var top := levels[levels.size() - 1]
+	var d := roundi(TERRACE_SLOPE_SPAN / DesignedCourse.CELL)
+	var cols := c.cols
+	var rows := c.rows
+	var out := PackedFloat32Array()
+	out.resize(c.heights.size())
+	for j in rows:
+		var ja := maxi(j - d, 0)
+		var jb := mini(j + d, rows - 1)
+		for i in cols:
+			var ia := maxi(i - d, 0)
+			var ib := mini(i + d, cols - 1)
+			var gx := (top[j * cols + ib] - top[j * cols + ia]) / float(ib - ia)
+			var gz := (top[jb * cols + i] - top[ja * cols + i]) / float(jb - ja)
+			var slope := sqrt(gx * gx + gz * gz) / DesignedCourse.CELL
+			var width := step * TERRACE_WIDTHS / maxf(slope, 1e-4)
+			var k := j * cols + i
+			var h := levels[levels.size() - 1][k]
+			for l in range(1, radii.size()):
+				if width < radii[l]:
+					var t := clampf((width - radii[l - 1]) / (radii[l] - radii[l - 1]), 0.0, 1.0)
+					h = lerpf(levels[l - 1][k], levels[l][k], t)
+					break
+			out[k] = h
+	c.heights = out
+
+
+## The heights smoothed over `f` samples.
+static func _smoothed(c: DesignedCourse, f: int) -> PackedFloat32Array:
+	var img := Image.create_from_data(c.cols, c.rows, false, Image.FORMAT_RF, c.heights.to_byte_array())
+	img.resize(maxi(c.cols / f, 2), maxi(c.rows / f, 2), Image.INTERPOLATE_TRILINEAR)
+	img.resize(c.cols, c.rows, Image.INTERPOLATE_CUBIC)
+	return img.get_data().to_float32_array()
 
 
 ## Grades the greens too steep to hold a ball; returns how many.

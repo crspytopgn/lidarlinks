@@ -1355,10 +1355,18 @@ func _derive(cells: Rect2i) -> void:
 			# The bank runs down to the water line at the edge and on under
 			# it, with no step: a dig that starts at the outline leaves a
 			# cliff that the 2 m grid draws as a sawtooth shore.
-			_shape_heights(s, cells, WATER_BANK, func(h: float, d: float) -> float:
+			# A burn or ditch a few metres wide is a channel: dug to its
+			# depth within its own half width (dug over 6 m as a pond is,
+			# its middle stayed above the water and the 2 m grid showed a
+			# dark, jagged trench with hardly any water), with banks as
+			# steep as a burn's.
+			var half := clampf(_half_width(s), 1.0, 6.0)
+			var bank := clampf(half * 2.5, 2.5, WATER_BANK)
+			var depth := lerpf(0.9, 1.95, (half - 1.0) / 5.0)
+			_shape_heights(s, cells, bank, func(h: float, d: float) -> float:
 				if d > 0.0:
-					return minf(h, lerpf(level + 0.05, h, smoothstep(0.0, WATER_BANK, d)))
-				return minf(h, level + 0.05 - 1.95 * smoothstep(0.0, 6.0, -d)))
+					return minf(h, lerpf(level + 0.05, h, smoothstep(0.0, bank, d)))
+				return minf(h, level + 0.05 - depth * smoothstep(0.0, half, -d)))
 	# Tee pads last, on the ground as the hazards left it; the grid gets the
 	# pads' shape at its own points, and TeePads the fine inserts.
 	for j in range(cells.position.y, cells.end.y):
@@ -1448,6 +1456,20 @@ func _green_centre(p: Vector2) -> Vector2:
 
 ## Applies `f(height, signed distance)` to the samples inside the shape (or
 ## within `outside` metres of it) that fall in `cells`.
+## About half the width of a shape (its area over its perimeter): half a
+## strip's width, a fair share of a pond's.
+static func _half_width(s: CourseShape) -> float:
+	var ol := s.outline()
+	var area := 0.0
+	var run := 0.0
+	for i in ol.size():
+		var a := ol[i]
+		var b := ol[(i + 1) % ol.size()]
+		area += a.cross(b)
+		run += a.distance_to(b)
+	return absf(area) * 0.5 / maxf(run, 1e-3)
+
+
 func _shape_heights(s: CourseShape, cells: Rect2i, outside: float, f: Callable) -> void:
 	var r := _cells_of(s.bounds().grow(outside + DesignedCourse.CELL)).intersection(cells)
 	var cols := course.cols

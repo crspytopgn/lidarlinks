@@ -122,6 +122,20 @@ func search(query: String) -> void:
 		busy = false
 		search_failed.emit("Couldn't reach OpenStreetMap's search. Check the connection and try again.")
 		return
+	var short := RealCourseBuilder.short_name(q)
+	if (results as Array).is_empty() and short != q and not short.is_empty():
+		# The club's full name may not be on the map at all: "Royal County
+		# Down Golf Club" finds nothing, its course is "Royal County Down
+		# Golf Course" (and "Royal County Down" alone finds roads in
+		# America). Other endings first, then the bare name.
+		for name: String in [short + " Golf Course", short + " Golf Club", short + " Golf Links", short]:
+			if name.to_lower() == q.to_lower():
+				continue
+			var other: Variant = await _search_once(name)
+			if other != null and not (other as Array).is_empty():
+				results = other
+				if _has_golf(other):
+					break
 	if not _has_golf(results):
 		var more: Variant = await _search_once(q + (" course" if q.to_lower().contains("golf") else " golf course"))
 		if more != null and _has_golf(more):
@@ -374,6 +388,7 @@ func _build(place: Dictionary) -> DesignedCourse:
 	if lidar == null:
 		# Open elevation tiles: speckled, and stepped at their edges.
 		builder.ground_smooth = clampf(tiles.pixel_metres(lat) * 2.0, 4.0, 10.0)
+		builder.ground_step = tiles.height_step()
 	await _step("Building %s..." % builder.course_name)
 	if _cancelled:
 		return null
@@ -407,6 +422,7 @@ func _build(place: Dictionary) -> DesignedCourse:
 		RealCourseUpdate.stamp(c, place)
 	_last_summary = first_summary
 	_last_summary["ground"] = ground_name
+	_last_summary["ground_terraced"] = builder.ground_step > 0.0
 	if not lidar_sources.is_empty() and (lidar == null or lidar_gaps > 0) and not (lidar == null and lidar_outside == lidar_sources.size()):
 		# Say so, rather than leave coarse ground looking like the lidar's.
 		_last_summary["lidar_failed"] = str(lidar_sources[0]["name"]) if lidar == null else ""

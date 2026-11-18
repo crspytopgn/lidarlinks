@@ -399,6 +399,30 @@ or not at all. What that found, and what the builder now does:
   agree (not mostly zeros where the tiles say the land is above 2 m, and
   medians within 30 m: the tiles measure tree tops in places like
   Hilversum's woods).
+- **No terraces:** where the open tiles come from data rounded to whole
+  metres (SRTM; `TerrainTiles.height_step` finds a tenth or more of their
+  pixels on whole metres), flat land reads as shelves tens of metres wide
+  with a 1 m step between them: Royal County Down's fairways came out in
+  stairs. `CoursePlayability.unterrace` gives each sample the ground
+  smoothed over about its terrace's width (the step over the slope).
+- **Burns that hold water:** a stream's line is smoothed and drawn as a
+  ribbon with round bends (`ribbon`; mitred offsets folded over at tight
+  bends), cut into pieces that fall at most 0.3 m (`stream_pieces`), and
+  `DesignedTerrain` digs a narrow water shape to its depth within its own
+  half width, so the Swilcan Burn shows water instead of a dark trench.
+- **Greens kept dry:** a pond mapped over an island or peninsula green
+  without its inner ring (Leopard Creek's 18th) has the green and a 3 m
+  bank cut out (`dry_out`), joined to the shore by a 3 m causeway so the
+  pond stays one shape with one water line.
+- **Outlines that don't fold:** a shape whose curve crosses itself (a
+  narrow green, a fairway's thin neck) has its points respaced
+  (`untangle_shapes`).
+- **Guessed fairways shaped like mown ones:** rounded ends, widest round
+  the landing area, narrowing into the approach, wandering a little either
+  side of the line, instead of a straight even bar.
+- **The club's full name:** "Royal County Down Golf Club" finds nothing on
+  the map; with no results the search tries the name with Golf Course,
+  Golf Club and Golf Links, then alone.
 - **Tees and pins where they belong:** a tee point mapped on the last
   hole's green is moved off it, and a hole whose line ends with no green
   near gets its pin moved out of the water it was drawn into.
