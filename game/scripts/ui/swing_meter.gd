@@ -454,21 +454,21 @@ func _draw_modern() -> void:
 		_draw_feet_scale(mid, h)
 	elif putting():
 		# The stroke scale: a fine tick every 5 percent, 25/50/75 labelled.
-		var small := GlassTheme.font(500)
+		var small := GlassTheme.display_font(600)
 		for m in marks():
 			var x := _modern_x(m)
 			var big := major(m)
 			draw_line(Vector2(x, mid + h * 0.5 + 3.0), Vector2(x, mid + h * 0.5 + (9.0 if big else 6.0)), Color(1, 1, 1, 0.55 if big else 0.3), 1.0, true)
 			if big and m < 0.999:
-				draw_string(small, Vector2(x - 12.0, mid + h * 0.5 + 19.0), str(roundi(m * 100.0)), HORIZONTAL_ALIGNMENT_CENTER, 24.0, 9, Color(1, 1, 1, 0.45))
+				draw_string(small, Vector2(x - 12.0, mid + h * 0.5 + 19.0), str(roundi(m * 100.0)), HORIZONTAL_ALIGNMENT_CENTER, 24.0, 11, Color(1, 1, 1, 0.45))
 	else:
-		var small := GlassTheme.font(500)
+		var small := GlassTheme.display_font(600)
 		for quarter in [0.25, 0.5, 0.75, 1.0]:
 			draw_circle(Vector2(_modern_x(quarter), mid + h + 5.0), 1.6, Color(1, 1, 1, 0.45))
 			if _reads_yards():
 				# What each quarter of the swing carries with this club.
 				draw_string(small, Vector2(_modern_x(quarter) - 14.0, mid + h + 18.0), str(roundi(yards_for_value(quarter))),
-					HORIZONTAL_ALIGNMENT_CENTER, 28.0, 9, Color(1, 1, 1, 0.5))
+					HORIZONTAL_ALIGNMENT_CENTER, 28.0, 11, Color(1, 1, 1, 0.5))
 	draw_line(Vector2(snap, mid - h * 1.6), Vector2(snap, mid + h * 1.6), Color(1, 1, 1, 0.85), 2.0, true)
 	if target >= 0.0:
 		draw_circle(Vector2(_modern_x(target), mid - h - 6.0), 4.5, TARGET)
@@ -477,27 +477,27 @@ func _draw_modern() -> void:
 		_capsule(Rect2(x - 4.0, mid - 13.0, 8.0, 26.0), Color(1, 1, 1, 0.25))
 		_capsule(Rect2(x - 2.0, mid - 11.0, 4.0, 22.0), Color.WHITE)
 
-	var font := GlassTheme.font(600)
+	var font := GlassTheme.display_font(700)
 	var top := 24.0
-	draw_string(font, Vector2(MODERN_INSET, top), title(), HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color(1, 1, 1, 0.55))
+	draw_string(font, Vector2(MODERN_INSET, top), title(), HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color(1, 1, 1, 0.55))
 	if putting() and putt_feet.size() > 1 and phase != Phase.IDLE:
 		# A putt reads in feet on the level, as the scale does.
 		var at := shown if phase == Phase.BACKSWING else power
-		draw_string(font, Vector2(MODERN_INSET + 44.0, top), "%d FT" % roundi(feet_for_value(at)), HORIZONTAL_ALIGNMENT_LEFT, -1, 15, GOLD if phase != Phase.BACKSWING else Color(1, 1, 1, 0.9))
+		draw_string(font, Vector2(MODERN_INSET + 44.0, top), "%d FT" % roundi(feet_for_value(at)), HORIZONTAL_ALIGNMENT_LEFT, -1, 19, GOLD if phase != Phase.BACKSWING else Color(1, 1, 1, 0.9))
 	elif phase == Phase.BACKSWING:
-		draw_string(font, Vector2(MODERN_INSET + 52.0, top), _reading(shown), HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color(1, 1, 1, 0.9))
+		draw_string(font, Vector2(MODERN_INSET + 52.0, top), _reading(shown), HORIZONTAL_ALIGNMENT_LEFT, -1, 19, Color(1, 1, 1, 0.9))
 	elif phase == Phase.DOWNSWING or phase == Phase.DONE:
-		draw_string(font, Vector2(MODERN_INSET + 52.0, top), _reading(value_of_power()), HORIZONTAL_ALIGNMENT_LEFT, -1, 15, GOLD)
+		draw_string(font, Vector2(MODERN_INSET + 52.0, top), _reading(value_of_power()), HORIZONTAL_ALIGNMENT_LEFT, -1, 19, GOLD)
 	if phase == Phase.DONE:
 		var label := miss_text()
 		var colour := good() if accuracy == 0.0 else GOLD
-		draw_string(font, Vector2(0, top), label, HORIZONTAL_ALIGNMENT_RIGHT, size.x - MODERN_INSET, 15, colour)
+		draw_string(font, Vector2(0, top), label, HORIZONTAL_ALIGNMENT_RIGHT, size.x - MODERN_INSET, 19, colour)
 	elif phase == Phase.IDLE and putting() and hole_feet >= 0.0:
-		draw_string(font, Vector2(0, top), "HOLE %d FT" % roundi(hole_feet), HORIZONTAL_ALIGNMENT_RIGHT, size.x - MODERN_INSET, 12, Color(1, 1, 1, 0.6))
+		draw_string(font, Vector2(0, top), "HOLE %d FT" % roundi(hole_feet), HORIZONTAL_ALIGNMENT_RIGHT, size.x - MODERN_INSET, 14, Color(1, 1, 1, 0.6))
 	elif phase == Phase.IDLE and _reads_yards():
-		draw_string(font, Vector2(0, top), "FULL %d YD CARRY" % roundi(yards_for_value(1.0)), HORIZONTAL_ALIGNMENT_RIGHT, size.x - MODERN_INSET, 12, Color(1, 1, 1, 0.6))
+		draw_string(font, Vector2(0, top), "FULL %d YD CARRY" % roundi(yards_for_value(1.0)), HORIZONTAL_ALIGNMENT_RIGHT, size.x - MODERN_INSET, 14, Color(1, 1, 1, 0.6))
 	elif phase == Phase.IDLE:
-		draw_string(font, Vector2(0, top), "CLICK TO PUTT" if putting() else "CLICK TO SWING", HORIZONTAL_ALIGNMENT_RIGHT, size.x - MODERN_INSET, 12, Color(1, 1, 1, 0.45))
+		draw_string(font, Vector2(0, top), "CLICK TO PUTT" if putting() else "CLICK TO SWING", HORIZONTAL_ALIGNMENT_RIGHT, size.x - MODERN_INSET, 14, Color(1, 1, 1, 0.45))
 
 
 ## The meter value the power click landed on (`power` is a share of full
@@ -521,7 +521,7 @@ func _reading(v: float) -> String:
 ## The putting meter's scale in feet on the level: ticks at round
 ## distances, labelled sparsely, and the hole's distance as a small flag.
 func _draw_feet_scale(mid: float, h: float) -> void:
-	var small := GlassTheme.font(500)
+	var small := GlassTheme.display_font(600)
 	var top_ft := putt_feet[putt_feet.size() - 1]
 	var step := 5.0 if top_ft <= 60.0 else 10.0
 	var label_every := 10.0 if top_ft <= 60.0 else 20.0
@@ -534,7 +534,7 @@ func _draw_feet_scale(mid: float, h: float) -> void:
 			var big := is_zero_approx(fmod(ft, label_every))
 			draw_line(Vector2(x, mid + h * 0.5 + 3.0), Vector2(x, mid + h * 0.5 + (9.0 if big else 6.0)), Color(1, 1, 1, 0.55 if big else 0.3), 1.0, true)
 			if big and x - last_label > 26.0:
-				draw_string(small, Vector2(x - 14.0, mid + h * 0.5 + 19.0), "%d'" % roundi(ft), HORIZONTAL_ALIGNMENT_CENTER, 28.0, 9, Color(1, 1, 1, 0.5))
+				draw_string(small, Vector2(x - 14.0, mid + h * 0.5 + 19.0), "%d'" % roundi(ft), HORIZONTAL_ALIGNMENT_CENTER, 28.0, 11, Color(1, 1, 1, 0.5))
 				last_label = x
 		ft += step
 	if hole_feet >= 0.0:

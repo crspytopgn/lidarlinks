@@ -120,9 +120,9 @@ func _draw() -> void:
 	var at := c + Vector2(float(_curve) / ShotShape.MAX_CURVE, float(_height) / ShotShape.MAX_HEIGHT) * r * 0.78
 	draw_circle(at, 5.0, DOT)
 	draw_arc(at, 5.0, 0.0, TAU, 16, Color(0, 0, 0, 0.6), 1.0, true)
-	var font := get_theme_default_font()
-	var fs := 12
-	var text := describe()
+	var font := GlassTheme.display_font(600) if modern else get_theme_default_font()
+	var fs := 14 if modern else 12
+	var text := describe().to_upper() if modern else describe()
 	var w := font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x
 	var base := Vector2(c.x - w * 0.5, c.y + r + 16.0)
 	draw_string_outline(font, base, text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, 4, Color(0, 0, 0, 0.8))

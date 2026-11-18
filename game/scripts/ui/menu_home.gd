@@ -26,6 +26,8 @@ const NAV := ["Courses", "Players", "Settings", "Quit"]
 const GOLD := Color(0.914, 0.78, 0.4)
 const TILE_SIZE := Vector2(212, 196)
 const RADIUS := 22.0
+## Glass showing round each tile's photo: a thin edge, not a coloured mat.
+const FRAME := 3.0
 
 const GLASS_SHADER := """
 shader_type canvas_item;
@@ -105,7 +107,7 @@ static var _art_cache := {}
 ## community links.
 var info: VBoxContainer
 var title: Label
-var _tiles: HFlowContainer
+var _tiles: GridContainer
 var _extras: HFlowContainer
 var _nav: HBoxContainer
 var _blurred: Texture2D
@@ -118,6 +120,9 @@ var _page: VBoxContainer
 func _init() -> void:
 	name = "MenuHome"
 	horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	# A console menu fits the screen; a scroll bar reads as a web page. It
+	# still scrolls (wheel, touch, focus) on a very short window.
+	vertical_scroll_mode = ScrollContainer.SCROLL_MODE_SHOW_NEVER
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	var margin := MarginContainer.new()
 	margin.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -161,7 +166,9 @@ func _init() -> void:
 	var gap2 := Control.new()
 	gap2.custom_minimum_size = Vector2(0, 18)
 	_page.add_child(gap2)
-	_tiles = HFlowContainer.new()
+	# An even grid: one row up to four tiles, else two equal rows, so no
+	# tile is left stretched alone on a row.
+	_tiles = GridContainer.new()
 	_tiles.add_theme_constant_override("h_separation", 18)
 	_tiles.add_theme_constant_override("v_separation", 18)
 	var tiles_margin := MarginContainer.new()
@@ -232,6 +239,7 @@ func set_items(items: Array, primary: int) -> Button:
 			_tiles.add_child(b)
 			_enter(b, n)
 			n += 1
+			_tiles.columns = n if n <= 4 else ceili(n / 2.0)
 		elif label in NAV:
 			b = _nav_button(label)
 			_nav.add_child(b)
@@ -241,6 +249,7 @@ func set_items(items: Array, primary: int) -> Button:
 		b.pressed.connect(item[1])
 		if i == primary:
 			focus = b
+	_fit()
 	return focus
 
 
@@ -351,15 +360,15 @@ func _tile(label: String, art: String, line: String) -> Button:
 	pic.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	pic.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	for side in ["left", "top"]:
-		pic.set("offset_" + side, 7.0)
+		pic.set("offset_" + side, FRAME)
 	for side in ["right", "bottom"]:
-		pic.set("offset_" + side, -7.0)
+		pic.set("offset_" + side, -FRAME)
 	if _picture_shader == null:
 		_picture_shader = Shader.new()
 		_picture_shader.code = PICTURE_SHADER
 	var pm := ShaderMaterial.new()
 	pm.shader = _picture_shader
-	pm.set_shader_parameter("radius", RADIUS - 7.0)
+	pm.set_shader_parameter("radius", RADIUS - FRAME)
 	pic.material = pm
 	pic.resized.connect(func() -> void: pm.set_shader_parameter("box_size", pic.size))
 	b.add_child(pic)
@@ -447,6 +456,13 @@ func _fit() -> void:
 	var vp := get_viewport_rect().size if is_inside_tree() else Vector2(1280, 720)
 	_page.custom_minimum_size.y = vp.y - 42.0
 	info.custom_minimum_size.x = minf(720.0, vp.x - 120.0)
+	# Tiles share what the hero leaves, so the page fits without scrolling.
+	var tiles := _tiles.get_children().filter(func(t: Node) -> bool: return not t.is_queued_for_deletion())
+	var rows := 1 if tiles.size() <= 4 else 2
+	title.add_theme_font_size_override("font_size", int(clampf(vp.y * 0.125, 76.0, 112.0)))
+	var h := clampf((vp.y - 480.0) / rows - 18.0, 104.0, TILE_SIZE.y + 24.0)
+	for t: Control in tiles:
+		t.custom_minimum_size.y = h
 	for mat in _glass:
 		_fit_one(mat)
 
