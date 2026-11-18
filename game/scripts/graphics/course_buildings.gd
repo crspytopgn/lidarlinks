@@ -10,6 +10,9 @@ extends MeshInstance3D
 const SHADER := preload("res://shaders/building.gdshader")
 const OVERHANG := 0.3  ## metres the roof reaches past the walls
 const FOOTING := 0.6  ## metres the walls go below the lowest ground
+const CHIMNEY_RISE := 1.1  ## metres a chimney stands above the ridge
+const PARAPET_HIGH := 0.6  ## a flat roof's parapet
+const PARAPET_THICK := 0.3
 ## Buildings drawn round a hole: within this of the line from tee to pin.
 const REACH := 900.0
 
@@ -140,8 +143,114 @@ static func add_building(st: SurfaceTool, b: CourseBuilding, terrain: CourseTerr
 	match b.roof:
 		"gabled", "hipped":
 			_pitched(st, b, y0, cols)
+			_chimneys(st, b, y0, cols)
 		_:
 			_flat(st, pts, top, cols[1])
+			_parapet(st, pts, top, cols)
+			_plant_room(st, b, top)
+
+
+## Prism walls round `ring` (counter-clockwise as add_building walks it)
+## from y0 to y1, facing out (or in, with `inward`), plain wall.
+static func _prism(st: SurfaceTool, ring: PackedVector2Array, y0: float, y1: float, colour: Color, inward := false) -> void:
+	var along := 0.0
+	for i in ring.size():
+		var p := ring[i]
+		var q := ring[(i + 1) % ring.size()]
+		var len := p.distance_to(q)
+		if len < 0.02:
+			continue
+		if inward:
+			_quad(st, colour, Vector3(p.x, y0, p.y), Vector3(q.x, y0, q.y), Vector3(q.x, y1, q.y), Vector3(p.x, y1, p.y),
+				Vector2(along, 0), Vector2(along + len, 0), Vector2(along + len, y1 - y0), Vector2(along, y1 - y0), Vector2.ZERO)
+		else:
+			_quad(st, colour, Vector3(q.x, y0, q.y), Vector3(p.x, y0, p.y), Vector3(p.x, y1, p.y), Vector3(q.x, y1, q.y),
+				Vector2(along + len, 0), Vector2(along, 0), Vector2(along, y1 - y0), Vector2(along + len, y1 - y0), Vector2.ZERO)
+		along += len
+
+
+## Corners of a box about `c` along `u`, counter-clockwise as add_building
+## walks a ring.
+static func _box_ring(c: Vector2, u: Vector2, half: Vector2) -> PackedVector2Array:
+	var v := Vector2(-u.y, u.x)
+	var ring := PackedVector2Array([c - u * half.x - v * half.y, c + u * half.x - v * half.y, c + u * half.x + v * half.y, c - u * half.x + v * half.y])
+	if CourseBuilding.new(ring).area() < 0.0:
+		ring.reverse()
+	return ring
+
+
+## Brick chimney stacks on the ridge of a house or clubhouse (one or two,
+## by the building's hash), capped: a roofline of bare slopes read as a toy.
+static func _chimneys(st: SurfaceTool, b: CourseBuilding, y0: float, cols: Array[Color]) -> void:
+	if not b.kind in ["house", "bungalow", "clubhouse"]:
+		return
+	var h := _hash(b)
+	if h % 7 == 0:
+		return
+	var box := b.oriented_box()
+	var half: Vector2 = box["half"]
+	if half.x < 2.5 or half.y < 2.0:
+		return
+	var u: Vector2 = box["axis"]
+	var c: Vector2 = box["centre"]
+	var reach := half.x - (half.y if b.roof == "hipped" else 0.0) - 0.8
+	var at: Array[float] = [reach * (0.55 if h % 3 == 0 else 1.0)]
+	if h % 2 == 0 and reach > 1.5:
+		at.append(-reach)
+	var stack := Color(0.46, 0.29, 0.21) if cols[0].a < 0.75 or cols[0].get_luminance() > 0.5 else cols[0]
+	stack.a = 1.0
+	for a in at:
+		var ring := _box_ring(c + u * clampf(a, -half.x + 0.6, half.x - 0.6), u, Vector2(0.45, 0.35 if b.kind == "bungalow" else 0.45))
+		var top := y0 + b.ridge + CHIMNEY_RISE
+		_prism(st, ring, y0 + b.ridge - 1.2, top, stack)
+		_flat(st, ring, top, Color(0.3, 0.28, 0.26))
+
+
+## A low parapet round a flat roof (its wall carried up, with an inner face
+## and a coping), so the roof reads as a roof and not a lid.
+static func _parapet(st: SurfaceTool, pts: PackedVector2Array, top: float, cols: Array[Color]) -> void:
+	var inner := Geometry2D.offset_polygon(pts, -PARAPET_THICK)
+	if inner.size() != 1:
+		return
+	var ring: PackedVector2Array = inner[0]
+	if CourseBuilding.new(ring).area() < 0.0:
+		ring.reverse()
+	var wall := cols[0]
+	wall.a = 1.0
+	_prism(st, pts, top, top + PARAPET_HIGH, cols[0])
+	_prism(st, ring, top, top + PARAPET_HIGH, wall * 0.85, true)
+	# The coping: the strip between the two rings, a shade lighter.
+	var cope := Color(0.62, 0.6, 0.56)
+	for i in pts.size():
+		var j := (i + 1) % pts.size()
+		var quad := PackedVector2Array([pts[i], pts[j], ring[_nearest(ring, pts[j])], ring[_nearest(ring, pts[i])]])
+		if absf(CourseBuilding.new(quad).area()) > 0.01:
+			_flat(st, quad, top + PARAPET_HIGH, cope)
+
+
+static func _nearest(ring: PackedVector2Array, p: Vector2) -> int:
+	var best := 0
+	for i in ring.size():
+		if ring[i].distance_squared_to(p) < ring[best].distance_squared_to(p):
+			best = i
+	return best
+
+
+## A plant room or lift housing on a big flat roof.
+static func _plant_room(st: SurfaceTool, b: CourseBuilding, top: float) -> void:
+	if absf(b.area()) < 300.0:
+		return
+	var box := b.oriented_box()
+	var half: Vector2 = box["half"]
+	if half.x < 6.0 or half.y < 5.0:
+		return
+	var h := _hash(b)
+	var u: Vector2 = box["axis"]
+	var off := u * half.x * (float(h % 5) / 10.0 - 0.2)
+	var ring := _box_ring(box["centre"] + off, u, Vector2(minf(3.0, half.x * 0.3), minf(2.2, half.y * 0.3)))
+	var grey := Color(0.55, 0.55, 0.53)
+	_prism(st, ring, top, top + 2.2, grey)
+	_flat(st, ring, top + 2.2, grey * 0.8)
 
 
 ## A flat roof, with a low parapet's worth of edge darkening in the shader.

@@ -15,6 +15,10 @@ const URL := "https://s3.amazonaws.com/elevation-tiles-prod/terrarium/%d/%d/%d.p
 const TILE := 256
 const MAX_ZOOM := 15  ## the finest level the tiles have
 const MAX_TILES := 36
+## Share of whole-metre pixels that marks rounded data: fine data has about
+## 1 in 150 by chance; SRTM resampled to the tiles keeps a third or more
+## (Royal County Down 36 %) on its flat shelves.
+const WHOLE_SHARE := 0.1
 
 var zoom := MAX_ZOOM
 var origin := Vector2i.ZERO  ## the top-left tile
@@ -126,6 +130,27 @@ func height_at(lat: float, lon: float) -> float:
 	var a := lerpf(_h[k], _h[k + 1], fu)
 	var b := lerpf(_h[k + w], _h[k + w + 1], fu)
 	return lerpf(a, b, fv)
+
+
+## The height step the tiles' source was rounded to: 1 m where most of
+## their pixels are whole metres (SRTM and other open data stored as whole
+## metres, which on flat links land reads as terraces a metre high and tens
+## of metres wide), else 0.
+func height_step() -> float:
+	var n := 0
+	var whole := 0
+	for k in range(0, _h.size(), 97):
+		if _have[_tile_of(k)] == 0:
+			continue
+		n += 1
+		if absf(_h[k] - roundf(_h[k])) < 0.003:
+			whole += 1
+	return 1.0 if n >= 100 and whole >= n * WHOLE_SHARE else 0.0
+
+
+func _tile_of(k: int) -> int:
+	var w := count.x * TILE
+	return (floori(float(k) / w) / TILE) * count.x + (k % w) / TILE
 
 
 ## Ground size of one pixel at a latitude, in metres.

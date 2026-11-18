@@ -206,23 +206,38 @@ static func _box(surface: int, centre: Vector2, dir: Vector2, half: Vector2) -> 
 	return CourseShape.new(surface, pts)
 
 
-## A fairway along the line from `start` to `stop` metres: full width in
-## the middle, narrowing toward each end, with gently wandering edges.
+## A fairway along the line from `start` to `stop` metres, as one is mown:
+## rounded at its start, widest round the landing area, narrowing into the
+## approach, its middle wandering a little either side of the line and its
+## edges in long, gentle curves (a straight bar of even width with square
+## ends read as a strip of carpet on a course mapped only as hole lines).
 static func _fairway(line: PackedVector2Array, start: float, stop: float, width: float, rng: RandomNumberGenerator) -> CourseShape:
-	var count := maxi(3, ceili((stop - start) / FAIRWAY_STEP))
+	var count := maxi(5, ceili((stop - start) / FAIRWAY_STEP))
+	var phase := Vector4(rng.randf() * TAU, rng.randf() * TAU, rng.randf() * TAU, rng.randf() * TAU)
 	var left := PackedVector2Array()
 	var right := PackedVector2Array()
+	var halves := PackedFloat32Array()
 	for k in count + 1:
 		var t := float(k) / count
 		var d := lerpf(start, stop, t)
-		var p := _point_at(line, d)
-		var side := _dir_at(line, d).orthogonal()
-		var half := width * 0.5 * (0.7 + 0.3 * sin(PI * t))
-		left.append(p + side * half * rng.randf_range(0.9, 1.1))
-		right.append(p - side * half * rng.randf_range(0.9, 1.1))
+		var dir := _dir_at(line, d)
+		var side := dir.orthogonal()
+		var wander := sin(t * PI * 1.3 + phase.x) * 0.6 + sin(t * PI * 2.9 + phase.y) * 0.3
+		var p := _point_at(line, d) + side * wander * width * 0.1
+		var profile := lerpf(0.45, 1.0, smoothstep(0.0, 0.22, t)) * lerpf(1.0, 0.7, smoothstep(0.7, 1.0, t))
+		var half := width * 0.5 * profile
+		halves.append(half)
+		left.append(p + side * half * (1.0 + 0.08 * sin(t * PI * 3.7 + phase.z)))
+		right.append(p - side * half * (1.0 + 0.08 * sin(t * PI * 3.3 + phase.w)))
+	# Rounded ends: a point out beyond each end on the middle line.
+	var end_dir := _dir_at(line, stop)
+	var start_dir := _dir_at(line, start)
+	var ring := left
+	ring.append((left[count] + right[count]) * 0.5 + end_dir * halves[count] * 0.6)
 	right.reverse()
-	left.append_array(right)
-	return CourseShape.new(Surface.Type.FAIRWAY, left)
+	ring.append_array(right)
+	ring.append((left[0] + right[right.size() - 1]) * 0.5 - start_dir * halves[0] * 0.8)
+	return CourseShape.new(Surface.Type.FAIRWAY, ring)
 
 
 ## Whether a point is on (or just beside) one of the course's paths.

@@ -25,6 +25,10 @@ const ROW_SPACING := 7.0  ## metres between trees in a tree row
 const LOW_GROUND := -12.0  ## heights below this (sea floor) are raised to it
 const MAX_POINTS := 90  ## control points per area at most
 const STREAM_PIECE := 60.0  ## streams are split so each piece has its own water line
+const STREAM_PIECE_DROP := 0.3  ## metres a piece's ground may fall along it
+const GREEN_BANK := 3.0  ## metres of dry bank kept round a green in a pond
+const TEE_BANK := 2.0
+const BRIDGE := 3.0  ## metres: the causeway out to a green inside a pond
 ## Metres either side of a hole's line of play kept free of found trees
 ## (crowns the lidar or photo put on the line: Hirono's 12th had 93).
 const LINE_CLEAR := 8.0
@@ -100,6 +104,9 @@ var extra_credits: PackedStringArray = []
 ## Metres to smooth the ground over: coarse open elevation tiles (no lidar)
 ## are speckled and step at their tile edges (CoursePlayability).
 var ground_smooth := 0.0
+## The step the ground's source was rounded to (TerrainTiles.height_step):
+## its terraces are eased out (CoursePlayability.unterrace).
+var ground_step := 0.0
 ## What CoursePlayability changed in the last build: {"greens", "tees", "par3_tees"}.
 var playability := {}
 ## Every golf course outline in the map: {"name", "box", "rings"}.
@@ -251,10 +258,10 @@ func _course_from_name(d: Dictionary) -> String:
 ## Springs".
 static func short_name(club: String) -> String:
 	var out := club.strip_edges()
-	for w in [" Golf Course", " Golf Club", " Golf Links", " Country Club", " Golf & Country Club", " Golf and Country Club", " Golf Resort"]:
-		if out.ends_with(w):
-			out = out.trim_suffix(w)
-	if out.begins_with("The ") and out.length() > 12:
+	for w: String in [" Golf Course", " Golf Club", " Golf Links", " Country Club", " Golf & Country Club", " Golf and Country Club", " Golf Resort"]:
+		if out.to_lower().ends_with(w.to_lower()):
+			out = out.left(out.length() - w.length())
+	if out.to_lower().begins_with("the ") and out.length() > 12:
 		out = out.substr(4)
 	return out
 
@@ -328,14 +335,18 @@ func build_steps(c: DesignedCourse, height: Callable, fallback := Callable()) ->
 	if not cached:
 		for j0 in range(0, c.rows, rows):
 			steps.append(_fill_height_rows.bind(c, j0, mini(j0 + rows, c.rows), height, fallback, fill))
+	if not cached:
+		steps.append(func() -> void:
+			_finish_heights(c, fallback, fill)
+			if ground_smooth > 0.0:
+				CoursePlayability.smooth_ground(c, ground_smooth))
+		if ground_step > 0.0:
+			steps.append(func() -> void: CoursePlayability.unterrace(c, ground_step))
 	steps.append(func() -> void:
 		if cached:
 			c.heights = _ground_cache.duplicate()
 			c.source["base_height"] = _ground_base
 		else:
-			_finish_heights(c, fallback, fill)
-			if ground_smooth > 0.0:
-				CoursePlayability.smooth_ground(c, ground_smooth)
 			_ground_cache = c.heights.duplicate()
 			_ground_base = c.source["base_height"]
 		if lidar_ground:
@@ -363,6 +374,7 @@ func build_steps(c: DesignedCourse, height: Callable, fallback := Callable()) ->
 	# (one a step: St Andrews' double greens are big), level tees, par 3s a
 	# driver reaches.
 	steps.append(func() -> void:
+		untangle_shapes(c)
 		playability = {"greens": 0, "tees": CoursePlayability.level_tees(c), "par3_tees": CoursePlayability.trim_par3_tees(c)}
 		var greens: Array[CourseShape] = []
 		for s in c.shapes:
@@ -759,6 +771,15 @@ func _finish_heights(c: DesignedCourse, _fallback: Callable, fill: Dictionary) -
 
 
 func _add_shapes(c: DesignedCourse) -> void:
+	# Greens and tees with a bank round them, kept out of the water: a pond
+	# mapped round an island or peninsula green without its inner ring
+	# (Leopard Creek's 18th) drowned the green.
+	var dry: Array[PackedVector2Array] = []
+	for surface: int in [Surface.Type.GREEN, Surface.Type.TEE]:
+		for ring in _rings_of(surface):
+			var grown := Geometry2D.offset_polygon(ring, GREEN_BANK if surface == Surface.Type.GREEN else TEE_BANK)
+			if not grown.is_empty():
+				dry.append(grown[0])
 	for d in _polys:
 		if d.has("wood"):
 			continue
@@ -775,15 +796,21 @@ func _add_shapes(c: DesignedCourse) -> void:
 			pts = smooth_ring(d["ring"], 1.0, 1)
 		else:
 			pts = simplify_ring(d["ring"], TOLERANCE.get(surface, 0.5))
-		if pts.size() >= 3:
-			var shape := CourseShape.new(surface, pts)
-			shape.cover = str(d.get("cover", ""))
-			c.shapes.append(shape)
+		var parts: Array[PackedVector2Array] = [pts]
+		if surface == Surface.Type.WATER:
+			parts = dry_out(pts, dry)
+		for part in parts:
+			if part.size() >= 3:
+				var shape := CourseShape.new(surface, part)
+				shape.cover = str(d.get("cover", ""))
+				c.shapes.append(shape)
 	for s in _streams:
 		var line: PackedVector2Array = s["line"]
-		for piece in _split_line(simplify_line(line, 0.8), STREAM_PIECE):
+		for piece in stream_pieces(c, smooth_line(simplify_line(line, 0.8)), STREAM_PIECE, STREAM_PIECE_DROP):
 			if piece.size() >= 2 and area.grow(-2.0).has_point(piece[0]):
-				c.shapes.append(CourseShape.strip(Surface.Type.WATER, piece, s["width"]))
+				var ring := ribbon(piece, s["width"])
+				if ring.size() >= 3:
+					c.shapes.append(CourseShape.new(Surface.Type.WATER, ring))
 
 
 func _add_holes(c: DesignedCourse) -> void:
@@ -1496,21 +1523,147 @@ static func _resample(line: PackedVector2Array, step: float) -> PackedVector2Arr
 
 
 ## A line cut into pieces about `length` metres long (sharing their ends).
-static func _split_line(line: PackedVector2Array, length: float) -> Array[PackedVector2Array]:
+## A stream's line cut into pieces each with its own water line: at most
+## `length` long and falling at most `drop` over the ground `c` has (a
+## piece's water sits at its lowest bank, so on a slope a long piece left
+## its top end's water far down a trench).
+static func stream_pieces(c: DesignedCourse, line: PackedVector2Array, length: float, drop: float) -> Array[PackedVector2Array]:
 	var out: Array[PackedVector2Array] = []
-	var piece := PackedVector2Array()
-	var run := 0.0
+	var dense := PackedVector2Array()
 	for i in line.size():
 		if i > 0:
-			run += line[i - 1].distance_to(line[i])
-		piece.append(line[i])
-		if run >= length and piece.size() >= 2:
+			var n := ceili(line[i - 1].distance_to(line[i]) / 4.0)
+			for k in range(1, n):
+				dense.append(line[i - 1].lerp(line[i], float(k) / n))
+		dense.append(line[i])
+	var piece := PackedVector2Array()
+	var run := 0.0
+	var lo := INF
+	var hi := -INF
+	for i in dense.size():
+		var h := c.base_height(dense[i].x, dense[i].y)
+		if i > 0:
+			run += dense[i - 1].distance_to(dense[i])
+		if piece.size() >= 2 and (run > length or maxf(hi, h) - minf(lo, h) > drop):
 			out.append(piece)
-			piece = PackedVector2Array([line[i]])
-			run = 0.0
+			piece = PackedVector2Array([dense[i - 1]])
+			run = dense[i - 1].distance_to(dense[i])
+			lo = c.base_height(dense[i - 1].x, dense[i - 1].y)
+			hi = lo
+		piece.append(dense[i])
+		lo = minf(lo, h)
+		hi = maxf(hi, h)
 	if piece.size() >= 2:
 		out.append(piece)
+	for k in out.size():
+		out[k] = simplify_line(out[k], 0.3)
 	return out
+
+
+## The outline of a `width` wide ribbon along `line`, round at its bends
+## and ends (offset by miters, a stream's tight bends folded over themselves
+## into jagged, crossed outlines).
+static func ribbon(line: PackedVector2Array, width: float) -> PackedVector2Array:
+	var best := PackedVector2Array()
+	var area := 0.0
+	for ring: PackedVector2Array in Geometry2D.offset_polyline(line, width * 0.5, Geometry2D.JOIN_ROUND, Geometry2D.END_ROUND):
+		var a := absf(_ring_area(ring))  # the outline, not a hole in it
+		if a > area:
+			area = a
+			best = ring
+	# Evenly spaced: the outline is drawn as a curve through these points,
+	# which overshot across a thin ribbon where an arc's short steps met a
+	# long side.
+	return smooth_ring(best, clampf(width * 0.5, 0.75, 3.0), 0) if best.size() > 3 else best
+
+
+## Respaces the points of every shape whose drawn outline crosses itself
+## (the curve through a few uneven points overshoots: a narrow green or a
+## fairway's thin neck folded over, and the 2 m grid then drew it in
+## jagged bits); returns how many.
+static func untangle_shapes(c: DesignedCourse) -> int:
+	var fixed := 0
+	for s in c.shapes:
+		if s.points.size() < 4 or not Geometry2D.triangulate_polygon(s.outline()).is_empty():
+			continue
+		var b := s.bounds()
+		for spacing: float in [clampf(minf(b.size.x, b.size.y) * 0.15, 0.75, 4.0), 0.75]:
+			var pts := smooth_ring(s.points, spacing, 0)
+			var test := CourseShape.new(s.surface, pts)
+			if not Geometry2D.triangulate_polygon(test.outline()).is_empty():
+				s.points = pts
+				s.changed()
+				fixed += 1
+				break
+	return fixed
+
+
+## `ring` with each of `dry` cut out of it, as rings without holes (a
+## shape has none): a dry area wholly inside is joined to the nearest shore
+## by a causeway BRIDGE metres wide, as an island green's walkway.
+static func dry_out(ring: PackedVector2Array, dry: Array[PackedVector2Array]) -> Array[PackedVector2Array]:
+	var parts: Array[PackedVector2Array] = [ring]
+	var box := _ring_box(ring)
+	for hole in dry:
+		if not box.intersects(_ring_box(hole)):
+			continue
+		var next: Array[PackedVector2Array] = []
+		for part in parts:
+			var cut := Geometry2D.clip_polygons(part, hole)
+			if _holed(cut):
+				var c := _ring_box(hole).get_center()
+				var shore := c
+				var best := INF
+				for i in part.size():
+					var q := Geometry2D.get_closest_point_to_segment(c, part[i], part[(i + 1) % part.size()])
+					if q.distance_squared_to(c) < best:
+						best = q.distance_squared_to(c)
+						shore = q
+				var dir := (shore - c).normalized()
+				var side := dir.orthogonal() * BRIDGE * 0.5
+				var far := shore + dir * 2.0
+				var band := PackedVector2Array([c - side, far - side, far + side, c + side])
+				var both := Geometry2D.merge_polygons(hole, band)
+				cut = Geometry2D.clip_polygons(part, both[0]) if both.size() == 1 else cut
+				if _holed(cut):
+					next.append(part)  # left as it was
+					continue
+			for r in cut:
+				if absf(_ring_area(r)) >= 4.0:
+					next.append(r)
+		parts = next
+	return parts
+
+
+## True when the clipped rings hold a hole (a ring inside another).
+static func _holed(rings: Array[PackedVector2Array]) -> bool:
+	for a in rings:
+		for b in rings:
+			if a != b and Geometry2D.is_point_in_polygon(a[0], b):
+				return true
+	return false
+
+
+static func _ring_box(ring: PackedVector2Array) -> Rect2:
+	var r := Rect2(ring[0], Vector2.ZERO)
+	for p in ring:
+		r = r.expand(p)
+	return r
+
+
+## Chaikin's corner cutting on an open line, ends kept: a stream's mapped
+## line bends in sharp corners every few metres.
+static func smooth_line(line: PackedVector2Array, passes := 2) -> PackedVector2Array:
+	for _p in passes:
+		if line.size() < 3:
+			return line
+		var out := PackedVector2Array([line[0]])
+		for i in line.size() - 1:
+			out.append(line[i].lerp(line[i + 1], 0.25))
+			out.append(line[i].lerp(line[i + 1], 0.75))
+		out.append(line[line.size() - 1])
+		line = out
+	return line
 
 
 ## Douglas-Peucker simplification of an open line.

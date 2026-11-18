@@ -28,6 +28,9 @@ func run_all() -> Array[String]:
 	_test_retries()
 	_test_map_servers()
 	_test_playable_on_a_hillside()
+	_test_terraces_eased_out()
+	_test_streams_hold_water()
+	_test_island_green_kept_dry()
 	_test_playability_steps()
 	_test_courses_at_a_club()
 	_test_boundary_by_name()
@@ -922,6 +925,111 @@ func _test_playable_on_a_hillside() -> void:
 	var far_a := c.base_height(-170 + shift.x, -100 + shift.y)
 	var far_b := c.base_height(-170 + shift.x, 0 + shift.y)
 	check(absf((far_b - far_a) - 11.0) < 1.5, "the hillside away from the greens keeps its 11 %% (%.1f m in 100 m)" % (far_b - far_a))
+
+
+## Ground rounded to whole metres (SRTM): a gentle 1 % fall reads as
+## shelves 100 m wide with a 1 m step between them; unterrace gives back the
+## slope with no step, and leaves a steep bank's shape. The tiles tell
+## rounded data from fine data.
+func _test_terraces_eased_out() -> void:
+	var c := DesignedCourse.blank(Vector2(800, 800))
+	var steep := DesignedCourse.blank(Vector2(400, 400))
+	for j in c.rows:
+		for i in c.cols:
+			c.heights[j * c.cols + i] = floorf(c.sample_pos(i, j).x * 0.01)
+	for j in steep.rows:
+		for i in steep.cols:
+			steep.heights[j * steep.cols + i] = roundf(steep.sample_pos(i, j).x * 0.2)
+	CoursePlayability.unterrace(c, 1.0)
+	CoursePlayability.unterrace(steep, 1.0)
+	var jump := 0.0
+	var off := 0.0
+	var mid := c.rows / 2
+	for i in range(c.cols / 4, c.cols * 3 / 4):
+		var k := mid * c.cols + i
+		jump = maxf(jump, absf(c.heights[k + 1] - c.heights[k]))
+		off = maxf(off, absf(c.heights[k] - (c.sample_pos(i, mid).x * 0.01 - 0.5)))
+	check(jump < 0.08, "no step left between the terraces (largest %.2f m between samples)" % jump)
+	check(off < 0.35, "the eased ground follows the real fall (off by %.2f m)" % off)
+	var rise := steep.heights[(steep.rows / 2) * steep.cols + steep.cols * 3 / 4] - steep.heights[(steep.rows / 2) * steep.cols + steep.cols / 4]
+	check(absf(rise - 40.0) < 2.0, "a steep bank keeps its rise (%.1f m over 200 m)" % rise)
+	var tiles := TerrainTiles.for_box(54.0, -6.0, 54.001, -5.999)
+	var rgb := PackedByteArray()
+	rgb.resize(TerrainTiles.TILE * TerrainTiles.TILE * 3)
+	for k in TerrainTiles.TILE * TerrainTiles.TILE:
+		rgb[k * 3] = 128
+		rgb[k * 3 + 1] = 3 + k % 5
+	tiles.set_tile_rgb(0, rgb)
+	check(tiles.height_step() == 1.0, "whole-metre tiles are found rounded")
+	for k in TerrainTiles.TILE * TerrainTiles.TILE:
+		rgb[k * 3 + 2] = (k * 37) % 256
+	tiles.set_tile_rgb(0, rgb)
+	check(tiles.height_step() == 0.0, "fine tiles are not")
+
+
+## A burn 3 m wide winding down a 2 % slope in tight bends: its outline
+## doesn't cross itself, each piece falls no more than STREAM_PIECE_DROP,
+## and along its middle the ground is dug under the water line (it used to
+## show as a dark, jagged trench with hardly any water in it).
+func _test_streams_hold_water() -> void:
+	var c := DesignedCourse.blank(Vector2(300, 300))
+	for j in c.rows:
+		for i in c.cols:
+			c.heights[j * c.cols + i] = 5.0 - c.sample_pos(i, j).y * 0.02
+	var line := PackedVector2Array()
+	for k in 25:
+		line.append(Vector2(-20.0 + (k % 2) * 14.0, -120.0 + k * 10.0))
+	var pieces := RealCourseBuilder.stream_pieces(c, RealCourseBuilder.smooth_line(line), RealCourseBuilder.STREAM_PIECE, RealCourseBuilder.STREAM_PIECE_DROP)
+	check(pieces.size() >= 12, "a stream down a 2 %% slope is cut into short pieces (%d)" % pieces.size())
+	var crossed := 0
+	for piece in pieces:
+		var lo := INF
+		var hi := -INF
+		for p in piece:
+			lo = minf(lo, c.base_height(p.x, p.y))
+			hi = maxf(hi, c.base_height(p.x, p.y))
+		check(hi - lo <= RealCourseBuilder.STREAM_PIECE_DROP + 0.1, "a piece falls %.2f m" % (hi - lo))
+		for w in [3.0, 12.0]:
+			var shape := CourseShape.new(Surface.Type.WATER, RealCourseBuilder.ribbon(piece, w))
+			if Geometry2D.triangulate_polygon(shape.outline()).is_empty():
+				crossed += 1
+			if w == 3.0:
+				c.shapes.append(shape)
+	check(crossed == 0, "no stream outline crosses itself (%d did)" % crossed)
+	# A thin neck between two long sides: the curve through these few
+	# points folds over; untangle_shapes respaces them.
+	var neck := DesignedCourse.blank(Vector2(200, 200))
+	neck.shapes.append(CourseShape.new(Surface.Type.FAIRWAY, PackedVector2Array([Vector2(-60, -2), Vector2(-1, -0.6), Vector2(60, -2), Vector2(60, 2), Vector2(1, 0.6), Vector2(-60, 2)])))
+	var folded := Geometry2D.triangulate_polygon(neck.shapes[0].outline()).is_empty()
+	RealCourseBuilder.untangle_shapes(neck)
+	check(Geometry2D.triangulate_polygon(neck.shapes[0].outline()).size() > 0, "a folded outline is untangled (folded before: %s)" % folded)
+	var t := DesignedTerrain.new(c)
+	var dry := 0
+	for k in pieces.size():
+		var mid := pieces[k][pieces[k].size() / 2]
+		if t.height_at(mid.x, mid.y) > t.water_level(c.shapes[k]) - 0.25:
+			dry += 1
+	var n := pieces.size()
+	check(dry <= n / 10, "the burn's middle lies under its water (%d of %d pieces dry)" % [dry, n])
+
+
+## A pond mapped round an island green with no inner ring (Leopard Creek's
+## 18th): the green and a bank round it are cut out, joined to the shore by
+## a causeway so the pond stays one shape; a green half in a pond trims it.
+func _test_island_green_kept_dry() -> void:
+	var pond := PackedVector2Array(_rect(Vector2(-60, -60), Vector2(60, 60))).slice(0, 4)
+	var green := PackedVector2Array(_rect(Vector2(-12, -10), Vector2(12, 10))).slice(0, 4)
+	var parts := RealCourseBuilder.dry_out(pond, [green])
+	check(parts.size() == 1, "the pond stays one shape (%d)" % parts.size())
+	var wet := 0
+	for p in [Vector2(0, 0), Vector2(11, 9), Vector2(-11, 0)]:
+		for part in parts:
+			if Geometry2D.is_point_in_polygon(p, part):
+				wet += 1
+	check(wet == 0, "the green is dry")
+	check(not parts.is_empty() and Geometry2D.is_point_in_polygon(Vector2(40, 40), parts[0]), "the rest is still water")
+	var half := RealCourseBuilder.dry_out(pond, [PackedVector2Array(_rect(Vector2(50, -10), Vector2(80, 10))).slice(0, 4)])
+	check(half.size() == 1 and not Geometry2D.is_point_in_polygon(Vector2(55, 0), half[0]), "a green half in the pond trims its edge")
 
 
 ## Each step on its own: smoothing keeps the mean and calms speckle, a tee
