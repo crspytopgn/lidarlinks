@@ -173,7 +173,11 @@ def main():
     in_course = (game <= 3) & ~near_trees & ~edge
     findings = []
     notes = []
-    for n, (i, j) in patches(water & ~g_water & (game != 4)):
+    # A shore a few cells off is the coarse land, not missing water; sand
+    # along the water is a beach (the ground tint draws it), not a bunker.
+    shore = grow(g_water, 3)
+    beach = grow(g_water, 5)
+    for n, (i, j) in patches(water & ~shore & (game != 4)):
         if n * area >= WATER_PATCH:
             findings.append(f"water: the picture has {n * area / 1e4:.1f} ha of water at cell ({i}, {j}) where the game has land")
     mown = fescue & in_course & (game == 0)
@@ -182,10 +186,11 @@ def main():
         notes.append("the picture's grass is dormant, so fescue and sand aren't judged")
     elif pic_fescue.sum() * area >= FESCUE_MIN and mown.sum() > FESCUE_SHARE * pic_fescue.sum():
         findings.append(f"fescue: {mown.sum() * area / 1e4:.1f} of the picture's {pic_fescue.sum() * area / 1e4:.1f} ha of straw fescue is mown in the game ({(mown & rough).sum() * area / 1e4:.1f} ha of it mapped rough)")
-    bunkers = [p for p in patches(sand & in_course) if SAND_PATCH <= p[0] * area <= 3000.0]
+    bunkers = [p for p in patches(sand & in_course & ~beach) if SAND_PATCH <= p[0] * area <= 3000.0]
     missing = 0
+    near_sand = grow(game == 2, 2)  # the map and the picture a few metres apart
     for n, (i, j) in bunkers:
-        if game[j, i] != 2:
+        if not near_sand[j, i]:
             missing += 1
     if green and len(bunkers) >= 8 and missing > 0.5 * len(bunkers):
         findings.append(f"sand: {missing} of the picture's {len(bunkers)} sand patches have no sand in the game")
@@ -193,9 +198,9 @@ def main():
     colours = np.array([[70, 120, 50], [170, 160, 90], [230, 215, 160], [60, 110, 190], [30, 60, 30], [110, 110, 100], [40, 80, 150], [90, 100, 80]], np.uint8)
     gimg = colours[np.clip(game, 0, 7)]
     flag = np.zeros(game.shape + (3,), np.uint8) + 40
-    flag[water & ~g_water & (game != 4)] = (60, 140, 255)
+    flag[water & ~shore & (game != 4)] = (60, 140, 255)
     flag[mown] = (255, 220, 60)
-    flag[sand & in_course & (game != 2)] = (255, 255, 255) if green else (90, 90, 90)
+    flag[sand & in_course & ~beach & (game != 2)] = (255, 255, 255) if green else (90, 90, 90)
     # Rows run with +z (north) and columns with +x (west): flipped both
     # ways each panel reads north up, east right.
     side = np.concatenate([p[::-1, ::-1] for p in ((pic * 255).astype(np.uint8), gimg, flag)], 1)

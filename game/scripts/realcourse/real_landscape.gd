@@ -25,6 +25,8 @@ const SEA_DEPTH := -8.0
 ## Or when this share of it is one flat surface at sea level: tiles without
 ## a sea floor hold the sea at 0 (Barnbougle's Bass Strait, Al Mouj's Gulf).
 const SEA_FLAT_SHARE := 0.08
+const SEA_FLAT_LOW := -3.0
+const SEA_FLAT_HIGH := 0.5
 ## A lake when this share of the land is one flat surface (to LAKE_FLAT
 ## metres) with hardly any land below it: the tiles hold big lakes level.
 const LAKE_SHARE := 0.03
@@ -36,6 +38,8 @@ const LAKE_STEEP := 4.0
 ## sea floor is the sea, let down to SEA_FLOOR.
 const SEA_SHORE := 1.5
 const SEA_FLOOR := -1.5
+const PLAY_LOW_SHARE := 0.15  ## of the play's points that may dip under the sea
+const PLAY_CLEAR := 1.0  ## metres the middle of the play stands over it
 const LINKS_REACH := 1000.0  ## metres from the course the sea makes it links
 
 var frame: GeoFrame
@@ -91,15 +95,34 @@ func has_sea() -> bool:
 	return _deep >= heights.size() * SEA_SHARE or flat_sea()
 
 
-## True when the sea is only a flat surface at 0 (no sea floor): it is let
-## down under its water like a lake's.
+## True when the sea's surface is held flat near 0 (with or without a sea
+## floor past it): it is let down under its water like a lake's.
 func flat_sea() -> bool:
-	if _deep >= heights.size() * SEA_SHARE:
-		return false
-	var flat := 0
-	for k in range(-2, 3):
-		flat += int(_levels.get(k, 0))
-	return flat >= heights.size() * SEA_FLAT_SHARE
+	return not is_nan(flat_sea_level())
+
+
+## The level of a sea held flat (to a decimetre) near 0 by tiles without a
+## sea floor, over SEA_FLAT_SHARE of the land, or NAN. Teeth of the Dog's
+## Caribbean sits at -1.8 m (the tiles' datum), Barnbougle's at 0.
+func flat_sea_level() -> float:
+	var lo := roundi(SEA_FLAT_LOW / LAKE_FLAT)
+	var hi := roundi(SEA_FLAT_HIGH / LAKE_FLAT)
+	var best := 0
+	var at := 0
+	for k in range(lo, hi + 1):
+		var n := 0
+		for d in range(-2, 3):
+			n += int(_levels.get(k + d, 0))
+		if n > best:
+			best = n
+			at = k
+	if best < heights.size() * SEA_FLAT_SHARE:
+		return NAN
+	var peak := at
+	for d in range(-2, 3):
+		if int(_levels.get(at + d, 0)) > int(_levels.get(peak, 0)):
+			peak = at + d
+	return peak * LAKE_FLAT
 
 
 ## The level of a big lake round the course (metres above sea level), or
@@ -129,7 +152,7 @@ func lake_level() -> float:
 
 ## Gives `c` (a course of the club, on the same frame) the land.
 func apply(c: DesignedCourse) -> void:
-	var lake := (0.0 if flat_sea() else NAN) if has_sea() else lake_level()
+	var lake := flat_sea_level() if has_sea() else lake_level()
 	if not is_nan(lake) and not _lake_sunk:
 		# The lake's flat surface lowered under its water, so the two don't
 		# flicker through each other.
@@ -144,9 +167,9 @@ func apply(c: DesignedCourse) -> void:
 	c.landscape = DesignedCourse._decode_landscape(saved)
 	c._landscape_saved = saved
 	if flat_sea():
-		if dry(c, 0.0, -1.0):
-			c.source["sea"] = 0.0
-			sink_lake(c, 0.0)
+		if dry(c, lake, -1.0):
+			c.source["sea"] = lake
+			sink_lake(c, lake)
 	elif has_sea() and dry(c):
 		c.source["sea"] = 0.0
 		sink_lake(c, 0.0)
@@ -266,7 +289,7 @@ static func sea_from_cover(c: DesignedCourse, frame: GeoFrame, cover: LandCover)
 ## True when the course has the sea (not a lake) within LINKS_REACH of its
 ## box: links land.
 static func by_the_sea(c: DesignedCourse) -> bool:
-	if not c.source.has("sea") or float(c.source["sea"]) != 0.0 or c.landscape.is_empty():
+	if not c.source.has("sea") or absf(float(c.source["sea"]) - 0.5 * (SEA_FLAT_LOW + SEA_FLAT_HIGH)) > 0.5 * (SEA_FLAT_HIGH - SEA_FLAT_LOW) or c.landscape.is_empty():
 		return false
 	var land: Dictionary = c.landscape
 	var o: Vector2 = land["origin"]
@@ -283,7 +306,7 @@ static func by_the_sea(c: DesignedCourse) -> bool:
 	var wet := 0
 	for j in range(j0, j1 + 1):
 		for i in range(i0, i1 + 1):
-			if hs[j * cols + i] + base < -0.5:
+			if hs[j * cols + i] + base < float(c.source["sea"]) - 0.5:
 				wet += 1
 	return wet >= 20
 
@@ -322,15 +345,22 @@ static func dry(c: DesignedCourse, level := 0.0, margin := 0.3) -> bool:
 	var low := 0
 	var n := 0
 	# The play areas, where there are any: a course's box takes in the sea
-	# beside it (Kingsbarns' is half North Sea).
+	# beside it (Kingsbarns' is half North Sea). Holes along the shore may
+	# dip under in coarse tiles (Teeth of the Dog), so most of the play
+	# must stand well clear of the water and only a few points under it;
+	# wrong heights (zeros) or a polder put most of it low.
+	var hs := PackedFloat32Array()
 	for s in c.shapes:
 		if s.surface in [Surface.Type.FAIRWAY, Surface.Type.GREEN, Surface.Type.TEE]:
 			for p in s.points:
-				n += 1
-				if c.base_height(p.x, p.y) + base < level + margin:
+				var h := c.base_height(p.x, p.y) + base
+				hs.append(h)
+				if h < level + margin:
 					low += 1
+	n = hs.size()
 	if n >= 20:
-		return low <= n * 0.01
+		hs.sort()
+		return low <= n * PLAY_LOW_SHARE and hs[n / 2] >= level + PLAY_CLEAR
 	low = 0
 	n = 0
 	for k in range(0, c.heights.size(), 37):

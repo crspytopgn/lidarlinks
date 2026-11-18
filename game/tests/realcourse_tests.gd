@@ -1582,6 +1582,15 @@ func _test_landscape() -> void:
 	shore.apply(bc)
 	check(float(bc.source.get("sea", -1.0)) == 0.0, "the course gets the flat sea")
 	check(shore.heights[shore.count / 2 * shore.count + 2] + 6.0 < -1.0, "the flat sea's surface is let down under its water")
+	var dc := DesignedCourse.blank(Vector2(600, 400))
+	dc.source["base_height"] = 6.0
+	var datum := RealLandscape.new(f, dc)
+	datum.rows(0, datum.count, func(lat: float, lon: float) -> float:
+		var p := f.to_local(lat, lon)
+		return -1.8 if p.x < -1500.0 else 6.0 + p.x * 0.004)
+	check(absf(datum.flat_sea_level() + 1.8) < 0.06, "a flat sea on the tiles' own datum (-1.8 m) is the sea (%.2f)" % datum.flat_sea_level())
+	datum.apply(dc)
+	check(absf(float(dc.source.get("sea", 9.0)) + 1.8) < 0.06, "the course gets the sea at that level")
 
 
 static func _with_land(c: DesignedCourse, land: RealLandscape) -> Dictionary:
