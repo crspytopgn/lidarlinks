@@ -531,7 +531,9 @@ or not at all. What that found, and what the builder now does:
   open aerial photos and the satellite image is too coarse there to tell
   fescue from fairway, so a course with the sea within 1 km and no photo
   gets deep rough (fescue) between the holes past a 12 m first cut round
-  each fairway (15 m round greens, 8 m round tees), as on any links.
+  each fairway (15 m round greens, 8 m round tees), as on any links. The
+  rough the map draws becomes fescue too (it is painted over deep rough,
+  so Hoylake's rough between the holes came out mown).
 - **Ponds the map leaves out:** water in the 10 m land cover that no
   mapped pond covers, 1 ha or more and clear of the fairways, greens,
   tees and bunkers, becomes a pond (`RealCourseBuilder.add_ponds`).
