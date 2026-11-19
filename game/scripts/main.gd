@@ -4977,6 +4977,8 @@ func _update_putting_panel() -> void:
 	# its shot card.
 	if hud.windows == null:
 		putting_panel.offset_top = PUTTING_PANEL_TOP_TV if tv else PUTTING_PANEL_TOP
+	else:
+		putting_panel.offset_top = 20.0 + ShotWindows.wanted_size().y
 	var lines: Array[String] = []
 	if practice != null:
 		lines.append(practice.status_text())
@@ -4991,6 +4993,20 @@ func _update_putting_panel() -> void:
 		if read_view != GreenRead.View.PLAY:
 			lines.append("View: %s" % GreenRead.VIEW_NAMES[read_view])
 	putting_panel.show_panel("\n".join(lines), practice != null and state == State.AIM, can_read)
+	_lift_putting_panel()
+
+
+## The panel grows a row in the read views; it steps up rather than run
+## over the putt meter below it (it did, hiding the meter's labels).
+func _lift_putting_panel() -> void:
+	var m := hud.meter
+	if m == null or not m.visible or not m.modern:
+		return
+	var top := putting_panel.offset_top
+	var tall := putting_panel.get_combined_minimum_size().y
+	var meter_top := m.position.y
+	if meter_top > top and top + tall > meter_top - 10.0:
+		putting_panel.offset_top = maxf(PUTTING_PANEL_TOP, meter_top - 10.0 - tall)
 
 
 ## V: the next way of looking at the putt (GreenRead.View).
