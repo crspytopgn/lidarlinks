@@ -13,6 +13,7 @@ func run_all() -> Array[String]:
 	_test_simplify()
 	_test_builder()
 	_test_geo_raster()
+	_test_strip_objects()
 	_test_national_lidar()
 	_test_photo_trees()
 	_test_extra_trees()
@@ -270,6 +271,32 @@ func _test_geo_raster() -> void:
 	var gappy := GeoRaster.from_bil(PackedFloat32Array([1, 2, -99999, 4]).to_byte_array(), 2, 2, [0.0, 0.0, 1.0, 1.0])
 	check(is_nan(gappy.sample(0.5, 0.5)) and is_equal_approx(gappy.valid_fraction(), 0.75), "no-data pixels read as NAN")
 	check(GeoRaster.from_tiff(PackedByteArray([1, 2, 3])) == null, "junk isn't a GeoTIFF")
+
+
+func _test_strip_objects() -> void:
+	# Flat ground at 10 m with a 120 m wood standing 15 m on it, and a dune
+	# ridge as narrow standing 8 m in the open.
+	var t := TerrainTiles.for_box(51.0, -1.0, 51.004, -0.996)
+	t.zoom = 15
+	t.count = Vector2i(1, 1)
+	t._h.resize(TerrainTiles.TILE * TerrainTiles.TILE)
+	t._have.resize(1)
+	var px := t.pixel_metres(51.0)
+	for y in TerrainTiles.TILE:
+		for x in TerrainTiles.TILE:
+			var hgt := 10.0
+			if absf(x - 64) * px < 60.0 and absf(y - 128) * px < 60.0:
+				hgt += 15.0
+			if absf(x - 192) * px < 60.0 and absf(y - 128) * px < 60.0:
+				hgt += 8.0
+			t._h[y * TerrainTiles.TILE + x] = hgt
+	var wood_lon := TerrainTiles.tile_lon(t.origin.x + 64.5 / TerrainTiles.TILE, 15)
+	var dune_lon := TerrainTiles.tile_lon(t.origin.x + 192.5 / TerrainTiles.TILE, 15)
+	var mid_lat := TerrainTiles.tile_lat(t.origin.y + 128.5 / TerrainTiles.TILE, 15)
+	var woods := func(_lat: float, lon: float) -> int: return 1 if absf(lon - wood_lon) < absf(lon - dune_lon) else 0
+	var most := t.strip_objects(woods)
+	check(most > 10.0 and absf(t.height_at(mid_lat, wood_lon) - 10.0) < 1.5, "the wood comes off the ground (%.1f m taken, %.1f m left)" % [most, t.height_at(mid_lat, wood_lon)])
+	check(absf(t.height_at(mid_lat, dune_lon) - 18.0) < 0.5, "the dune in the open stays (%.1f m)" % t.height_at(mid_lat, dune_lon))
 
 
 func _test_national_lidar() -> void:
@@ -725,6 +752,17 @@ func _test_land_cover() -> void:
 	lr.shapes.append(CourseShape.new(Surface.Type.ROUGH, PackedVector2Array([Vector2(-200, -100), Vector2(200, -100), Vector2(200, 100), Vector2(-200, 100)])))
 	RealCourseBuilder.links_fescue(lr, none)
 	check(lr.shapes[0].surface == Surface.Type.DEEP_ROUGH, "the mapped rough on a links is fescue")
+	# A beach the coarse tiles sank under the sea stands over it again.
+	var bc := DesignedCourse.blank(Vector2(200, 200))
+	bc.shapes.clear()
+	bc.source["sea"] = 0.0
+	bc.source["base_height"] = 0.0
+	for k in bc.heights.size():
+		bc.heights[k] = -1.0
+	var strand := CourseShape.new(Surface.Type.SAND, PackedVector2Array([Vector2(-50, -50), Vector2(50, -50), Vector2(50, 50), Vector2(-50, 50)]))
+	strand.cover = "beach"
+	bc.shapes.append(strand)
+	check(RealLandscape.raise_beaches(bc) > 0 and is_equal_approx(bc.base_height(0, 0), RealLandscape.BEACH_TOP) and bc.base_height(90, 90) < 0.0, "a beach stands over the sea, the sea beyond it stays")
 	var lt := lk.to_course_data().holes[0].terrain if not lk.holes.is_empty() else null
 	var deep := lk.shapes[1]
 	var cut := lk.shapes[2]
