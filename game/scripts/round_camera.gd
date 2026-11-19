@@ -515,8 +515,10 @@ func _update_flyover(delta: float) -> void:
 	# A frame far slower than the ones before it (the course still streaming
 	# in as the hole opens) moves the camera on by about a normal frame, so
 	# the glide slows for an instant rather than jumping.
-	var dt := minf(delta, _fly_dt * 2.0)
-	_fly_dt = lerpf(_fly_dt, dt, 0.1)
+	# (Paused frames, delta 0, leave the running average alone.)
+	var dt := minf(delta, maxf(_fly_dt * 2.0, 1.0 / 30.0))
+	if dt > 0.0:
+		_fly_dt = lerpf(_fly_dt, dt, 0.1)
 	_fly_t += dt
 	var u := _fly_t / _fly_seconds()
 	if u >= 1.0:

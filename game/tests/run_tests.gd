@@ -5942,6 +5942,13 @@ func _test_smooth_flyover() -> void:
 	var before := cam.position
 	cam.update(0.5, 0.0, hole1.tee)
 	_check(cam.position.distance_to(before) < 2.0, "a half-second hitch moves the flyover on by about one frame (%.1f m)" % cam.position.distance_to(before))
+	# Paused frames (delta 0) don't stall it once play resumes.
+	for i in 30:
+		cam.update(0.0, 0.0, hole1.tee)
+	var t0 := cam.flyover_progress()
+	for i in 30:
+		cam.update(1.0 / 30.0, 0.0, hole1.tee)
+	_check(cam.flyover_progress() > t0 + 0.05, "the flyover carries on after a pause")
 	cam.free()
 
 
