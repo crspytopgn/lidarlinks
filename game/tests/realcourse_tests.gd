@@ -341,6 +341,13 @@ func _test_strip_objects() -> void:
 
 func _test_national_lidar() -> void:
 	check(str(NationalLidar.source_for(51.4, -0.3).get("id", "")) == "ea", "England uses the Environment Agency")
+	var ids := func(la: float, lo: float) -> Array: return AerialPhotos.sources_for(la, lo).map(func(x: Dictionary) -> String: return str(x["id"]))
+	check(ids.call(35.19, -79.47) == ["naip", "usgs"], "Pinehurst: NAIP: %s" % [ids.call(35.19, -79.47)])
+	check(ids.call(40.745, -73.455) == ["naip", "usgs"], "Bethpage: summer NAIP, not the leaf-off state photos")
+	check(ids.call(43.70, -79.40) == ["on", "naip", "usgs"], "Toronto: Ontario first, then the US boxes")
+	check(ids.call(-41.03, 147.37) == ["tas"], "Barnbougle: Tasmania's photos")
+	check(ids.call(49.61, 6.13)[0] == "lu", "Luxembourg before Wallonia and France")
+	check(ids.call(36.57, -121.95) == ["naip", "usgs"], "California: NAIP as before")
 	check(str(NationalLidar.source_for(53.43, -6.12).get("id", "")) != "ea" and str(NationalLidar.source_for(50.1, -5.5).get("id", "")) == "ea", "Dublin is not England, Cornwall is")
 	check(str(NationalLidar.source_for(52.2, 5.2).get("id", "")) == "ahn", "the Netherlands use AHN")
 	check(str(NationalLidar.source_for(36.57, -121.95).get("id", "")) == "3dep", "California uses 3DEP")
@@ -470,75 +477,83 @@ func _test_mapterhorn_tiles() -> void:
 	check(GeoRaster.from_terrarium(PackedByteArray([1, 2, 3]), b) == null, "junk is no tile")
 
 
-## The canopy height map: which file and rows a course needs, the BigTIFF
-## header, and a row round trip through Deflate and the predictor.
+## The canopy height map: which file and tiles a course needs, the tiled
+## TIFF header, and a tile round trip through Deflate.
 func _test_canopy_heights() -> void:
 	check(CanopyHeights.quadkey(250, 158, 9) == "031133230", "quadkey for Gleneagles")
 	var c := CanopyHeights.new([56.278, -3.760, 56.292, -3.735])
-	check(c.parts.size() == 1 and c.parts[0]["key"] == "031133230", "one file for a course")
+	check(c.parts.size() == 1 and c.parts[0]["key"] == "0311332303", "one file for a course: %s" % [c.parts[0].get("key", "") if not c.parts.is_empty() else ""])
 	var part: Dictionary = c.parts[0]
 	var rows := int(part["r1"]) - int(part["r0"]) + 1
-	check(rows > 2000 and rows < 3000, "rows for 1.6 km at 0.66 m: %d" % rows)
-	# A BigTIFF header like the map's: 65536 px, 8 bit, Deflate, a strip a row.
+	check(rows > 2000 and rows < 3000, "rows for 1.6 km at 0.67 m (1.19 m Mercator pixels at lat 56): %d" % rows)
+	var tiles := CanopyHeights.tiles_for(part)
+	check(tiles.size() >= 20 and tiles.size() <= 40, "a few tiles, not whole rows: %d" % tiles.size())
+	# A classic TIFF header like the map's: 32768 px, 8 bit, Deflate, 512 px tiles.
 	var h := PackedByteArray()
 	h.resize(CanopyHeights.HEADER_BYTES)
 	h.encode_u16(0, 0x4949)
-	h.encode_u16(2, 43)
-	h.encode_u64(8, 16)
-	var tags := [[256, 4, 65536], [257, 4, 65536], [258, 3, 8], [259, 3, 8], [273, 16, 5000], [278, 3, 1], [279, 16, 9000], [317, 3, 2]]
-	h.encode_u64(16, tags.size())
+	h.encode_u16(2, 42)
+	h.encode_u32(4, 8)
+	var tags := [[256, 3, 32768], [257, 3, 32768], [258, 3, 8], [259, 3, 8], [317, 3, 1], [322, 3, 512], [323, 3, 512], [324, 4, 5000], [325, 4, 9000]]
+	h.encode_u16(8, tags.size())
 	for k in tags.size():
-		var p := 24 + k * 20
+		var p := 10 + k * 12
 		h.encode_u16(p, tags[k][0])
 		h.encode_u16(p + 2, tags[k][1])
-		h.encode_u64(p + 4, 1 if tags[k][1] != 16 else 65536)
-		h.encode_u64(p + 12, tags[k][2])
+		h.encode_u32(p + 4, 4096 if tags[k][0] >= 324 else 1)
+		if tags[k][1] == 3:
+			h.encode_u16(p + 8, tags[k][2])
+		else:
+			h.encode_u32(p + 8, tags[k][2])
 	var header := CanopyHeights.parse_header(h)
-	check(int(header.get("offsets", 0)) == 5000 and int(header.get("counts", 0)) == 9000, "header: %s" % header)
-	check(CanopyHeights.offsets_range(header, part).x == 5000 + 8 * int(part["r0"]), "offset index range")
-	h.encode_u64(24 + 2 * 20 + 12, 16)
+	check(int(header.get("offsets", 0)) == 5000 and int(header.get("counts", 0)) == 9000 and int(header.get("entry", 0)) == 4, "header: %s" % header)
+	var ty0 := int(part["r0"]) / 512
+	check(CanopyHeights.index_range(header, "offsets", part).x == 5000 + 4 * 64 * ty0, "tile index range")
+	h.encode_u16(10 + 2 * 12 + 8, 16)
 	check(CanopyHeights.parse_header(h).is_empty(), "16-bit maps are refused")
-	# Two rows: a 12 m tree at the part's first column, else bare.
-	var c0 := int(part["c0"])
-	var blob := PackedByteArray()
-	var counts := PackedByteArray()
+	# One tile: a 12 m tree at the part's first column and row, else bare;
+	# a 255 (no data) next to it reads as bare.
+	var t := tiles[0]
+	var px := PackedByteArray()
+	px.resize(512 * 512)
+	var li := int(part["c0"]) - t.x * 512
+	var lj := int(part["r0"]) - t.y * 512
+	px[lj * 512 + li] = 12
+	px[lj * 512 + li + 1] = 255
+	var z := px.compress(FileAccess.COMPRESSION_DEFLATE)
+	var across := 64
+	var n_idx := (int(part["r1"]) / 512 - ty0 + 1) * across
 	var offsets := PackedByteArray()
-	counts.resize(16)
-	offsets.resize(16)
-	for j in 2:
-		var row := PackedByteArray()
-		row.resize(CanopyHeights.SIZE)
-		row[c0] = 12  # the predictor stores differences
-		row[c0 + 1] = 256 - 12
-		var z := row.compress(FileAccess.COMPRESSION_DEFLATE)
-		offsets.encode_u64(j * 8, 100 + blob.size())
-		counts.encode_u64(j * 8, z.size())
-		blob.append_array(z)
-	var block := CanopyHeights.rows_block(offsets, counts)
-	check(int(block.get("start", 0)) == 100 and int(block.get("end", 0)) == 99 + blob.size(), "rows are one block")
-	var small := part.duplicate()
-	small["r1"] = int(small["r0"]) + 1
-	var raster := CanopyHeights.raster_for(small)
-	check(CanopyHeights.decode_rows(small, header, counts, blob, [0], raster, 0, 2), "rows decode")
-	check(raster.data[0] == 12.0 and raster.data[1] == 0.0 and raster.data[raster.width] == 12.0, "predictor undone: %s %s" % [raster.data[0], raster.data[1]])
-	check(absf(raster.west - TerrainTiles.tile_lon(250.0 + c0 / 65536.0, 9)) < 1e-9, "raster placed at its columns")
+	var counts := PackedByteArray()
+	offsets.resize(n_idx * 4)
+	counts.resize(n_idx * 4)
+	var k0 := ((t.y - ty0) * across + t.x) * 4
+	offsets.encode_u32(k0, 777)
+	counts.encode_u32(k0, z.size())
+	check(CanopyHeights.tile_range(header, offsets, counts, part, t) == Vector2i(777, 776 + z.size()), "tile found in the index")
+	check(CanopyHeights.tile_range(header, offsets, counts, part, tiles[1]).x < 0, "an empty tile is the sea")
+	var raster := CanopyHeights.raster_for(part)
+	check(CanopyHeights.decode_tile(part, header, t, z, raster), "tile decodes")
+	check(raster.data[0] == 12.0 and raster.data[1] == 0.0, "heights placed, no data bare: %s %s" % [raster.data[0], raster.data[1]])
+	check(not CanopyHeights.decode_tile(part, header, t, PackedByteArray([1, 2, 3]), raster), "a damaged tile is refused")
+	check(absf(raster.west - TerrainTiles.tile_lon(float(part["x"]) + float(part["c0"]) / 32768.0, 10)) < 1e-9, "raster placed at its columns")
 	# A cone-shaped crown is found once, at its top.
-	var t := GeoRaster.new()
-	t.width = 30
-	t.height = 30
-	t.west = -3.75
-	t.north = 56.28
-	t.dlon = 0.00001
-	t.dlat = 0.000006
-	t.data.resize(900)
+	var g := GeoRaster.new()
+	g.width = 30
+	g.height = 30
+	g.west = -3.75
+	g.north = 56.28
+	g.dlon = 0.00001
+	g.dlat = 0.000006
+	g.data.resize(900)
 	for j in 30:
 		for i in 30:
-			t.data[j * 30 + i] = maxf(0.0, 14.0 - roundf(Vector2(i - 15, j - 15).length()))
+			g.data[j * 30 + i] = maxf(0.0, 14.0 - roundf(Vector2(i - 15, j - 15).length()))
 	var sm := PackedFloat32Array()
 	sm.resize(900)
-	CanopyHeights.smooth_rows(t, sm, 0, 30)
+	CanopyHeights.smooth_rows(g, sm, 0, 30)
 	var out: Array[Dictionary] = []
-	CanopyHeights.crowns_in_rows(t, sm, out, {}, 0, 30)
+	CanopyHeights.crowns_in_rows(g, sm, out, {}, 0, 30)
 	check(out.size() == 1 and float(out[0]["height"]) > 12.0, "one crown at the top (%d)" % out.size())
 
 
@@ -1381,6 +1396,10 @@ func _test_native_grass() -> void:
 	var none := NativeGrass.new(green, area, [] as Array[PackedVector2Array], grass)
 	none.rows(0, 1000)
 	check((none.rings()["rings"] as Array).is_empty(), "a green photo gives no fescue")
+	check(not g.is_dormant() and not none.is_dormant(), "summer fairways aren't dormant")
+	var winter := Image.create(200, 200, false, Image.FORMAT_RGB8)
+	winter.fill(Color(0.62, 0.56, 0.42))  # straw fairways, a leaf-off flight
+	check(NativeGrass.new(winter, area, [] as Array[PackedVector2Array], grass).is_dormant(), "straw fairways are dormant")
 
 
 ## A club whose 27 holes have no numbers or course names (Royal Golf Dar
