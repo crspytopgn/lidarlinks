@@ -32,6 +32,7 @@ const SCRUB_GREYER := 0.7  ## of the fairways' saturation, at most
 const SCRUB_MIN_SAT := 0.06  ## greyer is rock, tarmac, water
 
 var kind := Kind.STRAW
+var min_share := MIN_SHARE
 var photo: Image
 var area: Rect2
 var boundary: Array[PackedVector2Array] = []
@@ -77,6 +78,17 @@ func _init(p_photo: Image, p_area: Rect2, p_boundary: Array[PackedVector2Array],
 	grass_hue = hues[hues.size() / 2]
 	grass_sat = sats[sats.size() / 2]
 	grass_val = vals[vals.size() / 2]
+
+
+## Outlines of a ready-made mask over `p_area` (CELL metres a cell, rows
+## from area.position.y), for any patches: the ponds the land cover finds.
+static func from_mask(p_area: Rect2, p_mask: PackedByteArray) -> NativeGrass:
+	var g := NativeGrass.new(null, p_area, [] as Array[PackedVector2Array], PackedVector2Array())
+	g.cols = maxi(1, ceili(p_area.size.x / CELL))
+	g.rows_n = maxi(1, ceili(p_area.size.y / CELL))
+	g.mask = p_mask
+	g.min_share = 0.0
+	return g
 
 
 ## True when there is anything to read.
@@ -149,7 +161,7 @@ func rings() -> Dictionary:
 	var kept := 0
 	for v in mask:
 		kept += v
-	if inside == 0 or kept < inside * MIN_SHARE:
+	if inside == 0 or kept < inside * min_share:
 		return out
 	var unit := 0.0
 	for loop in _loops():

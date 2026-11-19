@@ -33,6 +33,7 @@ ZOOM = 17
 WATER_PATCH = 20000.0  # m2 of water the game misses before it counts
 FESCUE_SHARE = 0.7     # of the picture's fescue cells the game may mow
 FESCUE_MIN = 50000.0   # m2 of fescue in the picture before that counts
+WATER_FAR = 100000.0   # m2 beyond the course's box (a lake, the sea)
 SAND_PATCH = 150.0     # m2 of a sand patch the game misses
 
 
@@ -55,7 +56,8 @@ def fetch(z, x, y):
 
 
 def picture(meta, zoom):
-    """The picture's colour at each cell centre, as an (h, w, 3) float array."""
+    """The picture's colour at each cell centre, (h, w, 3) floats, and how
+    much its brightness varies in each cell."""
     w, h = meta["w"], meta["h"]
     c = meta["corners"]
     lat = lambda i, j: (c["00"][0] * (1 - i) * (1 - j) + c["10"][0] * i * (1 - j) + c["01"][0] * (1 - i) * j + c["11"][0] * i * j)
@@ -82,12 +84,19 @@ def picture(meta, zoom):
     px = ((tx - x0) * 256).astype(int)
     py = ((ty - y0) * 256).astype(int)
     out = np.zeros((h, w, 3), np.float32)
+    sq = np.zeros((h, w), np.float32)
     k = 0
     for dy in (-2, -1, 0, 1, 2):
         for dx in (-2, -1, 0, 1, 2):
-            out += m[np.clip(py + dy, 0, m.shape[0] - 1), np.clip(px + dx, 0, m.shape[1] - 1)]
+            px_ = m[np.clip(py + dy, 0, m.shape[0] - 1), np.clip(px + dx, 0, m.shape[1] - 1)]
+            out += px_
+            sq += px_.mean(-1) ** 2
             k += 1
-    return out / k
+    out /= k
+    # How much the brightness varies inside the cell: water is smooth,
+    # fields in rows, polytunnels and roofs are not.
+    rough = np.sqrt(np.maximum(sq / k - out.mean(-1) ** 2, 0))
+    return out, rough
 
 
 def hsv(rgb):
@@ -111,7 +120,7 @@ def grow(mask, n):
     return out
 
 
-def patches(mask):
+def patches(mask, keep=False):
     """Connected patches of a boolean mask: list of (cells, (i, j) centre)."""
     h, w = mask.shape
     seen = np.zeros_like(mask)
@@ -134,7 +143,7 @@ def patches(mask):
         is_ = [c[1] for c in cells]
         # How much of its box it fills: a path or a roof edge is a thin line.
         fill = len(cells) / float((max(js) - min(js) + 1) * (max(is_) - min(is_) + 1))
-        out.append((len(cells), (int(np.mean(is_)), int(np.mean(js))), fill))
+        out.append((len(cells), (int(np.mean(is_)), int(np.mean(js))), fill) + ((cells,) if keep else ()))
     return out
 
 
@@ -149,7 +158,7 @@ def main():
     game = np.where(rough | play, 0, game)  # mapped rough and play are mown grass
     cell = meta["cell"]
     area = cell * cell
-    pic = picture(meta, ZOOM)
+    pic, _ = picture(meta, ZOOM)
     hue, sat, val = hsv(pic)
     r, g, b = pic[..., 0], pic[..., 1], pic[..., 2]
     fair = [(j, i) for i, j in meta["fairway_cells"] if 0 <= j < game.shape[0] and 0 <= i < game.shape[1]]
@@ -180,8 +189,11 @@ def main():
     # along the water is a beach (the ground tint draws it), not a bunker.
     shore = grow(g_water, 3)
     beach = grow(g_water, 5)
-    for n, (i, j), _ in patches(water & ~shore & (game != 4)):
-        if n * area >= WATER_PATCH:
+    for n, (i, j), _, cells in patches(water & ~shore & (game != 4), True):
+        # Inside the course's box a pond counts; beyond it, where the land
+        # round the course is drawn coarsely, only a lake or the sea.
+        inside = sum(1 for a, b in cells if game[a, b] != 5) * 2 > len(cells)
+        if n * area >= (WATER_PATCH if inside else WATER_FAR):
             findings.append(f"water: the picture has {n * area / 1e4:.1f} ha of water at cell ({i}, {j}) where the game has land")
     mown = fescue & in_course & (game == 0)
     pic_fescue = fescue & in_course & (game != 2) & (game != 3)

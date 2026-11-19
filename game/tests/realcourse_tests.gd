@@ -697,6 +697,20 @@ func _test_land_cover() -> void:
 	var mid := sc.area.get_center()
 	check(RealLandscape.sea_from_cover(sc, f, wl) > 0, "the sea in the box is let in")
 	check(sc.base_height(mid.x - 200.0, mid.y) < 0.0 and sc.base_height(mid.x + 200.0, mid.y) > 9.0, "under the water (east) only: %.1f, %.1f" % [sc.base_height(mid.x - 200.0, mid.y), sc.base_height(mid.x + 200.0, mid.y)])
+	# A pond the map leaves out, from the land cover; none over the fairway.
+	var pv := PackedFloat32Array()
+	for j in 20:
+		for i in 20:
+			pv.append(LandCover.WATER if (i >= 8 and i < 12 and j >= 8 and j < 12) or (i >= 2 and i < 5 and j >= 8 and j < 12) else LandCover.RANGELAND)
+	var pl := LandCover.new([50.98, -1.0, 51.0, -0.98])
+	pl.add(_tiff(pv, 20, 20, false, false, true))
+	var pc := DesignedCourse.blank(Vector2(1200, 1200))
+	pc.shapes.clear()
+	var west_pond := f.to_local(50.99, -0.9965)
+	pc.shapes.append(CourseShape.new(Surface.Type.FAIRWAY, PackedVector2Array([west_pond + Vector2(-250, -300), west_pond + Vector2(250, -300), west_pond + Vector2(250, 300), west_pond + Vector2(-250, 300)])))
+	check(RealCourseBuilder.add_ponds(pc, f, pl) == 1, "one pond from the land cover, none on the fairway")
+	if pc.shapes.size() == 2:
+		check(pc.shapes[1].surface == Surface.Type.WATER and pc.shapes[1].contains(f.to_local(50.99, -0.99)), "the pond is where the water is")
 	# A links course with no photo: fescue between the holes, a first cut
 	# round the fairway.
 	var lk := DesignedCourse.blank(Vector2(600, 400))
@@ -1271,6 +1285,9 @@ func _test_native_grass() -> void:
 	check(srings.size() >= 1 and covers.has("heath") and covers.has("scrub"), "dark scrub and purple heather are found (%s)" % [covers])
 	check(not NativeGrass.is_scrub(Color(0.12, 0.25, 0.10), sg.grass_sat, sg.grass_val), "dark green woods aren't scrub")
 	check(NativeGrass.is_scrub(Color.from_hsv(0.28, 0.2, 0.28), 0.37, 0.41), "Torrey's grey-green canyon sage is scrub")
+	var two: Array[PackedVector2Array] = [PackedVector2Array([Vector2(0, 0), Vector2(100, 0), Vector2(100, 100), Vector2(0, 100)]), PackedVector2Array([Vector2(160, 0), Vector2(260, 0), Vector2(260, 100), Vector2(160, 100)]), PackedVector2Array([Vector2(900, 0), Vector2(1000, 0), Vector2(1000, 100), Vector2(900, 100)])]
+	var grown := RealCourseBuilder.grown_rings(two, 50.0)
+	check(grown.size() == 2 and Geometry2D.is_point_in_polygon(Vector2(130, 50), grown[0] if Geometry2D.is_point_in_polygon(Vector2(50, 50), grown[0]) else grown[1]) and Geometry2D.is_point_in_polygon(Vector2(-40, 50), grown[0] if Geometry2D.is_point_in_polygon(Vector2(50, 50), grown[0]) else grown[1]), "outlines grown 50 m merge where they meet (%d)" % grown.size())
 	var green := Image.create(200, 200, false, Image.FORMAT_RGB8)
 	green.fill(Color(0.36, 0.55, 0.25))
 	var none := NativeGrass.new(green, area, [] as Array[PackedVector2Array], grass)

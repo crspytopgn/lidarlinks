@@ -124,3 +124,43 @@ func tree_points(frame: GeoFrame, area: Rect2, seed_value := 1) -> PackedVector2
 			if area.has_point(p):
 				out.append(p)
 	return out
+
+
+## Ponds and lakes inside the course's area that the map leaves out
+## (Fancourt's dam, Bandon's ponds): land cover water, away from `dry`
+## (rings that must stay dry: fairways, greens, tees) and from water the
+## course already has (`wet`), in patches of at least `min_area` m2.
+func pond_rings(frame: GeoFrame, area: Rect2, dry: Array[CourseShape], wet: Array[CourseShape], min_area := 10000.0) -> Array[PackedVector2Array]:
+	var out: Array[PackedVector2Array] = []
+	if raster == null:
+		return out
+	var cell := NativeGrass.CELL
+	var cols := maxi(1, ceili(area.size.x / cell))
+	var rows := maxi(1, ceili(area.size.y / cell))
+	var mask := PackedByteArray()
+	mask.resize(cols * rows)
+	var any := false
+	for j in rows:
+		for i in cols:
+			var p := area.position + (Vector2(i, j) + Vector2(0.5, 0.5)) * cell
+			if class_at(frame.lat_of(p), frame.lon_of(p)) == WATER:
+				mask[j * cols + i] = 1
+				any = true
+	if not any:
+		return out
+	# Clear what is already water or must stay dry (a margin round play).
+	for s in dry + wet:
+		var b := s.bounds().grow(RES if s in dry else 0.0)
+		for j in range(maxi(0, floori((b.position.y - area.position.y) / cell)), mini(rows, ceili((b.end.y - area.position.y) / cell))):
+			for i in range(maxi(0, floori((b.position.x - area.position.x) / cell)), mini(cols, ceili((b.end.x - area.position.x) / cell))):
+				var k := j * cols + i
+				if mask[k] == 0:
+					continue
+				var p := area.position + (Vector2(i, j) + Vector2(0.5, 0.5)) * cell
+				if s.signed_distance(p) < (RES if s in dry else 0.0):
+					mask[k] = 0
+	var found := NativeGrass.from_mask(area, mask).rings()
+	for r: PackedVector2Array in found["rings"]:
+		if absf(RealCourseBuilder._ring_area(r)) >= min_area:
+			out.append(r)
+	return out

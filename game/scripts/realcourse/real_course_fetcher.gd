@@ -482,6 +482,9 @@ func _build(place: Dictionary) -> DesignedCourse:
 			await _step("Letting the sea in...")
 			for c: DesignedCourse in [course] + others:
 				RealLandscape.sea_from_cover(c, builder.frame, land_cover)
+			await _step("Finding the ponds the map leaves out...")
+			for c: DesignedCourse in [course] + others:
+				RealCourseBuilder.add_ponds(c, builder.frame, land_cover)
 		# A links course by the sea with no photo to read its fescue from.
 		if builder.photo == null:
 			var none: Array[PackedVector2Array] = []
