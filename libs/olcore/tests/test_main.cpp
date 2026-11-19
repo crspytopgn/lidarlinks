@@ -2240,6 +2240,26 @@ void test_links_lie() {
   CHECK_NEAR(s.speed_scale, 0.927315, 1e-9);
   links_apply_lie(s, links_surface(kLinksDeepGrass));
   CHECK_NEAR(s.spin_scale, 0.1992, 1e-9);
+  // A clean strike's speed: the driver and the 3-wood meet the strike
+  // quality limit off the ground, softened on the easier levels; other clubs
+  // keep LiePower. It matches links_apply_swing with no miss.
+  CHECK_NEAR(links_clean_strike_speed(0, links_surface(kLinksRough), 3), 0.6, 1e-12);
+  CHECK_NEAR(links_clean_strike_speed(1, links_surface(kLinksRough), 3), 0.8, 1e-12);
+  CHECK_NEAR(links_clean_strike_speed(3, links_surface(kLinksRough), 3), 0.927315, 1e-9);
+  CHECK_NEAR(links_clean_strike_speed(0, links_surface(kLinksRough), 0), 0.8, 1e-12);
+  CHECK_NEAR(links_clean_strike_speed(0, links_surface(kLinksFairway), 3), 0.9, 1e-6);
+  CHECK_NEAR(links_clean_strike_speed(13, links_surface(kLinksDeepGrass), 3), 0.836732, 1e-9);
+  for (int club : {0, 1, 7, 8, 13}) {
+    for (int skill = 0; skill < kLinksSkillCount; ++skill) {
+      LinksStrike t;
+      t.club = club;
+      LinksSwing w;
+      w.skill = skill;
+      LinksRand rng(1);
+      links_apply_swing(t, w, links_surface(kLinksRough), rng);
+      CHECK_NEAR(t.speed_scale, links_clean_strike_speed(club, links_surface(kLinksRough), skill), 1e-12);
+    }
+  }
   // Sand: the face error goes, and the contact sets speed, spin and loft.
   struct Case {
     int contact;

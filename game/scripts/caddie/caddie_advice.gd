@@ -195,7 +195,7 @@ func _compose() -> String:
 		"wind_along_mps": _wind.dot(dir), "wind_cross_mps": _wind.dot(left),
 		"club": club.full_name, "power": meter_value(power, false, _chip, _putt_range), "aim_off_m": aim_off,
 		"in_range": dist <= reach * 1.08, "lie": _lie, "par": _hole.par,
-		"lie_power": _model.lie_power(_lie) if _model != null else Surface.lie_power(_lie), "reach_m": reach,
+		"lie_power": _model.lie_power(_lie, club) if _model != null else Surface.lie_power(_lie), "reach_m": reach,
 		"tee": _lie == Surface.Type.TEE,
 	})
 
@@ -246,7 +246,7 @@ static func club_for(clubs: Array[Club], plays_m: float, lie: int, model: ShotMo
 static func _reach_of(club: Club, lie: int, model: ShotModel) -> float:
 	if model == null:
 		return club.total_m * Surface.lie_power(lie)
-	return club.total_m * model.reach_scale(club) * model.lie_power(lie)
+	return club.total_m * model.reach_scale(club) * model.lie_power(lie, club)
 
 
 func _reach(club: Club) -> float:

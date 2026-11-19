@@ -33,6 +33,7 @@ func reach_scale(_club: Club) -> float:
 
 
 ## The share of a full swing's ball speed a shot from `lie` keeps in this
-## model, for the reach the game shows and plans with.
-func lie_power(lie: int) -> float:
+## model, for the reach the game shows and plans with. With a `club`, the
+## share that club keeps (a model may hit some clubs worse from a lie).
+func lie_power(lie: int, _club: Club = null) -> float:
 	return Surface.lie_power(lie)

@@ -659,6 +659,23 @@ func _test_swing_meter() -> void:
 	_check_near(links_model.lie_power(Surface.Type.ROUGH), 0.927315, 1e-6, "rough keeps 93 percent, as the game strikes it")
 	_check_near(links_model.lie_power(Surface.Type.DEEP_ROUGH), 0.836732, 1e-6, "deep rough keeps 84 percent")
 	_check(links_model.lie_power(Surface.Type.FRINGE) == 1.0, "the fringe plays as fairway")
+	# A clean strike's speed: the driver and 3-wood meet the game's strike
+	# quality limit off the ground (0.6 and 0.8 from the rough at the hardest
+	# level), so the reach shown and the auto club allow for it.
+	var rough_p := LinksGround.surface_for_class(LinksGround.ROUGH)
+	_check_near(LinksLaunch.clean_strike_speed(0, rough_p, 3), 0.6, 1e-12, "driver out of the rough: 60 percent")
+	_check_near(LinksLaunch.clean_strike_speed(1, rough_p, 3), 0.8, 1e-12, "3-wood out of the rough: 80 percent")
+	_check_near(LinksLaunch.clean_strike_speed(3, rough_p, 3), 0.927315, 1e-6, "5-wood out of the rough keeps LiePower")
+	_check_near(LinksLaunch.clean_strike_speed(0, rough_p, 0), 0.8, 1e-12, "easiest level softens it")
+	_check_near(LinksLaunch.clean_strike_speed(0, LinksGround.surface_for_class(LinksGround.FAIRWAY), 3), 0.9, 1e-6, "driver off the deck")
+	for club in [0, 1, 7, 8, 13]:
+		for lvl in LinksLaunch.SKILL_COUNT:
+			var cs := LinksLaunch.Strike.new()
+			cs.club = club
+			var cw := LinksLaunch.SwingInput.new()
+			cw.skill = lvl
+			LinksLaunch.apply_swing(cs, cw, rough_p, LinksLaunch.Rand.new(1))
+			_check_near(cs.speed_scale, LinksLaunch.clean_strike_speed(club, rough_p, lvl), 1e-12, "clean strike matches apply_swing (club %d, level %d)" % [club, lvl])
 	_check_near(LinksPowerStroke.chip_power(15), 7.0, 1e-6, "chip power at the snap line")
 	_check_near(LinksPowerStroke.chip_power(68), 34.95, 1e-4, "chip power at the top")
 	_check_near(LinksPowerStroke.chip_power(32), 14.25, 1e-4, "chip power midway")
