@@ -1,9 +1,9 @@
-# OpenLinks2003 brand
+# LidarLinks brand
 
 <p>
 <img src="png/app-icon-256.png" width="128" alt="App icon">
 &nbsp;&nbsp;
-<picture><source media="(prefers-color-scheme: dark)" srcset="wordmark-dark.svg"><img src="wordmark-light.svg" height="64" alt="OpenLinks2003 wordmark"></picture>
+<picture><source media="(prefers-color-scheme: dark)" srcset="wordmark-dark.svg"><img src="wordmark-light.svg" height="64" alt="LidarLinks wordmark"></picture>
 </p>
 
 An app icon in the iOS style: a studio-lit golf ball, with all 362 of its
@@ -31,7 +31,7 @@ desktop builds and the web page's favicon.
 
 - Leave clear space around the icon of at least a quarter of its width.
 - Don't recolour, stretch, outline or add effects to the icon or wordmark.
-- The wordmark is **OpenLinks** in Inter Display SemiBold with **2003** in
+- The wordmark is **Lidar** in Inter Display SemiBold with **Links** in
   Inter Display Light, in Apple's greys (`#1D1D1F` / `#6E6E73` on light,
   `#F5F5F7` / `#A1A1A6` on dark).
 - Accent colours: green `#30B94D`, blue `#0071E3`.
@@ -53,7 +53,7 @@ node tools/brand/render.js          # PNGs, README images, social card
 `render.js` uses the Playwright Chromium in the cloud sessions (or any
 `npm i playwright` install). The HTML templates are in
 `tools/brand/templates/`, the screenshots in `tools/brand/shots/`: CI
-render-check frames of the built-in Placeholder Nine, so they show no
+render-check frames of the built-in course, so they show no
 original game data. Replace them with newer CI renders as the game improves.
 
 Fonts: Inter Display, SIL Open Font License 1.1 (https://rsms.me/inter/).

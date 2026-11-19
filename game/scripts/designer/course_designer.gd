@@ -1180,7 +1180,7 @@ func _on_new_confirmed() -> void:
 func _on_imported(text: String, file_name: String) -> void:
 	var c := DesignedCourse.from_json(text)
 	if c == null:
-		_set_status("%s isn't an OpenLinks course file." % file_name)
+		_set_status("%s isn't a LidarLinks course file." % file_name)
 		return
 	_set_course(c, "")
 	_unsaved = true
