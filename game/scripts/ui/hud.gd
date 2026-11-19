@@ -19,6 +19,8 @@ var mouse_swing: MouseSwingControl
 ## Aim, club and menu buttons on a touch screen (hidden elsewhere).
 var touch_pad: TouchPad
 var swing_button: TouchPad.SwingButton
+## "View target" (TargetView), just above the swing meter.
+var target_button: TargetButton
 var wind: WindIndicator
 var spin: SpinBall
 var scorecard: ScorecardPanel
@@ -84,6 +86,10 @@ func _ready() -> void:
 	meter = SwingMeter.new()
 	_place(meter, Control.PRESET_BOTTOM_RIGHT, Rect2(-240, -240, 220, 220))
 	add_child(meter)
+	target_button = TargetButton.new()
+	target_button.visible = false
+	add_child(target_button)
+	_place_target_button()
 
 	mouse_swing = MouseSwingControl.new()
 	add_child(mouse_swing)
@@ -237,6 +243,21 @@ func _place_meter() -> void:
 	else:
 		_place(meter, Control.PRESET_CENTER_BOTTOM, Rect2(-want.x * 0.5, -want.y - 44.0, want.x, want.y))
 	meter.queue_redraw()
+	_place_target_button()
+
+
+## "View target" sits just above the meter, lined up with its right edge;
+## over the original's centred meter, in the bottom right corner instead.
+## (Clear of the touch swing button, half way up the right side, and the
+## wind and spin ball at the top.)
+func _place_target_button() -> void:
+	if target_button == null:
+		return
+	var s := TargetButton.SIZE
+	if meter.anchor_left == 1.0:
+		_place(target_button, Control.PRESET_BOTTOM_RIGHT, Rect2(meter.offset_right - s.x, meter.offset_top - s.y - 12.0, s.x, s.y))
+	else:
+		_place(target_button, Control.PRESET_BOTTOM_RIGHT, Rect2(-s.x - 24.0, -s.y - 44.0, s.x, s.y))
 
 
 func _process(delta: float) -> void:

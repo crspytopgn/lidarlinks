@@ -149,6 +149,7 @@ func _process(_delta: float) -> bool:
 	_run("designer_scene", _test_designer_scene)
 	_run("designed_round", _test_designed_round)
 	_run("caddie_and_buggy_in_round", _test_caddie_and_buggy_in_round)
+	_run("target_view", _test_target_view)
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(PlayerProfiles.path))
 	if _failures > 0:
 		print("%d check(s) failed" % _failures)
@@ -6561,3 +6562,69 @@ func _test_weather() -> void:
 	_check_near(Scenery.overcast_of(1.0), 1.0, 1e-6, "full deck")
 	_check_near(Scenery.fog_scale(0.0), 1.0, 1e-6, "no mist")
 	_check(RainFx.hiss().data.size() == RainFx.MIX_RATE * 4, "rain loop is two seconds")
+
+
+## "View target": out to stand short of and above the aim point looking at
+## it, back to exactly the aim view, smoothly both ways.
+func _test_target_view() -> void:
+	var flat := CourseTerrain.new()
+	var ball := Vector3.ZERO
+	var target := Vector3(0, 0, 230)
+	var pose := TargetView.pose(flat, ball, target, false)
+	var pos: Vector3 = pose[0]
+	var look: Vector3 = pose[1]
+	_check(pos.z < target.z and pos.z > target.z - TargetView.BACK_MAX - 0.01, "the view stands short of a drive's target (%.1f m)" % (target.z - pos.z))
+	_check(pos.y >= TargetView.UP_MIN and pos.y <= TargetView.UP_MAX, "and above it (%.1f m)" % pos.y)
+	_check(look.z >= target.z and look.z < target.z + 15.0 and absf(look.x) < 0.01, "looking at the target down the line")
+	var down := rad_to_deg(atan2(pos.y - look.y, look.z - pos.z))
+	_check(down > 10.0 and down < 45.0, "looking down on the landing area (%.0f degrees)" % down)
+	var putt := TargetView.pose(flat, ball, Vector3(0, 0, 6), true)
+	_check((putt[0] as Vector3).y < 3.0 and (putt[0] as Vector3).z > 2.0, "a putt's view is low, near the hole")
+	# A ridge just short of the target is climbed over.
+	var hill := _RidgeTerrain.new()
+	var over := TargetView.pose(hill, ball, target, false)
+	_check(RoundCamera.sight_clear(hill, over[0], target + Vector3.UP * 0.3), "the view climbs to see over a ridge (%.1f m up)" % (over[0] as Vector3).y)
+	var tv := TargetView.new()
+	tv.terrain = flat
+	var home := [Vector3(0, 1.75, -4.2), Vector3(0, 2, 70)]
+	tv.start(home[0], home[1], pose, home)
+	_check(tv.busy() and tv.out(), "flying out")
+	var steps := 0
+	var biggest := 0.0
+	var last := tv.position
+	while tv.phase == TargetView.Phase.OUT and steps < 1000:
+		tv.step(1.0 / 60.0)
+		biggest = maxf(biggest, tv.position.distance_to(last))
+		last = tv.position
+		steps += 1
+	_check(tv.phase == TargetView.Phase.THERE and tv.position.is_equal_approx(pos), "arrives at the target view")
+	_check_near(steps / 60.0, TargetView.OUT_S, 0.05, "in about a second")
+	_check(biggest < 6.0, "with no jumps on the way (largest step %.2f m)" % biggest)
+	_check(TargetView.ease_in_out(0.0) == 0.0 and TargetView.ease_in_out(1.0) == 1.0 and TargetView.ease_in_out(0.02) < 0.001, "eases in and out")
+	# Aiming while out there moves the view smoothly.
+	var moved := TargetView.pose(flat, ball, Vector3(20, 0, 225), false)
+	tv.retarget(moved, home)
+	tv.step(1.0 / 60.0)
+	_check(tv.position.distance_to(pos) > 0.01 and tv.position.distance_to(moved[0]) > 1.0, "follows a new aim smoothly")
+	tv.go_home()
+	var landed := false
+	steps = 0
+	while not landed and steps < 1000:
+		landed = tv.step(1.0 / 60.0)
+		steps += 1
+	_check(landed and not tv.busy() and tv.position.is_equal_approx(home[0]), "lands home on the aim view")
+	_check(not tv.step(1.0 / 60.0), "and stays there")
+	tv.start(home[0], home[1], pose, home)
+	tv.step(0.3)
+	tv.go_home()
+	_check(tv.phase == TargetView.Phase.BACK, "turns for home part way out")
+	tv.go_out(pose)
+	_check(tv.phase == TargetView.Phase.OUT, "and out again")
+	tv.cancel()
+	_check(not tv.busy(), "cancel hands the camera back")
+
+
+class _RidgeTerrain extends CourseTerrain:
+	func height_at(_x: float, z: float) -> float:
+		# A 12 m ridge 15 m short of a 230 m target.
+		return 12.0 * maxf(0.0, 1.0 - absf(z - 215.0) / 6.0)
