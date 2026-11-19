@@ -79,6 +79,11 @@ func _ready() -> void:
 	_rect.offset_bottom = 0.0
 
 
+## The pass's material, for a copy of the look elsewhere (CourseSnapshot).
+func material() -> ShaderMaterial:
+	return _mat
+
+
 ## The size of the effect's rectangle, which should be the whole screen.
 func covered_size() -> Vector2:
 	return _rect.size
