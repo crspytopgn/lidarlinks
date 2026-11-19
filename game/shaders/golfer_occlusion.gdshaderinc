@@ -77,9 +77,9 @@ float people_fill(vec3 normal) {
 // below; most on faces turned down or sideways.
 global uniform vec3 people_bounce;
 
-vec3 people_ground_bounce(vec3 albedo, vec3 world_normal, float occ) {
+vec3 people_ground_bounce(vec3 base, vec3 world_normal, float occ) {
 	float down = 0.5 - 0.5 * normalize(world_normal).y;
-	return albedo * people_bounce * down * occ;
+	return base * people_bounce * down * occ;
 }
 
 // The sun's shadow map on a person, in light(): `att` is ATTENUATION,
