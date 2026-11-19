@@ -1020,7 +1020,11 @@ Nothing in the round needs to change.
   `tools/audio/build_free_sounds.py` from `tools/audio/free_sounds.json`;
   credits in `game/assets/sounds/CREDITS.md`): a strike per club kind
   (driver, fairway wood or hybrid, iron, wedge) with turf, grass or sand
-  layered in by lie, landings by surface (a firm thump on the fairway and tee, a swish in the rough, a soft thud on the green, sand) and the crowd takes, each played
+  layered in by lie, landings by surface (a firm, crisp thump on the fairway and tee from a real ball
+  bouncing on firm ground, with its low body and a short crack and no grass
+  in it; a dull muffled thud or a swish in the rough; a lighter pock on the
+  green; sand. Each surface comes from a different recording, so the fairway
+  never sounds like the rough) and the crowd takes, each played
   with a little random pitch and level. Courses with no ambient sounds of
   their own get `FreeAmbience`. Like a real course on TV it is mostly
   quiet: wind in the trees (always a little, more with the wind); a bed
