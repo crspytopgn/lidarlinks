@@ -85,6 +85,10 @@ var _new_size: OptionButton
 var _new_starter: CheckBox
 var _open_dialog: ConfirmationDialog
 var _real: RealCourseDialog
+## Update from the map (RealCourseUpdate), shown for saved real courses;
+## pressed once it asks "Sure?", since the designer's changes are replaced.
+var _updater: RealCourseUpdate
+var _update_armed := false
 var _photo_material: ShaderMaterial  ## null when the course has no aerial photo
 var _photo_on := true
 ## The satellite guide (AerialPhotos.GUIDE): fetched on demand, kept in
@@ -163,6 +167,7 @@ func _set_course(c: DesignedCourse, p_path: String) -> void:
 	_overlay_dirty = true
 	_markers_dirty = true
 	panel.show_course_name(course.course_name, course.tournament)
+	_show_update()
 	_guide_material = null
 	_guide_on = false
 	_show_credits()
@@ -1091,6 +1096,9 @@ func _screen_distance(p: Vector2) -> float:
 # --- Files ----------------------------------------------------------------------
 
 func _on_file_action(action: String) -> void:
+	if action != "update" and _update_armed:
+		_update_armed = false
+		_show_update()
 	match action:
 		"new":
 			_confirm_discard(func() -> void: _new_dialog.popup_centered())
@@ -1102,6 +1110,8 @@ func _on_file_action(action: String) -> void:
 			_confirm_discard(files.import_file)
 		"real":
 			_confirm_discard(func() -> void: _real.open())
+		"update":
+			_on_update_pressed()
 		"export":
 			files.export_text(course.to_json(), course.default_path().get_file())
 			_set_status("Exported %s." % course.default_path().get_file())
@@ -1121,6 +1131,7 @@ func _save() -> bool:
 	path = p
 	last_path = p
 	_unsaved = false
+	_show_update()
 	_set_status("Saved as %s." % p.get_file())
 	return true
 
@@ -1211,6 +1222,45 @@ func _on_real_built(c: DesignedCourse, summary: Dictionary) -> void:
 		(", ground every %.1f m" % float(summary.get("metres_per_pixel", 0))) if summary.has("metres_per_pixel") else "",
 		_lidar_note(summary) + _missing_note(summary) + ("Saved; polish it here, then play it." if saved else "Save it to keep it.") +
 		(" Also saved: %s (Open)." % ", ".join(others.map(func(o: DesignedCourse) -> String: return o.course_name)) if not others.is_empty() else "")])
+
+
+## True when the course open is a saved real course, which Update can
+## build again from the map.
+func can_update() -> bool:
+	return course != null and not path.is_empty() and str(course.source.get("kind", "")) == "openstreetmap"
+
+
+func _show_update() -> void:
+	if panel != null:
+		panel.show_update(can_update(), "Sure? Update" if _update_armed else "Update from the map")
+
+
+func _on_update_pressed() -> void:
+	if not can_update() or _updater.busy:
+		return
+	if not _update_armed:
+		_update_armed = true
+		_show_update()
+		_set_status(RealCourseUpdate.age_note(course.source) + " Press Sure? Update to build it again from the map; changes you made to it here are replaced.")
+		return
+	_update_armed = false
+	_show_update()
+	_real.begin_external("Updating %s" % course.course_name, _updater.cancel)
+	_updater.run(path)
+
+
+func _on_updated(ok: bool, text: String) -> void:
+	_real.end_external(ok, text, text.begins_with("Update cancelled"))
+	if not ok:
+		_set_status(text)
+		return
+	var c := DesignedCourse.load_file(path)
+	if c == null:
+		_set_status("Couldn't read the updated course.")
+		return
+	_photo_on = true
+	_set_course(c, path)
+	_set_status(text + " Polish it here, then play it.")
 
 
 ## Says when holes of the course aren't on the map, so a short course
@@ -1403,6 +1453,10 @@ func _build_ui() -> void:
 	_real.status.connect(_set_status)
 	_real.built.connect(_on_real_built)
 	canvas.add_child(_real)
+	_updater = RealCourseUpdate.new()
+	_updater.progress.connect(func(t: String) -> void: _real.step(t))
+	_updater.finished.connect(_on_updated)
+	add_child(_updater)
 
 	_new_dialog = ConfirmationDialog.new()
 	_new_dialog.title = "New course"

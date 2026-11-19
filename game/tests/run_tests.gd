@@ -257,6 +257,16 @@ func _test_designer_scene() -> void:
 		d._process(0.5)
 	d._stop_flyover()
 	_check(not d._preview.current and d.camera.current, "and hands back to the designer camera")
+	# Update from the map shows only for a saved real course, and asks once.
+	_check(not d.can_update() and not d.panel.update.visible, "no Update for a designed course")
+	d.course.source["kind"] = "openstreetmap"
+	d.path = "user://courses/update_test.olc"
+	d._show_update()
+	_check(d.can_update() and d.panel.update.visible, "a saved real course offers Update in the designer")
+	d._on_update_pressed()
+	_check(d._update_armed and d.panel.update.text == "Sure? Update", "the first press asks to be sure")
+	d._on_file_action("save_none")
+	_check(not d._update_armed and d.panel.update.text == "Update from the map", "another action calls it off")
 	d.queue_free()
 
 

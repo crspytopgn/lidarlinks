@@ -24,6 +24,9 @@ var _started := 0
 var _spin := 0
 var _step := ""
 var _building := false
+## Set while the window shows someone else's build (the designer's Update):
+## Cancel calls it instead of this window's fetcher.
+var _external_cancel := Callable()
 
 
 func _ready() -> void:
@@ -207,9 +210,41 @@ func _finish() -> void:
 	set_process(false)
 
 
+## Shows the progress window for a build this window didn't start (the
+## designer's Update): feed it with step(), end it with end_external().
+func begin_external(title_text: String, cancel: Callable) -> void:
+	_external_cancel = cancel
+	_building = true
+	_started = Time.get_ticks_msec()
+	_step = "Starting..."
+	progress.title = title_text
+	progress.ok_button_text = "Cancel"
+	_show_progress()
+	set_process(true)
+
+
+func step(text: String) -> void:
+	_on_progress(text)
+
+
+## Ends an external build: the window closes when it worked or was
+## cancelled, and otherwise stays up with `text`.
+func end_external(ok: bool, text: String, cancelled := false) -> void:
+	_external_cancel = Callable()
+	if ok or cancelled:
+		_finish()
+		progress.hide()
+		status.emit(text)
+		return
+	_on_failed(text)
+
+
 func _on_progress_button() -> void:
 	if _building:
 		_step = "Cancelling..."
-		fetcher.cancel()
+		if _external_cancel.is_valid():
+			_external_cancel.call()
+		else:
+			fetcher.cancel()
 		# Keep the window up until the fetcher has stopped.
 		_show_progress.call_deferred()

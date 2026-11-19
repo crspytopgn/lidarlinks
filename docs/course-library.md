@@ -39,6 +39,11 @@ hidden. Hidden paths are kept in `user://settings.cfg` under
 
 ## Update (real courses)
 
+The course designer has the same button, "Update from the map", under
+"Real course..." whenever a saved real course is open. It asks once
+("Sure? Update"), shows the build in the same progress window as Real course,
+and reopens the course when it is done.
+
 Every real-course build now saves in its `source`:
 
 - `place`: the search result it was built from (`name`, `lat`, `lon`, `box`,
