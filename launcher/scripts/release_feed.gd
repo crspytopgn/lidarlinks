@@ -4,7 +4,7 @@ extends RefCounted
 ## (the changelog). Pure functions over the decoded JSON, so they're tested
 ## without the network (tests/run_tests.gd).
 
-const API := "https://api.github.com/repos/crspytopgn/openlinks2003"
+const API := "https://api.github.com/repos/crspytopgn/lidarlinks"
 const RELEASE_URL := API + "/releases/tags/latest"
 const COMMITS_URL := API + "/commits?sha=main&per_page=40"
 ## The top folder of main, for the tree id of launcher/.

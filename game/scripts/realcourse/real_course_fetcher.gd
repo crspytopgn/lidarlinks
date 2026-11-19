@@ -32,7 +32,7 @@ const OVERPASS := [
 	"https://overpass.private.coffee/api/interpreter",
 	"https://maps.mail.ru/osm/tools/overpass/api/interpreter",
 ]
-const USER_AGENT := "LidarLinks course importer (+https://github.com/crspytopgn/openlinks2003)"
+const USER_AGENT := "LidarLinks course importer (+https://github.com/crspytopgn/lidarlinks)"
 ## Metres searched round a place that isn't itself a mapped golf course.
 const POINT_RADIUS := 1500.0
 const PARALLEL := 6  ## downloads at once
