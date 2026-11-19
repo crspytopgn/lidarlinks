@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Writes the OpenLinks2003 logo SVGs into docs/brand/.
+"""Writes the LidarLinks logo SVGs into docs/brand/.
 
 The icon is a studio-lit golf ball (rendered by ball.py) on a dark
 backdrop with a glow of turf, in an iOS squircle; the
@@ -85,7 +85,7 @@ def icon_svg(uid: str = "ol", rim: bool = True) -> str:
 		if rim else ""
 	)
 	return f"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {SIZE} {SIZE}" width="{SIZE}" height="{SIZE}">
-	<title>OpenLinks2003</title>{defs(uid)}
+	<title>LidarLinks</title>{defs(uid)}
 	<g clip-path="url(#{uid}-clip)">{scene(uid, ball_data_uri())}
 	</g>
 	{edge}
@@ -113,18 +113,18 @@ def text_outline(font_path: pathlib.Path, text: str, size: float, x: float, base
 
 
 def wordmark_svg(dark: bool) -> str:
-	"""App icon beside the name, Apple-style: bold name, light year."""
+	"""App icon beside the name, Apple-style: bold "Lidar", light "Links"."""
 	ink = "#F5F5F7" if dark else "#1D1D1F"
 	year = "#A1A1A6" if dark else "#6E6E73"
 	icon_px, gap, size = 200, 44, 132
 	baseline = 100 + size * 0.36
 	x0 = icon_px + gap
-	word, w1 = text_outline(WORD_FONT, "OpenLinks", size, x0, baseline)
-	yr, w2 = text_outline(YEAR_FONT, "2003", size, x0 + w1 + size * 0.06, baseline)
-	width = int(x0 + w1 + size * 0.06 + w2 + 8)
+	word, w1 = text_outline(WORD_FONT, "Lidar", size, x0, baseline)
+	yr, w2 = text_outline(YEAR_FONT, "Links", size, x0 + w1 + size * 0.02, baseline)
+	width = int(x0 + w1 + size * 0.02 + w2 + 8)
 	scale = icon_px / SIZE
 	return f"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {width} 200" width="{width}" height="200">
-	<title>OpenLinks2003</title>{defs("wm")}
+	<title>LidarLinks</title>{defs("wm")}
 	<g transform="scale({scale})">
 		<g clip-path="url(#wm-clip)">{scene("wm", ball_data_uri())}</g>
 	</g>

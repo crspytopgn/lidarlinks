@@ -6,7 +6,7 @@ config_version=5
 [application]
 
 config/name="OpenLinks2003"
-config/description="Open-source reimplementation of Links 2003. Requires your own copy of the original game."
+config/description="LidarLinks: play any real course, built from lidar. Began as an open-source Links 2003 remake; your own Links 2003 files are optional."
 run/main_scene="res://scenes/boot.tscn"
 config/features=PackedStringArray("4.4", "Forward Plus")
 config/icon="res://icon.png"

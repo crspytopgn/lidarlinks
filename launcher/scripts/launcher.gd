@@ -1,5 +1,5 @@
 extends Control
-## The OpenLinks2003 launcher: keeps the game up to date from the "latest"
+## The LidarLinks launcher: keeps the game up to date from the "latest"
 ## GitHub release, shows what changed, sets the options worth choosing before
 ## the game starts, gets the player's own Links 2003 files ready, and starts
 ## the game or its course designer. See docs/launcher.md.
@@ -100,7 +100,7 @@ var _files: VBoxContainer
 func _ready() -> void:
 	theme = UI.make_theme()
 	get_window().min_size = Vector2i(980, 640)
-	get_window().title = "OpenLinks2003"
+	get_window().title = "LidarLinks"
 	_net = Net.new()
 	add_child(_net)
 	_net.download_progress.connect(_on_download_progress)
@@ -182,11 +182,11 @@ func _build_hero() -> Control:
 	var words := HBoxContainer.new()
 	words.alignment = BoxContainer.ALIGNMENT_CENTER
 	words.add_theme_constant_override("separation", 0)
-	words.add_child(UI.label("OpenLinks", 52, "SemiBold", UI.TEXT))
-	words.add_child(UI.label("2003", 52, "Light", UI.TEXT_2))
+	words.add_child(UI.label("Lidar", 52, "SemiBold", UI.TEXT))
+	words.add_child(UI.label("Links", 52, "Light", UI.TEXT_2))
 	hero.add_child(words)
 	var tag := GradientText.new()
-	tag.text = "The classic golf game, rebuilt."
+	tag.text = "Play any real course on Earth."
 	tag.font = UI.font("SemiBold")
 	tag.font_size = 20
 	tag.from = UI.GREEN
@@ -673,7 +673,7 @@ func _fill_news() -> void:
 	if _entries.is_empty():
 		head.text = "The changelog appears here once the launcher has been online."
 	elif installed_commit.is_empty():
-		head.text = "The latest changes to OpenLinks2003"
+		head.text = "The latest changes to LidarLinks"
 	elif fresh == 0:
 		head.text = "You have the latest build."
 	else:
@@ -941,7 +941,7 @@ func _build_files() -> void:
 	add.row("Installed game", install, "The Links 2003 folder of an installed copy, used where it is. Nothing is copied.")
 	_files.add_child(add)
 
-	var note := UI.wrap(UI.label("You can also drop images or folders on this window. OpenLinks2003 contains nothing from Links 2003: your files are read on this computer and never uploaded.", 12, "Regular", UI.TEXT_3))
+	var note := UI.wrap(UI.label("You can also drop images or folders on this window. LidarLinks contains nothing from Links 2003: your files are read on this computer and never uploaded.", 12, "Regular", UI.TEXT_3))
 	_files.add_child(note)
 
 

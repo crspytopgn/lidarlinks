@@ -56,7 +56,7 @@ func _dialog(mode: FileDialog.FileMode, title: String) -> FileDialog:
 	dlg.access = FileDialog.ACCESS_FILESYSTEM
 	dlg.use_native_dialog = true
 	dlg.title = title
-	dlg.filters = PackedStringArray(["*.%s ; OpenLinks course" % DesignedCourse.EXTENSION])
+	dlg.filters = PackedStringArray(["*.%s ; LidarLinks course" % DesignedCourse.EXTENSION])
 	dlg.close_requested.connect(dlg.queue_free)
 	add_child(dlg)
 	dlg.popup_centered_ratio(0.6)
