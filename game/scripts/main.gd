@@ -34,7 +34,7 @@ const METER_LINGER_S := 1.5
 ## A putt missed from inside this many metres (8 ft) gets a slump.
 const SLUMP_PUTT := 2.5
 const COMPUTER_HOLE_PAUSE := 4.0  ## between holes when nobody is at the keyboard
-const HINT_AIM := "Left/Right or right-click: aim (Shift: fine)    Up/Down: club    Q/E/W/S or click the ball: spin    %s    D: drop    Tab: scorecard    I: details%s    Esc: menu"
+const HINT_AIM := "Left/Right or right-click: aim (Shift: fine)    Up/Down: club    Q/E/W/S or click the ball: spin    %s    Y: view target    D: drop    Tab: scorecard    I: details%s    Esc: menu"
 ## The object viewer needs the game folder, which browsers can't read.
 const HINT_OBJECTS := "    O: objects"
 const HINT_AIM_METER := "3-click swing: Space or click    K: use the mouse swing"
@@ -51,7 +51,7 @@ const HINT_SWING := "Click or Space    1: start    2: set power    3: on the whi
 const HINT_MOUSE_SWING := "Keep holding: pull the mouse back, then push it forward briskly and straight"
 const HINT_AIM_TOUCH := "Swing button: tap for the meter, or drag down from it then flick up    Tap the course: aim there    Buttons: menu, club, aim"
 const HINT_TOUCH_SWING := "Keep your finger down: drag it back, then flick it up briskly and straight"
-const HINT_AIM_PAD := "    Pad: right stick swing, A meter, D-pad club, LB fine aim"
+const HINT_AIM_PAD := "    Pad: right stick swing, A meter, D-pad club, LB fine aim, Y view target"
 const HINT_STICK_SWING := "Right stick: pull it back, then push it forward briskly and straight    B: call it off"
 const HINT_COMPUTER := "%s is playing    Space or click: hurry up    Tab: scorecard"
 const HINT_DRIVE := "Up/Down or W/S: drive    Left/Right or A/D: steer    Space or click: skip to the ball    %d yd to go"
@@ -339,6 +339,9 @@ var _yard_key := []
 var _yard_job := PackedFloat32Array()
 var _yard_done := PackedFloat32Array()
 var read_view := 0  ## GreenRead.View
+## "View target": the camera out over where the shot is aimed (Y, pad Y, or
+## the HUD button), stepped in place of the round camera while it is busy.
+var _target_view := TargetView.new()
 ## The Green Analyzer's free camera (GreenRead.orbit_*): which read view
 ## it was moved in (-1 none), its yaw, pitch and distance, the point it
 ## circles, and the drag in progress (mouse or finger, -2 none).
@@ -422,6 +425,7 @@ func _ready() -> void:
 	hud.mouse_swing.stroke_cancelled.connect(_on_mouse_stroke_cancelled)
 	hud.touch_pad.club_pressed.connect(_change_club)
 	hud.touch_pad.menu_pressed.connect(_escape)
+	hud.target_button.pressed.connect(_toggle_target_view)
 	hud.spin.spin_picked.connect(_pick_spin)
 	if online == null:
 		online = next_online
@@ -1102,7 +1106,10 @@ func _process(delta: float) -> void:
 	hud.meter.visible = state != State.DROP and state != State.DRIVE and not (shot_over and practice == null and not round_setup.practice)
 	hud.swing_button.visible = hud.touch_pad.visible and state == State.AIM and not _replaying \
 		and not hud.hand_over.visible and not paused and shooter < opponents.size() and opponents[shooter] == null and not _is_remote()
-	hud.swing_button.armed = Time.get_ticks_msec() >= _aim_ready_ms and not camera.flying()
+	hud.swing_button.armed = Time.get_ticks_msec() >= _aim_ready_ms and not camera.flying() and not _target_view.busy()
+	hud.target_button.visible = _target_view_allowed() and not paused and not hud.scorecard.visible \
+		and (read_view == GreenRead.View.PLAY or _target_view.busy())
+	hud.target_button.out = _target_view.out()
 	hud.spin.visible = state == State.AIM and not _replaying and not paused and not hud.hand_over.visible \
 		and shooter < opponents.size() and opponents[shooter] == null and not _is_remote() \
 		and not clubs[club_index].is_putter
@@ -1143,7 +1150,15 @@ func _process(delta: float) -> void:
 		_replay_delay -= delta
 		if _replay_delay < 0.0:
 			start_replay()
-	if state != State.DRIVE:
+	if _target_view.busy() and not _target_view_allowed():
+		# The turn moved on (a drop, the next player, a replay): the camera
+		# is the round's again, wherever that has put it.
+		_target_view.cancel()
+		if state == State.AIM and not _replaying:
+			_aim_camera(false)
+	if _target_view.busy():
+		_step_target_view(delta)
+	elif state != State.DRIVE:
 		camera.update(delta, _replay_time if _replaying else shot_time, _ball_base)
 	_update_reticle(paused)
 	_step_advice()
@@ -1258,6 +1273,9 @@ func _unhandled_input(event: InputEvent) -> void:
 					if state == State.AIM and _human_turn():
 						_toggle_swing_method()
 					return
+				KEY_Y:
+					_toggle_target_view()
+					return
 				KEY_R:
 					start_replay()
 					return
@@ -1313,6 +1331,9 @@ func _on_swing_pressed() -> void:
 		return
 	if state == State.AIM and camera.flying():
 		camera.end_flyover()
+		return
+	if state == State.AIM and _target_view.busy():
+		_target_view.go_home()  # the swing is played from behind the ball
 		return
 	match state:
 		State.AIM:
@@ -1390,6 +1411,9 @@ func _mouse_swing_input(event: InputEvent) -> bool:
 		if ms.is_swinging():
 			if not mb.pressed and _swing_input == SwingInput.MOUSE:
 				ms.release()
+			return true
+		if mb.pressed and graphics.swing_method == 1 and state == State.AIM and _target_view.busy():
+			_target_view.go_home()
 			return true
 		if mb.pressed and graphics.swing_method == 1 and _can_start_swing() and Time.get_ticks_msec() >= _aim_ready_ms:
 			_begin_mouse_swing(SwingInput.MOUSE)
@@ -1492,7 +1516,8 @@ func _crowd_on() -> bool:
 
 ## Whether the player may start a swing now.
 func _can_start_swing() -> bool:
-	return state == State.AIM and not _replaying and not camera.flying() and not hud.mouse_swing.is_swinging()
+	return state == State.AIM and not _replaying and not camera.flying() and not hud.mouse_swing.is_swinging() \
+		and not _target_view.busy()
 
 
 ## Starts Links 2003's mouse swing, driven by the mouse, a finger or a stick.
@@ -1646,6 +1671,8 @@ func _touch_swing_input(event: InputEvent) -> bool:
 						_on_swing_pressed()  # ends the flyover
 					elif not hud.swing_button.covers(t.position):
 						_touch_aim(t.position)
+					elif _target_view.busy():
+						_on_swing_pressed()  # back behind the ball first
 					elif _can_start_swing() and Time.get_ticks_msec() >= _aim_ready_ms:
 						_touch_index = t.index
 						_touch_from = t.position
@@ -1743,6 +1770,8 @@ func _pad_button(event: InputEvent) -> bool:
 				hud.scorecard.visible = false
 			else:
 				hud.scorecard.show_round(scoring, _round_name())
+		JOY_BUTTON_Y:
+			_toggle_target_view()
 		_:
 			return false
 	return true
@@ -4372,8 +4401,65 @@ func _aim_camera(_snap: bool) -> void:
 		if _orbit_view == read_view:
 			pose = GreenRead.orbit_pose(hole.terrain, _orbit_pivot, _orbit)
 		camera.look_from(pose[0], pose[1])
+	else:
+		camera.aim(ball_at, _aim_dir(), clubs[club_index].is_putter, _flat_distance(ball_at, _aim_target()))
+	if _target_view.busy():
+		# Out at the target the aim (or the club) changed: the view follows
+		# the new target, and comes home to the new aim view. The round
+		# camera has just been put there; the next step puts it back out.
+		_target_view.retarget(_target_pose(), _camera_pose())
+
+
+# --- View target -------------------------------------------------------------
+
+## Whether the player can look out at the target now: their own turn,
+## lining up the shot.
+func _target_view_allowed() -> bool:
+	return state == State.AIM and not _replaying and hole != null and aim_marker != null \
+		and not camera.flying() and not hud.hand_over.visible and _human_turn() and not _is_remote() \
+		and not hud.mouse_swing.is_swinging()
+
+
+## Y, pad Y or the HUD button: out to look at the target, or back again.
+func _toggle_target_view() -> void:
+	if _target_view.out():
+		_target_view.go_home()
 		return
-	camera.aim(ball_at, _aim_dir(), clubs[club_index].is_putter, _flat_distance(ball_at, _aim_target()))
+	if _target_view.busy():
+		_target_view.go_out(_target_pose())
+		return
+	if not _target_view_allowed():
+		return
+	if read_view != GreenRead.View.PLAY:
+		# Out from a putting read view, home to the usual view behind the ball.
+		read_view = GreenRead.View.PLAY
+		_orbit_view = -1
+		_update_putting_panel()
+		_aim_camera(false)
+	_target_view.terrain = hole.terrain
+	var home := _camera_pose()
+	_target_view.start(home[0], home[1], _target_pose(), home)
+
+
+## Where the camera stands now and what it looks at.
+func _camera_pose() -> Array:
+	var c := camera.global_transform
+	return [c.origin, c.origin - c.basis.z * 50.0]
+
+
+func _target_pose() -> Array:
+	return TargetView.pose(hole.terrain, ball_at, aim_marker.position, clubs[club_index].is_putter)
+
+
+func _step_target_view(delta: float) -> void:
+	var home := _target_view.step(delta)
+	if home:
+		_aim_camera(false)  # exactly the aim view again
+		return
+	camera.position = _target_view.position
+	var to_look := _target_view.look - _target_view.position
+	if to_look.length() > 0.1 and absf(to_look.normalized().y) < 0.99:
+		camera.look_at(_target_view.look)
 
 
 # --- Broadcast presentation ---------------------------------------------------

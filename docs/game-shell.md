@@ -16,6 +16,7 @@ the browser and on desktop today.
 | Spin ball (under the wind) | Click, tap or drag where the club meets the ball: low for more backspin (higher), high for less (lower), left to draw or hook, right to fade or slice. Right-click or double-click resets |
 | Space or left click | Swing meter: start, set power, set accuracy |
 | Space or left click | Skip the ball flight, continue after a shot |
+| Y (or the View target button) | View target: the camera glides out to stand short of and above where the shot is aimed, looking at the landing area; aiming and changing club still work out there. Y again, the button, or a swing press glides back behind the ball (`TargetView`, `target_view.gd`) |
 | Tab | Show or hide the scorecard |
 | F1 | Broadcast and Tour: bring back the key hints, folded away from the second hole |
 | Esc | Menu: resume, scorecard, settings (quality, fullscreen, v-sync, anti-aliasing, 3D resolution, field of view), restart, main menu |
@@ -43,8 +44,8 @@ before the downswing calls the swing off. A tap starts the swing meter, and
 later taps click it.
 
 On a game pad the left stick or D-pad left and right aim (LB for fine aim),
-D-pad up and down change club, A is the swing meter (and continues), Back
-shows the scorecard and Start opens the menu. The right stick is the mouse
+D-pad up and down change club, A is the swing meter (and continues), Y
+views the target, Back shows the scorecard and Start opens the menu. The right stick is the mouse
 swing: pull it back, then push it forward. B calls it off before the
 downswing; the next swing waits for the stick to come back to rest.
 
