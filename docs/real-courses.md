@@ -635,6 +635,17 @@ or not at all. What that found, and what the builder now does:
   (dormant) pictures skip the grass tests, and the course edges, woods
   and houses are left out. It writes picture | game | flags side by side.
 
+- **No freezes from the long steps:** the sea and pond steps tested every
+  land cover pixel's distance to every fairway, green, tee and bunker
+  outline, which froze the game for up to 7 s on a big course (Whistling
+  Straits, 2,300 shapes). `LandCover.clear_near` now grows each outline
+  once and tests only the pixels inside its box, in native code: the same
+  course comes out, and the freeze is under 1 s. `e2e_build.gd` prints the
+  longest freeze (`MAXGAP`) and the step it was in.
+- **No wasted photo requests:** each photo service's boxes keep to its
+  own ground, so a US course by the Ontario border (Whistling Straits)
+  doesn't ask Ontario first and get a blank.
+
 `tools/realcourse_bench/e2e.sh` builds a course the way the game does and
 audits it (each hole's tee and pin surfaces, green slope, par for its
 length, trees on its line, and the reach check of `reach_tests.gd`);

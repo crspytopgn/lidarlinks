@@ -164,7 +164,13 @@ const SOURCES := [
 	# flown in summer.
 	{
 		"id": "on", "name": "Ontario GEO imagery, Ontario",
-		"boxes": [[41.7, -95.2, 56.9, -74.3]],
+		# Ontario only, round the border with the US states, so a US course
+		# (Whistling Straits, Oak Hill) doesn't ask it first and get a blank.
+		"boxes": [
+			[42.5, -82.3, 45.5, -79.0], [41.9, -83.1, 42.5, -82.3],
+			[44.0, -79.0, 46.5, -76.4], [44.9, -76.4, 46.5, -74.3],
+			[45.5, -83.5, 56.9, -74.3], [48.0, -90.0, 56.9, -83.5], [48.7, -95.2, 56.9, -90.0],
+		],
 		"url": "https://ws.geoservices.lrc.gov.on.ca/arcgis5/rest/services/AerialImagery/GEO_Imagery_Data_Service_2018to2022/ImageServer/exportImage?bbox={bbox}&bboxSR=3857&imageSR=3857&size={size},{size}&format=jpg&f=image",
 		"block": 4,
 		"credit": "Aerial photo: Ontario GEO imagery, Open Government Licence - Ontario",

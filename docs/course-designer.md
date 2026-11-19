@@ -149,7 +149,9 @@ course plays with the same bounce, roll, lies and penalties as any other.
 
 ## The `.olc` file
 
-A UTF-8 JSON object:
+A UTF-8 JSON object. **Save** writes it compact and gzipped (a real course
+is about 2.5 times smaller: Whistling Straits 3.0 MB to 1.2 MB); **Export**
+writes it as plain JSON to share. Loading and importing read either.
 
 | Key | Value |
 | --- | --- |

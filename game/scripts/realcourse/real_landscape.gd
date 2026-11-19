@@ -288,15 +288,10 @@ static func sea_from_cover(c: DesignedCourse, frame: GeoFrame, cover: LandCover)
 	for cj in ch:
 		for ci in cw:
 			var p := c.sample_pos(mini(ci * step + step / 2, c.cols - 1), mini(cj * step + step / 2, c.rows - 1))
-			if cover.class_at(frame.lat_of(p), frame.lon_of(p)) != LandCover.WATER:
-				continue
-			var dry_play := false
-			for s in play:
-				if s.bounds().grow(LandCover.RES).has_point(p) and s.signed_distance(p) < LandCover.RES:
-					dry_play = true
-					break
-			if not dry_play:
+			if cover.class_at(frame.lat_of(p), frame.lon_of(p)) == LandCover.WATER:
 				wet[cj * cw + ci] = 1
+	# Not within a land cover pixel of play.
+	LandCover.clear_near(wet, cw, ch, c.sample_pos(step / 2, step / 2), step * DesignedCourse.CELL, play, LandCover.RES, Rect2(c.area.position, c.sample_pos(c.cols - 1, c.rows - 1) - c.area.position))
 	# Joined to the edge: the sea comes in from outside.
 	var todo := PackedInt32Array()
 	var seen := PackedByteArray()

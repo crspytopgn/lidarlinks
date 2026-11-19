@@ -379,6 +379,9 @@ func _test_national_lidar() -> void:
 	check(ids.call(35.19, -79.47) == ["naip", "usgs"], "Pinehurst: NAIP: %s" % [ids.call(35.19, -79.47)])
 	check(ids.call(40.745, -73.455) == ["naip", "usgs"], "Bethpage: summer NAIP, not the leaf-off state photos")
 	check(ids.call(43.70, -79.40) == ["on", "naip", "usgs"], "Toronto: Ontario first, then the US boxes")
+	check(ids.call(45.42, -75.70)[0] == "on" and ids.call(48.38, -89.25)[0] == "on", "Ottawa and Thunder Bay: Ontario")
+	for us: Vector2 in [Vector2(43.85, -87.73), Vector2(43.12, -77.57), Vector2(42.90, -78.88), Vector2(48.60, -93.40), Vector2(42.55, -83.25)]:
+		check(not "on" in ids.call(us.x, us.y), "%s is in the US: not Ontario" % us)
 	check(ids.call(-41.03, 147.37) == ["tas"], "Barnbougle: Tasmania's photos")
 	check(ids.call(49.61, 6.13)[0] == "lu", "Luxembourg before Wallonia and France")
 	check(ids.call(36.57, -121.95) == ["naip", "usgs"], "California: NAIP as before")
@@ -832,6 +835,22 @@ func _test_land_cover() -> void:
 	check(RealCourseBuilder.add_ponds(pc, f, pl) == 1, "one pond from the land cover, none on the fairway")
 	if pc.shapes.size() == 2:
 		check(pc.shapes[1].surface == Surface.Type.WATER and pc.shapes[1].contains(f.to_local(50.99, -0.99)), "the pond is where the water is")
+	# The fast margin test agrees with the distance to the outline (a
+	# C-shaped fairway, so the grown outline has a notch).
+	var cs := CourseShape.new(Surface.Type.FAIRWAY, PackedVector2Array([Vector2(0, 0), Vector2(120, 0), Vector2(120, 30), Vector2(30, 30), Vector2(30, 90), Vector2(120, 90), Vector2(120, 120), Vector2(0, 120)]))
+	var near_shapes: Array[CourseShape] = [cs]
+	for margin: float in [0.0, 10.0]:
+		var nm := PackedByteArray()
+		nm.resize(40 * 40)
+		nm.fill(1)
+		LandCover.clear_near(nm, 40, 40, Vector2(-30.5, -30.5), 5.0, near_shapes, margin)
+		var wrong := 0
+		for k in nm.size():
+			var p := Vector2(-30.5, -30.5) + Vector2(k % 40, k / 40) * 5.0
+			var d := cs.signed_distance(p)
+			if absf(d - margin) > 0.3 and (nm[k] == 0) != (d < margin):
+				wrong += 1
+		check(wrong == 0, "margin %.0f: %d cells differ from the distance test" % [margin, wrong])
 	# A links course with no photo: fescue between the holes, a first cut
 	# round the fairway.
 	var lk := DesignedCourse.blank(Vector2(600, 400))
