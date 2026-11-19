@@ -720,6 +720,11 @@ func _test_land_cover() -> void:
 	lk.shapes.append(fw)
 	var none: Array[PackedVector2Array] = []
 	check(RealCourseBuilder.links_fescue(lk, none) == 2, "fescue over the area and a cut round the fairway")
+	var lr := DesignedCourse.blank(Vector2(600, 400))
+	lr.shapes.clear()
+	lr.shapes.append(CourseShape.new(Surface.Type.ROUGH, PackedVector2Array([Vector2(-200, -100), Vector2(200, -100), Vector2(200, 100), Vector2(-200, 100)])))
+	RealCourseBuilder.links_fescue(lr, none)
+	check(lr.shapes[0].surface == Surface.Type.DEEP_ROUGH, "the mapped rough on a links is fescue")
 	var lt := lk.to_course_data().holes[0].terrain if not lk.holes.is_empty() else null
 	var deep := lk.shapes[1]
 	var cut := lk.shapes[2]
