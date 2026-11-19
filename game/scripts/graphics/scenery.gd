@@ -35,7 +35,7 @@ const COMPAT_FILL_LIFT := 1.6
 ## (44, 55, 83) on the web and (74, 107, 150) on desktop against 2K25's
 ## pale (97, 159, 205); a deep, saturated sky behind bright cumulus read
 ## as a painted backdrop.
-const COMPAT_SKY_ENERGY := 2.1
+const COMPAT_SKY_ENERGY := 1.75
 const COMPAT_SKY_DEPTH := 0.8
 const COMPAT_SKY_FOG := 0.08
 const FORWARD_SKY_ENERGY := 1.0
@@ -518,6 +518,11 @@ func _apply_time() -> void:
 	var c: Color = _time.sun
 	sun.light_color = c
 	sun.light_energy = PHOTO_SUN_ENERGY * float(_time.energy)
+	if not GraphicsSettings.is_forward_plus():
+		# With the shade fill at COMPAT_SHADE_RATIO the web's sunlit turf
+		# came out darker than Forward+'s (the green darker than the
+		# fairway); a stronger sun lifts it without filling the shadows.
+		sun.light_energy *= COMPAT_SUN_LIFT
 	# Compatibility has no sky light, so its flat fill is a little stronger,
 	# or shade goes near black.
 	# (Measured against real course photos: our shade was far darker than
@@ -612,6 +617,8 @@ func _apply_weather() -> void:
 ## with only the flat fill its shade came out near black (about 10%); 0.75
 ## here gives the photos' 55% on screen.
 const COMPAT_SHADE_RATIO := 0.5
+## How much stronger the sun is drawn in Compatibility (see _apply_time).
+const COMPAT_SUN_LIFT := 1.3
 ## The same for Forward+. Its sky light fills the shade, but under the
 ## grade and SSAO tree shade still came out near black beside sunlit
 ## grass; 0.35 brings it to a darker green as in the photos (tuned on
