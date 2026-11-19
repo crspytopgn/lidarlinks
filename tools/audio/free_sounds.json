@@ -545,6 +545,13 @@
    "license": "cc0",
    "url": "https://xeno-canto.org/1183149",
    "preview": "https://xeno-canto.org/1183149/download"
+  },
+  "bsb0584": {
+   "title": "Tennis Ball: Bounce",
+   "user": "Joseph Sardin (BigSoundBank)",
+   "license": "cc0",
+   "url": "https://bigsoundbank.com/tennis-ball-bounce-s0584.html",
+   "preview": "https://bigsoundbank.com/UPLOAD/ogg/0584.ogg"
   }
  },
  "sounds": [
@@ -884,10 +891,10 @@
    "name": "land_fairway_1",
    "layers": [
     {
-     "src": 711443,
-     "t": 0.4,
-     "af": "lowpass=f=3500,lowpass=f=3500",
-     "onset": 0.0506
+     "src": "bsb0584",
+     "t": 0.3,
+     "af": "lowpass=f=2600,bass=g=8:f=140:w=1",
+     "onset": 1.6681
     }
    ],
    "peak": -3
@@ -896,18 +903,24 @@
    "name": "land_fairway_2",
    "layers": [
     {
-     "src": 711443,
-     "t": 0.45,
-     "rate": 1.08,
-     "af": "lowpass=f=3000",
-     "onset": 0.0506
-    },
-    {
-     "src": 711443,
+     "src": "bsb0584",
      "t": 0.3,
-     "db": -16,
-     "af": "highpass=f=2500",
-     "onset": 0.0506
+     "rate": 1.05,
+     "af": "lowpass=f=2600,bass=g=8:f=140:w=1",
+     "onset": 24.8095
+    }
+   ],
+   "peak": -3
+  },
+  {
+   "name": "land_fairway_3",
+   "layers": [
+    {
+     "src": "bsb0584",
+     "t": 0.3,
+     "rate": 0.97,
+     "af": "lowpass=f=2400,bass=g=9:f=130:w=1",
+     "onset": 26.4671
     }
    ],
    "peak": -3
@@ -916,11 +929,24 @@
    "name": "land_green_1",
    "layers": [
     {
-     "src": 711443,
-     "t": 0.5,
+     "src": "bsb0584",
+     "t": 0.3,
      "rate": 1.15,
-     "af": "lowpass=f=3000",
-     "onset": 0.0506
+     "af": "highpass=f=100,lowpass=f=2800,bass=g=4:f=160",
+     "onset": 10.5083
+    }
+   ],
+   "peak": -4
+  },
+  {
+   "name": "land_green_2",
+   "layers": [
+    {
+     "src": "bsb0584",
+     "t": 0.3,
+     "rate": 1.2,
+     "af": "highpass=f=100,lowpass=f=2800,bass=g=4:f=160",
+     "onset": 3.3766
     }
    ],
    "peak": -4

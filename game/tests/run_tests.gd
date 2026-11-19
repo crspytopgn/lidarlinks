@@ -3402,6 +3402,22 @@ func _test_full_round() -> void:
 	game.sounds.play_detail(&"hit", {"club": _club("Dr"), "lie": Surface.Type.ROUGH, "power": 1.0})
 	game.sounds.play_detail(&"land", {"surface": Surface.Type.SAND, "speed": 15.0})
 	_check(game.sounds.get_child_count() == before + 3, "driver from the rough plays strike and grass, sand landing plays")
+	# Off the fairway the strike plays alone (no rough swish), and each
+	# landing surface plays its own recording: the fairway's firm thump is
+	# not the rough's grass.
+	before = game.sounds.get_child_count()
+	game.sounds.play_detail(&"hit", {"club": _club("7i"), "lie": Surface.Type.FAIRWAY, "power": 1.0})
+	_check(game.sounds.get_child_count() == before + 1, "an iron off the fairway plays only the strike")
+	var landed := {}
+	for s: int in [Surface.Type.FAIRWAY, Surface.Type.TEE, Surface.Type.ROUGH, Surface.Type.DEEP_ROUGH, Surface.Type.GREEN]:
+		game.sounds.play_detail(&"land", {"surface": s, "speed": 25.0})
+		var p := game.sounds.get_child(game.sounds.get_child_count() - 1) as AudioStreamPlayer
+		landed[s] = p.stream.resource_path.get_file().rsplit("_", true, 1)[0] if p != null and p.stream != null else ""
+	_check(landed[Surface.Type.FAIRWAY] == "land_fairway" and landed[Surface.Type.TEE] == "land_fairway", "fairway and tee land with a thump: %s" % landed)
+	_check(landed[Surface.Type.ROUGH] == "land_grass" and landed[Surface.Type.DEEP_ROUGH] == "land_grass", "rough lands in the grass: %s" % landed)
+	_check(landed[Surface.Type.GREEN] == "land_green", "the green has its own landing: %s" % landed)
+	var fairway_takes: Array = (game.sounds as FreeSoundBank).takes("land_fairway")
+	_check(fairway_takes.size() >= 3, "three fairway landing takes")
 
 
 ## The full round was recorded and plays again to the same card; a changed
