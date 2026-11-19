@@ -51,23 +51,27 @@ FAMILY = {
 
 
 def club_frame(glb, rig, node_name):
-    """The mesh's vertices in the club joint's frame, and the matrices to
-    and from it."""
+    """The mesh's vertices (every surface: a head's face, sole and ferrule
+    too) in the club joint's frame, its surfaces, and the matrix to it."""
     doc = glb.doc
     node = next(n for n in doc["nodes"] if n.get("name") == node_name)
-    prim = doc["meshes"][node["mesh"]]["primitives"][0]
+    prims = doc["meshes"][node["mesh"]]["primitives"]
     skin = doc["skins"][node["skin"]]
     ibm = np.array(glb.read(skin["inverseBindMatrices"])).astype(float)
     k = skin["joints"].index(rig.joints[rig.index["club"]])
     m = ibm[k].reshape(4, 4).T
-    V = np.array(glb.read(prim["attributes"]["POSITION"])).astype(float)
-    return prim, m, (m[:3, :3] @ V.T).T + m[:3, 3]
+    V = np.vstack([np.array(glb.read(p["attributes"]["POSITION"])).astype(float) for p in prims])
+    return prims, m, (m[:3, :3] @ V.T).T + m[:3, 3]
 
 
-def put_back(glb, prim, m, local):
+def put_back(glb, prims, m, local):
     inv = np.linalg.inv(m)
     V = (inv[:3, :3] @ local.T).T + inv[:3, 3]
-    prim["attributes"]["POSITION"] = glb.add(V.astype(np.float32), minmax=True)
+    at = 0
+    for p in prims:
+        n = glb.doc["accessors"][p["attributes"]["POSITION"]]["count"]
+        p["attributes"]["POSITION"] = glb.add(V[at:at + n].astype(np.float32), minmax=True)
+        at += n
 
 
 def needed(glb, rig, clip, window, sole_at, head, shaft_dir):
