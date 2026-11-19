@@ -100,6 +100,11 @@ var round_holes: Array[int] = []
 var round_pars: Array[int] = []
 var made_cut: Array[bool] = []
 var withdrawn := false
+## A playoff the person is in, played for real on the event's last hole:
+## the golfers still in it (the person among them) and the playoff holes
+## played so far. Empty when there is none.
+var playoff_with: Array[int] = []
+var playoff_holes := 0
 ## Season earnings, per golfer.
 var money: Array[int] = []
 ## The person's career: {events, wins, top10, cuts_made, cuts_missed,
@@ -170,7 +175,14 @@ func playing_event() -> bool:
 
 ## Ties a saved round to the round of the career it was started for.
 func round_id() -> String:
+	if not playoff_with.is_empty():
+		return "%d/%d/%d/%d/p%d" % [career_seed, season, event, rounds_played(), playoff_holes]
 	return "%d/%d/%d/%d" % [career_seed, season, event, rounds_played()]
+
+
+## True when the person's next round is a playoff hole.
+func in_playoff() -> bool:
+	return not playoff_with.is_empty()
 
 
 # --- Seasons and events -------------------------------------------------------
@@ -340,7 +352,16 @@ func next_setup() -> RoundSetup:
 	s.names.assign([player])
 	s.teams.assign([0])
 	s.computer.assign([RoundSetup.HUMAN])
-	for i in partner_indexes():
+	var group := partner_indexes()
+	if in_playoff():
+		# Sudden death on the last hole of the round, against everyone
+		# still tied.
+		s.only_hole = (round_holes[-1] if not round_holes.is_empty() else (9 if short_rounds else 18)) - 1
+		group.clear()
+		for i in playoff_with:
+			if i != player_index():
+				group.append(i)
+	for i in group:
 		s.names.append(names[i])
 		s.teams.append(s.teams.size() % 2)
 		s.computer.append(partner_level(i))
@@ -386,8 +407,67 @@ func record_round(id: String, played: Dictionary, holes: int, par: int, gross: i
 	if made_cut.size() > 0 and not made_cut[me]:
 		_play_out()
 	if rounds_played() >= rounds_per_event:
-		text += " " + _finish_event()
+		var tied := tied_leaders()
+		if tied.size() > 1 and tied.has(me) and not withdrawn:
+			playoff_with = tied
+			playoff_holes = 0
+			text += " Tied for the lead with %s: a sudden-death playoff on the last hole. Play it from the Career page." % _names_of(tied, me)
+		else:
+			text += " " + _finish_event()
 	return text
+
+
+## The golfers level at the top after the last round (finishers only).
+func tied_leaders() -> Array[int]:
+	var out: Array[int] = []
+	var rows := standings()
+	if rows.is_empty() or not str(rows[0][2]).is_empty():
+		return out
+	for row: Array in rows:
+		if str(row[2]).is_empty() and int(row[1]) == int(rows[0][1]):
+			out.append(int(row[0]))
+	return out
+
+
+func _names_of(who: Array[int], except: int) -> String:
+	var out: Array[String] = []
+	for i in who:
+		if i != except:
+			out.append(names[i])
+	return " and ".join(out)
+
+
+## A playoff hole the person played: `played` maps each golfer's name to
+## their strokes on it. The best score goes on; the person going out ends
+## it (the rest is simulated); the person alone wins it. Returns what
+## happened, or "" if `id` isn't this career's playoff hole.
+func record_playoff(id: String, played: Dictionary) -> String:
+	if not in_playoff() or id != round_id():
+		return ""
+	var me := player_index()
+	if not played.has(names[me]):
+		return ""
+	var best := 99
+	for i in playoff_with:
+		if played.has(names[i]):
+			best = mini(best, int(played[names[i]]))
+	var left: Array[int] = []
+	for i in playoff_with:
+		# A golfer with no score (the hole stopped early) is out.
+		if played.has(names[i]) and int(played[names[i]]) == best:
+			left.append(i)
+	playoff_holes += 1
+	var hole_text := "Playoff hole %d: %d." % [playoff_holes, int(played[names[me]])]
+	if left.size() > 1 and left.has(me) and playoff_holes < MAX_PLAYOFF_HOLES:
+		playoff_with = left
+		return hole_text + " Still tied with %s: play the next playoff hole." % _names_of(left, me)
+	var winner := me if left.has(me) and left.size() == 1 else -1
+	if winner < 0:
+		var rest: Array[int] = left.duplicate()
+		rest.erase(me)
+		winner = rest[0] if rest.size() == 1 else _playoff(rest if not rest.is_empty() else left)
+	playoff_with.clear()
+	return hole_text + " " + _finish_event(winner)
 
 
 ## The person withdraws from the event in progress (no money); the event is
@@ -396,6 +476,7 @@ func withdraw() -> void:
 	if not playing_event():
 		return
 	withdrawn = true
+	playoff_with.clear()
 	_play_out()
 	_finish_event()
 
@@ -536,6 +617,10 @@ static func _share(place: int) -> float:
 	return maxf(0.15, float(PAYOUT[-1]) - 0.002 * (place - PAYOUT.size() + 1))
 
 
+## Playoff holes the person plays before the rest is simulated.
+const MAX_PLAYOFF_HOLES := 6
+
+
 ## Sudden death between the golfers in `tied`: each plays holes until one
 ## wins outright. Returns the winner.
 func _playoff(tied: Array[int]) -> int:
@@ -568,7 +653,7 @@ func player_average() -> float:
 
 
 ## Pays out the event, keeps the person's result and moves on.
-func _finish_event() -> String:
+func _finish_event(playoff_winner := -1) -> String:
 	var ev: Dictionary = schedule[event]
 	var rows := standings()
 	var finishers: Array[int] = []
@@ -583,7 +668,7 @@ func _finish_event() -> String:
 		for k in totals.size():
 			if totals[k] == totals[0]:
 				tied.append(finishers[k])
-		var winner := _playoff(tied)
+		var winner := playoff_winner if tied.has(playoff_winner) else _playoff(tied)
 		finishers.erase(winner)
 		finishers.insert(0, winner)
 		playoff = true
@@ -719,7 +804,9 @@ func next_text() -> String:
 		return "Season %d is over." % season
 	var ev: Dictionary = schedule[event]
 	var text := "Event %d of %d: %s. Purse %s." % [event + 1, schedule.size(), event_title(event), format_money(int(ev.purse))]
-	if playing_event():
+	if in_playoff():
+		text += " Playoff hole %d against %s." % [playoff_holes + 1, _names_of(playoff_with, player_index())]
+	elif playing_event():
 		text += " Round %d of %d." % [rounds_played() + 1, rounds_per_event]
 	elif withdrawn:
 		text += " Withdrawn."
@@ -826,7 +913,7 @@ func save() -> void:
 	for key: String in ["player", "career_seed", "tour", "season", "events_per_season", "rounds_per_event",
 			"short_rounds", "partners", "course_keys", "course_names", "names", "skills", "schedule",
 			"results", "event", "scores", "round_holes", "round_pars", "made_cut", "withdrawn", "money",
-			"stats", "history"]:
+			"stats", "history", "playoff_with", "playoff_holes"]:
 		var v: Variant = get(key)
 		if v is Array:
 			v = Array(v)
@@ -859,6 +946,8 @@ static func load_saved() -> Career:
 	c.round_pars.assign(cfg.get_value("career", "round_pars", []))
 	c.made_cut.assign(cfg.get_value("career", "made_cut", []))
 	c.withdrawn = cfg.get_value("career", "withdrawn", false) == true
+	c.playoff_with.assign(cfg.get_value("career", "playoff_with", []))
+	c.playoff_holes = int(cfg.get_value("career", "playoff_holes", 0))
 	c.money.assign(cfg.get_value("career", "money", []))
 	c.stats = cfg.get_value("career", "stats", {})
 	c.history = cfg.get_value("career", "history", [])

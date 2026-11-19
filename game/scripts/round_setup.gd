@@ -59,6 +59,15 @@ var putting := false
 ## the ball comes back, and a launch monitor shows each shot. No scores.
 ## Not saved with the setup.
 var practice := false
+## With `practice` on a course: chipping only. Each ball sits somewhere
+## round the green (GolfRound.chip_spot) instead of on the tee, as in
+## Links 2003's chipping practice. Not saved with the setup.
+var chipping := false
+## Play through (Links 2003's practice option): the course played as a round,
+## but nothing counts: no profile, records, handicap or saved replay, a
+## mulligan on any shot, and N and B skip to the next or last hole. Not
+## saved with the setup.
+var play_through := false
 ## Practice on the built-in practice ground (PracticeGround: its range for
 ## `practice`, its putting green for `putting`) instead of the course's own
 ## tees and greens. Not saved with the setup.
@@ -82,6 +91,11 @@ var pros := {}
 ## Each player's handicap index in tenths (Handicap.NONE plays off scratch),
 ## from their profile. Not saved with the setup.
 var indexes: Array[int] = []
+## Only this hole (an index) is played, as a career playoff does; -1 for
+## the usual holes. Kept with a saved round.
+var only_hole := -1
+## The daily round's date (DailyRound), or "". Kept with a saved round.
+var daily := ""
 
 
 static func single(path: String) -> RoundSetup:
@@ -174,6 +188,8 @@ func problem() -> String:
 
 ## The holes of a `count`-hole course to play, as indices.
 func hole_indices(count: int) -> Array[int]:
+	if only_hole >= 0 and count > 0:
+		return [mini(only_hole, count - 1)]
 	var first := 0
 	var last := count
 	if count > 9:

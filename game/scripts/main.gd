@@ -357,6 +357,7 @@ var _orbit_pinch := 0.0
 const ORBIT_DEG_PER_PX := 0.25
 var practice: PuttingPractice  ## the putting green (RoundSetup.putting); null otherwise
 var practice_cups: PracticeCups
+var _chip_count := 0  ## balls chipped so far (RoundSetup.chipping), for the next spot
 var putting_panel: PuttingPanel
 var _home_pins := {}  ## HoleData -> its own pin, while practising
 var _replaying := false
@@ -644,7 +645,7 @@ func _restore(saved: Dictionary) -> void:
 
 ## Saves where the round stands (SavedRound), so it can be resumed.
 func _save_progress() -> void:
-	if state == State.ROUND_DONE or practice != null or round_setup.practice:
+	if state == State.ROUND_DONE or practice != null or round_setup.practice or round_setup.play_through:
 		return
 	var saved_cards: Array = []
 	for c in scoring.cards:
@@ -803,6 +804,8 @@ func start_hole(index: int) -> void:
 	for i in players.size():
 		var p := players[i]
 		p.at = hole.tee if practice == null else practice_spot
+		if round_setup != null and round_setup.chipping:
+			p.at = chip_spot(hole.terrain, hole.pin, hole.tee, hash([round_seed, index, _chip_count]))
 		p.strokes = 0
 		p.holed = false
 		p.picked_up = false
@@ -959,7 +962,7 @@ func play_shot(power: float, accuracy: float, monitor: OpenConnect.Launch = null
 	_quiet_advice()
 	players[current].shots += 1
 	# The player's mouse brought the club down to the ball: it is struck now.
-	var struck := golfer != null and not club.is_putter and golfer.at_impact()
+	var struck := golfer != null and golfer.at_impact()
 	if golfer:
 		golfer.set_shot(club, _flat_distance(ball_at, hole.pin), power)
 		golfer.play(&"putt" if club.is_putter else &"swing")
@@ -1269,7 +1272,7 @@ func _unhandled_input(event: InputEvent) -> void:
 						_take_mulligan()
 					return
 				KEY_N, KEY_B:
-					if round_setup.practice and state == State.AIM and holes.size() > 1:
+					if (round_setup.practice or round_setup.play_through) and state == State.AIM and holes.size() > 1:
 						var step := 1 if key.keycode == KEY_N else -1
 						start_hole(posmod(hole_index + step, holes.size()))
 					return
@@ -1822,12 +1825,13 @@ func _on_mouse_stroke_cancelled() -> void:
 ## The golfer's club goes where the player's swing has it, frame by frame:
 ## up with the meter's rise (held at the top while it comes back down), or
 ## with the mouse back and through, so the ball is struck as the mouse
-## brings the club to it. Putts keep their own stroke.
+## brings the club to it. Putts too: the putter goes back and through
+## with the stroke (FreeGolfer.PUTT_TOP).
 var _swing_top := 0.0
 
 
 func _follow_swing() -> void:
-	if golfer == null or clubs[club_index].is_putter:
+	if golfer == null:
 		return
 	var ms := hud.mouse_swing
 	if ms.club != null:
@@ -1992,7 +1996,7 @@ var _mulligans_taken: Array = []
 
 
 func _can_mulligan() -> bool:
-	if graphics.mulligans == 0 or _undo.is_empty() or round_setup.practice or not _house_rules():
+	if (graphics.mulligans == 0 and not round_setup.play_through) or _undo.is_empty() or round_setup.practice or not _house_rules():
 		return false
 	if GameModes.shared_ball(round_setup.mode) or opponents[shooter] != null or shot == null:
 		return false
@@ -2000,6 +2004,8 @@ func _can_mulligan() -> bool:
 		return false
 	if shot.outcome == ShotResult.Outcome.HOLED or int(_undo.record) != record.shots.size() - 1:
 		return false
+	if round_setup.play_through:
+		return true  # practice: as many as you like
 	while _mulligans_taken.size() <= shooter:
 		_mulligans_taken.append([])
 	for h: int in _mulligans_taken[shooter]:
@@ -2057,7 +2063,7 @@ func _pickup_at() -> int:
 ## in a friend's round, so result codes compare, nor online, where each game
 ## must end every hole on the same shot as the others.
 func _house_rules() -> bool:
-	return round_setup.challenge == null and online == null
+	return round_setup.challenge == null and online == null and round_setup.daily.is_empty()
 
 
 # --- Gimmes -------------------------------------------------------------------
@@ -2130,6 +2136,9 @@ func _practice_shot_done() -> void:
 		monitor_panel.show_reading(reading, practice_session.summary(club.full_name))
 	var msg := "Carry %d yd    Total %d yd    %s" % [roundi(reading.carry_yd), roundi(reading.total_yd),
 		Surface.name_of(hole.terrain.surface_at(shot.rest.x, shot.rest.z))]
+	if round_setup.chipping:
+		var left := _flat_distance(shot.rest, hole.pin)
+		msg = "%.1f ft from the hole" % (left / 0.3048) if left < 6.0 else "%d ft from the hole" % roundi(left / 0.3048)
 	match shot.outcome:
 		ShotResult.Outcome.HOLED:
 			sounds.play(&"cup")
@@ -2154,9 +2163,40 @@ func _practice_shot_done() -> void:
 
 
 ## The ball comes back to the tee for the next practice shot.
+## Chipping practice (RoundSetup.chipping): a spot round the green, off
+## it, CHIP_MIN to CHIP_MAX metres from the pin and mostly on the side the
+## hole is played from, on ground a ball could lie on (not water, a hazard,
+## out of bounds or the green). The same `spot_seed` gives the same spot.
+const CHIP_MIN := 5.0
+const CHIP_MAX := 35.0
+static func chip_spot(t: CourseTerrain, pin: Vector3, tee: Vector3, spot_seed: int) -> Vector3:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = spot_seed
+	var back := atan2(tee.x - pin.x, tee.z - pin.z)
+	for attempt in 80:
+		# Widen the search the longer it takes (a green ringed by water).
+		var spread := deg_to_rad(lerpf(100.0, 180.0, attempt / 80.0))
+		var a := back + rng.randf_range(-spread, spread)
+		var d := rng.randf_range(CHIP_MIN, CHIP_MAX)
+		var x := pin.x + sin(a) * d
+		var z := pin.z + cos(a) * d
+		var s := t.surface_at(x, z)
+		if s == Surface.Type.GREEN or s == Surface.Type.WATER or s == Surface.Type.OUT_OF_BOUNDS:
+			continue
+		if t.hazard_at(x, z) or not t.in_bounds(x, z):
+			continue
+		return Vector3(x, t.height_at(x, z), z)
+	var x0 := pin.x + sin(back) * CHIP_MAX
+	var z0 := pin.z + cos(back) * CHIP_MAX
+	return Vector3(x0, t.height_at(x0, z0), z0)
+
+
 func _practice_reset() -> void:
 	ball.visible = true
 	ball_at = hole.tee
+	if round_setup.chipping:
+		_chip_count += 1
+		ball_at = chip_spot(hole.terrain, hole.pin, hole.tee, hash([round_seed, hole_index, _chip_count]))
 	_place_ball(ball_at)
 	strokes = 0
 	_prepare_shot(false)
@@ -2294,9 +2334,9 @@ static func _objects_viewable() -> bool:
 
 func _process_aim(delta: float) -> void:
 	var turn := 0.0
-	if Input.is_action_pressed("ui_left"):
+	if KeyRemap.held(KEY_LEFT, "ui_left"):
 		turn += 1.0
-	if Input.is_action_pressed("ui_right"):
+	if KeyRemap.held(KEY_RIGHT, "ui_right"):
 		turn -= 1.0
 	if turn == 0.0:
 		_clear_gallery_line()
@@ -2885,6 +2925,9 @@ func _next_hole() -> void:
 			text += "  Net %d (%s)." % [net.total_strokes(), Scorecard.format_to_par(net.to_par())]
 	var records := _record_rounds()
 	_save_record()
+	if not round_setup.daily.is_empty() and card.holes_played() == card.pars.size():
+		var best := DailyRound.record(round_setup.daily, card.to_par())
+		text += "\nDaily round: best today %s, %d in a row." % [Scorecard.format_to_par(best), DailyRound.streak(round_setup.daily)]
 	if round_setup.challenge != null:
 		text += "\nTheir round: " + round_setup.challenge.summary()
 	if not records.is_empty():
@@ -2912,7 +2955,7 @@ func _save_record() -> void:
 	record.cards.clear()
 	for c in scoring.cards:
 		record.cards.append(c.strokes.duplicate())
-	if record_rounds:
+	if record_rounds and not round_setup.play_through:
 		record.save()
 
 
@@ -2920,6 +2963,8 @@ func _save_record() -> void:
 ## their handicap index. Rounds that stop early, or are shorter than nine
 ## holes, don't count.
 func _record_rounds() -> String:
+	if round_setup.play_through:
+		return ""  # practice
 	if GameModes.shared_ball(round_setup.mode):
 		return ""  # team scores, not the players' own
 	var profiles := PlayerProfiles.load_saved()
@@ -3037,7 +3082,16 @@ func _record_career() -> String:
 		if cd.holes_played() == cd.pars.size():
 			played[scoring.names[i]] = cd.to_par()
 	var me := scoring.cards[0]
-	var text := c.record_round(round_setup.career, played, me.pars.size(), me.total_par(), me.total_strokes())
+	var text := ""
+	if c.in_playoff():
+		var strokes_on := {}
+		for i in scoring.player_count():
+			var cd := scoring.cards[i]
+			if cd.holes_played() == cd.pars.size():
+				strokes_on[scoring.names[i]] = cd.total_strokes()
+		text = c.record_playoff(round_setup.career, strokes_on)
+	else:
+		text = c.record_round(round_setup.career, played, me.pars.size(), me.total_par(), me.total_strokes())
 	if text.is_empty():
 		return ""
 	c.save()
@@ -3189,6 +3243,46 @@ func _cancel_drop() -> void:
 	_prepare_shot(false)
 
 
+const DROP_HEIGHT := 1.4  ## metres, about shoulder height
+const DROP_PUSH := 0.6  ## m/s sideways, at most
+
+
+## Links drops the ball rather than placing it: it falls from about
+## shoulder height (Links 2003 follows the rules of its day) at `spot`,
+## bounces and rolls on the course, and is dropped again if it rolls out
+## of the zone (nearer the pin, into water, out of bounds, on to the green,
+## or more than two club lengths from where it fell and outside the zone).
+## After two drops that roll out it is placed
+## where the drop was aimed. `drop_seed` picks the small sideways push each
+## drop gets, so a replayed round drops the same way.
+## Returns {"spot": Vector3, "note": String}.
+static func drop_and_roll(model: ShotModel, z: DropRules.Zone, spot: Vector3, pin: Vector3, t: CourseTerrain, drop_seed: int) -> Dictionary:
+	if model == null or t == null:
+		return {"spot": spot, "note": ""}
+	var rng := RandomNumberGenerator.new()
+	rng.seed = drop_seed
+	var ground := Vector3(spot.x, t.height_at(spot.x, spot.z), spot.z)
+	for attempt in 2:
+		var a := rng.randf() * TAU
+		var push := Vector3(cos(a), 0.0, sin(a)) * rng.randf() * DROP_PUSH
+		var start := BallState.new(ground + Vector3.UP * DROP_HEIGHT, push)
+		var r := model.simulate(start, t, Vector3(0, 0, 1.0e7))
+		var moved := Vector2(r.rest.x - ground.x, r.rest.z - ground.z).length()
+		var c := DropRules.check(z, r.rest, pin, t) if r.outcome == ShotResult.Outcome.REST else DropRules.Check.HAZARD
+		# A dropped ball may roll up to two club lengths from where it fell,
+		# even past the zone's edge (but never nearer the pin or into trouble).
+		if c == DropRules.Check.OUTSIDE_ZONE and moved <= 2.0 * DropRules.CLUB_LENGTH:
+			c = DropRules.Check.OK
+		if c == DropRules.Check.OK:
+			var note := ""
+			if attempt > 0:
+				note = " It rolled out, so it was dropped again."
+			elif moved >= 0.3:
+				note = " It rolled %.1f m." % moved
+			return {"spot": r.rest, "note": note}
+	return {"spot": ground, "note": " It rolled out twice, so it was placed."}
+
+
 func _finish_drop() -> void:
 	var z := _drop_zones[_drop_choice]
 	if not z.found:
@@ -3199,6 +3293,12 @@ func _finish_drop() -> void:
 	_drop_reason = -1
 	drop_marker.visible = false
 	ball_at = _drop_spot
+	var drop_note := ""
+	if z.option != DropRules.Option.STROKE_AND_DISTANCE and not _is_remote():
+		var dropped := drop_and_roll(shot_model, z, _drop_spot, hole.pin, hole.terrain,
+				hash([round_seed, hole_index, current, strokes]))
+		ball_at = dropped["spot"]
+		drop_note = dropped["note"]
 	# The water penalty was counted when the ball went in.
 	if reason != DropRules.Reason.WATER:
 		strokes += DropRules.penalty(reason)
@@ -3216,7 +3316,7 @@ func _finish_drop() -> void:
 		strokes = mini(strokes, _pickup_at())
 		_hole_out(true)
 		return
-	var msg := what + "."
+	var msg := what + "." + drop_note
 	if players.size() > 1:
 		msg = scoring.names[shooter] + ": " + msg
 	if reason == DropRules.Reason.WATER:

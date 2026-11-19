@@ -238,6 +238,7 @@ func _ask_for_files(problem := "") -> void:
 	_status.text = text if problem.is_empty() else problem + "\n\n" + text
 	_set_buttons([
 		["Play now", _play_placeholders],
+		["Daily round", _play_daily],
 		["Play a round", _setup_placeholders],
 		["Load disc images...", _pick.bind(false)],
 		["Load a game folder...", _pick.bind(true)],
@@ -342,7 +343,7 @@ func _show_ready(courses: PackedStringArray, extra: Array) -> void:
 	if _can_resume():
 		_status.text += "
 Saved round: %s." % SavedRound.describe()
-	var items: Array = [["Play a round", _open_setup]]
+	var items: Array = [["Play a round", _open_setup], ["Daily round", _play_daily]]
 	if OnlineSettings.available():
 		items.append(["Play online", _open_online])
 	if _can_resume():
@@ -377,6 +378,20 @@ func _play_placeholders() -> void:
 	_open_setup()
 	if _setup.visible:
 		_setup._on_start()
+
+
+## The daily round (DailyRound): today's built-in course, pins, wind and
+## seed, the same for everyone.
+func _play_daily() -> void:
+	if _busy:
+		return
+	var saved := RoundSetup.load_saved()
+	var player: String = saved.names[0] if not saved.names.is_empty() else "Player 1"
+	var s := DailyRound.setup(DailyRound.today(), player)
+	_setup_paths = _all_courses()
+	var slot := 0 if s.course_key.is_empty() else _setup_paths.find(s.course_key) + 1
+	GolfRound.resume = {}
+	_launch(s, maxi(slot, 0))
 
 
 func _setup_placeholders() -> void:
@@ -831,6 +846,7 @@ func _show_desktop_choice() -> void:
 	_status.text = "Kettle Hollow is ready. Add your Links 2003 game folder to play the original courses too."
 	_set_buttons([
 		["Play now", _play_placeholders],
+		["Daily round", _play_daily],
 		["Play a round", _setup_placeholders],
 		["Choose game folder...", _choose_folder],
 		["Tour event", _open_tour_event],

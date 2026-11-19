@@ -70,6 +70,10 @@ const PULL_MAX := 6.0
 ## Mixamo takes, tools/golfer/mixamo_bake.py prints them).
 const SWING_IMPACT := 0.27
 const PUTT_IMPACT := 1.0
+## The top of the putt's backstroke, seconds into the putt clip (the trail
+## hand furthest back in the bake): a stroke the player drives is held
+## from address up to here, then brought through to PUTT_IMPACT.
+const PUTT_TOP := 0.63
 ## Each golfer's own tempo (speed of the backswing, swing and putt),
 ## picked from the look: tour downswings run ~0.25 s (quick players) to
 ## ~0.33 s (smooth ones).
@@ -101,6 +105,9 @@ var look: PlayerLook
 ## follow_downswing), or empty.
 var _following := &""
 var _follow_f := 0.0
+## Where play(&"putt") started the putt clip, seconds in: 0 from address,
+## or as far as the player's stroke had brought the putter.
+var _putt_from := 0.0
 ## False to settle into address on the spot (the player creator's preview).
 var walk_in := true
 ## Largest texture side for this golfer's look (0: the pack's own). The
@@ -633,6 +640,16 @@ func play(animation: StringName) -> void:
 		_player.play(_player.assigned_animation, 0.0, tempo)
 		_player.seek(SWING_IMPACT, true)
 		return
+	# A putt the player's stroke has been driving goes on from where the
+	# putter is, at his tempo, rather than from address again.
+	_putt_from = 0.0
+	if animation == &"putt" and _following == &"putt":
+		_following = &""
+		_putt_from = minf(_player.current_animation_position, PUTT_IMPACT)
+		_speed = tempo
+		_player.play(&"putt", 0.0, tempo)
+		_player.seek(_putt_from, true)
+		return
 	_following = &""
 	if animation == &"address" and _putting:
 		clip = &"address_putt"
@@ -682,15 +699,45 @@ func _ball_spot() -> Vector3:
 
 
 func follow_backswing(f: float) -> void:
-	_follow_clip(&"backswing", clampf(f, 0.0, 1.0))
+	if _putting:
+		_follow_putt(clampf(f, 0.0, 1.0) * PUTT_TOP, f)
+	else:
+		_follow_clip(&"backswing", clampf(f, 0.0, 1.0))
 
 
 func follow_downswing(f: float) -> void:
-	_follow_clip(&"swing", clampf(f, 0.0, 1.0))
+	if _putting:
+		_follow_putt(lerpf(PUTT_TOP, PUTT_IMPACT, clampf(f, 0.0, 1.0)), 1.0 + f)
+	else:
+		_follow_clip(&"swing", clampf(f, 0.0, 1.0))
 
 
+## The putter is at the ball: for a putt, _follow_f runs 0 to 1 on the
+## backstroke and 1 to 2 coming through.
 func at_impact() -> bool:
+	if _following == &"putt":
+		return _follow_f >= 1.0 + IMPACT_NEAR
 	return _following != &"" and String(_following).begins_with("swing") and _follow_f >= IMPACT_NEAR
+
+
+## Holds the putt clip `t` seconds in (the player's stroke).
+func _follow_putt(t: float, f: float) -> void:
+	if not _player.has_animation(&"putt"):
+		return
+	if _following != &"putt":
+		_stop_walk()
+		if _look:
+			_look.track(null, 0.0)
+		_show_putter(true)
+		_speed = 1.0
+		_player.play(&"putt", BLEND_TIME * 0.5, 1.0)
+		if _hands:
+			_hands.follow(&"putt", BLEND_TIME * 0.5)
+		_following = &"putt"
+	elif not _player.is_playing():
+		_player.play(&"putt", 0.0, 1.0)
+	_follow_f = f
+	_player.seek(t, true)
 
 
 ## Holds `animation` (its iron take for an iron) at share `f` of the way
@@ -726,7 +773,7 @@ func impact_delay() -> float:
 
 
 func putt_impact_delay() -> float:
-	return PUTT_IMPACT / tempo
+	return maxf(PUTT_IMPACT - _putt_from, 0.0) / tempo
 
 
 ## A tempo for a look, the same every time for the same golfer.

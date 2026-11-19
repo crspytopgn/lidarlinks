@@ -12,9 +12,9 @@ signal back_pressed
 ## Asks for Select golfer (GolferSelectPanel) on this player.
 signal golfer_pressed(player_name: String)
 
-enum { PLAY_ROUND, PLAY_RANGE, PLAY_TARGETS, PLAY_PUTTING_GREEN, PLAY_COURSE_GREENS, PLAY_COURSE_TEES }
+enum { PLAY_ROUND, PLAY_RANGE, PLAY_TARGETS, PLAY_PUTTING_GREEN, PLAY_COURSE_GREENS, PLAY_COURSE_TEES, PLAY_COURSE_CHIPS, PLAY_THROUGH }
 const PLAY_NAMES: Array[String] = ["A round", "Driving range", "Range target game", "Practice putting green",
-	"Putting on this course's greens", "Hitting from this course's tees"]
+	"Putting on this course's greens", "Hitting from this course's tees", "Chipping round this course's greens", "Play through (practice, no score)"]
 
 var _course: OptionButton
 var _picture: CoursePicture
@@ -253,7 +253,9 @@ func current_setup() -> RoundSetup:
 	s.green_speed = _speed.selected - 1
 	s.mode = _mode.selected as GameModes.Mode
 	s.handicaps = _handicaps.selected == 1
-	s.practice = _play.selected in [PLAY_RANGE, PLAY_TARGETS, PLAY_COURSE_TEES]
+	s.practice = _play.selected in [PLAY_RANGE, PLAY_TARGETS, PLAY_COURSE_TEES, PLAY_COURSE_CHIPS]
+	s.chipping = _play.selected == PLAY_COURSE_CHIPS
+	s.play_through = _play.selected == PLAY_THROUGH
 	s.putting = _play.selected in [PLAY_PUTTING_GREEN, PLAY_COURSE_GREENS]
 	s.facility = _play.selected in [PLAY_RANGE, PLAY_TARGETS, PLAY_PUTTING_GREEN]
 	s.target_game = _play.selected == PLAY_TARGETS
@@ -398,6 +400,10 @@ static func play_help(play: int) -> String:
 			return PuttingPractice.SETUP_HELP
 		PLAY_COURSE_TEES:
 			return "Hit from this course's tees as often as you like: the ball comes back and a launch monitor shows each shot. N and B change hole."
+		PLAY_THROUGH:
+			return "Play the course for practice: nothing goes on your record or handicap, U takes any shot again, and N and B skip holes."
+		PLAY_COURSE_CHIPS:
+			return "Chip to this course's pins: each ball sits somewhere new round the green, from a few yards to about 40, and you see how close it finished. N and B change hole."
 	return ""
 
 

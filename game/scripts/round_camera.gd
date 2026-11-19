@@ -30,6 +30,12 @@ const AIM_LOOK_UP := 2.0
 ## golf and 2K25 keep the camera low behind him and leave a blind shot blind
 ## (the HUD says BLIND and the aim marker shows the target).
 const AIM_MAX_LIFT := 1.5
+## Off a tee shelf above a downhill hole the fairway can drop out of sight
+## under the tee's own front edge. The golfer still fills the foot of the
+## frame from a little higher, as TV's raised tee cameras show, so a target
+## at least DOWNHILL_DROP below the ball lets the camera climb this far.
+const AIM_DOWNHILL_LIFT := 4.0
+const DOWNHILL_DROP := 4.0
 const AIM_FRAME_FOV := 50.0  ## framing over a rise assumes at most this vertical field of view
 const PUTT_LOOK_AHEAD := 6.0
 ## Shots that carry further than this get the landing view.
@@ -170,9 +176,11 @@ func _aim_over_rise(ball: Vector3, dir: Vector3, start: Vector3, target: Vector3
 	var feet := ball + Vector3.UP * 0.1
 	var pos := start
 	var cleared := false
-	for step in range(1, 4):
-		var lift := AIM_MAX_LIFT * step / 3.0
-		pos = _above_ground(start - dir * lift + Vector3.UP * lift)
+	var max_lift := AIM_DOWNHILL_LIFT if target.y < ball.y - DOWNHILL_DROP else AIM_MAX_LIFT
+	var steps := 3 if max_lift <= AIM_MAX_LIFT else 6
+	for step in range(1, steps + 1):
+		var lift := max_lift * step / float(steps)
+		pos = _above_ground(start - dir * minf(lift, AIM_MAX_LIFT) + Vector3.UP * lift)
 		if sight_clear(terrain, pos, target):
 			cleared = true
 			break
