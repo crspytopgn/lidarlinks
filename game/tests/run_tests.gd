@@ -5785,7 +5785,9 @@ func _test_broadcast_pieces() -> void:
 	grid.free()
 	# The sim look (Broadcast, Tour): faint white grid on flat ground, a thin
 	# white aim ring, and a putt ring that rims the cup instead of a hoop.
-	_check(GreenGrid.slope_color(0.0).s < 0.05 and GreenGrid.slope_color(0.0).a <= 0.4, "TV grid is faint white on flat ground")
+	_check(GreenGrid.slope_color(0.0).s < 0.05 and GreenGrid.slope_color(0.0).a >= 0.35 and GreenGrid.slope_color(0.0).a <= 0.5,
+		"TV grid is a clear but see-through white on flat ground")
+	_check(GreenGrid.slope_color(GreenGrid.STEEP_PERCENT).a > GreenGrid.slope_color(0.0).a, "steep lines stand out more than flat ones")
 	var sim_aim := GolfRound.aim_style(true)
 	var links_aim := GolfRound.aim_style(false)
 	var putt_r: float = sim_aim.putt

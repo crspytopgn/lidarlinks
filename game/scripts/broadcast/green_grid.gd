@@ -8,10 +8,13 @@ extends MeshInstance3D
 ## so reading the break is still up to the player.
 ##
 ## Three looks (`style`): Links 2003's plain yellow grid, its grid coloured
-## by height (low blue, high red), and the TV grid: faint white lines, as TV
-## green reads and PGA Tour 2K25 draw them, warming only to a soft amber
-## and then a muted red where the green gets steep, with the running dots.
-## The Links looks keep the game's own bright colours.
+## by height (low blue, high red), and the TV grid: see-through white
+## lines, as TV green reads and PGA Tour 2K25 draw them, warming to amber
+## and then red where the green gets steep, with the running dots.
+## The Links looks keep the game's own bright colours. Every look has a
+## soft dark edge (the shader's halo) so it reads on a sunlit green; at
+## alpha 0.2 with no edge the TV grid all but vanished from the putting
+## camera and the Green Analyzer.
 ##
 ## The lines are thin ribbons (shaders/green_grid.gdshader) with soft,
 ## anti-aliased edges, drawn in short pieces that follow the turf, rather
@@ -28,21 +31,21 @@ const LIFT := 0.01
 const PIECES := 4
 ## The lines' width on the turf (m); the shader keeps them a pixel or so
 ## wide however far off they are.
-const LINE_WIDTH := 0.02
+const LINE_WIDTH := 0.025
 const SHADER := preload("res://shaders/green_grid.gdshader")
-const FLAT := Color(1.0, 1.0, 1.0, 0.2)
-const MEDIUM := Color(1.0, 0.88, 0.6, 0.3)
-const STEEP := Color(0.95, 0.5, 0.38, 0.5)
+const FLAT := Color(1.0, 1.0, 1.0, 0.42)
+const MEDIUM := Color(1.0, 0.86, 0.45, 0.58)
+const STEEP := Color(1.0, 0.45, 0.32, 0.75)
 const STEEP_PERCENT := 4.0
 ## The flowing dots: one streamline seeded in each square, followed
 ## downhill for up to FLOW_LENGTH metres, with a dot running along it.
 const FLOW_LENGTH := 0.85
 const FLOW_STEP := 0.05
-const FLOW_WIDTH := 2.6  ## times LINE_WIDTH
+const FLOW_WIDTH := 3.2  ## times LINE_WIDTH
 const FLOW_BASE_SPEED := 0.18
 const FLOW_SPEED_PER_PERCENT := 0.1
 const FLOW_MAX_SPEED := 0.9
-const FLOW_COLOR := Color(1.0, 1.0, 1.0, 0.85)
+const FLOW_COLOR := Color(1.0, 1.0, 1.0, 1.0)
 const YELLOW := Color(1.0, 0.9, 0.2, 0.7)
 const LOW := Color(0.2, 0.45, 1.0, 0.75)
 const MIDDLE := Color(0.35, 0.9, 0.4, 0.75)
@@ -63,6 +66,7 @@ func _init() -> void:
 	var mat := ShaderMaterial.new()
 	mat.shader = SHADER
 	mat.set_shader_parameter("width", LINE_WIDTH)
+	mat.render_priority = 10
 	material_override = mat
 	visible = false
 
