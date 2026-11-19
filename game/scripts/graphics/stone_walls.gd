@@ -27,8 +27,8 @@ static func material() -> ShaderMaterial:
 		# The weathered grey-brown upland stone of field walls, if the pack has it.
 		for r: Dictionary in RockField.rocks():
 			if r["kind"] == "upland" or r["kind"] == "woodland":
-				var a := FreeAssets.megascans_texture(str(r["id"]) + "_albedo.jpg", "rocks/")
-				var n := FreeAssets.megascans_texture(str(r["id"]) + "_normal.jpg", "rocks/", true)
+				var a := FreeAssets.megascans_texture(RockField.texture_file(str(r["id"]), "albedo"), "rocks/")
+				var n := FreeAssets.megascans_texture(RockField.texture_file(str(r["id"]), "normal"), "rocks/", true)
 				if a != null and n != null:
 					_material.set_shader_parameter("rock_albedo", a)
 					_material.set_shader_parameter("rock_normal", n)

@@ -6,6 +6,8 @@ in this repository or the web build. Each player who has the scans can bake
 a private pack, and the desktop game reads it from `user://megascans/`
 (on a Mac, `~/Library/Application Support/Godot/app_userdata/OpenLinks2003/megascans/`),
 or from the folder named by the `OL_MEGASCANS` environment variable.
+Without it, the desktop game reads the CC0 free pack instead
+(docs/free-pack.md), part by part: whatever the private pack has wins.
 
 | Pack file | Replaces | Made by |
 |---|---|---|

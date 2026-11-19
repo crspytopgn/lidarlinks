@@ -1,0 +1,148 @@
+{
+ "source": "Poly Haven and ambientCG (CC0), see docs/free-pack.md",
+ "plants": [
+  {
+   "uid": "fern_02",
+   "title": "Fern",
+   "kind": "fern",
+   "height_m": 0.428,
+   "roles": [
+    "woodland_edge"
+   ],
+   "variants": 4,
+   "file": "plants/fern_02",
+   "ext": "webp",
+   "normal": true,
+   "luma": 0.0917
+  },
+  {
+   "uid": "grass_medium_01",
+   "title": "Wild Grass",
+   "kind": "grass",
+   "height_m": 0.323,
+   "roles": [
+    "meadow",
+    "deep_rough"
+   ],
+   "variants": 4,
+   "file": "plants/grass_medium_01",
+   "ext": "webp",
+   "normal": true,
+   "luma": 0.5594
+  },
+  {
+   "uid": "grass_bermuda_01",
+   "title": "Bermuda Grass",
+   "kind": "grass",
+   "height_m": 0.152,
+   "roles": [
+    "meadow"
+   ],
+   "variants": 4,
+   "file": "plants/grass_bermuda_01",
+   "ext": "webp",
+   "normal": true,
+   "luma": 0.1159
+  },
+  {
+   "uid": "dandelion_01",
+   "title": "Dandelion",
+   "kind": "flower",
+   "height_m": 0.164,
+   "roles": [
+    "meadow"
+   ],
+   "variants": 2,
+   "file": "plants/dandelion_01",
+   "ext": "webp",
+   "normal": true,
+   "luma": 0.1661
+  },
+  {
+   "uid": "nettle_plant",
+   "title": "Nettle",
+   "kind": "flower",
+   "height_m": 0.217,
+   "roles": [
+    "woodland_edge"
+   ],
+   "variants": 4,
+   "file": "plants/nettle_plant",
+   "ext": "webp",
+   "normal": true,
+   "luma": 0.0931
+  },
+  {
+   "uid": "celandine_01",
+   "title": "Celandine Buttercup",
+   "kind": "flower",
+   "height_m": 0.186,
+   "roles": [
+    "meadow",
+    "woodland_edge"
+   ],
+   "variants": 4,
+   "file": "plants/celandine_01",
+   "ext": "webp",
+   "normal": true,
+   "luma": 0.3169
+  },
+  {
+   "uid": "shrub_sorrel_01",
+   "title": "Wood Sorrel Clover",
+   "kind": "flower",
+   "height_m": 0.056,
+   "roles": [
+    "woodland_edge"
+   ],
+   "variants": 4,
+   "file": "plants/shrub_sorrel_01",
+   "ext": "webp",
+   "normal": true,
+   "luma": 0.1506
+  },
+  {
+   "uid": "cheiridopsis_succulent",
+   "title": "Succulent Cheiridopsis",
+   "kind": "succulent",
+   "height_m": 0.269,
+   "roles": [
+    "desert"
+   ],
+   "variants": 4,
+   "file": "plants/cheiridopsis_succulent",
+   "ext": "webp",
+   "normal": true,
+   "luma": 0.2587
+  },
+  {
+   "uid": "crystalline_iceplant",
+   "title": "Succulent Iceplant",
+   "kind": "succulent",
+   "height_m": 0.081,
+   "roles": [
+    "desert",
+    "dune"
+   ],
+   "variants": 4,
+   "file": "plants/crystalline_iceplant",
+   "ext": "webp",
+   "normal": true,
+   "luma": 0.1317
+  },
+  {
+   "uid": "flower_gazania",
+   "title": "Desert Gazania",
+   "kind": "succulent",
+   "height_m": 0.166,
+   "roles": [
+    "desert"
+   ],
+   "variants": 4,
+   "file": "plants/flower_gazania",
+   "ext": "webp",
+   "normal": true,
+   "luma": 0.1704
+  }
+ ]
+}

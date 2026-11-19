@@ -21,7 +21,7 @@ static var _meshes := {}  ## mesh file -> ArrayMesh (or null when unreadable)
 static func pack() -> Dictionary:
 	if not _loaded:
 		_loaded = true
-		var dir := FreeAssets.megascans_dir()
+		var dir := FreeAssets.pack_dir(MANIFEST)
 		if not dir.is_empty() and FileAccess.file_exists(dir + MANIFEST):
 			_data = parse(FileAccess.get_file_as_string(dir + MANIFEST))
 		else:
@@ -69,7 +69,7 @@ static func mesh(prop: Dictionary) -> ArrayMesh:
 	if _meshes.has(file):
 		return _meshes[file]
 	var m: ArrayMesh = null
-	var dir := FreeAssets.megascans_dir()
+	var dir := FreeAssets.pack_dir(MANIFEST)
 	if not dir.is_empty() and FileAccess.file_exists(dir + file):
 		var f := FileAccess.open(dir + file, FileAccess.READ)
 		var d: Variant = f.get_var() if f != null else null
@@ -106,4 +106,4 @@ static func build_mesh(d: Dictionary) -> ArrayMesh:
 
 
 static func texture(file: String) -> Texture2D:
-	return FreeAssets.megascans_pack_texture(file, file.ends_with("_n.jpg"))
+	return FreeAssets.megascans_pack_texture(file, file.get_basename().ends_with("_n"))

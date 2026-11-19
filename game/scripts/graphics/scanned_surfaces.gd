@@ -83,7 +83,7 @@ static func entry(slot: String, from: Dictionary = slots()) -> Dictionary:
 static func slots() -> Dictionary:
 	if not _loaded:
 		_loaded = true
-		var dir := FreeAssets.megascans_dir()
+		var dir := FreeAssets.pack_dir(MANIFEST)
 		if not dir.is_empty() and FileAccess.file_exists(dir + MANIFEST):
 			_slots = parse(FileAccess.get_file_as_string(dir + MANIFEST))
 	return _slots

@@ -21,6 +21,7 @@ const GROUPS := [
 	["fern", "fern"],
 	["reed", "wet"], ["rush", "wet"], ["cotton", "wet"], ["sedge", "wet"],
 	["marram", "dune"], ["xeric", "dune"],
+	["succulent", "dry"], ["desert", "dry"], ["cactus", "dry"],
 	["poppy", "flower"], ["nettle", "flower"], ["dandelion", "flower"], ["clover", "flower"], ["buttercup", "flower"],
 	["grass", "grass"],
 ]
@@ -38,7 +39,7 @@ static var _meshes := {}  ## uid -> Array (per variant) of [near, mid] ArrayMesh
 static func plants() -> Array[Dictionary]:
 	if not _loaded:
 		_loaded = true
-		var dir := FreeAssets.megascans_dir()
+		var dir := FreeAssets.pack_dir(MANIFEST)
 		if not dir.is_empty() and FileAccess.file_exists(dir + MANIFEST):
 			_plants = parse(FileAccess.get_file_as_string(dir + MANIFEST))
 	return _plants
@@ -56,12 +57,13 @@ static func parse(text: String) -> Array[Dictionary]:
 		out.append({"uid": str(p.get("uid", "")), "title": title, "kind": str(p.get("kind", "grass")),
 			"group": group_of(title), "height_m": clampf(float(p.get("height_m", 0.6)), 0.05, 4.0),
 			"roles": PackedStringArray(p.get("roles", [])), "variants": int(p["variants"]),
-			"file": str(p["file"]), "normal": bool(p.get("normal", true)),
+			"file": str(p["file"]), "normal": bool(p.get("normal", true)), "ext": str(p.get("ext", "png")),
 			"luma": clampf(float(p.get("luma", TARGET_LUMA)), 0.002, 1.0)})
 	return out
 
 
-## A plant's group by its title: fern, wet, dune, flower or grass.
+## A plant's group by its title: fern, wet, dune, dry (succulents and
+## desert flowers, grown only in the desert), flower or grass.
 static func group_of(title: String) -> String:
 	var t := title.to_lower()
 	for g: Array in GROUPS:
@@ -81,9 +83,10 @@ static func meshes(plant: Dictionary) -> Array:
 	if _meshes.has(uid):
 		return _meshes[uid]
 	var out := []
-	var dir := FreeAssets.megascans_dir()
-	var albedo := FreeAssets.megascans_texture(str(plant["file"]) + "_albedo.png", "foliage/", false, texture_size)
-	var normal := FreeAssets.megascans_texture(str(plant["file"]) + "_normal.png", "foliage/", false, texture_size) if plant.get("normal", true) else null
+	var dir := FreeAssets.pack_dir(MANIFEST)
+	var ext := "." + str(plant.get("ext", "png"))
+	var albedo := FreeAssets.megascans_texture(str(plant["file"]) + "_albedo" + ext, "foliage/", false, texture_size)
+	var normal := FreeAssets.megascans_texture(str(plant["file"]) + "_normal" + ext, "foliage/", false, texture_size) if plant.get("normal", true) else null
 	var levels := read(dir + "foliage/" + str(plant["file"]) + ".olplant") if not dir.is_empty() else []
 	if albedo != null and not levels.is_empty():
 		var mats := [material(albedo, normal, float(plant["height_m"]), 0), material(albedo, normal, float(plant["height_m"]), 1)]

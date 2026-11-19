@@ -5748,7 +5748,23 @@ func _test_broadcast_pieces() -> void:
 	_check(ScannedSurfaces.region_for(Vector2(20.0, -155.8), FreeAmbience.Setting.SEASIDE) == "tropical" and ScannedSurfaces.region_for(Vector2(22.9, -109.8), FreeAmbience.Setting.DESERT) == "desert", "Hawaii tropical, Cabo desert")
 	_check(ScannedSurfaces.region_for(Vector2(NAN, NAN), FreeAmbience.Setting.PARKLAND) == "", "an unknown place has no region")
 	var flat := StandardMaterial3D.new()
+	var had_free := FreeAssets.free_pack
+	FreeAssets.free_pack = false
+	ScannedSurfaces._loaded = false
+	ScannedSurfaces._slots = {}
+	ScannedSurfaces._mats = {}
 	_check(ScannedSurfaces.uv_material("path", 2.5, flat) == flat and ScannedSurfaces.triplanar_material("bench", null) == null, "no pack, no scans: flat materials stay")
+	FreeAssets.free_pack = had_free
+	ScannedSurfaces._loaded = false
+	ScannedSurfaces._slots = {}
+	ScannedSurfaces._mats = {}
+	# The free pack (docs/free-pack.md), when fetched, fills every part the
+	# private pack would.
+	if had_free and FileAccess.file_exists(FreeAssets.FREE_PACK_DIR + "surfaces/surfaces.json"):
+		_check(FreeAssets.pack_dir("surfaces/surfaces.json") != "" and ScannedSurfaces.uv_material("path", 2.5, flat) != flat, "the free pack scans the cart paths")
+		_check(not RockField.rocks().is_empty() and RockField.mesh(str(RockField.rocks()[0]["id"])) != null and RockField.material(str(RockField.rocks()[0]["id"])).albedo_texture != null, "the free pack has rocks with their scans")
+		_check(not MegascansPlants.plants().is_empty() and not MegascansPlants.meshes(MegascansPlants.plants()[0]).is_empty(), "the free pack has 3D plants")
+		_check(not (MegascansDebris.pack()["props"] as Array).is_empty() and MegascansDebris.mesh(MegascansDebris.pack()["props"][0]) != null, "the free pack has woodland debris")
 	_check(far_air < 70.0, "the follow camera keeps the ball in sight in the air (%.1f m)" % far_air)
 	_check(rest_gap > 4.0 and rest_gap < 11.0 and cam.y < 3.0 and cam.z < 215.0, "the follow camera settles low behind the ball at rest (%s)" % cam)
 	_check((late[0] as Vector3).z > 240.0, "pin camera stands beyond the pin")

@@ -2,7 +2,9 @@
 """Downloads the free (CC0) textures and sky that the public build uses in
 place of the original game's art, from Poly Haven (https://polyhaven.com),
 and the leaf texture of the 3D trees from ambientCG (https://ambientcg.com)
-and photoscanned fir sprigs for the conifers from Poly Haven.
+and photoscanned fir sprigs for the conifers from Poly Haven, and the free
+pack (tools/free_pack/free_pack.py, docs/free-pack.md): CC0 rocks, plants,
+woodland debris and surfaces for the desktop build.
 
     python3 tools/fetch_free_assets.py [--out game/free_assets] [--strict]
 
@@ -75,6 +77,10 @@ def texture_maps(res):
             "height.jpg": ("Displacement", res, "jpg")}
 
 
+def _albedo_normal():
+    return {k: v for k, v in texture_maps("1k").items() if k in ("albedo.jpg", "normal.jpg")}
+
+
 # slot: (asset type, preferred ids, fallback keywords, {out name: (map, resolution, format)})
 SLOTS = {
     "grass": ("textures", ["leafy_grass", "sparse_grass", "aerial_grass_rock"], ["grass"], texture_maps("1k")),
@@ -87,6 +93,14 @@ SLOTS = {
     # (RockFormations): only its light and dark and its bumps are used.
     "cliff": ("textures", ["cliff_side", "rock_06"], ["cliff", "rock face"],
               {k: v for k, v in texture_maps("1k").items() if k in ("albedo.jpg", "normal.jpg")}),
+    # The ground finishes (FreeAssets.FINISHES, terrain.gdshader): what bare
+    # ground is where it isn't turf. Beach and dune sand, pine straw under
+    # conifers, mud along the water, and desert hardpan; bare rock is the
+    # cliff scan above. Colour and bumps only, at 1k (normals 512).
+    "finish_beach": ("textures", ["dense_sand", "coast_sand_01"], ["sand"], _albedo_normal()),
+    "finish_pine": ("textures", ["forrest_ground_03", "forrest_sand_01"], ["needles"], _albedo_normal()),
+    "finish_mud": ("textures", ["mud_forest", "muddy_tracks", "brown_mud_02"], ["mud"], _albedo_normal()),
+    "finish_hardpan": ("textures", ["dry_ground_01", "mud_cracked_dry_03"], ["desert", "cracked"], _albedo_normal()),
     "sky": ("hdris", ["kloofendal_48d_partly_cloudy_puresky", "kloofendal_43d_clear_puresky"], ["pure sky", "clear"], {"panorama.hdr": ("hdri", "2k", "hdr")}),
     # The bright, even cloud of the "Soft overcast" time of day. It has no
     # sun to line up and little detail, so 1k is plenty (packed at half that).
@@ -186,11 +200,14 @@ def fetch_slot(out_dir, slot, spec):
 
 # Slots seen mostly from a distance, kept at 1024 pixels to save video
 # memory in the browser.
-SMALL_SLOTS = ("path_", "dirt_", "bark_", "cliff_")
+SMALL_SLOTS = ("path_", "dirt_", "bark_", "cliff_", "finish_")
 
 
 def size_limit(out_name):
-    """Roughness is soft detail: 1024 pixels is plenty and saves memory."""
+    """Roughness is soft detail: 1024 pixels is plenty and saves memory.
+    The finishes' bumps are seen as soft shading: 512."""
+    if out_name.startswith("finish_") and out_name.endswith("_normal.jpg"):
+        return 512
     soft = out_name.startswith("roughness") or "_roughness" in out_name or "_height" in out_name
     return 1024 if soft or out_name.startswith(SMALL_SLOTS) else 0
 
@@ -424,6 +441,13 @@ def main():
     except Exception as e:  # noqa: BLE001 - the procedural trees stay
         print(f"WARNING: couldn't fetch the scanned trees: {e}")
         failed.append("scan trees")
+    try:
+        sys.path.insert(0, os.path.join(here, "free_pack"))
+        import free_pack  # noqa: E402 - needs numpy and Pillow, so only imported here
+        credits += free_pack.fetch(os.path.join(args.out, "pack"))
+    except Exception as e:  # noqa: BLE001 - the desktop build goes without its free pack
+        print(f"WARNING: couldn't fetch the free pack: {e}")
+        failed.append("free pack")
     try:
         credits += fetch_fabrics(args.out)
     except Exception as e:  # noqa: BLE001 - the golfers' cloth stays plain
