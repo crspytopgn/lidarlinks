@@ -2218,6 +2218,26 @@ func _test_graphics_settings() -> void:
 	_check(sunset.elevation < dusk.elevation and early.elevation < dawn.elevation, "dawn and sunset sit lowest")
 	_check(absf(float(early.bearing) - float(sunset.bearing)) > 120.0, "dawn and sunset light from opposite sides")
 	_check((sunset.sun as Color).b < (dusk.sun as Color).b, "sunset is the warmest sun")
+	# Shade adaptation: open ground, a lone tree's shadow, a closed wood.
+	var wood := ObstacleField.new()
+	wood.add_cylinder(0.0, 0.0, 0.3, 0.0, 4.0, ObstacleField.Kind.SOLID)
+	wood.add_cylinder(0.0, 0.0, 4.0, 3.0, 12.0, ObstacleField.Kind.CANOPY)
+	wood.finalize()
+	var sun_up := Vector3(0.3, 0.9, 0.3).normalized()
+	var open_cover := Scenery.shade_cover(wood, Vector3(40.0, 1.2, 0.0), sun_up)
+	var lone := Scenery.shade_cover(wood, Vector3(1.5, 1.2, 0.0), sun_up)
+	_check(open_cover == Vector2.ZERO and Scenery.shade_adapt_for(open_cover) == 1.0, "open ground: no shade adaptation")
+	_check(lone.y == 1.0 and lone.x > 0.3 and lone.x < 0.65, "under a lone crown: sun blocked, part of the sky (%.2f)" % lone.x)
+	var forest := ObstacleField.new()
+	for i in range(-4, 5):
+		for j in range(-4, 5):
+			forest.add_cylinder(i * 7.0, j * 7.0, 5.0, 3.0, 14.0, ObstacleField.Kind.CANOPY)
+	forest.finalize()
+	var deep := Scenery.shade_cover(forest, Vector3(3.5, 1.2, 3.5), sun_up)
+	_check(deep.y == 1.0 and deep.x > 0.75, "in a wood most of the sky is shut out (%.2f)" % deep.x)
+	_check(Scenery.shade_adapt_for(deep) > 1.4 and Scenery.shade_adapt_for(deep) <= Scenery.SHADE_ADAPT_MAX, "deep shade opens the exposure up")
+	_check(Scenery.shade_adapt_for(lone) < Scenery.shade_adapt_for(deep), "a lone tree's shade less than a wood's")
+	_check(Scenery.shade_cover(null, Vector3.ZERO, sun_up) == Vector2.ZERO, "no obstacles: open")
 	var grey := Scenery.time_light(GraphicsSettings.TimeOfDay.OVERCAST, 0.0)
 	var aft: Dictionary = Scenery.TIMES["afternoon"]
 	_check(float(grey.energy) < 0.5 * float(aft.energy) and float(grey.fill_fwd) > float(aft.fill_fwd), "overcast: a weak sun and a strong sky fill")
