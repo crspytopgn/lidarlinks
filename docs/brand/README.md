@@ -6,26 +6,28 @@
 <picture><source media="(prefers-color-scheme: dark)" srcset="wordmark-dark.svg"><img src="wordmark-light.svg" height="64" alt="LidarLinks wordmark"></picture>
 </p>
 
-An app icon in the iOS style: a studio-lit golf ball, with all 362 of its
-dimples, hovering over a glow of turf on a dark backdrop, inside a
-continuous-corner squircle. The ball is rendered in code
-(`tools/brand/ball.py`) and embedded in the SVG. Everything here is our own
-artwork. None of it comes from Links 2003 or its discs.
+An app icon in the iOS style: a golf ball drawn as a lidar point cloud,
+lit from the top left, with a cyan scan line through it, hovering over a
+glow of turf on a dark backdrop, inside a continuous-corner squircle. The
+ball is rendered in code (`tools/brand/ball.py`) and embedded in the SVG.
+Everything here is our own artwork. None of it comes from Links 2003 or its
+discs.
 
 ## Files
 
 | File | Use |
 | --- | --- |
 | `app-icon.svg` | Master icon, 1024 x 1024 |
-| `ball.png` | The rendered ball on its own, with transparency |
+| `ball.png` | The rendered ball on its own, with transparency (also `launcher/assets/ball.png` at 420 px) |
 | `png/app-icon-{16..1024}.png` | Icon at 16, 32, 64, 128, 180 (Apple touch), 256, 512, 1024 |
 | `wordmark-light.svg`, `wordmark-dark.svg` | Icon and name, for light and dark backgrounds (text outlined) |
 | `png/wordmark-*.png` | The same as PNG |
 | `social-preview.jpg` | GitHub social preview, 1280 x 640 |
 | `readme/` | README hero, screenshot, feature tiles and buttons, light and dark |
 
-`game/icon.png` is the 256 px icon, used by Godot for the window, the
-desktop builds and the web page's favicon.
+`game/icon.png` and `launcher/assets/icon.png` are the 256 px icon, used by
+Godot for the window, the desktop builds and the web page's favicon;
+`launcher/assets/icon-1024.png` is the launcher's macOS app icon.
 
 ## Guidelines
 
@@ -45,7 +47,7 @@ GitHub doesn't take the social preview from the repository: upload
 
 ```bash
 pip install fonttools
-python3 tools/brand/ball.py         # the golf ball (numpy, Pillow)
+python3 tools/brand/ball.py         # the point-cloud ball (numpy, Pillow)
 python3 tools/brand/make_brand.py   # SVG icon and wordmarks
 node tools/brand/render.js          # PNGs, README images, social card
 ```
