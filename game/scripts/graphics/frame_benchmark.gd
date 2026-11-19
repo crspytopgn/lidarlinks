@@ -89,7 +89,7 @@ func _run() -> void:
 	for k: String in KEYS:
 		_base[k] = g.get(k)
 	var lines := PackedStringArray()
-	lines.append("OpenLinks2003 benchmark: %s, %s, %s, window %s, look %s" % [OS.get_name(), RenderingServer.get_video_adapter_name(), RenderingServer.get_current_rendering_method(), get_window().size, GraphicsSettings.LOOK_NAMES[g.look]])
+	lines.append("LidarLinks benchmark: %s, %s, %s, window %s, look %s" % [OS.get_name(), RenderingServer.get_video_adapter_name(), RenderingServer.get_current_rendering_method(), get_window().size, GraphicsSettings.LOOK_NAMES[g.look]])
 	for line in scene_breakdown(_game, get_viewport().get_camera_3d()):
 		print(line)
 		lines.append(line)

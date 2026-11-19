@@ -453,6 +453,19 @@ or not at all. What that found, and what the builder now does:
   (2 % of the land deeper than 8 m below sea level) the course gets a sea
   (`source.sea`), as at St Andrews, but only when hardly any of the
   course's own ground lies below sea level.
+- **One door for every download:** every request goes through `NetDoor`
+  (`game/scripts/realcourse/net_door.gd`). It allows at most 6 requests at
+  once to a server. When a server answers 429 (or 503 with Retry-After),
+  it pauses that server for as long as it asks (up to 2 minutes; 2 s, then
+  doubling, without a header). When a server fails 5 times in a row (no
+  answer or 5xx), it stops asking it for a minute, then lets one request
+  through to test it, resting it twice as long each time it still fails.
+  So a dead source fails in seconds, not after minutes of time-outs, and
+  the build falls back to the next source. The requests we stop ourselves
+  (a cancel, the slower map servers once one has answered) don't count.
+  The progress line names a server that keeps the build waiting more than
+  20 s, or one that asked us to slow down. The back-off and breaker follow
+  BeamNG.Earth's `netfetch.py` (MIT licence).
 - **Lidar must agree with the tiles:** England's lidar answers outside
   England with zeros, which put Royal County Down at sea level and let the
   sea in over it. Lidar is used only when its ground and the open tiles'
@@ -623,6 +636,7 @@ game/scripts/realcourse/
   course_playability.gd   CoursePlayability: greens that hold, level tees, smooth coarse ground
   real_landscape.gd       RealLandscape: the land round the course to the horizon
   real_course_fetcher.gd  RealCourseFetcher: the Nominatim, Overpass and tile requests
+  net_door.gd             NetDoor: per-server limits, back-off and circuit breaker
   real_course_dialog.gd   RealCourseDialog: the designer's window
 game/tests/realcourse_tests.gd  checks on a made-up map (no network)
 ```

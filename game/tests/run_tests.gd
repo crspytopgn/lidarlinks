@@ -659,6 +659,23 @@ func _test_swing_meter() -> void:
 	_check_near(links_model.lie_power(Surface.Type.ROUGH), 0.927315, 1e-6, "rough keeps 93 percent, as the game strikes it")
 	_check_near(links_model.lie_power(Surface.Type.DEEP_ROUGH), 0.836732, 1e-6, "deep rough keeps 84 percent")
 	_check(links_model.lie_power(Surface.Type.FRINGE) == 1.0, "the fringe plays as fairway")
+	# A clean strike's speed: the driver and 3-wood meet the game's strike
+	# quality limit off the ground (0.6 and 0.8 from the rough at the hardest
+	# level), so the reach shown and the auto club allow for it.
+	var rough_p := LinksGround.surface_for_class(LinksGround.ROUGH)
+	_check_near(LinksLaunch.clean_strike_speed(0, rough_p, 3), 0.6, 1e-12, "driver out of the rough: 60 percent")
+	_check_near(LinksLaunch.clean_strike_speed(1, rough_p, 3), 0.8, 1e-12, "3-wood out of the rough: 80 percent")
+	_check_near(LinksLaunch.clean_strike_speed(3, rough_p, 3), 0.927315, 1e-6, "5-wood out of the rough keeps LiePower")
+	_check_near(LinksLaunch.clean_strike_speed(0, rough_p, 0), 0.8, 1e-12, "easiest level softens it")
+	_check_near(LinksLaunch.clean_strike_speed(0, LinksGround.surface_for_class(LinksGround.FAIRWAY), 3), 0.9, 1e-6, "driver off the deck")
+	for club in [0, 1, 7, 8, 13]:
+		for lvl in LinksLaunch.SKILL_COUNT:
+			var cs := LinksLaunch.Strike.new()
+			cs.club = club
+			var cw := LinksLaunch.SwingInput.new()
+			cw.skill = lvl
+			LinksLaunch.apply_swing(cs, cw, rough_p, LinksLaunch.Rand.new(1))
+			_check_near(cs.speed_scale, LinksLaunch.clean_strike_speed(club, rough_p, lvl), 1e-12, "clean strike matches apply_swing (club %d, level %d)" % [club, lvl])
 	_check_near(LinksPowerStroke.chip_power(15), 7.0, 1e-6, "chip power at the snap line")
 	_check_near(LinksPowerStroke.chip_power(68), 34.95, 1e-4, "chip power at the top")
 	_check_near(LinksPowerStroke.chip_power(32), 14.25, 1e-4, "chip power midway")
@@ -2371,7 +2388,29 @@ func _test_wind_gusts() -> void:
 	_check(absf(rad_to_deg(seen.angle())) <= 8.01, "gusts swing the direction only a few degrees")
 	var mat := ShaderMaterial.new()
 	mat.shader = load("res://shaders/flag.gdshader")
-	_check(mat.shader != null and mat.shader.get_code().contains("wind_vector"), "flag shader reads the wind")
+	_check(mat.shader != null and mat.shader.get_code().contains("flag_wind") and mat.shader.get_code().contains("flag_phase"), "flag shader reads the eased flag wind and phase")
+	_check(not mat.shader.get_code().contains("TIME"), "flag ripple phase is integrated, not TIME * a gusting frequency")
+	# The ripple quickens with the wind but stays a ripple, not a thrash.
+	_check(FlagMotion.ripple_hz(2.0) < 1.0 and FlagMotion.ripple_hz(9.0) < 3.0, "flag ripple is lazy in light air, brisk at 20 mph")
+	_check(FlagMotion.ripple_hz(40.0) <= FlagMotion.RIPPLE_MAX_HZ, "flag ripple capped")
+	# The phase never jumps, however hard the gusts swing.
+	var fm := FlagMotion.new()
+	fm.snap(Vector2(9, 0))
+	var worst := 0.0
+	for i in 600:
+		var before := fm.phase
+		fm.step(WindGust.visual_wind(Vector2(9, 0), 1000.0 + i / 60.0), 1.0 / 60.0)
+		var moved := fposmod(fm.phase - before, 1.0)
+		worst = maxf(worst, moved)
+	_check(worst <= FlagMotion.RIPPLE_MAX_HZ / 60.0 + 1e-5, "flag ripple advances smoothly through gusts (%.4f cycles/frame)" % worst)
+	# The cloth eases into a gust instead of snapping.
+	var ease := FlagMotion.new()
+	ease.snap(Vector2(5, 0))
+	ease.step(Vector2(10, 0), 1.0 / 60.0)
+	_check(ease.wind.x > 5.0 and ease.wind.x < 5.5, "flag eases into a gust (%.2f m/s)" % ease.wind.x)
+	var calm := FlagMotion.new()
+	calm.snap(Vector2.ZERO)
+	_check(calm.wind == Vector2.ZERO, "flag hangs in a calm")
 
 
 func _test_course_marks() -> void:

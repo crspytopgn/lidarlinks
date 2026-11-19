@@ -45,7 +45,21 @@ var _busy := false
 static var _opened_from_launcher := false
 
 
+## The name players see. project.godot keeps config/name "OpenLinks2003"
+## because it names the desktop save folder (user://) that the launcher and
+## existing players' courses and settings live in, so the window and the web
+## page are titled here instead.
+const GAME_NAME := "LidarLinks"
+
+
+func _show_title() -> void:
+	get_window().title = GAME_NAME
+	if OS.has_feature("web"):
+		JavaScriptBridge.eval("document.title = '%s'" % GAME_NAME, true)
+
+
 func _ready() -> void:
+	_show_title()
 	_graphics = GraphicsSettings.load_saved()
 	get_window().content_scale_factor = GraphicsSettings.UI_SCALES[_graphics.ui_scale]
 	Glass.allow_blur = _graphics.quality != GraphicsSettings.Quality.LOW
@@ -143,7 +157,7 @@ func _build_ui() -> void:
 	box.add_child(_bar)
 	_build_community(box)
 	var note := Label.new()
-	note.text = "OpenLinks2003 contains nothing from the original game. Your files are read on your own computer.\n" + BuildInfo.label()
+	note.text = "LidarLinks began as a Links 2003 remake and contains nothing from the original game. Your files are read on your own computer.\n" + BuildInfo.label()
 	note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	note.add_theme_font_size_override("font_size", 12)
 	note.modulate = Color(1, 1, 1, 0.5)

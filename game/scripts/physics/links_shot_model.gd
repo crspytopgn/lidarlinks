@@ -167,13 +167,20 @@ func reach_scale(club: Club) -> float:
 
 
 ## Links 2003's LiePower for the lie (rough 0.93, deep grass 0.84), the
-## value launch() strikes with, so the reach shown matches the shot. Sand
-## keeps the shell's own figure: there the contact decides (apply_lie).
-func lie_power(lie: int) -> float:
+## value launch() strikes with, so the reach shown matches the shot. With a
+## `club`, a clean strike's share for the player's skill: the game's strike
+## quality limit takes the driver and the 3-wood down to 0.6 and 0.8 from the
+## rough at the hardest level (LinksLaunch.clean_strike_speed). Sand keeps
+## the shell's own figure: there the contact decides (apply_lie).
+func lie_power(lie: int, club: Club = null) -> float:
 	var c := LinksGround.ground_class_for(lie)
 	if c == LinksGround.SAND:
 		return Surface.lie_power(lie)
-	return LinksGround.surface_for_class(c).lie_power
+	var p := LinksGround.surface_for_class(c)
+	if club == null or club.is_putter or lie == Surface.Type.TEE or clubs == null or computer \
+			or not LinksLaunch.CLUB_INDEX.has(club.short_name):
+		return p.lie_power
+	return LinksLaunch.clean_strike_speed(LinksLaunch.CLUB_INDEX[club.short_name], p, skill)
 
 
 func simulate(start: BallState, terrain: CourseTerrain, cup: Vector3, wind := Vector3.ZERO) -> ShotResult:

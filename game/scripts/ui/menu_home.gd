@@ -284,7 +284,7 @@ func _top_bar() -> Control:
 	word.add_theme_font_override("italics_font", GlassTheme.font(300))
 	word.add_theme_font_size_override("normal_font_size", 20)
 	word.add_theme_font_size_override("italics_font_size", 20)
-	word.text = "OpenLinks[i][color=#ffffffbb]2003[/color][/i]"
+	word.text = "Lidar[i][color=#ffffffbb]Links[/color][/i]"
 	row.add_child(word)
 	var spring := Control.new()
 	spring.size_flags_horizontal = Control.SIZE_EXPAND_FILL
