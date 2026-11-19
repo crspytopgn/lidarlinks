@@ -295,6 +295,21 @@ OpenStreetMap from the club's own published scorecard.
   at the end of the line, else the green's centre; tees are the tee boxes
   along the start of the line, back to forward (up to three); the line's
   bends become aim points. A line drawn green to tee is turned round.
+- **Holes worked out from the greens and tees:** a club with greens, tees
+  and fairways mapped but no `golf=hole` lines (common on OpenStreetMap)
+  gets its holes worked out (`RealCourseBuilder.holes_from_features`):
+  - tee boxes within 35 m of each other are one hole's tees;
+  - each green takes the tee group whose line to it runs most along a
+    fairway, or bends through one on a dogleg; a par 3 with no fairway
+    takes the nearest free group 80 to 230 m off;
+  - a pairing with another green in the way is skipped;
+  - the holes are numbered in the order a round walks them, each green to
+    the nearest next tee, from the start that walks least.
+
+  It needs at least 9 greens. Shiskine, which failed before, now builds as
+  13 holes. The holes are a best guess, since the map has no numbers: check
+  them in the designer. Clubs with nothing mapped still fail with the
+  "no holes mapped" message.
 - **Trees:** `natural=tree` points (sized by their `height` tag),
   `natural=tree_row` lines (a tree every 7 m) and woods (`natural=wood`,
   `landuse=forest`) filled on a jittered 9 m grid, thinned to keep the

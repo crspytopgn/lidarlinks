@@ -15,6 +15,7 @@ func run_all() -> Array[String]:
 	_test_geo_raster()
 	_test_strip_objects()
 	_test_net_door()
+	_test_holes_from_features()
 	_test_national_lidar()
 	_test_photo_trees()
 	_test_extra_trees()
@@ -272,6 +273,39 @@ func _test_geo_raster() -> void:
 	var gappy := GeoRaster.from_bil(PackedFloat32Array([1, 2, -99999, 4]).to_byte_array(), 2, 2, [0.0, 0.0, 1.0, 1.0])
 	check(is_nan(gappy.sample(0.5, 0.5)) and is_equal_approx(gappy.valid_fraction(), 0.75), "no-data pixels read as NAN")
 	check(GeoRaster.from_tiff(PackedByteArray([1, 2, 3])) == null, "junk isn't a GeoTIFF")
+
+
+func _test_holes_from_features() -> void:
+	# Nine holes up and down a field, no hole lines: hole k plays along
+	# x = 150k, north on even holes and south on odd ones, each next tee
+	# a short walk from the last green; tee boxes in pairs.
+	var greens: Array[PackedVector2Array] = []
+	var tees: Array[PackedVector2Array] = []
+	var fairways: Array[PackedVector2Array] = []
+	var sq := func(c: Vector2, h: Vector2) -> PackedVector2Array:
+		return PackedVector2Array([c + Vector2(-h.x, -h.y), c + Vector2(h.x, -h.y), c + Vector2(h.x, h.y), c + Vector2(-h.x, h.y)])
+	for k in 9:
+		var x := 150.0 * k
+		var north := k % 2 == 0
+		var tz := 0.0 if north else 400.0
+		var gz := 380.0 if north else 20.0
+		greens.append(sq.call(Vector2(x, gz), Vector2(14, 14)))
+		tees.append(sq.call(Vector2(x, tz), Vector2(5, 8)))
+		tees.append(sq.call(Vector2(x, tz + (12.0 if north else -12.0)), Vector2(5, 8)))
+		fairways.append(sq.call(Vector2(x, 200.0), Vector2(20, 130)))
+	var lines := RealCourseBuilder.holes_from_features(greens, tees, fairways)
+	check(lines.size() == 9, "nine holes worked out from greens and tees (%d)" % lines.size())
+	if lines.size() == 9:
+		var xs := []
+		for l in lines:
+			xs.append(roundi(l[0].x))
+		var up := xs == [0, 150, 300, 450, 600, 750, 900, 1050, 1200]
+		var down := xs == [1200, 1050, 900, 750, 600, 450, 300, 150, 0]
+		check(up or down, "holes in walking order: %s" % [xs])
+		check(absf(lines[0][lines[0].size() - 1].y - (380.0 if roundi(lines[0][0].x) == 0 else (380.0 if 8 % 2 == 0 else 20.0))) < 1.0, "each line ends on its green")
+		check(absf(lines[0][0].y - (0.0 if roundi(lines[0][0].x) == 0 else 0.0)) < 1.0, "from the back tee")
+	greens.resize(5)
+	check(RealCourseBuilder.holes_from_features(greens, tees, fairways).is_empty(), "too few greens: no holes made up")
 
 
 func _test_net_door() -> void:
