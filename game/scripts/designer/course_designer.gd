@@ -437,6 +437,7 @@ func _on_left_press(mb: InputEventMouseButton) -> void:
 			else:
 				_draft.append(p2)
 				_overlay_dirty = true
+				_set_status(_draft_hint())
 		DesignerPanel.Tool.PATH:
 			if p2 == null:
 				return
@@ -627,6 +628,14 @@ func _finish_draft() -> void:
 	selected = course.shapes.size() - 1
 	_mark_surfaces(s.bounds())
 	_set_status("%s added." % Surface.name_of(s.surface))
+
+
+## The status line while an outline is drawn.
+func _draft_hint() -> String:
+	var what := Surface.name_of(panel.chosen_surface()).to_lower()
+	if _draft.size() < 3:
+		return "Drawing %s: %d point%s. Keep clicking round its edge." % [what, _draft.size(), "" if _draft.size() == 1 else "s"]
+	return "Drawing %s: %d points. Click the first point (the big square), press Enter or right-click to finish; Esc cancels." % [what, _draft.size()]
 
 
 func _finish_path() -> void:
@@ -870,75 +879,86 @@ func _ground_point(p: Vector2, lift := 0.3) -> Vector3:
 	return Vector3(p.x, terrain.height_at(p.x, p.y) + lift, p.y)
 
 
+## Every outline, path, hole line and handle as one surface of line pairs:
+## a surface each ran past the mesh's 256-surface limit on a real course
+## (West Essex has 263 areas), and everything after that, including the
+## outline being drawn, silently wasn't shown.
 func _draw_overlay() -> void:
 	_overlay_dirty = false
 	_lines.clear_surfaces()
-	var any := false
+	_lines.surface_begin(Mesh.PRIMITIVE_LINES)
+	# Something to draw even on an empty course.
+	_lines.surface_add_vertex(Vector3.ZERO)
+	_lines.surface_add_vertex(Vector3.ZERO)
 	for i in course.shapes.size():
-		var s := course.shapes[i]
-		var poly := s.outline()
-		if poly.size() < 3:
-			continue
-		var c: Color = LINE_COLORS.get(s.surface, Color.WHITE)
-		if s.guessed and not s.found:
-			c = GUESSED_COLOR
 		if i == selected:
-			c = Color(1.0, 0.95, 0.2)
-		if s.guessed:
-			# Not from the map: dashed, so it is easy to spot and check.
-			_dashed(poly, c)
-		else:
-			_lines.surface_begin(Mesh.PRIMITIVE_LINE_STRIP)
-			for k in poly.size() + 1:
-				_lines.surface_set_color(c)
-				_lines.surface_add_vertex(_ground_point(poly[k % poly.size()]))
-			_lines.surface_end()
-		any = true
-	if selected >= 0 and selected < course.shapes.size():
-		var size := camera.distance * 0.008
-		for p in course.shapes[selected].points:
-			_square(p, size, Color(1.0, 0.95, 0.2))
-	if not _draft.is_empty():
-		_lines.surface_begin(Mesh.PRIMITIVE_LINE_STRIP)
-		for p in _draft:
-			_lines.surface_set_color(Color.WHITE)
-			_lines.surface_add_vertex(_ground_point(p))
-		_lines.surface_end()
-		var size := camera.distance * 0.008
-		for p in _draft:
-			_square(p, size, Color.WHITE)
+			continue  # drawn last, on top
+		_shape_lines(course.shapes[i], false)
 	for path in course.paths:
 		if not path.is_valid():
 			continue
-		any = true
-		_lines.surface_begin(Mesh.PRIMITIVE_LINE_STRIP)
+		var pc := Color(0.85, 0.75, 0.55) if path.bridge else Color(0.85, 0.85, 0.85)
+		var pts: Array[Vector3] = []
 		for p in path.points:
-			_lines.surface_set_color(Color(0.85, 0.75, 0.55) if path.bridge else Color(0.85, 0.85, 0.85))
-			_lines.surface_add_vertex(_ground_point(p, 0.6))
-		_lines.surface_end()
+			pts.append(_ground_point(p, 0.6))
+		_polyline(pts, pc, false)
 	for n in course.holes.size():
 		var h := course.holes[n]
 		if h.tees.is_empty():
 			continue
-		var c := Color(1.0, 0.9, 0.2) if n == hole_index else Color(1, 1, 1, 0.5)
-		_lines.surface_begin(Mesh.PRIMITIVE_LINE_STRIP)
+		var hc := Color(1.0, 0.9, 0.2) if n == hole_index else Color(1, 1, 1, 0.5)
+		var pts: Array[Vector3] = []
 		for p in [h.tees[0]] + Array(h.route) + [h.pin]:
-			_lines.surface_set_color(c)
-			_lines.surface_add_vertex(_ground_point(p, 1.0))
-		_lines.surface_end()
-		any = true
-	if not any:
-		# An ImmediateMesh with no surfaces is fine, but keep one so the
-		# instance always has something to draw.
-		_lines.surface_begin(Mesh.PRIMITIVE_LINES)
-		_lines.surface_add_vertex(Vector3.ZERO)
-		_lines.surface_add_vertex(Vector3.ZERO)
-		_lines.surface_end()
+			pts.append(_ground_point(p, 1.0))
+		_polyline(pts, hc, false)
+	if selected >= 0 and selected < course.shapes.size():
+		_shape_lines(course.shapes[selected], true)
+		var size := camera.distance * 0.008
+		for p in course.shapes[selected].points:
+			_square(p, size, Color(1.0, 0.95, 0.2))
+	if not _draft.is_empty():
+		var pts: Array[Vector3] = []
+		for p in _draft:
+			pts.append(_ground_point(p))
+		_polyline(pts, Color.WHITE, false)
+		var size := camera.distance * 0.008
+		for k in _draft.size():
+			# The first point is bigger: click it to close the outline.
+			_square(_draft[k], size * (1.8 if k == 0 and _draft.size() >= 3 else 1.0), Color.WHITE)
+	_lines.surface_end()
+
+
+func _shape_lines(s: CourseShape, is_selected: bool) -> void:
+	var poly := s.outline()
+	if poly.size() < 3:
+		return
+	var c: Color = LINE_COLORS.get(s.surface, Color.WHITE)
+	if s.guessed and not s.found:
+		c = GUESSED_COLOR
+	if is_selected:
+		c = Color(1.0, 0.95, 0.2)
+	if s.guessed:
+		# Not from the map: dashed, so it is easy to spot and check.
+		_dashed(poly, c)
+		return
+	var pts: Array[Vector3] = []
+	for p in poly:
+		pts.append(_ground_point(p))
+	_polyline(pts, c, true)
+
+
+## Line pairs along `pts` into the open overlay surface.
+func _polyline(pts: Array[Vector3], c: Color, closed: bool) -> void:
+	var n := pts.size()
+	for k in (n if closed else n - 1):
+		_lines.surface_set_color(c)
+		_lines.surface_add_vertex(pts[k])
+		_lines.surface_set_color(c)
+		_lines.surface_add_vertex(pts[(k + 1) % n])
 
 
 ## A closed outline drawn as dashes of about DASH metres.
 func _dashed(poly: PackedVector2Array, c: Color) -> void:
-	_lines.surface_begin(Mesh.PRIMITIVE_LINES)
 	var on := true
 	var left := DASH
 	for k in poly.size():
@@ -958,15 +978,13 @@ func _dashed(poly: PackedVector2Array, c: Color) -> void:
 			if left <= 0.0:
 				on = not on
 				left = DASH
-	_lines.surface_end()
 
 
 func _square(p: Vector2, size: float, c: Color) -> void:
-	_lines.surface_begin(Mesh.PRIMITIVE_LINE_STRIP)
-	for corner in [Vector2(-1, -1), Vector2(1, -1), Vector2(1, 1), Vector2(-1, 1), Vector2(-1, -1)]:
-		_lines.surface_set_color(c)
-		_lines.surface_add_vertex(_ground_point(p + corner * size, 0.5))
-	_lines.surface_end()
+	var pts: Array[Vector3] = []
+	for corner in [Vector2(-1, -1), Vector2(1, -1), Vector2(1, 1), Vector2(-1, 1)]:
+		pts.append(_ground_point(p + corner * size, 0.5))
+	_polyline(pts, c, true)
 
 
 ## The brush ring, or the line from the last outline point to the mouse.
@@ -1400,9 +1418,12 @@ func _build_ui() -> void:
 	add_child(canvas)
 	panel = DesignerPanel.new()
 	panel.file_action.connect(_on_file_action)
-	panel.tool_changed.connect(func(_t: int) -> void:
+	panel.tool_changed.connect(func(t: int) -> void:
 		_draft.clear()
-		_overlay_dirty = true)
+		_overlay_dirty = true
+		# The panel's help can be scrolled out of sight: say it here too.
+		if t == DesignerPanel.Tool.SHAPE:
+			_set_status("Draw %s: %s" % [Surface.name_of(panel.chosen_surface()).to_lower(), DesignerPanel.TOOL_HELP[t]]))
 	panel.surface_changed.connect(_on_surface_changed)
 	panel.hole_selected.connect(func(i: int) -> void:
 		hole_index = i
