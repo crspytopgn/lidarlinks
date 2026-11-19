@@ -2362,7 +2362,29 @@ func _test_wind_gusts() -> void:
 	_check(absf(rad_to_deg(seen.angle())) <= 8.01, "gusts swing the direction only a few degrees")
 	var mat := ShaderMaterial.new()
 	mat.shader = load("res://shaders/flag.gdshader")
-	_check(mat.shader != null and mat.shader.get_code().contains("wind_vector"), "flag shader reads the wind")
+	_check(mat.shader != null and mat.shader.get_code().contains("flag_wind") and mat.shader.get_code().contains("flag_phase"), "flag shader reads the eased flag wind and phase")
+	_check(not mat.shader.get_code().contains("TIME"), "flag ripple phase is integrated, not TIME * a gusting frequency")
+	# The ripple quickens with the wind but stays a ripple, not a thrash.
+	_check(FlagMotion.ripple_hz(2.0) < 1.0 and FlagMotion.ripple_hz(9.0) < 3.0, "flag ripple is lazy in light air, brisk at 20 mph")
+	_check(FlagMotion.ripple_hz(40.0) <= FlagMotion.RIPPLE_MAX_HZ, "flag ripple capped")
+	# The phase never jumps, however hard the gusts swing.
+	var fm := FlagMotion.new()
+	fm.snap(Vector2(9, 0))
+	var worst := 0.0
+	for i in 600:
+		var before := fm.phase
+		fm.step(WindGust.visual_wind(Vector2(9, 0), 1000.0 + i / 60.0), 1.0 / 60.0)
+		var moved := fposmod(fm.phase - before, 1.0)
+		worst = maxf(worst, moved)
+	_check(worst <= FlagMotion.RIPPLE_MAX_HZ / 60.0 + 1e-5, "flag ripple advances smoothly through gusts (%.4f cycles/frame)" % worst)
+	# The cloth eases into a gust instead of snapping.
+	var ease := FlagMotion.new()
+	ease.snap(Vector2(5, 0))
+	ease.step(Vector2(10, 0), 1.0 / 60.0)
+	_check(ease.wind.x > 5.0 and ease.wind.x < 5.5, "flag eases into a gust (%.2f m/s)" % ease.wind.x)
+	var calm := FlagMotion.new()
+	calm.snap(Vector2.ZERO)
+	_check(calm.wind == Vector2.ZERO, "flag hangs in a calm")
 
 
 func _test_course_marks() -> void:
