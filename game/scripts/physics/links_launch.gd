@@ -425,26 +425,7 @@ static func apply_swing(s: Strike, w: SwingInput, lie: LinksGround.Params, rng: 
 			quality = 0.95 - 0.06 * c
 		_:
 			quality = (rng.next() % 200 - 100) * 5e-5 + (SINGLE_0_9 - 0.01 * c)
-	if lie.ground_class != LinksGround.GREEN:
-		quality = maxf(quality, 0.3)
-	# Only the driver, the 3-wood and the two longest irons feel it.
-	match s.club:
-		0:
-			pass
-		1:
-			quality = 1.0 - (1.0 - quality) * 0.5
-		7:
-			quality = 1.0 - (1.0 - quality) * 0.2
-		8:
-			quality = 1.0 - (1.0 - quality) * 0.05
-		_:
-			quality = 1.0
-	if skill == 0:
-		quality = (quality + 1.0) * 0.5
-	elif skill == 1:
-		quality = quality * 0.8 + 0.2
-	elif skill == 2:
-		quality = quality * 0.9 + 0.1
+	quality = _club_quality(quality, lie.ground_class, s.club, skill)
 
 	# The easier levels forgive the first steps of a miss.
 	var steps := c
@@ -472,6 +453,55 @@ static func apply_swing(s: Strike, w: SwingInput, lie: LinksGround.Params, rng: 
 
 ## 0.9 as the game stores it, in single precision.
 const SINGLE_0_9 := 0.89999997615814209
+
+
+## The share of ball speed a clean strike (no miss on the meter) from `lie`
+## keeps with `club` at `skill`, as apply_swing gives it: the lie's
+## LiePower, or less where the strike quality limit bites (the driver and the
+## 3-wood off the ground: 0.6 and 0.8 from the rough at the hardest level).
+## Leaves out the fairway's random wobble of up to 0.005. Sand and the putter
+## keep LiePower; a ball on the tee peg is not limited at all, so don't ask
+## for it. Mirrors olcore::links_clean_strike_speed.
+static func clean_strike_speed(club: int, lie: LinksGround.Params, skill: int) -> float:
+	if club == PUTTER or lie.ground_class == LinksGround.SAND:
+		return lie.lie_power
+	var quality: float
+	match lie.ground_class:
+		LinksGround.GREEN:
+			quality = 1.0
+		LinksGround.ROUGH:
+			quality = 0.6
+		LinksGround.PATH, LinksGround.DIRT, LinksGround.BUSHES, LinksGround.ROCKS:
+			quality = 0.95
+		_:
+			quality = SINGLE_0_9
+	return minf(lie.lie_power, _club_quality(quality, lie.ground_class, club, clampi(skill, 0, SKILL_COUNT - 1)))
+
+
+## The strike quality limit for `club` at `skill` from the lie's own figure:
+## only the driver, the 3-wood and the two longest irons feel it, and the
+## easier levels soften it.
+static func _club_quality(quality: float, ground_class: int, club: int, skill: int) -> float:
+	if ground_class != LinksGround.GREEN:
+		quality = maxf(quality, 0.3)
+	match club:
+		0:
+			pass
+		1:
+			quality = 1.0 - (1.0 - quality) * 0.5
+		7:
+			quality = 1.0 - (1.0 - quality) * 0.2
+		8:
+			quality = 1.0 - (1.0 - quality) * 0.05
+		_:
+			quality = 1.0
+	if skill == 0:
+		quality = (quality + 1.0) * 0.5
+	elif skill == 1:
+		quality = quality * 0.8 + 0.2
+	elif skill == 2:
+		quality = quality * 0.9 + 0.1
+	return quality
 
 
 ## Sand: how much sand the club takes for a contact. Returns the speed (x)
