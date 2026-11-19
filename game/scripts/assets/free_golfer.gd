@@ -173,6 +173,7 @@ static func create(p_look: PlayerLook = null, p_texture_cap := 0) -> FreeGolfer:
 	golfer._skeleton = skeletons[0]
 	var twist := GolferTwist.rig(golfer._skeleton)
 	golfer._feet = GolferFeet.new()
+	golfer._feet.player = player
 	golfer._skeleton.add_child(golfer._feet)
 	golfer._look = GolferLook.new()
 	golfer._skeleton.add_child(golfer._look)
