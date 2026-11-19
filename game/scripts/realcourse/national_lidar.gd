@@ -47,7 +47,10 @@ const SOURCES := [
 	},
 	{
 		"id": "ea", "name": "Environment Agency lidar, England (1 m)",
-		"boxes": [[49.85, -6.45, 55.82, 1.80]],
+		# Cornwall and the Scillies, then the rest of England east of
+		# 4.8 W: one box reached Dublin, and its answers there passed for
+		# Portmarnock's ground.
+		"boxes": [[49.85, -6.45, 50.80, 1.80], [50.80, -4.80, 55.82, 1.80]],
 		"format": "tiff",
 		"dtm": "https://environment.data.gov.uk/spatialdata/lidar-composite-digital-terrain-model-dtm-1m/wcs",
 		"dtm_layer": "13787b9a-26a4-4775-8523-806d13af58fc__Lidar_Composite_Elevation_DTM_1m",

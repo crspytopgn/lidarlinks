@@ -274,6 +274,7 @@ func _test_geo_raster() -> void:
 
 func _test_national_lidar() -> void:
 	check(str(NationalLidar.source_for(51.4, -0.3).get("id", "")) == "ea", "England uses the Environment Agency")
+	check(str(NationalLidar.source_for(53.43, -6.12).get("id", "")) != "ea" and str(NationalLidar.source_for(50.1, -5.5).get("id", "")) == "ea", "Dublin is not England, Cornwall is")
 	check(str(NationalLidar.source_for(52.2, 5.2).get("id", "")) == "ahn", "the Netherlands use AHN")
 	check(str(NationalLidar.source_for(36.57, -121.95).get("id", "")) == "3dep", "California uses 3DEP")
 	check(str(NationalLidar.source_for(-33.9, 151.2).get("id", "")) == "mapterhorn", "Sydney tries Mapterhorn")
@@ -697,6 +698,20 @@ func _test_land_cover() -> void:
 	var mid := sc.area.get_center()
 	check(RealLandscape.sea_from_cover(sc, f, wl) > 0, "the sea in the box is let in")
 	check(sc.base_height(mid.x - 200.0, mid.y) < 0.0 and sc.base_height(mid.x + 200.0, mid.y) > 9.0, "under the water (east) only: %.1f, %.1f" % [sc.base_height(mid.x - 200.0, mid.y), sc.base_height(mid.x + 200.0, mid.y)])
+	# A pond the map leaves out, from the land cover; none over the fairway.
+	var pv := PackedFloat32Array()
+	for j in 20:
+		for i in 20:
+			pv.append(LandCover.WATER if (i >= 8 and i < 12 and j >= 8 and j < 12) or (i >= 2 and i < 5 and j >= 8 and j < 12) else LandCover.RANGELAND)
+	var pl := LandCover.new([50.98, -1.0, 51.0, -0.98])
+	pl.add(_tiff(pv, 20, 20, false, false, true))
+	var pc := DesignedCourse.blank(Vector2(1200, 1200))
+	pc.shapes.clear()
+	var west_pond := f.to_local(50.99, -0.9965)
+	pc.shapes.append(CourseShape.new(Surface.Type.FAIRWAY, PackedVector2Array([west_pond + Vector2(-250, -300), west_pond + Vector2(250, -300), west_pond + Vector2(250, 300), west_pond + Vector2(-250, 300)])))
+	check(RealCourseBuilder.add_ponds(pc, f, pl) == 1, "one pond from the land cover, none on the fairway")
+	if pc.shapes.size() == 2:
+		check(pc.shapes[1].surface == Surface.Type.WATER and pc.shapes[1].contains(f.to_local(50.99, -0.99)), "the pond is where the water is")
 	# A links course with no photo: fescue between the holes, a first cut
 	# round the fairway.
 	var lk := DesignedCourse.blank(Vector2(600, 400))
@@ -1271,6 +1286,9 @@ func _test_native_grass() -> void:
 	check(srings.size() >= 1 and covers.has("heath") and covers.has("scrub"), "dark scrub and purple heather are found (%s)" % [covers])
 	check(not NativeGrass.is_scrub(Color(0.12, 0.25, 0.10), sg.grass_sat, sg.grass_val), "dark green woods aren't scrub")
 	check(NativeGrass.is_scrub(Color.from_hsv(0.28, 0.2, 0.28), 0.37, 0.41), "Torrey's grey-green canyon sage is scrub")
+	var two: Array[PackedVector2Array] = [PackedVector2Array([Vector2(0, 0), Vector2(100, 0), Vector2(100, 100), Vector2(0, 100)]), PackedVector2Array([Vector2(160, 0), Vector2(260, 0), Vector2(260, 100), Vector2(160, 100)]), PackedVector2Array([Vector2(900, 0), Vector2(1000, 0), Vector2(1000, 100), Vector2(900, 100)])]
+	var grown := RealCourseBuilder.grown_rings(two, 50.0)
+	check(grown.size() == 2 and Geometry2D.is_point_in_polygon(Vector2(130, 50), grown[0] if Geometry2D.is_point_in_polygon(Vector2(50, 50), grown[0]) else grown[1]) and Geometry2D.is_point_in_polygon(Vector2(-40, 50), grown[0] if Geometry2D.is_point_in_polygon(Vector2(50, 50), grown[0]) else grown[1]), "outlines grown 50 m merge where they meet (%d)" % grown.size())
 	var green := Image.create(200, 200, false, Image.FORMAT_RGB8)
 	green.fill(Color(0.36, 0.55, 0.25))
 	var none := NativeGrass.new(green, area, [] as Array[PackedVector2Array], grass)
@@ -1518,12 +1536,18 @@ func _test_search_ranking() -> void:
 	check(names == ["Pebble Beach Golf Course", "Spyglass Hill Golf Course", "Poppy Hills Golf Course", "", "Pebble Beach Golf Links"], "search ranking (%s)" % [names])
 	var club := [{"name": "The Carnoustie Burnside Course", "golf": true}, {"name": "The Carnoustie Buddon Course", "golf": true}, {"name": "The Carnoustie Championship Course", "golf": true}]
 	check(str(RealCourseFetcher.rank(club, "Carnoustie Golf Links")[0]["name"]) == "The Carnoustie Championship Course", "a club's championship course first")
+	var troon := [{"name": "Troon Lochgreen", "golf": true, "near": 900.0}, {"name": "Old Course", "golf": true, "near": 150.0}, {"name": "Royal Troon Golf Club", "golf": false}]
+	check(str(RealCourseFetcher.rank(troon, "Royal Troon Golf Club")[0]["name"]) == "Old Course", "the Old Course round the club's clubhouse before the town's course")
 	check(RealCourseBuilder.display_name({"name": "ملعب خور دبي للغولف", "name:en": "Dubai Creek Golf Course"}) == "Dubai Creek Golf Course", "an Arabic name gives way to its English one")
 	check(RealCourseBuilder.display_name({"name": "Golf de Saint-Cloud", "name:en": "Saint-Cloud Golf Club"}) == "Golf de Saint-Cloud", "a Latin-script name is kept")
 	check(RealCourseBuilder.display_name({"name": "霞ヶ関カンツリー倶楽部"}) == "霞ヶ関カンツリー倶楽部", "with no English name, its own")
 	var tries := RealCourseFetcher.search_names("Real Club Valderrama")
 	check("valderrama golf club" in Array(tries).map(func(t: String) -> String: return t.to_lower()), "a Spanish club name is also tried as a golf club (%s)" % tries)
 	check(RealCourseFetcher.search_names("Royal County Down Golf Club")[0] == "Royal County Down Golf Course", "the other ending first")
+	var kiawah := [{"name": "Kiawah Island Club - River Course", "golf": true}, {"name": "Cypress Point", "golf": false}]
+	check(not RealCourseFetcher._has_named_golf(kiawah, "Cypress Point Club", false) and RealCourseFetcher._has_named_golf([{"name": "Cypress Point Golf Course", "golf": true}], "Cypress Point Golf Course", true), "a course in a district of the same name is not the club")
+	var cypress := RealCourseFetcher.search_names("Cypress Point Club")
+	check("Cypress Point Golf Course" in cypress and cypress.find("Cypress Point Golf Course") < cypress.find("cypress golf course") and not "Cabo del Golf Course" in RealCourseFetcher.search_names("Cabo del Sol Ocean Course"), "the name cut short a word at a time (%s)" % cypress)
 	check(RealCourseBuilder.is_main_course("Sunningdale Old Course") and not RealCourseBuilder.is_main_course("Sunningdale New Course") and not RealCourseBuilder.is_main_course("Oldham Golf Club"), "a club's main course by name")
 	var inside := {"lat": 46.31, "lon": 7.47, "box": ["46.30", "46.32", "7.46", "7.48"]}
 	var off := {"lat": 46.32, "lon": 7.49, "box": ["46.315", "46.325", "7.485", "7.495"]}

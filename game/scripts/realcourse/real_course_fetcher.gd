@@ -66,6 +66,12 @@ const LIGHT_MAX_TREES := 2500
 const FRAME_BUDGET_MS := 60
 ## Lidar pixels read per step when finding the trees.
 const LIDAR_PIXELS_PER_STEP := 60000
+## Metres from the clubhouse found by name within which a course called
+## only "Old Course" or "Championship" is taken as the club's.
+const MAIN_NEAR := 800.0
+## Metres from what the full name found within which a course found by one
+## of its words is taken.
+const WORD_NEAR := 20000.0
 ## Metres round the course the land cover is read for the sea under cliffs.
 const SHORE_REACH := 2500.0
 ## Land samples shaped per step (RealLandscape).
@@ -73,7 +79,7 @@ const LAND_SAMPLES_PER_STEP := 20000
 ## Goes up whenever a build gives a better course (new detection, trees,
 ## walls...): courses built before it offer "Update" on the Courses page.
 ## Saved in each course's source as "builder" (RealCourseUpdate).
-const BUILDER_VERSION := 5  ## 5: big lakes as water, native grass from the photo
+const BUILDER_VERSION := 6  ## 5: big lakes as water, native grass from the photo; 6: seas under cliffs, scrub, ponds from the land cover, Ireland off England's lidar
 
 var busy := false
 ## Use national lidar and aerial photos where they cover the course.
@@ -127,23 +133,58 @@ func search(query: String) -> void:
 		search_failed.emit("Couldn't reach OpenStreetMap's search. Check the connection and try again.")
 		return
 	var short := RealCourseBuilder.short_name(q)
-	if (results as Array).is_empty() and not short.is_empty():
-		# The club's full name may not be on the map at all: "Royal County
-		# Down Golf Club" finds nothing, its course is "Royal County Down
-		# Golf Course" (and "Royal County Down" alone finds roads in
-		# America). Other endings first, then the bare name.
-		# Then its distinctive words as a golf club ("Real Club Valderrama"
-		# finds nothing; "Valderrama Golf Club" finds the course).
+	if not _has_named_golf(results, q, false) and not short.is_empty():
+		# The club's full name may not be on the map at all, or only as its
+		# clubhouse, a road or a district: "Cypress Point Club" finds the
+		# Kiawah course in a Cypress Point district (its course is
+		# "Cypress Point Golf Course"), "Royal County Down Golf Club" finds
+		# nothing (its course is "Royal County Down Golf Course"). Other
+		# endings first, then the name cut short, then its distinctive
+		# words as a golf club ("Real Club Valderrama" finds nothing;
+		# "Valderrama Golf Club" finds the course).
 		var tried := {q.to_lower(): true}
+		var anchors: Array = _naming(results, q)
+		var near_tried := false
 		for name: String in search_names(q):
 			if tried.has(name.to_lower()):
 				continue
 			tried[name.to_lower()] = true
-			var other: Variant = await _search_once(name)
-			if other != null and not (other as Array).is_empty():
-				results = other
-				if _has_golf(other):
+			var words := RealCourseBuilder.name_words(name)
+			if words.size() == 1 and not anchors.is_empty() and not near_tried:
+				# Before one word alone, the golf courses round the places the
+				# fuller names found (the clubhouse of Royal Troon, the Cabo
+				# del Sol district): "troon golf course" finds the town's
+				# public courses, "ocean golf course" one in Spain.
+				near_tried = true
+				var ring: Array = await _golf_near(anchors)
+				if not ring.is_empty():
+					results = ring + anchors
 					break
+			var other: Variant = await _search_once(name)
+			if other == null:
+				continue
+			if words.size() == 1:
+				# One word alone matches anything with it in its address
+				# ("Earth golf course" found a course in Blue Earth County):
+				# keep only golf courses with the word in their own name,
+				# near the places the fuller names found.
+				var seen: Array = anchors
+				other = (other as Array).filter(func(r: Dictionary) -> bool:
+					if not r["golf"] or not words[0] in RealCourseBuilder.name_words(str(r["name"])):
+						return false
+					if seen.is_empty():
+						return true
+					for f: Dictionary in seen:
+						if near_distance(r, float(f["lat"]), float(f["lon"])) < WORD_NEAR:
+							return true
+					return false)
+			if _has_named_golf(other, name, true):
+				results = other
+				break
+			if anchors.is_empty() and not _naming(other, name).is_empty():
+				anchors = _naming(other, name)
+				if not _has_golf(results):
+					results = anchors
 	if not _has_golf(results):
 		var more: Variant = await _search_once(q + (" course" if q.to_lower().contains("golf") else " golf course"))
 		if more != null and _has_golf(more):
@@ -153,22 +194,7 @@ func search(query: String) -> void:
 		# rather than the course (Pebble Beach Golf Links is mapped as a
 		# restaurant, the course as "Pebble Beach Golf Course"): look for
 		# golf courses round the first places found.
-		var near: Array[Dictionary] = []
-		for r: Dictionary in (results as Array).slice(0, NEAR_LOOKUPS):
-			var more: Variant = await _search_near(float(r["lat"]), float(r["lon"]))
-			if more == null:
-				continue
-			var golf: Array[Dictionary] = []
-			for m: Dictionary in more:
-				if m["golf"] and not near.any(func(o: Dictionary) -> bool: return o["label"] == m["label"]):
-					m["near"] = near_distance(m, float(r["lat"]), float(r["lon"]))
-					golf.append(m)
-			# The course round the clubhouse first (Crans-sur-Sierre's
-			# club is a point inside its Ballesteros course, with another
-			# club's nine a mile off).
-			golf.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return a["near"] < b["near"])
-			near.append_array(golf)
-		results = near + results
+		results = await _golf_near(results) + results
 	busy = false
 	found.emit(rank(results, q))
 
@@ -180,7 +206,18 @@ static func search_names(q: String) -> PackedStringArray:
 	var short := RealCourseBuilder.short_name(q)
 	var core := " ".join(RealCourseBuilder.name_words(q))
 	var out := PackedStringArray()
-	var names := [short + " Golf Course", short + " Golf Club", short + " Golf Links", short, core + " Golf Club", core + " Golf Course"]
+	var names := [short + " Golf Course", short + " Golf Club", short + " Golf Links", short]
+	# Its name cut short a word at a time, as a golf course ("Cypress Point
+	# Club" is mapped as "Cypress Point Golf Course", "Cabo del Sol Ocean
+	# Course" as "Cabo del Sol"), down to two words.
+	var tokens := short.split(" ", false)
+	for n in range(tokens.size() - 1, 1, -1):
+		if tokens[n - 1].to_lower() in ["de", "del", "la", "le", "of", "the", "golf", "and", "&"]:
+			continue
+		var head := " ".join(tokens.slice(0, n))
+		names.append(head + " Golf Course")
+		names.append(head)
+	names.append_array([core + " Golf Club", core + " Golf Course"])
 	# Each word alone, the last (often the town) first: the search wants
 	# every word in the name, and "Engadine Golf Club Samedan" is mapped as
 	# "Golfcourse Samedan".
@@ -214,6 +251,11 @@ static func rank(results: Array, query: String) -> Array:
 		var lower := str(r["name"])
 		if r["golf"] and RealCourseBuilder.is_main_course(lower):
 			score += 5
+			# The club's main course found round its clubhouse, named only
+			# "Old Course" (Royal Troon's, beside the town's Lochgreen):
+			# as good as named after the club.
+			if float(r.get("near", INF)) < MAIN_NEAR:
+				score += 10 * words.size()
 		keyed.append([score, i, r])
 	keyed.sort_custom(func(a: Array, b: Array) -> bool: return a[0] > b[0] or (a[0] == b[0] and a[1] < b[1]))
 	return keyed.map(func(k: Array) -> Dictionary: return k[2])
@@ -482,6 +524,9 @@ func _build(place: Dictionary) -> DesignedCourse:
 			await _step("Letting the sea in...")
 			for c: DesignedCourse in [course] + others:
 				RealLandscape.sea_from_cover(c, builder.frame, land_cover)
+			await _step("Finding the ponds the map leaves out...")
+			for c: DesignedCourse in [course] + others:
+				RealCourseBuilder.add_ponds(c, builder.frame, land_cover)
 		# A links course by the sea with no photo to read its fescue from.
 		if builder.photo == null:
 			var none: Array[PackedVector2Array] = []
@@ -711,6 +756,58 @@ static func _has_golf(results: Array) -> bool:
 		if r["golf"]:
 			return true
 	return false
+
+## Golf courses round the first places found, nearest first round each.
+func _golf_near(places: Array) -> Array:
+	var near: Array = []
+	for r: Dictionary in places.slice(0, NEAR_LOOKUPS):
+		var more: Variant = await _search_near(float(r["lat"]), float(r["lon"]))
+		if more == null:
+			continue
+		var golf: Array[Dictionary] = []
+		for m: Dictionary in more:
+			if m["golf"] and not near.any(func(o: Dictionary) -> bool: return o["label"] == m["label"]):
+				m["near"] = near_distance(m, float(r["lat"]), float(r["lon"]))
+				golf.append(m)
+		# The course round the clubhouse first (Crans-sur-Sierre's club is
+		# a point inside its Ballesteros course, with another club's nine a
+		# mile off).
+		golf.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return a["near"] < b["near"])
+		near.append_array(golf)
+	return near
+
+
+## The places found whose address holds every word of the name ("Cabo del
+## Sol Ocean" finds an Ocean Basket restaurant on a Sol Plaatje road in
+## South Africa).
+static func _naming(results: Variant, name: String) -> Array:
+	var words := RealCourseBuilder.name_words(name)
+	return (results as Array).filter(func(r: Dictionary) -> bool:
+		var label := str(r.get("label", r.get("name", ""))).to_lower()
+		for w in words:
+			if not label.contains(w):
+				return false
+		return true)
+
+
+## Whether a golf course among the results carries the name's words in its
+## own name (any of them, or all with every_word), not just in its address.
+static func _has_named_golf(results: Array, name: String, every_word: bool) -> bool:
+	var words := RealCourseBuilder.name_words(name)
+	for r in results:
+		if not r["golf"]:
+			continue
+		if words.is_empty():
+			return true
+		var own := RealCourseBuilder.name_words(str(r["name"]))
+		var shared := 0
+		for w in words:
+			if w in own:
+				shared += 1
+		if shared == words.size() or (shared > 0 and not every_word):
+			return true
+	return false
+
 
 
 ## The Overpass answer; {} if no server gives one. Every server is asked

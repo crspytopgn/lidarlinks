@@ -28,6 +28,7 @@ const STREAM_PIECE := 60.0  ## streams are split so each piece has its own water
 const STREAM_PIECE_DROP := 0.3  ## metres a piece's ground may fall along it
 const NATIVE_ROWS_PER_STEP := 120
 const NATIVE_ROUGH_SHARE := 0.5  ## of a mapped rough straw in the photo: native rough
+const NATIVE_REACH := 50.0  ## metres past the course outline native grass is read
 const LINKS_CUT := 12.0  ## metres of first cut round a links fairway  ## rows of NativeGrass cells read a step
 const CHAIN_REACH := 150.0  ## metres from a green to the next hole's tee, chaining unnumbered holes
 const CHAIN_REACH_FAR := 400.0  ## then joining what's left of the chains
@@ -603,11 +604,14 @@ func build_steps(c: DesignedCourse, height: Callable, fallback := Callable()) ->
 	steps.append(func() -> void:
 		var img := photo if photo != null and not photo.is_empty() else native_photo
 		if img != null and not img.is_empty():
-			native["grass"] = NativeGrass.new(img, c.area, _boundary, grass_points())
+			# A little past the outline too: what lies just beyond it is seen
+			# from the holes (Torrey Pines' canyons are city land).
+			var reach := grown_rings(_boundary, NATIVE_REACH)
+			native["grass"] = NativeGrass.new(img, c.area, reach, grass_points())
 			# Scrub only from a real aerial photo: the satellite image is too
 			# coarse and dark to tell it from woods.
 			if img == photo:
-				native["scrub"] = NativeGrass.new(img, c.area, _boundary, grass_points(), NativeGrass.Kind.SCRUB))
+				native["scrub"] = NativeGrass.new(img, c.area, reach, grass_points(), NativeGrass.Kind.SCRUB))
 	var native_rows := ceili(c.area.size.y / NativeGrass.CELL)
 	for key: String in ["grass", "scrub"]:
 		for j in range(0, native_rows, NATIVE_ROWS_PER_STEP):
@@ -2023,6 +2027,53 @@ static func simplify_line(line: PackedVector2Array, tolerance: float) -> PackedV
 ## holes, past a first cut round the fairways, greens and tees, becomes
 ## deep rough, drawn as fescue, as on any links. `boundary` is the course
 ## outline (its whole area without one). Returns the shapes added.
+## Ponds and lakes the map leaves out, from the land cover, as water
+## (the terrain finds their level from their banks). Returns how many.
+static func add_ponds(c: DesignedCourse, frame: GeoFrame, cover: LandCover) -> int:
+	var dry: Array[CourseShape] = []
+	var wet: Array[CourseShape] = []
+	for s in c.shapes:
+		if not s.is_valid():
+			continue
+		if s.surface in [Surface.Type.FAIRWAY, Surface.Type.GREEN, Surface.Type.TEE, Surface.Type.SAND]:
+			dry.append(s)
+		elif s.surface == Surface.Type.WATER:
+			wet.append(s)
+	var sea := float(c.source.get("sea", NAN))
+	var n := 0
+	for r in cover.pond_rings(frame, c.area, dry, wet):
+		# Not the sea already let in under the course.
+		if not is_nan(sea) and c.base_height(_centroid(r).x, _centroid(r).y) + float(c.source.get("base_height", 0.0)) < sea:
+			continue
+		c.shapes.append(CourseShape.new(Surface.Type.WATER, r))
+		n += 1
+	return n
+
+
+## Rings grown by `by` metres and merged where they meet (so an even-odd
+## scan doesn't take their overlap for a hole).
+static func grown_rings(rings: Array[PackedVector2Array], by: float) -> Array[PackedVector2Array]:
+	var out: Array[PackedVector2Array] = []
+	for r in rings:
+		# The biggest piece is the ring grown (the rest are holes in it).
+		var merged := PackedVector2Array()
+		for g in Geometry2D.offset_polygon(r, by, Geometry2D.JOIN_ROUND):
+			if absf(_ring_area(g)) > absf(_ring_area(merged)):
+				merged = g
+		if merged.size() >= 3:
+			var k := 0
+			while k < out.size():
+				var m := Geometry2D.merge_polygons(merged, out[k])
+				if m.size() == 1:
+					merged = m[0]
+					out.remove_at(k)
+					k = 0
+				else:
+					k += 1
+			out.append(merged)
+	return out
+
+
 static func links_fescue(c: DesignedCourse, boundary: Array[PackedVector2Array]) -> int:
 	var cut := {Surface.Type.FAIRWAY: LINKS_CUT, Surface.Type.GREEN: LINKS_CUT + 3.0, Surface.Type.TEE: LINKS_CUT - 4.0}
 	var added: Array[CourseShape] = []

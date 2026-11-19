@@ -532,6 +532,23 @@ or not at all. What that found, and what the builder now does:
   fescue from fairway, so a course with the sea within 1 km and no photo
   gets deep rough (fescue) between the holes past a 12 m first cut round
   each fairway (15 m round greens, 8 m round tees), as on any links.
+- **Ponds the map leaves out:** water in the 10 m land cover that no
+  mapped pond covers, 1 ha or more and clear of the fairways, greens,
+  tees and bunkers, becomes a pond (`RealCourseBuilder.add_ponds`).
+- **Native grass round the edge:** the scrub and straw just outside the
+  course boundary (50 m) is read as well, so canyon scrub at Torrey
+  Pines doesn't stop at the fence line.
+- **The right club for the name:** a golf course found only because its
+  address holds the name (Kiawah's River Course is in a district called
+  Cypress Point) doesn't count; the search tries the name cut short a
+  word at a time ("Cypress Point Golf Course"), then looks round the
+  club's own buildings or district (Royal Troon's clubhouse, the Cabo
+  del Sol district) before trying single words, and a single word only
+  counts near those places ("troon golf course" found Troon North in
+  Arizona). The main course within 800 m of the clubhouse ranks first.
+- **Lidar kept to its country:** England's Environment Agency box no
+  longer reaches Dublin (Portmarnock took its answers as ground and lost
+  its sea).
 - **Checked against the real place from above:** `e2e.sh` ends with
   `look_export.gd` and `look_check.py`, which read a satellite picture of
   the same ground (a dev check only: it is cached in /tmp, never saved
