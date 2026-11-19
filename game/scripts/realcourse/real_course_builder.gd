@@ -2078,6 +2078,13 @@ static func links_fescue(c: DesignedCourse, boundary: Array[PackedVector2Array])
 	var cut := {Surface.Type.FAIRWAY: LINKS_CUT, Surface.Type.GREEN: LINKS_CUT + 3.0, Surface.Type.TEE: LINKS_CUT - 4.0}
 	var added: Array[CourseShape] = []
 	if boundary.is_empty():
+		# The mapped rough too: it is painted over deep rough, and on a
+		# links it is fescue past the first cut (Hoylake's rough between
+		# the holes came out mown).
+		for s in c.shapes:
+			if s.surface == Surface.Type.ROUGH and s.is_valid():
+				s.surface = Surface.Type.DEEP_ROUGH
+				s.changed()
 		var r := c.area.grow(-2.0)
 		added.append(CourseShape.new(Surface.Type.DEEP_ROUGH, PackedVector2Array([r.position, Vector2(r.end.x, r.position.y), r.end, Vector2(r.position.x, r.end.y)])))
 	for ring in boundary:
