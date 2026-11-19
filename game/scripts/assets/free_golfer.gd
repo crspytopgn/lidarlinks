@@ -78,6 +78,14 @@ const TEMPO_MAX := 1.15
 ## Everything else plays this much faster or slower each time, and a
 ## looping clip starts at a random point, so no two shots look the same.
 const SPEED_JITTER := 0.06
+## Each club head's toe, heel, sole, top and tip in the club bone's frame,
+## for GolferFeet to keep out of the ground (read from the glb after
+## tools/golfer/club_length.py; rerun if the club meshes change).
+const CLUB_HEAD_POINTS := {
+	"driver": [Vector3(-0.036, -0.149, -1.17), Vector3(0.073, -0.134, -1.16), Vector3(0.016, -0.192, -1.124), Vector3(-0.001, -0.092, -1.182), Vector3(0.015, -0.112, -1.211)],
+	"iron": [Vector3(-0.027, -0.141, -0.906), Vector3(0.017, -0.08, -0.917), Vector3(-0.027, -0.148, -0.921), Vector3(0.004, -0.062, -0.934), Vector3(-0.007, -0.084, -0.967)],
+	"putter": [Vector3(-0.024, -0.128, -0.818), Vector3(0.016, -0.13, -0.884), Vector3(0.012, -0.152, -0.891), Vector3(-0.009, -0.055, -0.92), Vector3(0.011, -0.065, -0.939)],
+}
 const SURVEY_JITTER := 0.5  ## seconds either side of SURVEY_TIME
 const SWING_CLIPS: Array[StringName] = [&"backswing", &"swing", &"backswing_iron", &"swing_iron", &"putt"]
 ## Where the ball sits in the rig (GolferRig): a taller or shorter golfer is
@@ -1017,6 +1025,8 @@ static func _near_yaw(from: float, yaw: float) -> float:
 ## Empty-handed on the way to the bag.
 func _hide_clubs() -> void:
 	_holding = false
+	if _feet:
+		_feet.club_points = PackedVector3Array()
 	for node in _driver + _iron_meshes + _putter:
 		node.visible = false
 
@@ -1039,3 +1049,5 @@ func _show_putter(on: bool) -> void:
 		node.visible = not on and _iron
 	for node in _putter:
 		node.visible = on
+	if _feet:
+		_feet.club_points = PackedVector3Array(CLUB_HEAD_POINTS["putter" if on else ("iron" if _iron else "driver")])
