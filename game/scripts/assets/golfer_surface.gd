@@ -38,6 +38,8 @@ const HAIR_SHADER := preload("res://shaders/golfer_hair.gdshader")
 const FINE_HAIR_SHADER := preload("res://shaders/golfer_fine_hair.gdshader")
 const EYE_SHADER := preload("res://shaders/golfer_eye.gdshader")
 const PERSON_SHADER := preload("res://shaders/golfer_person.gdshader")
+const PLAIN_SHADER := preload("res://shaders/golfer_plain.gdshader")
+const PLAIN_TWO_SIDED_SHADER := preload("res://shaders/golfer_plain_two_sided.gdshader")
 
 
 static func skin(mat: StandardMaterial3D) -> StandardMaterial3D:
@@ -167,6 +169,28 @@ static func _set_fabrics(m: ShaderMaterial, has_regions: bool) -> void:
 		m.set_shader_parameter("fabric_shirt", shirt)
 		m.set_shader_parameter("fabric_trousers", trousers)
 		m.set_shader_parameter("fabric_shoes", shoes)
+
+
+## A plain part (a cap, a person's modelled hair, the glove) as
+## golfer_plain.gdshader, lit as the body is: the web's people_light, the
+## body's own shade and its soft terminator. `mat` stays as it is when it
+## is cut out (hair cards), which the shader doesn't do.
+static func plain(mat: StandardMaterial3D) -> Material:
+	if mat.transparency != BaseMaterial3D.TRANSPARENCY_DISABLED or mat.cull_mode == BaseMaterial3D.CULL_FRONT:
+		return mat
+	var m := ShaderMaterial.new()
+	m.resource_name = mat.resource_name
+	m.shader = PLAIN_SHADER if mat.cull_mode == BaseMaterial3D.CULL_BACK else PLAIN_TWO_SIDED_SHADER
+	m.set_shader_parameter("albedo", mat.albedo_color)
+	m.set_shader_parameter("texture_albedo", mat.albedo_texture)
+	m.set_shader_parameter("use_normal", mat.normal_enabled and mat.normal_texture != null)
+	m.set_shader_parameter("texture_normal", mat.normal_texture)
+	m.set_shader_parameter("normal_scale", mat.normal_scale)
+	m.set_shader_parameter("uv_scale", Vector2(mat.uv1_scale.x, mat.uv1_scale.y))
+	m.set_shader_parameter("roughness", mat.roughness)
+	m.set_shader_parameter("specular", mat.metallic_specular)
+	m.set_shader_parameter("rim", mat.rim if mat.rim_enabled else 0.0)
+	return m
 
 
 static func cloth(mat: StandardMaterial3D) -> StandardMaterial3D:

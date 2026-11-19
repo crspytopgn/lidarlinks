@@ -1119,6 +1119,15 @@ func _strs(values: Array) -> Array[String]:
 
 
 func _test_round_setup() -> void:
+	var claim := RoundSetup.new()
+	_check(claim.claim_first_player("Michael", ""), "creator: a new player takes over the standard Player 1")
+	_check(claim.names[0] == "Michael", "creator: first player is the new one")
+	_check(not claim.claim_first_player("Bob", ""), "creator: a second new player doesn't replace a named first player")
+	_check(claim.claim_first_player("Mike", "michael"), "creator: renaming the first player follows them")
+	_check(claim.names[0] == "Mike", "creator: renamed first player")
+	_check(GolferSelectPanel.with_person(PlayerLook.default_look(), "Female_Adult_13").sex >= 0.5, "select golfer: a woman's look takes her sex")
+	_check(GolferSelectPanel.with_person(PlayerLook.default_look(), "").person == "", "select golfer: Custom is the creator's body")
+	_check(RoundSetupPanel.golfer_name(PlayerLook.default_look()) == "Man 1", "setup: the standard golfer is Man 1")
 	var s := RoundSetup.new()
 	_check(s.problem().is_empty(), "one player stroke play is fine")
 	s.mode = GameModes.Mode.MATCH

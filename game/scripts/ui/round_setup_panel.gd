@@ -9,6 +9,8 @@ extends PanelContainer
 
 signal start_pressed(setup: RoundSetup, course_index: int)
 signal back_pressed
+## Asks for Select golfer (GolferSelectPanel) on this player.
+signal golfer_pressed(player_name: String)
 
 enum { PLAY_ROUND, PLAY_RANGE, PLAY_TARGETS, PLAY_PUTTING_GREEN, PLAY_COURSE_GREENS, PLAY_COURSE_TEES }
 const PLAY_NAMES: Array[String] = ["A round", "Driving range", "Range target game", "Practice putting green",
@@ -33,6 +35,7 @@ var _speed: OptionButton
 var _swing: OptionButton
 var _indexes: Array[LineEdit] = []
 var _records: Array[Label] = []
+var _golfers: Array[Button] = []
 var _profiles := PlayerProfiles.new()
 var _rows: Array[HBoxContainer] = []
 var _problem: Label
@@ -132,6 +135,13 @@ func _ready() -> void:
 		who.item_selected.connect(func(_item: int) -> void: _on_name_changed(i))
 		row.add_child(who)
 		_who.append(who)
+		var golfer_button := MenuStyle.button("Golfer")
+		golfer_button.custom_minimum_size = Vector2(170, 34)
+		golfer_button.add_theme_font_size_override("font_size", 15)
+		golfer_button.tooltip_text = "Select golfer: who this player plays as"
+		golfer_button.pressed.connect(func() -> void: golfer_pressed.emit(_player_name(i)))
+		row.add_child(golfer_button)
+		_golfers.append(golfer_button)
 		var index := LineEdit.new()
 		index.max_length = 5
 		index.custom_minimum_size = Vector2(80, 34)
@@ -226,6 +236,7 @@ func open(courses: PackedStringArray, selected: int, saved: RoundSetup) -> void:
 		_teams[i].select(saved.teams[i] if i < saved.teams.size() else i % 2)
 		_who[i].select(saved.computer_level(i) + 1)
 		_fill_index(i)
+		_fill_golfer(i)
 	_clear_code()
 	visible = true
 	_start.grab_focus.call_deferred()
@@ -307,7 +318,33 @@ func _fill_index(i: int) -> void:
 
 func _on_name_changed(i: int) -> void:
 	_fill_index(i)
+	_fill_golfer(i)
 	_refresh()
+
+
+## Shows on each human player's Golfer button who they play as (their
+## saved golfer, or the standard one); computer golfers have their own.
+func refresh_golfers() -> void:
+	_profiles = PlayerProfiles.load_saved()
+	for i in _golfers.size():
+		_fill_golfer(i)
+
+
+func _fill_golfer(i: int) -> void:
+	var human := _who[i].selected - 1 == RoundSetup.HUMAN
+	_golfers[i].visible = human
+	if not human:
+		return
+	var look := _profiles.look_of(_player_name(i))
+	_golfers[i].text = "Golfer: " + golfer_name(look if look != null else PlayerLook.default_look())
+
+
+## The name a look's golfer goes by on the setup page.
+static func golfer_name(look: PlayerLook) -> String:
+	for c: Array in GolferSelectPanel.choices():
+		if c[0] == look.person:
+			return c[1]
+	return "Custom"
 
 
 ## Moves the player count into what the mode allows.

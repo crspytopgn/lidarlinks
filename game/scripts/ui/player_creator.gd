@@ -174,6 +174,9 @@ func _save() -> void:
 		_profiles.rename(_original_name, player_name)
 	_profiles.set_look(player_name, look)
 	_profiles.save()
+	var setup := RoundSetup.load_saved()
+	if setup.claim_first_player(player_name, _original_name):
+		setup.save()
 	close()
 	closed.emit(player_name)
 

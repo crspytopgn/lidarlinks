@@ -473,6 +473,7 @@ def regions(surface, colour, skin, names):
         mask[..., k - 1] = sel
         means.append(m)
     mask = fill_holes(mask > 0.5, is_skin)
+    mask = close_notches(mask > 0.5, is_skin)
     mask = grow_edges(mask > 0.5, tex)
     img = Image.fromarray((mask * 255).astype(np.uint8)).filter(ImageFilter.GaussianBlur(0.8))
     buf = io.BytesIO()
@@ -527,6 +528,32 @@ def enclosed(sel):
     off = Image.fromarray(np.pad(~sel, 1, constant_values=True).astype(np.uint8) * 255).copy()
     ImageDraw.floodfill(off, (0, 0), 128)
     return (np.asarray(off) == 255)[1:-1, 1:-1]
+
+
+CLOSE_STEPS = 5  # mask texels: the widest notch close_notches fills is twice this
+
+
+def close_notches(mask, is_skin, steps=CLOSE_STEPS):
+    """Each garment's mask (bool, h x w x 3) with the notches in its edges
+    filled (a morphological closing): deep creases and fold shadows where a
+    piece of cloth meets its seam fail the colour test, and, open to the
+    piece's edge, fill_holes doesn't see them. Left out they keep the
+    source clothes' own colour, and down the back of dyed trousers they
+    showed as ragged pale streaks that read as broken sunlight (the
+    Mixamo golfer's khaki through navy or grey). Skin and texels another
+    garment holds stay as they are; a belt is wider than the notches."""
+    out = mask.copy()
+    for k in range(3):
+        sel = mask[..., k]
+        grown = sel
+        for _ in range(steps):
+            grown = _dilate(grown)
+        closed = grown
+        for _ in range(steps):
+            closed = ~_dilate(~closed)
+        others = mask[..., [j for j in range(3) if j != k]].any(-1)
+        out[..., k] |= closed & ~is_skin & ~others
+    return out.astype(np.float64)
 
 
 def fill_holes(mask, is_skin):
