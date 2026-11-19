@@ -27,6 +27,9 @@ var _web_added := PackedStringArray()
 var _confirm := ""  ## "delete:<path>" or "update:<path>" pressed once
 var _web := false
 
+## Each row's course picture.
+const ROW_PICTURE := Vector2(128, 72)
+
 
 func _ready() -> void:
 	MenuStyle.panel(self)
@@ -190,7 +193,19 @@ func _row(e: Dictionary) -> Control:
 		if _confirm.ends_with(":" + path):
 			note.modulate = MenuStyle.WARNING
 		row.add_child(note)
-	return row
+	# The course's picture at the left of its row.
+	var line := HBoxContainer.new()
+	line.add_theme_constant_override("separation", 14)
+	var pic := CoursePicture.new(ROW_PICTURE)
+	pic.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	pic.show_course(path)
+	if e["hidden"]:
+		pic.modulate = Color(1, 1, 1, 0.5)
+	line.add_child(pic)
+	row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	row.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	line.add_child(row)
+	return line
 
 
 func _set_status(text: String) -> void:
@@ -209,6 +224,8 @@ func _on_delete(path: String) -> void:
 		remove_web_pressed.emit(path)
 		return
 	var err := CourseLibrary.delete_course(path)
+	if err == OK:
+		CoursePictures.forget(path)
 	if CourseDesigner.last_path == path:
 		CourseDesigner.last_path = ""
 	_set_status("Deleted %s." % name if err == OK else "Couldn't delete %s (%s)." % [name, error_string(err)])

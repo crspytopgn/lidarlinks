@@ -288,6 +288,8 @@ var _voice_flight := ""
 var _voice_flight_at := INF
 var _voice_landing := ""
 var post: PostProcess
+## The course's picture was taken (or wasn't needed) this round.
+var _picture_taken := false
 var caddie: Caddie  ## Settings > Caddie; null when off
 ## The caddie's read when the caddie figure is off (CaddieAdvice), and its card.
 var _advice: CaddieAdvice
@@ -433,6 +435,7 @@ func _ready() -> void:
 
 func start_round() -> void:
 	_stop_replay()
+	_picture_taken = false
 	round_setup = setup
 	if round_setup == null:
 		round_setup = RoundSetup.single(course_path if not course_path.is_empty() else chosen_course)
@@ -833,6 +836,18 @@ func start_hole(index: int) -> void:
 	if players.size() > 1:
 		text += ("\n" if not text.is_empty() else "") + "%s has the honour" % _side_name(current)
 	hud.show_message(text, 3.0)
+	_take_course_picture()
+
+
+## The course's picture for the course pickers (CoursePictures), taken
+## off screen on the first hole of a round on a course that has none yet.
+func _take_course_picture() -> void:
+	if _picture_taken or practice != null or round_setup == null or round_setup.facility or _on_range():
+		return
+	_picture_taken = true
+	var key := round_setup.course_key if not round_setup.course_key.is_empty() else course_path
+	if CoursePictures.needs_picture(key):
+		CourseSnapshot.take(self, key, hole, camera, post)
 
 
 ## Who plays next: tee shots in order of the honour, then whoever is furthest

@@ -58,3 +58,30 @@ course's name (even if it was renamed in the designer) and refreshing the
 aerial photo and ground pictures. Changes made to the course in the designer
 are replaced, which the page says before the second press. If the build
 fails or is cancelled, the old file is untouched.
+
+## Course pictures
+
+Every course picker shows a small picture of the course: the round setup
+page (right of the players), Play online, a row per course on the Courses
+page, the Tournament form (the course of the round row last changed) and
+the next round's course once an event is under way, and Career (a strip of
+the season's courses for a new career, then the next event's course).
+
+- The built-in courses ship a picture: `assets/ui/menu/course_*.oljpg`
+  (`CoursePictures.BUILT_IN`). Re-render them after a built-in course or the
+  look changes, with the full renderer:
+  `godot --path game --rendering-method forward_plus -s res://tests/course_pictures_render.gd`.
+- Every other course (the player's Links 2003 courses, added courses, real
+  courses, designs) gets its picture the first time a round is played on it.
+  `CourseSnapshot` renders one frame of the first hole off screen, from a
+  camera 36 m over the tee looking down the hole, into its own small
+  viewport (the player's view and HUD are untouched), with the round's
+  colour grade. It is saved as `user://course_pictures/<md5 of key>.jpg`
+  (480x270). A course file newer than its picture (an Update, or an edit in
+  the designer) is photographed again; deleting a course drops its picture.
+- Until then the picker draws a plain card (a fairway and flag) saying the
+  picture comes after the first round.
+
+Pictures only ever come from the game's own rendering. Map and satellite
+photos (Esri, Google and the like) are never used for them, so nothing
+non-redistributable reaches the repository or a shared screenshot.
