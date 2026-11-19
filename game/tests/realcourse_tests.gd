@@ -370,6 +370,10 @@ func _test_national_lidar() -> void:
 	var u := l.url(l.chunks[0], false)
 	check(u.contains("DTM_1m") and u.contains("subset=Lat(51.4000000,"), "WCS url: " + u)
 	check(l.url(l.chunks[0], true).contains("FZ_DSM_1m"), "surface model url")
+	# The ground is resampled linearly (nearest pixels drew lines across
+	# West Essex); the surface keeps its nearest pixels for the tree tops.
+	check(u.contains("interpolation=http://www.opengis.net/def/interpolation/OGC/1/linear"), "the ground is read between pixels")
+	check(not l.url(l.chunks[0], true).contains("interpolation="), "the surface keeps its peaks")
 	# Canopy: a 12 m crown on flat ground, and a flat 8 m roof.
 	var ground := PackedFloat32Array()
 	var top := PackedFloat32Array()

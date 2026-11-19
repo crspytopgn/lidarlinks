@@ -68,7 +68,10 @@ func _ready() -> void:
 	buttons.add_child(_add_links)
 	_cancel = MenuStyle.button("Cancel update")
 	_cancel.visible = false
-	_cancel.pressed.connect(func() -> void: _updater.cancel())
+	_cancel.pressed.connect(func() -> void:
+		_cancel.text = "Cancelling..."
+		_cancel.disabled = true
+		_updater.cancel())
 	buttons.add_child(_cancel)
 	_back = MenuStyle.button("Back")
 	_back.pressed.connect(func() -> void:
@@ -80,7 +83,7 @@ func _ready() -> void:
 	_files.imported.connect(_on_imported)
 	add_child(_files)
 	_updater = RealCourseUpdate.new()
-	_updater.progress.connect(_set_status)
+	_updater.progress.connect(func(_t: String) -> void: _show_update_progress())
 	_updater.finished.connect(_on_updated)
 	add_child(_updater)
 	visible = false
@@ -232,12 +235,30 @@ func _on_update(path: String) -> void:
 		_fill()
 		return
 	_confirm = ""
+	_cancel.text = "Cancel update"
+	_cancel.disabled = false
 	_cancel.visible = true
+	set_process(true)
 	_updater.run(path)
 	_fill()
 
 
+## The step under way and the time taken, kept ticking while it waits.
+func _process(_delta: float) -> void:
+	if _updater.busy:
+		_show_update_progress()
+	else:
+		set_process(false)
+
+
+func _show_update_progress() -> void:
+	var secs := floori((Time.get_ticks_msec() - _updater.started_ms) / 1000.0)
+	_set_status("%s  %d:%02d. Big courses take a few minutes; Cancel update stops it and leaves the course as it was." % [
+		_updater.step if not _updater.step.is_empty() else "Starting...", floori(secs / 60.0), secs % 60])
+
+
 func _on_updated(_ok: bool, text: String) -> void:
+	set_process(false)
 	_cancel.visible = false
 	_set_status(text)
 	_fill()

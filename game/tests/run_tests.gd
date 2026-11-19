@@ -259,6 +259,35 @@ func _test_designer_scene() -> void:
 		d._process(0.5)
 	d._stop_flyover()
 	_check(not d._preview.current and d.camera.current, "and hands back to the designer camera")
+	# Draw area on a big course: more areas than a mesh has surfaces (West
+	# Essex has 263), and the outline being drawn still shows.
+	for i in 300:
+		d.course.shapes.append(CourseShape.oval(Surface.Type.ROUGH, Vector2(i * 0.5, 0.0), Vector2(5.0, 4.0), 0.0))
+	d.panel.select_tool(DesignerPanel.Tool.SHAPE)
+	d._draft = PackedVector2Array([Vector2(0, 0), Vector2(20, 0), Vector2(20, 20)])
+	d._draw_overlay()
+	_check(d._lines.get_surface_count() == 1, "every outline goes in one surface (%d)" % d._lines.get_surface_count())
+	var drawn: int = (d._lines.surface_get_arrays(0)[Mesh.ARRAY_VERTEX] as PackedVector3Array).size()
+	d._draft.clear()
+	d._draw_overlay()
+	_check(drawn > (d._lines.surface_get_arrays(0)[Mesh.ARRAY_VERTEX] as PackedVector3Array).size(), "the outline being drawn is drawn")
+	d._draft = PackedVector2Array([Vector2(0, 0), Vector2(20, 0), Vector2(20, 20)])
+	var shapes_before := d.course.shapes.size()
+	d._finish_draft()
+	_check(d.course.shapes.size() == shapes_before + 1 and d._draft.is_empty(), "finishing the outline adds the area")
+	d._undo_step(d._undo, d._redo, "undo")
+	_check(d.course.shapes.size() == shapes_before, "undo takes the drawn area away")
+	d.panel.select_tool(DesignerPanel.Tool.SELECT)
+	# Update from the map shows only for a saved real course, and asks once.
+	_check(not d.can_update() and not d.panel.update.visible, "no Update for a designed course")
+	d.course.source["kind"] = "openstreetmap"
+	d.path = "user://courses/update_test.olc"
+	d._show_update()
+	_check(d.can_update() and d.panel.update.visible, "a saved real course offers Update in the designer")
+	d._on_update_pressed()
+	_check(d._update_armed and d.panel.update.text == "Sure? Update", "the first press asks to be sure")
+	d._on_file_action("save_none")
+	_check(not d._update_armed and d.panel.update.text == "Update from the map", "another action calls it off")
 	d.queue_free()
 
 
