@@ -10,18 +10,45 @@ signal progress(text: String)
 ## ok is false if the build failed or was cancelled; `text` says what happened.
 signal finished(ok: bool, text: String)
 
+## Seconds without any progress before an update is given up on. Waiting
+## for a busy map server or a download still reports progress every frame,
+## so this only trips when the build has truly stopped moving.
+const STALL_SECS := 150.0
+## Seconds Cancel waits for the build to stop before letting go of it.
+const CANCEL_GRACE := 3.0
+
 var fetcher: RealCourseFetcher
 var busy := false
+## The step shown last, and when (msec).
+var step := ""
+var started_ms := 0
+var _last_progress_ms := 0
+var _run := 0
 var _path := ""
 var _old: Dictionary = {}
 
 
 func _ready() -> void:
+	_new_fetcher()
+
+
+func _new_fetcher() -> void:
 	fetcher = RealCourseFetcher.new()
 	add_child(fetcher)
-	fetcher.progress.connect(progress.emit)
+	fetcher.progress.connect(_on_progress)
 	fetcher.failed.connect(_on_failed)
 	fetcher.built.connect(_on_built)
+
+
+func _on_progress(text: String) -> void:
+	step = text
+	_last_progress_ms = Time.get_ticks_msec()
+	progress.emit(text)
+
+
+func _process(_delta: float) -> void:
+	if busy and Time.get_ticks_msec() - _last_progress_ms > STALL_SECS * 1000.0:
+		_let_go("The update stopped at \"%s\" and was given up on. The course is as it was; try again in a few minutes." % step.trim_suffix("..."))
 
 
 ## Records on a freshly built course what's needed to build it again: the
@@ -70,6 +97,10 @@ func run(path: String) -> void:
 		finished.emit(false, "That isn't a real course, so there's nothing to update.")
 		return
 	busy = true
+	_run += 1
+	started_ms = Time.get_ticks_msec()
+	_last_progress_ms = started_ms
+	step = ""
 	_path = path
 	_old = {"name": c.course_name, "map_name": str(c.source.get("map_name", c.course_name)), "photo": str(c.source.get("photo", "")),
 		"ground": str(c.source.get("ground", ""))}
@@ -77,8 +108,31 @@ func run(path: String) -> void:
 	fetcher.build(place_of(c.source, c.course_name))
 
 
+## Stops the update. If the build doesn't stop within CANCEL_GRACE seconds
+## it is let go of anyway, so the page is never left waiting on it.
 func cancel() -> void:
+	if not busy:
+		return
 	fetcher.cancel()
+	var run := _run
+	get_tree().create_timer(CANCEL_GRACE).timeout.connect(func() -> void:
+		if busy and run == _run:
+			_let_go("Update cancelled; the course is as it was."))
+
+
+## Ends the update now with `text`; the old build, if it ever finishes, is
+## ignored and freed (a fresh fetcher takes its place).
+func _let_go(text: String) -> void:
+	var old := fetcher
+	old.progress.disconnect(_on_progress)
+	old.failed.disconnect(_on_failed)
+	old.built.disconnect(_on_built)
+	old.failed.connect(func(_t: String) -> void: old.queue_free())
+	old.built.connect(func(_c: DesignedCourse, _s: Dictionary) -> void: old.queue_free())
+	old.cancel()
+	_new_fetcher()
+	busy = false
+	finished.emit(false, text)
 
 
 func _on_failed(text: String) -> void:
