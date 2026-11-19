@@ -14,10 +14,10 @@ extends RefCounted
 ## existing installs keep their settings, courses and auto-update.
 
 const GAME_NAME := "OpenLinks2003"
-const REPO := "crspytopgn/openlinks2003"
-const RELEASES_PAGE := "https://github.com/crspytopgn/openlinks2003/releases/tag/latest"
-const PROJECT_PAGE := "https://github.com/crspytopgn/openlinks2003"
-const WEB_BUILD := "https://crspytopgn.github.io/openlinks2003/"
+const REPO := "crspytopgn/lidarlinks"
+const RELEASES_PAGE := "https://github.com/crspytopgn/lidarlinks/releases/tag/latest"
+const PROJECT_PAGE := "https://github.com/crspytopgn/lidarlinks"
+const WEB_BUILD := "https://crspytopgn.github.io/lidarlinks/"
 
 
 ## "macos", "windows" or "linux".

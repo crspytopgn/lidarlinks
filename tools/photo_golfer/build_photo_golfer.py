@@ -55,7 +55,7 @@ def download(take, cache):
     path = os.path.join(cache, os.path.basename(take["url"]))
     if os.path.exists(path) and os.path.getsize(path) > 100000:
         return path
-    req = urllib.request.Request(take["url"], headers={"User-Agent": "OpenLinks2003/0.1 (https://github.com/crspytopgn/openlinks2003)"})
+    req = urllib.request.Request(take["url"], headers={"User-Agent": "OpenLinks2003/0.1 (https://github.com/crspytopgn/lidarlinks)"})
     with urllib.request.urlopen(req, timeout=300) as r, open(path, "wb") as f:
         f.write(r.read())
     return path

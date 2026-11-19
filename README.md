@@ -6,9 +6,9 @@
 </p>
 
 <p align="center">
-<a href="https://crspytopgn.github.io/openlinks2003/"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/brand/readme/button-play-dark.png"><img alt="Play in your browser" src="docs/brand/readme/button-play-light.png" height="42"></picture></a>
+<a href="https://crspytopgn.github.io/lidarlinks/"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/brand/readme/button-play-dark.png"><img alt="Play in your browser" src="docs/brand/readme/button-play-light.png" height="42"></picture></a>
 &nbsp;
-<a href="https://github.com/crspytopgn/openlinks2003/releases/tag/latest"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/brand/readme/button-download-dark.png"><img alt="Download" src="docs/brand/readme/button-download-light.png" height="42"></picture></a>
+<a href="https://github.com/crspytopgn/lidarlinks/releases/tag/latest"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/brand/readme/button-download-dark.png"><img alt="Download" src="docs/brand/readme/button-download-light.png" height="42"></picture></a>
 </p>
 
 <p align="center">
@@ -67,7 +67,7 @@ It began as an open-source remake of <b>Links 2003</b> and keeps its physics.
 ## Play in the browser
 
 The latest `main` build is published to
-**https://crspytopgn.github.io/openlinks2003/** (desktop Chrome, Firefox,
+**https://crspytopgn.github.io/lidarlinks/** (desktop Chrome, Firefox,
 Edge or Safari, and iPad; needs WebGL 2).
 
 It plays Kettle Hollow out of the box. To use the real courses,
@@ -82,7 +82,7 @@ the files again. **Forget my files** clears the remembered choice.
 ## Download a build
 
 Every push to `main` builds the game for all three platforms and publishes
-it as the **[latest release](https://github.com/crspytopgn/openlinks2003/releases/tag/latest)**
+it as the **[latest release](https://github.com/crspytopgn/lidarlinks/releases/tag/latest)**
 (macOS universal, Windows, Linux). The builds contain no game data.
 
 The easiest way in is the **launcher**: download `OpenLinks2003-Launcher-*`

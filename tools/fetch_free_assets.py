@@ -51,7 +51,7 @@ SCAN_TREES = {
     "island_tree_02": {"leaves.jpg": ("leaves_diff", "jpg", 512), "leaves_alpha.png": ("leaves_alpha", "png", 512),
                        "trunk.jpg": ("Diffuse", "jpg", 512), "trunk_normal.jpg": ("nor_gl", "jpg", 512), "bark.jpg": ("branches_diff", "jpg", 512)},
 }
-USER_AGENT = "OpenLinks2003-asset-fetch (https://github.com/crspytopgn/openlinks2003)"
+USER_AGENT = "OpenLinks2003-asset-fetch (https://github.com/crspytopgn/lidarlinks)"
 
 
 

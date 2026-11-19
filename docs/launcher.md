@@ -3,7 +3,7 @@
 `launcher/` is a small Godot project (Compatibility renderer, about the size
 of a Godot runtime) that installs, updates and starts the game on macOS,
 Windows and Linux. CI builds it with the game and publishes it in the
-[latest release](https://github.com/crspytopgn/openlinks2003/releases/tag/latest)
+[latest release](https://github.com/crspytopgn/lidarlinks/releases/tag/latest)
 as `OpenLinks2003-Launcher-macOS.zip`, `-Windows.zip` and `-Linux.tar.gz`.
 
 It contains nothing from Links 2003, and it never downloads anything from
