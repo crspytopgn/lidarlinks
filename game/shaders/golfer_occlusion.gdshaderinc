@@ -67,3 +67,34 @@ float people_fill(vec3 normal) {
 	float up = normalize(normal).y * 0.5 + 0.5;
 	return people_light.y * mix(1.0, mix(0.7, 1.3, up), people_light.z);
 }
+
+// Sunlight bounced off the turf onto a person's shaded side, as EMISSION
+// (Compatibility at Photoreal only: Scenery.people_bounce is zero
+// elsewhere, where the sky light carries the ground's colour). The flat
+// fill there is the sky's blue from every side, so the shade on khaki
+// trousers or a face went a cold blue-grey against the warm sunlit side,
+// a two-tone cut-out. Real shade on a golf course is warmed by the grass
+// below; most on faces turned down or sideways.
+global uniform vec3 people_bounce;
+
+vec3 people_ground_bounce(vec3 albedo, vec3 world_normal, float occ) {
+	float down = 0.5 - 0.5 * normalize(world_normal).y;
+	return albedo * people_bounce * down * occ;
+}
+
+// The sun's shadow map on a person, in light(): `att` is ATTENUATION,
+// `ndl` the surface's own (not normal mapped) facing to the sun,
+// dot(people_geo, LIGHT). The map can't resolve a body's own shadow where
+// it turns away from the sun: across that terminator its texels, lifted
+// by the normal bias, land on and off the surface, and the trousers and
+// shirt showed ragged lit and shaded tongues down their sides. Light
+// falling off with N.L already darkens that band, so the map's say fades
+// in only once the surface faces the sun; a limb's shadow across the
+// body, the bag's and a tree's still fall where it does.
+float people_shadow(float att, float ndl) {
+	return mix(1.0, att, smoothstep(0.0, 0.35, ndl));
+}
+
+// The surface's own normal (view space) for people_shadow: set it in
+// fragment() from NORMAL before any NORMAL_MAP.
+varying vec3 people_geo;

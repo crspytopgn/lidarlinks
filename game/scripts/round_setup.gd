@@ -210,6 +210,24 @@ func tee_index(count: int) -> int:
 	return 0
 
 
+## After the player creator saves `player_name` (renamed from `was`, or
+## new): rounds then play as them when the first player was still the
+## standard "Player 1" or was them before. A golfer made in the creator
+## used to go unseen, as Play now kept playing "Player 1". True if the
+## first player changed.
+func claim_first_player(player_name: String, was: String) -> bool:
+	player_name = player_name.strip_edges()
+	if player_name.is_empty() or names.is_empty() or is_computer(0):
+		return false
+	var first := names[0].strip_edges()
+	if first == player_name:
+		return false
+	if first != DEFAULT_NAMES[0] and (was.strip_edges().is_empty() or first.to_lower() != was.strip_edges().to_lower()):
+		return false
+	names[0] = player_name
+	return true
+
+
 func save(path := GameFolder.SETTINGS_PATH) -> void:
 	var cfg := ConfigFile.new()
 	cfg.load(path)

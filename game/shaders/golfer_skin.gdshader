@@ -77,6 +77,7 @@ void vertex() {
 void fragment() {
 	vec4 flex = flex_fragment(flex_v, flex_cs, NORMAL, VIEW_MATRIX);
 	NORMAL = flex.xyz;
+	people_geo = NORMAL;
 	vec3 c = texture(texture_albedo, UV).rgb * albedo.rgb * flex.w;
 	vec4 r = texture(regions, UV);
 	vec2 fuv = (UV - face_rect.xy) / (face_rect.zw - face_rect.xy);
@@ -102,6 +103,7 @@ void fragment() {
 	float occ = body_occlusion(occ_pos, occ_normal);
 	AO = occ * people_fill(occ_normal);
 	ALBEDO = c * warmth * mix(1.0, occ, contact_share) * people_light.x;
+	EMISSION = people_ground_bounce(ALBEDO, occ_normal, occ);
 	ROUGHNESS = clamp(roughness - r.a * 0.16 - r.b * 0.14 + hairs * 0.25, 0.2, 1.0);
 	SPECULAR = specular + r.a * 0.08;
 	vec2 p = (texture(pores, UV * pore_scale).rg * 2.0 - 1.0) * pore_strength * (1.0 - r.b);
@@ -113,8 +115,9 @@ void fragment() {
 
 void light() {
 	float ndl = dot(NORMAL, LIGHT);
+	float shade = people_shadow(ATTENUATION, dot(normalize(people_geo), LIGHT));
 	vec3 d = clamp((vec3(ndl) + wrap) / (1.0 + wrap), 0.0, 1.0);
-	DIFFUSE_LIGHT += d / warmth * ATTENUATION * LIGHT_COLOR / PI;
+	DIFFUSE_LIGHT += d / warmth * shade * LIGHT_COLOR / PI;
 	// The skin's sheen (GGX, Schlick Fresnel) and a faint rim at grazing light.
 	float nl = max(ndl, 0.0);
 	float nv = max(dot(NORMAL, VIEW), 1e-3);
@@ -128,7 +131,7 @@ void light() {
 	float vis = 0.25 / ((nl * (1.0 - k) + k) * (nv * (1.0 - k) + k));
 	float f0 = 0.08 * specular;
 	float fres = f0 + (1.0 - f0) * pow(1.0 - max(dot(LIGHT, h), 0.0), 5.0);
-	SPECULAR_LIGHT += nl * dist * vis * fres * ATTENUATION * LIGHT_COLOR;
+	SPECULAR_LIGHT += nl * dist * vis * fres * shade * LIGHT_COLOR;
 	float r = pow(1.0 - nv, 4.0) * rim * clamp(ndl + 0.3, 0.0, 1.0);
-	DIFFUSE_LIGHT += r * mix(vec3(1.0), ALBEDO, rim_tint) / max(ALBEDO, vec3(0.05)) * ATTENUATION * LIGHT_COLOR / PI;
+	DIFFUSE_LIGHT += r * mix(vec3(1.0), ALBEDO, rim_tint) / max(ALBEDO, vec3(0.05)) * shade * LIGHT_COLOR / PI;
 }

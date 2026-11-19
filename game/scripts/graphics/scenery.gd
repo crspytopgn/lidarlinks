@@ -44,6 +44,10 @@ const FORWARD_SKY_DEPTH := 1.2
 ## (1.5 lifted the golfer's shadow off his feet).
 const SUN_ANGLE := 0.15
 const SUN_NORMAL_BIAS := 0.8
+## Where the sun's shadow splits end, as shares of the shadow distance
+## (Godot's are 0.1, 0.2, 0.5): the first covers the golfer and the tee
+## at about four times the detail.
+const SUN_SPLITS := Vector3(0.04, 0.12, 0.4)
 ## Forward+ only: how much brighter the photo sky's clouds are drawn
 ## (photo_sky.gdshader cloud_lift), so they read white under AgX.
 const FORWARD_CLOUD_LIFT := 1.2
@@ -201,6 +205,13 @@ func _init() -> void:
 	sun.shadow_bias = 0.04
 	sun.shadow_normal_bias = SUN_NORMAL_BIAS
 	sun.directional_shadow_blend_splits = true
+	# The first split ends close (SUN_SPLITS): the golfer always stands near
+	# the camera, and with Godot's 10% of a 400 m shadow distance its texels
+	# were 2 cm across, so a leg's or an arm's shadow on the body had a
+	# ragged, stepped edge.
+	sun.directional_shadow_split_1 = SUN_SPLITS.x
+	sun.directional_shadow_split_2 = SUN_SPLITS.y
+	sun.directional_shadow_split_3 = SUN_SPLITS.z
 	add_child(sun)
 
 
@@ -510,6 +521,7 @@ func _apply_time() -> void:
 	RenderingServer.global_shader_parameter_set("sky_tint", Vector3(1, 1, 1))
 	RenderingServer.global_shader_parameter_set("turf_tone", (1.0 if GraphicsSettings.is_forward_plus() else 1.35) if _photo else 0.0)
 	RenderingServer.global_shader_parameter_set("people_light", people_light(_photo, GraphicsSettings.is_forward_plus()))
+	RenderingServer.global_shader_parameter_set("people_bounce", people_bounce(_photo, GraphicsSettings.is_forward_plus(), _time))
 	_set_grade_look()
 	RenderingServer.global_shader_parameter_set("ground_sun_shadow", float(_time.get("shadow", 1.0)) if _photo else 1.0)
 	if not _photo:
@@ -565,6 +577,24 @@ static func people_light(photo: bool, forward_plus: bool) -> Vector3:
 	if not photo or forward_plus:
 		return Vector3(1.0, 1.0, 0.0)
 	return Vector3(1.0 / COMPAT_EXPOSURE_LIFT, PEOPLE_COMPAT_FILL, 1.0)
+
+
+## The sunlit turf's light bounced up onto people's shaded sides
+## (golfer_occlusion.gdshaderinc people_ground_bounce): Compatibility at
+## Photoreal only, which has no sky light to carry the ground's colour.
+## The sun's colour and strength through a grass green's reflectance,
+## fitted so shaded khaki keeps its warmth (red to blue about 0.8 of the
+## cloth's own, as in photos of golfers' shaded trousers) rather than
+## the flat sky fill's cold grey.
+const PEOPLE_BOUNCE := Vector3(0.34, 0.32, 0.16)
+
+
+static func people_bounce(photo: bool, forward_plus: bool, time: Dictionary) -> Vector3:
+	if not photo or forward_plus:
+		return Vector3.ZERO
+	var c: Color = time.get("sun", Color.WHITE)
+	var k := float(time.get("energy", 1.0)) * float(time.get("shadow", 1.0))
+	return Vector3(c.r * PEOPLE_BOUNCE.x, c.g * PEOPLE_BOUNCE.y, c.b * PEOPLE_BOUNCE.z) * k
 
 
 ## Sets the round's weather (RoundWeather; null for a fine day): cloud dims

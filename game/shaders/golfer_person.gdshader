@@ -13,6 +13,11 @@ render_mode blend_mix, depth_draw_opaque, cull_back, diffuse_burley, specular_sc
 uniform sampler2D texture_albedo : source_color, filter_linear_mipmap_anisotropic, repeat_enable;
 uniform sampler2D texture_normal : hint_roughness_normal, filter_linear_mipmap_anisotropic, repeat_enable;
 uniform bool use_normal = false;
+// The Rocketbox normal maps are drawn DirectX style, green pointing down
+// the texture: read as Godot's (OpenGL style, green up) every crease was lit
+// from the wrong side, and the light across trousers and shirts broke into
+// ragged lit and shaded tongues instead of folds.
+uniform bool normal_green_down = true;
 uniform sampler2D regions : hint_default_black, filter_linear_mipmap;
 uniform vec4 top : source_color = vec4(1.0);
 uniform vec4 bottom : source_color = vec4(1.0);
@@ -50,9 +55,12 @@ vec3 dye(vec3 tex, vec3 target, float mean) {
 	// range so a seam or a highlight doesn't burn out.
 	// 0.8: the creator's cloth texture averages that, so a colour looks the
 	// same on both kinds of golfer.
-	// 1.8: the folds deeper than the source's, as a light colour
+	// 1.3: the folds a little deeper than the source's, as a light colour
 	// in the sun otherwise reads flat next to the photographed original.
-	return target * 0.7 * clamp(pow(lum / max(mean, 0.01), 1.8), 0.15, 1.8);
+	// (1.8 made up for the normal maps lighting the creases from the wrong
+	// side, and with them right it smeared the scan's baked shade into dark
+	// grime on khaki trousers and white shoes.)
+	return target * 0.7 * clamp(pow(lum / max(mean, 0.01), 1.3), 0.15, 1.8);
 }
 
 // Skin, 1, where the regions map has none of the shirt, trousers or shoes.
@@ -76,6 +84,7 @@ void fragment() {
 	vec3 m = texture(regions, UV).rgb * recolour;
 	vec4 flex = flex_fragment(flex_v * vec4(1.0, skin_of(m), skin_of(m), 1.0), flex_cs, NORMAL, VIEW_MATRIX);
 	NORMAL = flex.xyz;
+	people_geo = NORMAL;
 	vec3 c = tex;
 	c = mix(c, dye(tex, top.rgb, region_means.x), m.r);
 	c = mix(c, dye(tex, bottom.rgb, region_means.y), m.g);
@@ -90,6 +99,9 @@ void fragment() {
 		ALBEDO = flex_debug_colour(flex_v, flex_cs);
 	}
 	vec3 nm = use_normal ? texture(texture_normal, UV).rgb : vec3(0.5, 0.5, 1.0);
+	if (use_normal && normal_green_down) {
+		nm.g = 1.0 - nm.g;
+	}
 	if (use_fabric) {
 		float worn = max(m.r, max(m.g, m.b));
 		if (worn > 0.01) {
@@ -109,6 +121,7 @@ void fragment() {
 	if (use_normal || use_fabric) {
 		NORMAL_MAP = nm;
 	}
+	EMISSION = people_ground_bounce(ALBEDO, occ_normal, occ);
 	ROUGHNESS = roughness;
 	SPECULAR = 0.3;
 	// The fibres' rim light shows on dark cloth, but on light cloth only
@@ -118,8 +131,9 @@ void fragment() {
 
 void light() {
 	float ndl = dot(NORMAL, LIGHT);
+	float shade = people_shadow(ATTENUATION, dot(normalize(people_geo), LIGHT));
 	float d = clamp((ndl + wrap) / (1.0 + wrap), 0.0, 1.0);
-	DIFFUSE_LIGHT += d * ATTENUATION * LIGHT_COLOR / PI;
+	DIFFUSE_LIGHT += d * shade * LIGHT_COLOR / PI;
 	// A faint cloth sheen (GGX, Schlick Fresnel at SPECULAR 0.3).
 	float nl = max(ndl, 0.0);
 	float nv = max(dot(NORMAL, VIEW), 1e-3);
@@ -133,8 +147,8 @@ void light() {
 	float vis = 0.25 / ((nl * (1.0 - k) + k) * (nv * (1.0 - k) + k));
 	float f0 = 0.024;
 	float fres = f0 + (1.0 - f0) * pow(1.0 - max(dot(LIGHT, h), 0.0), 5.0);
-	SPECULAR_LIGHT += nl * dist * vis * fres * ATTENUATION * LIGHT_COLOR;
+	SPECULAR_LIGHT += nl * dist * vis * fres * shade * LIGHT_COLOR;
 	// The fibres' rim, as Godot's RIM with RIM_TINT 0.7.
 	float r = pow(1.0 - nv, 4.0) * rim_amount * clamp(ndl + 0.3, 0.0, 1.0);
-	DIFFUSE_LIGHT += r * mix(vec3(1.0), ALBEDO, 0.7) / max(ALBEDO, vec3(0.05)) * ATTENUATION * LIGHT_COLOR / PI;
+	DIFFUSE_LIGHT += r * mix(vec3(1.0), ALBEDO, 0.7) / max(ALBEDO, vec3(0.05)) * shade * LIGHT_COLOR / PI;
 }
