@@ -79,7 +79,7 @@ const LAND_SAMPLES_PER_STEP := 20000
 ## Goes up whenever a build gives a better course (new detection, trees,
 ## walls...): courses built before it offer "Update" on the Courses page.
 ## Saved in each course's source as "builder" (RealCourseUpdate).
-const BUILDER_VERSION := 6  ## 5: big lakes as water, native grass from the photo; 6: seas under cliffs, scrub, ponds from the land cover, Ireland off England's lidar
+const BUILDER_VERSION := 7  ## 5: big lakes as water, native grass from the photo; 6: seas under cliffs, scrub, ponds from the land cover, Ireland off England's lidar; 7: beaches, woods out of the tile ground
 
 var busy := false
 ## Use national lidar and aerial photos where they cover the course.
@@ -95,6 +95,7 @@ var use_landscape := true
 var configure_request: Callable
 ## Overpass servers, all asked at once (see _overpass).
 var servers: Array = OVERPASS.duplicate()
+var _last_object_cut := 0.0  ## metres of wood or house taken off the coarse ground
 var _last_summary := {}
 var _cancelled := false
 var _last_yield := 0
@@ -330,6 +331,7 @@ func _build(place: Dictionary) -> DesignedCourse:
 	var light := light_mode()
 	if light:
 		builder.max_trees = LIGHT_MAX_TREES
+	_last_object_cut = 0.0
 	var gb := builder.geo_box()
 	var tiles := TerrainTiles.for_box(gb[0], gb[1], gb[2], gb[3])
 	var urls := tiles.urls()
@@ -492,6 +494,14 @@ func _build(place: Dictionary) -> DesignedCourse:
 		# Open elevation tiles: speckled, and stepped at their edges.
 		builder.ground_smooth = clampf(tiles.pixel_metres(lat) * 2.0, 4.0, 10.0)
 		builder.ground_step = tiles.height_step()
+		# Whole-metre tiles are SRTM and the like, which stand on the woods'
+		# and houses' tops: taken off where the land cover has them.
+		if builder.ground_step > 0.0 and land_cover != null:
+			await _step("Taking the woods out of the ground...")
+			var lc := land_cover
+			_last_object_cut = tiles.strip_objects(func(la: float, lo: float) -> int:
+				var k := lc.class_at(la, lo)
+				return 2 if k == LandCover.WATER else (1 if k in [LandCover.TREES, LandCover.BUILT] else 0))
 	await _step("Building %s..." % builder.course_name)
 	if _cancelled:
 		return null
@@ -524,6 +534,9 @@ func _build(place: Dictionary) -> DesignedCourse:
 			await _step("Letting the sea in...")
 			for c: DesignedCourse in [course] + others:
 				RealLandscape.sea_from_cover(c, builder.frame, land_cover)
+		for c: DesignedCourse in [course] + others:
+			RealLandscape.raise_beaches(c, builder.frame, land_cover)
+		if land_cover != null:
 			await _step("Finding the ponds the map leaves out...")
 			for c: DesignedCourse in [course] + others:
 				RealCourseBuilder.add_ponds(c, builder.frame, land_cover)
@@ -539,6 +552,7 @@ func _build(place: Dictionary) -> DesignedCourse:
 	_last_summary = first_summary
 	_last_summary["ground"] = ground_name
 	_last_summary["ground_terraced"] = builder.ground_step > 0.0
+	_last_summary["woods_cut"] = snappedf(_last_object_cut, 0.1)
 	if not lidar_sources.is_empty() and (lidar == null or lidar_gaps > 0) and not (lidar == null and lidar_outside == lidar_sources.size()):
 		# Say so, rather than leave coarse ground looking like the lidar's.
 		_last_summary["lidar_failed"] = str(lidar_sources[0]["name"]) if lidar == null else ""

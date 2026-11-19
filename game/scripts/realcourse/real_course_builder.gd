@@ -812,6 +812,10 @@ func _read(elements: Array) -> void:
 		elif natural == "water" or t.has("water") or str(t.get("landuse", "")) in ["reservoir", "basin"]:
 			if closed:
 				_add_poly(e, {"surface": Surface.Type.WATER})
+		elif natural in ["beach", "sand"] and closed:
+			# A beach or open sand (a links' blowouts, a desert course's
+			# waste areas): sand where the ground lies, kept out of the sea.
+			_add_poly(e, {"surface": Surface.Type.SAND, "cover": "beach"})
 		elif natural in ["scrub", "heath", "wetland", "dune"] and closed:
 			# Played as deep rough; the cover says what grows there.
 			_add_poly(e, {"surface": Surface.Type.DEEP_ROUGH, "cover": natural})

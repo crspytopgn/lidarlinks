@@ -1339,7 +1339,7 @@ func _derive(cells: Rect2i) -> void:
 		for i in range(cells.position.x, cells.end.x):
 			_h[j * cols + i] = course.heights[j * cols + i]
 	for s in course.shapes:
-		if s.is_valid() and s.surface == Surface.Type.SAND:
+		if s.is_valid() and s.surface == Surface.Type.SAND and s.cover != "beach":
 			# The bank starts a little outside the outline: begun at it, the
 			# drop fell between whichever 2 m grid points happened to be
 			# inside, so the bank wandered up to a cell either side of the

@@ -400,6 +400,18 @@ or not at all. What that found, and what the builder now does:
 - **Coarse ground smoothed:** without lidar the open elevation tiles (3 to
   5 m a pixel) carry speckle and steps at their tile edges, a metre or two
   high; they are smoothed over about two of their pixels (4 to 10 m).
+- **Woods and roofs out of the ground:** the open elevation tiles are
+  partly a surface model, so a wood or a town stands up to 30 m proud of
+  the ground and a fairway beside it climbs into the trees. Where there is
+  no lidar, the ground is opened (the lowest height over 160 m, then the
+  highest over the same, on a 10 m grid, the sea left out) and the bumps
+  above it are cut back, but only on cells the land cover calls trees or
+  buildings, by more on steep ground than flat, not in hill country (over
+  90 m of relief within 600 m), and never to within 2 m of the sea. Dunes,
+  greens and mounds stand. The idea is from BeamNG.Earth's `dsmground.py`
+  (MIT licence), sized down from its 400 m city blocks to a course's tree
+  lines. Woods came down 7 to 14 m on Kingston Heath, Lahinch, Al Mouj and
+  Tobermory.
 - **Lines of play clear:** trees the lidar, photo or land cover finds
   within 8 m of a hole's line (each tee along its route to the pin, past
   its first 10 m) are left out; Hirono's 12th had 93 photo trees on it.
@@ -534,6 +546,11 @@ or not at all. What that found, and what the builder now does:
   each fairway (15 m round greens, 8 m round tees), as on any links. The
   rough the map draws becomes fescue too (it is painted over deep rough,
   so Hoylake's rough between the holes came out mown).
+- **Beaches and open sand:** the map's `natural=beach` and `natural=sand`
+  are sand where the ground lies (cover "beach"), not bunkers dug into it,
+  and a beach the coarse ground puts under the sea is lifted 0.4 m above
+  it, except where the land cover shows water. Ballybunion's strand,
+  Kiawah's beach, Al Mouj and Bude were sea or bunkers before.
 - **Ponds the map leaves out:** water in the 10 m land cover that no
   mapped pond covers, 1 ha or more and clear of the fairways, greens,
   tees and bunkers, becomes a pond (`RealCourseBuilder.add_ponds`).

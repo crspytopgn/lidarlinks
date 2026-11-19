@@ -40,6 +40,7 @@ const SEA_SHORE := 1.5
 const SEA_FLOOR := -1.5
 const PLAY_LOW_SHARE := 0.15  ## of the play's points that may dip under the sea
 const PLAY_CLEAR := 1.0  ## metres the middle of the play stands over it
+const BEACH_TOP := 0.4  ## metres a beach stands over the water
 const LINKS_REACH := 1000.0  ## metres from the course the sea makes it links
 
 var frame: GeoFrame
@@ -332,6 +333,37 @@ static func sea_from_cover(c: DesignedCourse, frame: GeoFrame, cover: LandCover)
 				if c.heights[q] > floor_h:
 					c.heights[q] = floor_h
 					n += 1
+	return n
+
+
+## The beaches and open sand of the map (sand shapes with cover "beach")
+## raised to stand BEACH_TOP over the sea or lake: coarse tiles put a beach
+## at the water's level or under it, and the sea came in over Ballybunion's
+## strand. Where the land cover has water (a beach mapped out to the low
+## tide line, as at Tara Iti) the sea keeps it. Returns the samples raised.
+static func raise_beaches(c: DesignedCourse, frame: GeoFrame = null, cover: LandCover = null) -> int:
+	if not c.source.has("sea"):
+		return 0
+	var top := float(c.source["sea"]) + BEACH_TOP - float(c.source.get("base_height", 0.0))
+	var n := 0
+	for s in c.shapes:
+		if not s.is_valid() or s.surface != Surface.Type.SAND or s.cover != "beach":
+			continue
+		var b := s.bounds()
+		var i0 := maxi(0, floori((b.position.x - c.area.position.x) / DesignedCourse.CELL))
+		var i1 := mini(c.cols - 1, ceili((b.end.x - c.area.position.x) / DesignedCourse.CELL))
+		var j0 := maxi(0, floori((b.position.y - c.area.position.y) / DesignedCourse.CELL))
+		var j1 := mini(c.rows - 1, ceili((b.end.y - c.area.position.y) / DesignedCourse.CELL))
+		for j in range(j0, j1 + 1):
+			for i in range(i0, i1 + 1):
+				var q := j * c.cols + i
+				var p := c.sample_pos(i, j)
+				if c.heights[q] >= top or not s.contains(p):
+					continue
+				if cover != null and cover.class_at(frame.lat_of(p), frame.lon_of(p)) == LandCover.WATER:
+					continue
+				c.heights[q] = top
+				n += 1
 	return n
 
 
