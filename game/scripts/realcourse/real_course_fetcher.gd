@@ -79,7 +79,7 @@ const LAND_SAMPLES_PER_STEP := 20000
 ## Goes up whenever a build gives a better course (new detection, trees,
 ## walls...): courses built before it offer "Update" on the Courses page.
 ## Saved in each course's source as "builder" (RealCourseUpdate).
-const BUILDER_VERSION := 7  ## 5: big lakes as water, native grass from the photo; 6: seas under cliffs, scrub, ponds from the land cover, Ireland off England's lidar; 7: beaches, woods out of the tile ground
+const BUILDER_VERSION := 8  ## 5: big lakes as water, native grass from the photo; 6: seas under cliffs, scrub, ponds from the land cover, Ireland off England's lidar; 7: beaches, woods out of the tile ground; 8: tree heights v2, more photo services, dormant photos
 
 var busy := false
 ## Use national lidar and aerial photos where they cover the course.
@@ -479,8 +479,10 @@ func _build(place: Dictionary) -> DesignedCourse:
 				cover = land.ground_image(builder.frame, builder.area)
 
 	builder.photo = photo
-	if photo == null and use_photos:
-		# No aerial photo: the satellite image, for the native grass only.
+	var dormant := photo != null and NativeGrass.new(photo, builder.area, [] as Array[PackedVector2Array], builder.grass_points()).is_dormant()
+	if (photo == null or dormant) and use_photos:
+		# No aerial photo, or one flown with the fairways dormant: the
+		# (summer) satellite image, for the native grass only.
 		var sat := AerialPhotos.new(AerialPhotos.SATELLITE, gb)
 		var surls := sat.urls()
 		var sgot := await _fetch_all(surls, "Fetching the satellite image", TRIES)
@@ -908,7 +910,7 @@ static func overpass_status(answers: Array, reqs: Array, secs: float) -> String:
 ## Over `tries` rounds, the ones that failed (no answer, or a server error
 ## or rate limit) are asked for again; `timeout` is seconds per request.
 ## Tree crowns from CanopyHeights for the box (south, west, north, east):
-## only the course's rows are downloaded, and read a band at a time between
+## only the course's tiles are downloaded, and read one at a time between
 ## frames. Empty if the map can't be read.
 func _canopy_trees(box: Array) -> Array[Dictionary]:
 	var crowns: Array[Dictionary] = []
@@ -921,27 +923,30 @@ func _canopy_trees(box: Array) -> Array[Dictionary]:
 		var header := CanopyHeights.parse_header(head)
 		if header.is_empty():
 			return crowns
-		var offsets := await fetch_range(url, CanopyHeights.offsets_range(header, part))
-		var counts := await fetch_range(url, CanopyHeights.counts_range(header, part))
-		var block := CanopyHeights.rows_block(offsets, counts)
-		if block.is_empty() or _cancelled:
+		var offsets := await fetch_range(url, CanopyHeights.index_range(header, "offsets", part))
+		var counts := await fetch_range(url, CanopyHeights.index_range(header, "counts", part))
+		if offsets.is_empty() or counts.is_empty() or _cancelled:
 			return crowns
-		progress.emit("Fetching the tree heights (%.0f MB)..." % ((int(block["end"]) - int(block["start"])) / 1e6))
-		var rows := await fetch_range(url, Vector2i(int(block["start"]), int(block["end"])), 300.0)
-		if rows.size() != int(block["end"]) - int(block["start"]) + 1 or _cancelled:
+		var tiles := CanopyHeights.tiles_for(part)
+		var ranges: Array[Vector2i] = []
+		for t in tiles:
+			ranges.append(CanopyHeights.tile_range(header, offsets, counts, part, t))
+		var got := await fetch_ranges(url, ranges, "Fetching the tree heights")
+		if _cancelled:
 			return crowns
 		var raster := CanopyHeights.raster_for(part)
 		var band := maxi(1, LIDAR_PIXELS_PER_STEP / 4 / maxi(raster.width, 1) * 4)
-		var pos := [0]
-		for j in range(0, raster.height, band):
-			if j % (band * 8) == 0:
-				await _step("Reading the tree heights (%d%%)..." % (100 * j / raster.height))
-			if not CanopyHeights.decode_rows(part, header, counts, rows, pos, raster, j, mini(j + band, raster.height)):
+		for k in tiles.size():
+			if ranges[k].x < 0:
+				continue  # the sea: bare
+			if (got[k] as PackedByteArray).is_empty() or not CanopyHeights.decode_tile(part, header, tiles[k], got[k], raster):
 				return crowns
+			if k % 4 == 0:
+				await _step("Reading the tree heights (%d%%)..." % (100 * k / tiles.size()))
 			await _breathe()
 			if _cancelled:
 				return crowns
-		rows = PackedByteArray()
+		got.clear()
 		var smooth := PackedFloat32Array()
 		smooth.resize(raster.width * raster.height)
 		await _step("Finding the trees in the tree heights...")
@@ -965,6 +970,35 @@ func fetch_range(url: String, r: Vector2i, timeout := LIDAR_TIMEOUT) -> PackedBy
 		if int(got[0]) != 0 and int(got[0]) < 500:
 			break
 	return PackedByteArray()
+
+
+## Byte ranges of one file, PARALLEL at a time, each asked for again on a
+## failure (fetch_range); an empty array for a failed range or one with x < 0.
+func fetch_ranges(url: String, ranges: Array[Vector2i], label: String) -> Array:
+	var out: Array = []
+	out.resize(ranges.size())
+	var state := [0, 0]  # started, finished
+	var todo: Array[int] = []
+	for i in ranges.size():
+		if ranges[i].x < 0:
+			out[i] = PackedByteArray()
+		else:
+			todo.append(i)
+	while (state[0] < todo.size() and not _cancelled) or state[0] > state[1]:
+		while state[0] - state[1] < PARALLEL and state[0] < todo.size() and not _cancelled:
+			_range_into(url, ranges[todo[state[0]]], out, todo[state[0]], state)
+			state[0] += 1
+		await get_tree().process_frame
+		progress.emit("%s (%d of %d)...%s" % [label, state[1], todo.size(), door.waiting_note(Time.get_ticks_msec())])
+	for i in out.size():
+		if out[i] == null:
+			out[i] = PackedByteArray()
+	return out
+
+
+func _range_into(url: String, r: Vector2i, out: Array, i: int, state: Array) -> void:
+	out[i] = await fetch_range(url, r)
+	state[1] += 1
 
 
 ## Downloads `urls` a few at a time, asking again for failures: one

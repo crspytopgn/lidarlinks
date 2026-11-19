@@ -608,6 +608,13 @@ func build_steps(c: DesignedCourse, height: Callable, fallback := Callable()) ->
 			# from the holes (Torrey Pines' canyons are city land).
 			var reach := grown_rings(_boundary, NATIVE_REACH)
 			native["grass"] = NativeGrass.new(img, c.area, reach, grass_points())
+			# A photo flown in winter or drought, with dormant fairways, can't
+			# tell fescue from them: the summer satellite image instead.
+			if img == photo and (native["grass"] as NativeGrass).is_dormant():
+				native["grass"] = null
+				if native_photo != null and not native_photo.is_empty():
+					native["grass"] = NativeGrass.new(native_photo, c.area, reach, grass_points())
+				return
 			# Scrub only from a real aerial photo: the satellite image is too
 			# coarse and dark to tell it from woods.
 			if img == photo:

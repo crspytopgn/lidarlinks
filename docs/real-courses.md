@@ -122,16 +122,27 @@ the first tee, and fewer from inside the woods.
 Where the lidar has no surface model (Scotland, Wales and everywhere else
 Mapterhorn covers, the US, Japan) or there is no lidar, `CanopyHeights`
 (`game/scripts/realcourse/canopy_heights.gd`) reads Meta and the World
-Resources Institute's global 1 m canopy height map (CC BY 4.0, on AWS Open
-Data). Each file is a 65536 px square per zoom 9 web mercator tile (about
-500 MB), one Deflate row per strip, heights in whole metres. Only the
-course's rows are downloaded, with range requests: the 1 KB header, the
-rows' offsets and sizes, then the rows as one block (7 MB for Gleneagles,
-up to about 35 MB for a big wooded course, since each row spans the whole
-tile). The heights are smoothed over a plus of pixels, and each highest
+Resources Institute's global canopy height map, version 2 (2025, CC BY
+4.0, on AWS Open Data). Each file is a 32768 px square Cloud-Optimised
+GeoTIFF per zoom 10 web mercator tile (1.19 m pixels), cut into 512 px
+Deflate tiles, heights in whole metres (255 for no data). Only the
+course's tiles are downloaded, with range requests: the 1 KB header, the
+tile offsets and sizes for the course's tile rows, then each tile (1 to 3
+MB for a course; version 1's whole-tile-wide rows took 7 to 35 MB).
+Version 2 (Meta's DINOv3 model) finds more of the real trees: against the
+photo, the share of the tree cover with game trees rose by 6 to 16 points
+on Augusta, Oakmont, Gleneagles, Kingston Heath, Medinah and Pinehurst,
+with as few false trees as before. The heights are smoothed over a plus of pixels, and each highest
 pixel within 1.5 m at least 3 m tall is a crown, one per 4 m, planted like
 lidar trees. Gleneagles: 2,461 crowns in 7 s, on the trees in the photo.
 The bucket sends no cross-site headers, so the web build skips it.
+
+**Not used: ESA WorldCover.** Its 10 m land cover splits shrubland from
+grassland, which the land cover above doesn't, so it was tried for
+heather and scrub. It reads Sunningdale's and Wentworth's heather as
+grassland, and the land cover above already has bare ground, so it adds
+nothing for a course (tested 2026-11-19 on Sunningdale, Wentworth,
+Ballybunion, Scottsdale, Torrey Pines and Cape Kidnappers).
 
 ### Aerial photos
 
@@ -162,6 +173,26 @@ photo**), to check and trace the course against.
 | Queensland (Australia) | Queensland Government latest state imagery | CC BY 4.0 |
 | Czechia | CUZK orthophoto (WMS) | CC BY 4.0 |
 | Portugal | DGT OrtoSat 2023 (WMS) | CC BY 4.0 |
+| Luxembourg | geoportail.lu orthophoto | CC0 |
+| Berlin | Geoportal Berlin TrueDOP 2024 (WMS) | dl-de/zero-2-0 |
+| Baden-Wuerttemberg | LGL DOP 20 cm (WMS) | dl-de/by-2-0 |
+| Hong Kong | Lands Department aerial photo | credit |
+| Tasmania (Australia) | theLIST orthophoto | credit |
+| Ontario (Canada) | Ontario GEO imagery (ArcGIS export) | Open Government Licence - Ontario |
+
+These six were found through BeamNG.Earth's source list (MIT). So were 12
+US state services (15 to 30 cm). They were tried and left out: they are
+spring leaf-off flights, and their dormant straw fairways hid Pinehurst's
+sandy native areas and Shinnecock's fescue from the native grass reader
+while painting false fescue on Muirfield Village. NAIP is flown in
+summer. Indiana's cache (404), South Tyrol (blank) and Lower Saxony (down)
+didn't answer when tested.
+
+**Dormant photos:** where a course's own photo shows dormant fairways
+(median fairway hue at or under 0.17, or saturation at or under 0.18: a
+winter, spring or drought flight), the native grass is read from the
+summer Sentinel-2 image instead, since straw fescue can't be told from
+straw fairways. A photo of any service can be flown that way.
 
 **Satellite guide (designer only):** on a real course the designer also
 offers **Show the satellite guide (Esri)**. It streams Esri World Imagery

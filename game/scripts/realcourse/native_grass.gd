@@ -21,6 +21,10 @@ const MAX_VALUE := 0.85  ## brighter is sand or paths
 const MIN_SAT := 0.14  ## greyer is sand, paths or water
 const MIN_CELLS := 40  ## smallest patch kept (640 m2)
 const MIN_SHARE := 0.04  ## of the course's cells, or none is taken
+## Fairways this yellow or this grey are dormant (a winter, spring or
+## drought flight): straw everywhere, so the fescue can't be told apart.
+const DORMANT_HUE := 0.17
+const DORMANT_SAT := 0.18
 
 ## What is looked for: STRAW (fescue, meadow: lighter than the fairways)
 ## or SCRUB (scrub, heather, sage: darker, browner or purple, Torrey Pines'
@@ -94,6 +98,11 @@ static func from_mask(p_area: Rect2, p_mask: PackedByteArray) -> NativeGrass:
 ## True when there is anything to read.
 func ready() -> bool:
 	return cols > 0
+
+
+## True when the photo's fairways are dormant straw, not summer green.
+func is_dormant() -> bool:
+	return ready() and (grass_hue <= DORMANT_HUE or grass_sat <= DORMANT_SAT)
 
 
 ## Reads rows j0 to j1 of cells.

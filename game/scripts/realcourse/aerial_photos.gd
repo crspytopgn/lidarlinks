@@ -24,6 +24,36 @@ const DETAIL_HALF := 70.0  ## metres either side of the green
 ## is used.
 const SOURCES := [
 	{
+		"id": "lu", "name": "geoportail.lu orthophoto, Luxembourg",
+		"boxes": [[49.44, 5.73, 50.19, 6.53]],
+		"url": "https://wmts1.geoportail.lu/opendata/wmts/ortho_latest/GLOBAL_WEBMERCATOR_4_V3/{z}/{x}/{y}.jpeg",
+		"credit": "Aerial photo: geoportail.lu (Administration du cadastre et de la topographie), CC0",
+	},
+	{
+		"id": "berlin", "name": "Geoportal Berlin TrueDOP 2024, Berlin",
+		"boxes": [[52.33, 13.08, 52.68, 13.77]],
+		"url": "https://gdi.berlin.de/services/wms/truedop_2024?LAYERS=truedop_2024&SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap&STYLES=&CRS=EPSG:3857&BBOX={bbox}&WIDTH=256&HEIGHT=256&FORMAT=image/jpeg",
+		"credit": "Aerial photo: Geoportal Berlin, TrueDOP 2024, dl-de/zero-2-0",
+	},
+	{
+		"id": "bw", "name": "LGL DOP 20 cm, Baden-Wuerttemberg",
+		"boxes": [[47.53, 7.51, 49.79, 10.5]],
+		"url": "https://owsproxy.lgl-bw.de/owsproxy/ows/WMS_LGL-BW_ATKIS_DOP_20_C?LAYERS=IMAGES_DOP_20_RGB&SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap&STYLES=&CRS=EPSG:3857&BBOX={bbox}&WIDTH=256&HEIGHT=256&FORMAT=image/jpeg",
+		"credit": "Aerial photo: LGL Baden-Wuerttemberg (www.lgl-bw.de), dl-de/by-2-0",
+	},
+	{
+		"id": "hk", "name": "Lands Department aerial photo, Hong Kong",
+		"boxes": [[22.13, 113.82, 22.57, 114.45]],
+		"url": "https://mapapi.hkmapservice.gov.hk/gs/api/v1.0.0/xyz/imagery/WGS84/{z}/{x}/{y}.png",
+		"credit": "Aerial Photograph from Lands Department, Hong Kong SAR Government",
+	},
+	{
+		"id": "tas", "name": "theLIST orthophoto, Tasmania",
+		"boxes": [[-43.7, 143.8, -39.5, 148.5]],
+		"url": "https://services.thelist.tas.gov.au/arcgis/rest/services/Basemaps/Orthophoto/MapServer/tile/{z}/{y}/{x}",
+		"credit": "Aerial photo: (c) State of Tasmania, theLIST",
+	},
+	{
 		"id": "vl", "name": "Digitaal Vlaanderen orthophoto, Flanders",
 		"boxes": [[50.67, 2.53, 51.51, 5.92]],
 		"url": "https://geo.api.vlaanderen.be/omz/wms?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap&LAYERS=omzrgb24vl&STYLES=&CRS=EPSG:3857&BBOX={bbox}&WIDTH=256&HEIGHT=256&FORMAT=image/jpeg",
@@ -124,6 +154,20 @@ const SOURCES := [
 		"boxes": [[24.0, 122.9, 45.6, 146.0]],
 		"url": "https://cyberjapandata.gsi.go.jp/xyz/seamlessphoto/{z}/{x}/{y}.jpg",
 		"credit": "Aerial photo: Geospatial Information Authority of Japan (GSI tiles)",
+	},
+	# Ontario (leaf-on summer flights). Its box reaches into the US, where
+	# it answers blank tiles and NAIP is tried next. The US states' own
+	# 15 to 30 cm photos (found by BeamNG.Earth, MIT) were tried and left
+	# out: they are spring leaf-off flights, and their dormant straw grass
+	# hid Pinehurst's sandy native areas and Shinnecock's fescue from
+	# NativeGrass while painting false fescue on Muirfield Village. NAIP is
+	# flown in summer.
+	{
+		"id": "on", "name": "Ontario GEO imagery, Ontario",
+		"boxes": [[41.7, -95.2, 56.9, -74.3]],
+		"url": "https://ws.geoservices.lrc.gov.on.ca/arcgis5/rest/services/AerialImagery/GEO_Imagery_Data_Service_2018to2022/ImageServer/exportImage?bbox={bbox}&bboxSR=3857&imageSR=3857&size={size},{size}&format=jpg&f=image",
+		"block": 4,
+		"credit": "Aerial photo: Ontario GEO imagery, Open Government Licence - Ontario",
 	},
 	{
 		# The full NAIP mosaic (0.6 m): the cached basemap below stops at
