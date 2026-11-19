@@ -14,6 +14,7 @@ func run_all() -> Array[String]:
 	_test_builder()
 	_test_geo_raster()
 	_test_strip_objects()
+	_test_net_door()
 	_test_national_lidar()
 	_test_photo_trees()
 	_test_extra_trees()
@@ -271,6 +272,45 @@ func _test_geo_raster() -> void:
 	var gappy := GeoRaster.from_bil(PackedFloat32Array([1, 2, -99999, 4]).to_byte_array(), 2, 2, [0.0, 0.0, 1.0, 1.0])
 	check(is_nan(gappy.sample(0.5, 0.5)) and is_equal_approx(gappy.valid_fraction(), 0.75), "no-data pixels read as NAN")
 	check(GeoRaster.from_tiff(PackedByteArray([1, 2, 3])) == null, "junk isn't a GeoTIFF")
+
+
+func _test_net_door() -> void:
+	check(NetDoor.host_of("https://User@Tile.Example.org:8080/a/b?c") == "tile.example.org:8080", "host of a url")
+	check(NetDoor.retry_after(PackedStringArray(["Retry-After: 7"])) == 7.0 and NetDoor.retry_after(PackedStringArray()) < 0.0, "Retry-After read")
+	var d := NetDoor.new()
+	var h := "a.org"
+	# A cap on requests at once to one server.
+	var ids: Array[int] = []
+	for i in NetDoor.HOST_PARALLEL:
+		check(d.wait_ms(h, 0) == 0, "room for request %d" % i)
+		ids.append(d.started(h, 0))
+	check(d.wait_ms(h, 0) > 0 and d.wait_ms("b.org", 0) == 0, "full server waits, others don't")
+	for id in ids:
+		d.finished(h, id, 200, PackedStringArray(), 10)
+	# Slow down when told to.
+	d.finished(h, d.started(h, 10), 429, PackedStringArray(["retry-after: 3"]), 20)
+	check(d.wait_ms(h, 1000) > 2000 and d.wait_ms(h, 3100) == 0, "429 pauses for Retry-After")
+	check(d.waiting_note(1000).contains("a.org asked us to slow down"), "pause named: %s" % d.waiting_note(1000))
+	# The breaker: five failures in a row and the server is left alone.
+	var t := 4000
+	for i in NetDoor.BREAK_AFTER:
+		d.finished(h, d.started(h, t), 0 if i % 2 == 0 else 502, PackedStringArray(), t)
+	check(d.wait_ms(h, t + 1) < 0 and d.is_open(h, t + 1), "failing server left alone")
+	t += NetDoor.BREAK_MS + 1
+	check(d.wait_ms(h, t) == 0, "one try after the rest")
+	var trial := d.started(h, t)
+	check(d.wait_ms(h, t) > 0, "only one try at a time while testing")
+	d.finished(h, trial, 503, PackedStringArray(), t)
+	check(d.wait_ms(h, t + NetDoor.BREAK_MS + 1) < 0, "a failed try rests it longer")
+	t += NetDoor.BREAK_MS * 2 + 2
+	d.finished(h, d.started(h, t), 404, PackedStringArray(), t)
+	check(d.wait_ms(h, t) == 0 and not d.is_open(h, t), "an answer (even 404) closes the breaker")
+	# A stopped request says nothing about the server, and slow ones are named.
+	for i in NetDoor.BREAK_AFTER + 1:
+		d.dropped(h, d.started(h, t))
+	check(not d.is_open(h, t), "dropped requests don't count as failures")
+	d.started("slow.org", t)
+	check(d.waiting_note(t + 1000) == "" and d.waiting_note(t + NetDoor.WAITING_MS).contains("waiting on slow.org"), "slow server named")
 
 
 func _test_strip_objects() -> void:

@@ -95,6 +95,8 @@ var use_landscape := true
 var configure_request: Callable
 ## Overpass servers, all asked at once (see _overpass).
 var servers: Array = OVERPASS.duplicate()
+## Per-server limits, back-off and circuit breaker for every download.
+var door := NetDoor.new()
 var _last_object_cut := 0.0  ## metres of wood or house taken off the coarse ground
 var _last_summary := {}
 var _cancelled := false
@@ -118,6 +120,7 @@ func cancel() -> void:
 			var req := c as HTTPRequest
 			if req != null:
 				# cancel_request() is silent; the waiting step needs its answer.
+				req.set_meta("dropped", true)
 				req.cancel_request()
 				req.request_completed.emit(HTTPRequest.RESULT_REQUEST_FAILED, 0, PackedStringArray(), PackedByteArray())
 
@@ -867,6 +870,7 @@ func _overpass(query: String) -> Dictionary:
 		# Stop the slower servers: their answers aren't needed.
 		for req in reqs:
 			if is_instance_valid(req) and req.get_http_client_status() != HTTPClient.STATUS_DISCONNECTED:
+				req.set_meta("dropped", true)
 				req.cancel_request()
 				req.request_completed.emit(HTTPRequest.RESULT_REQUEST_FAILED, 0, PackedStringArray(), PackedByteArray())
 		if not won.is_empty():
@@ -993,7 +997,7 @@ func _fetch_all(urls: PackedStringArray, label: String, tries := 1, timeout := 1
 				_fetch_into(urls[i], out, i, done, timeout)
 			await get_tree().process_frame
 			running = (next - done[0])
-			progress.emit("%s (%d of %d)..." % [label, done[0], todo.size()])
+			progress.emit("%s (%d of %d)...%s" % [label, done[0], todo.size(), door.waiting_note(Time.get_ticks_msec())])
 	return out
 
 
@@ -1043,12 +1047,30 @@ func _make_request(timeout: float) -> HTTPRequest:
 func _send(req: HTTPRequest, url: String, method: int, body: String, headers: Array) -> Array:
 	if not OS.has_feature("web"):
 		headers = headers + ["User-Agent: " + USER_AGENT]
+	var host := NetDoor.host_of(url)
+	while true:
+		var wait := door.wait_ms(host, Time.get_ticks_msec())
+		if _cancelled or wait < 0:
+			# A server failing again and again is left alone for a while.
+			req.queue_free()
+			return [0, PackedByteArray()]
+		if wait == 0:
+			break
+		await get_tree().create_timer(minf(wait, 250) / 1000.0).timeout
+	var id := door.started(host, Time.get_ticks_msec())
 	var err := req.request(url, PackedStringArray(headers), method, body)
 	if err != OK:
+		door.finished(host, id, 0, PackedStringArray(), Time.get_ticks_msec())
 		req.queue_free()
 		return [0, PackedByteArray()]
 	var res: Array = await req.request_completed
+	var dropped := req.has_meta("dropped")  # we stopped it: not the server's fault
 	req.queue_free()
-	if res[0] != HTTPRequest.RESULT_SUCCESS:
+	if dropped:
+		door.dropped(host, id)
+		return [0, PackedByteArray()]
+	var ok: bool = res[0] == HTTPRequest.RESULT_SUCCESS
+	door.finished(host, id, int(res[1]) if ok else 0, res[2] if ok else PackedStringArray(), Time.get_ticks_msec())
+	if not ok:
 		return [0, PackedByteArray()]
 	return [res[1], res[3]]
