@@ -63,6 +63,14 @@ wind_vector={
 "type": "vec2",
 "value": Vector2(0, 0)
 }
+flag_wind={
+"type": "vec2",
+"value": Vector2(0, 0)
+}
+flag_phase={
+"type": "float",
+"value": 0.0
+}
 foliage_sway={
 "type": "float",
 "value": 0.0
