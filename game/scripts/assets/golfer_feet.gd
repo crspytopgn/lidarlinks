@@ -17,6 +17,8 @@ const MAX_SHIFT := 0.35  ## metres, up or down
 const MAX_TILT := deg_to_rad(20.0)
 const NORMAL_STEP := 0.15  ## metres between height samples for the slope
 const MAX_BEND := 0.15  ## metres a knee may bend further to reach higher ground
+const MAX_CLUB_TURN := deg_to_rad(25.0)  ## the most the wrist bends to lift the club head off the ground
+const CLUB_MIN_REACH := 0.3  ## metres: a club hanging nearly straight down turns no faster than this
 const MAX_CHOKE := 0.1  ## metres he may choke down the grip
 const MAX_LEAN := deg_to_rad(8.0)  ## and stand taller at the waist
 ## Toward the ball from his feet, in the skeleton's frame (FreeGolfer.BALL).
@@ -35,6 +37,9 @@ var sink := 0.0
 ## The golfer's clips, to tell when he stands over the ball.
 var player: AnimationPlayer
 var _bones := {}
+## The club head's outermost points in the club bone's frame (FreeGolfer
+## sets them for the club in his hands; none when empty-handed).
+var club_points := PackedVector3Array()
 var _club := -1
 var _ball_w := 0.0
 var _lean_per_m := 0.75  ## radians a metre: about a driver's, until address is read
@@ -72,8 +77,13 @@ func _process_modification() -> void:
 	var step := clampf(float(now - _last_us) / 1e6 / AT_BALL_BLEND, 0.0, 1.0) if _last_us > 0 else 1.0
 	_last_us = now
 	_ball_w = move_toward(_ball_w, 1.0 if at_ball() else 0.0, step)
-	if absf(drop["l"]) < 1e-3 and absf(drop["r"]) < 1e-3 and sink < 1e-3:
-		return
+	if absf(drop["l"]) >= 1e-3 or absf(drop["r"]) >= 1e-3 or sink >= 1e-3:
+		_plant(sk, up, drop, tilt)
+	_keep_club_up(sk, to_world, up)
+
+
+## The legs and hips on the slope (see the top).
+func _plant(sk: Skeleton3D, up: Vector3, drop: Dictionary[String, float], tilt: Dictionary[String, Vector3]) -> void:
 	var shift: float = lerpf(minf(drop["l"], drop["r"]), 0.0, _ball_w)
 	# Each knee may bend MAX_BEND further, and each leg straighten until
 	# it is straight: the hips go no further from the ground than that.
@@ -95,6 +105,39 @@ func _process_modification() -> void:
 	sk.set_bone_pose_position(root, sk.get_bone_pose_position(root) + sk.get_bone_global_pose(root).basis.inverse() * (up * shift))
 	if _ball_w > 0.0 and shift < -1e-3 and _club >= 0:
 		_stand_tall(sk, up, -shift * _ball_w)
+
+
+## No part of the club head below the ground: where the clip (or a slope)
+## would push it in, the left wrist (the club hangs from that hand) bends
+## just enough to sit the head on the turf; GolferHands then brings the
+## right hand along. Mostly a soled club at address and a club held head down
+## in the reactions after a shot.
+func _keep_club_up(sk: Skeleton3D, to_world: Transform3D, up: Vector3) -> void:
+	if _club < 0 or club_points.is_empty():
+		return
+	for _pass in 2:
+		var g := sk.get_bone_global_pose(_club)
+		var lowest := 0.0
+		var at := Vector3.ZERO
+		for p in club_points:
+			var q := g * p
+			var w := to_world * q
+			var under: float = ground.call(w.x, w.z) - w.y
+			if under > lowest:
+				lowest = under
+				at = q
+		if lowest < 1e-3:
+			return
+		var wrist := sk.get_bone_parent(_club)
+		var wg := sk.get_bone_global_pose(wrist)
+		var v := at - wg.origin
+		var flat := v - up * v.dot(up)
+		var axis := v.cross(up)
+		if axis.length_squared() < 1e-6:
+			return
+		var turn := minf(lowest / maxf(flat.length(), CLUB_MIN_REACH), MAX_CLUB_TURN)
+		GolferLook.turn_bone(sk, wrist, Quaternion(axis.normalized(), turn))
+
 
 
 ## His legs are straight and his hips still sit `low` below where the club

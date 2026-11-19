@@ -109,7 +109,7 @@ func _initialize() -> void:
 		var node: Variant = _golfer.get("_" + helper)
 		if node is SkeletonModifier3D:
 			(node as SkeletonModifier3D).active = false
-	if slope.size() == 2:
+	if true:  # level ground unless GROUND_SLOPE says otherwise, as in the game
 		var at := FreeGolfer.BALL
 		_golfer.set_ground(func(x: float, z: float) -> float: return gx * (x - at.x) + gz * (z - at.z))
 	_player = _golfer.find_child("AnimationPlayer", true, false) as AnimationPlayer
