@@ -146,6 +146,7 @@ func _process(_delta: float) -> bool:
 	_run("menu_resume", _test_menu_resume)
 	SavedRound.clear()
 	_run("broadcast_round", _test_broadcast_round)
+	_run("smooth_flyover", _test_smooth_flyover)
 	_run("designer_scene", _test_designer_scene)
 	_run("designed_round", _test_designed_round)
 	_run("caddie_and_buggy_in_round", _test_caddie_and_buggy_in_round)
@@ -5871,6 +5872,77 @@ func _test_broadcast_pieces() -> void:
 	wav.append_array("data".to_ascii_buffer())
 	wav.append_array(PackedByteArray([4, 0, 0, 0, 0, 0, 0, 0]))
 	_check(MenuSounds._stream(wav) != null, "menu sound past the block header")
+
+
+## The hole flyover glides: even speed with no spikes, no sudden turns or
+## bobbing, and it stays clear of the ground, also on a route as ragged as
+## a mapped real course gives (points bunched up, zig-zagging, one on the
+## tee and one by the pin).
+func _test_smooth_flyover() -> void:
+	var course := PlaceholderCourseLoader.new().load_course("")
+	for ragged in [false, true]:
+		for h in [0, 3, 6]:
+			var hole: HoleData = course.holes[h]
+			var real := hole
+			if ragged:
+				real = HoleData.new()
+				real.number = hole.number
+				real.tee = hole.tee
+				real.pin = hole.pin
+				real.terrain = hole.terrain
+				var tee := Vector2(hole.tee.x, hole.tee.z)
+				var pin := Vector2(hole.pin.x, hole.pin.z)
+				var side := (pin - tee).normalized().orthogonal()
+				real.route.append(tee)
+				for k in range(1, 24):
+					real.route.append(tee.lerp(pin, k / 24.0) + side * (6.0 if k % 2 == 0 else -6.0))
+				real.route.append(pin + side * 2.0)
+			var cam := RoundCamera.new()
+			root.add_child(cam)
+			cam.terrain = real.terrain if real.terrain != null else course.terrain
+			cam.start_flyover(real)
+			var dt := 1.0 / 60.0
+			var prev := cam.position
+			var prev_v := Vector3.ZERO
+			var prev_fwd := -cam.global_transform.basis.z
+			var prev_w := 0.0
+			var worst_acc := 0.0
+			var worst_turn := 0.0
+			var lowest := INF
+			var frames := 0
+			while frames < 2000:
+				cam.update(dt, 0.0, real.tee)
+				if not cam.flying():
+					break
+				var v := (cam.position - prev) / dt
+				var fwd := -cam.global_transform.basis.z
+				var w := rad_to_deg(prev_fwd.angle_to(fwd)) / dt
+				if frames > 1:
+					worst_acc = maxf(worst_acc, (v - prev_v).length() / dt)
+					worst_turn = maxf(worst_turn, absf(w - prev_w) / dt)
+				lowest = minf(lowest, cam.position.y - cam.terrain.height_at(cam.position.x, cam.position.z))
+				prev = cam.position
+				prev_v = v
+				prev_fwd = fwd
+				prev_w = w
+				frames += 1
+			cam.free()
+			var what := "hole %d%s" % [hole.number, " (ragged route)" if ragged else ""]
+			_check(frames > 60 and frames < 2000, "the flyover of %s ends by itself (%d frames)" % [what, frames])
+			_check(worst_acc < 90.0, "the flyover of %s changes speed and line smoothly (%.0f m/s2)" % [what, worst_acc])
+			_check(worst_turn < 90.0, "the flyover of %s turns smoothly (%.0f deg/s2)" % [what, worst_turn])
+			_check(lowest > 5.0, "the flyover of %s stays well clear of the ground (%.1f m)" % [what, lowest])
+	# A slow frame (the course streaming in) slows the glide, never jumps it.
+	var hole1: HoleData = course.holes[0]
+	var cam := RoundCamera.new()
+	root.add_child(cam)
+	cam.terrain = hole1.terrain if hole1.terrain != null else course.terrain
+	cam.start_flyover(hole1)
+	cam.update(1.0 / 60.0, 0.0, hole1.tee)
+	var before := cam.position
+	cam.update(0.5, 0.0, hole1.tee)
+	_check(cam.position.distance_to(before) < 2.0, "a half-second hitch moves the flyover on by about one frame (%.1f m)" % cam.position.distance_to(before))
+	cam.free()
 
 
 ## A round in each presentation, with a replay, a flyover and the green grid.

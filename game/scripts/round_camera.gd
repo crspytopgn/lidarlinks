@@ -69,6 +69,9 @@ var _fly_path := PackedVector3Array()
 var _fly_t := 0.0
 var _fly_length := 0.0
 var _fly_pin := Vector3.ZERO
+var _fly_look_path := PackedVector3Array()
+var _fly_step := 1.0
+var _fly_dt := 1.0 / 60.0
 
 ## The TV cameraman (Broadcast only). A long lens on a tripod is never
 ## quite still: the operator's hand drifts it a few hundredths of a degree,
@@ -83,13 +86,24 @@ var _look_vel := Vector3.ZERO
 var _operator_t := 0.0
 var _operator_pan := 0.0  ## 0 resting to 1 panning, eased so the drift never jumps
 
-const FLYOVER_SPEED := 55.0  ## metres per second along the path
-const FLYOVER_MIN_S := 4.5
-const FLYOVER_MAX_S := 9.0
+const FLYOVER_SPEED := 45.0  ## metres per second along the path
+const FLYOVER_MIN_S := 6.0
+const FLYOVER_MAX_S := 12.0
 ## Quick pace: the hole flyover at this share of its time (a click still
 ## ends it).
 const QUICK_FLYOVER := 0.6
 const FLYOVER_UP := 38.0
+const FLYOVER_LOW := 7.0  ## height over the green at the end of the flyover
+const FLY_STEP := 2.0  ## metres between the flyover path's samples
+const FLY_SMOOTH_SAMPLES := 10  ## corner rounding, samples either side
+const FLY_SIDE := 15.0  ## the flyover clears the ground this far either side
+const FLY_GROUND_SLOPE := 0.25  ## steepest climb or drop it makes for the ground
+const FLY_HEIGHT_SMOOTH := 40.0  ## metres the height changes are spread over, at least
+const FLY_HEIGHT_SMOOTH_S := 1.0  ## and at least this many seconds of flight
+const FLY_LOOK_AHEAD := 90.0  ## metres along the path the camera looks
+const FLY_APPROACH := 30.0  ## the last turn in, short of the pin
+const FLY_EASE_IN := 0.25
+const FLY_EASE_OUT := 0.35
 
 
 ## Snaps behind the ball, looking down the aim line `dir` (flat, unit).
@@ -269,27 +283,207 @@ static func operator_offset(t: float, panning: float) -> Vector2:
 
 ## Flies over the hole from behind the tee, along its route, down to the
 ## green, then settles behind the ball (wherever aim() last put it).
+##
+## Built like a TV flyover: the route is turned into one smooth curve and
+## sampled every FLY_STEP metres by distance, so the speed along it is even
+## (a spline stepped by control point raced down long legs and crawled
+## round short ones); the height follows a smoothed envelope of the ground
+## that never climbs or drops faster than FLY_GROUND_SLOPE (no bobbing over
+## every mound); the camera looks at a point a fixed distance ahead, also
+## smoothed, so the view turns gently into a dogleg before the camera does;
+## and the speed eases in and out rather than peaking mid-hole.
 func start_flyover(hole: HoleData) -> void:
 	_fly_path = PackedVector3Array()
+	_fly_look_path = PackedVector3Array()
 	_fly_pin = hole.pin
-	var pts: Array[Vector3] = [hole.tee]
-	for r in hole.route:
-		pts.append(Vector3(r.x, 0.0, r.y))
-	pts.append(hole.pin)
-	var first := Vector3(pts[1].x - pts[0].x, 0.0, pts[1].z - pts[0].z).normalized()
-	_fly_path.append(_lift(hole.tee - first * 40.0, FLYOVER_UP * 0.8))
-	for i in range(0, pts.size() - 1):
-		_fly_path.append(_lift(pts[i], FLYOVER_UP))
-	var last := Vector3(hole.pin.x - pts[pts.size() - 2].x, 0.0, hole.pin.z - pts[pts.size() - 2].z).normalized()
-	_fly_path.append(_lift(hole.pin - last * 30.0, FLYOVER_UP * 0.5))
-	_fly_path.append(_lift(hole.pin - last * 14.0 + last.cross(Vector3.UP) * 6.0, 7.0))
+	var xz := fly_route(hole)
+	xz = _resample(_spline(xz), FLY_STEP)
+	xz = _smooth_line(xz, FLY_SMOOTH_SAMPLES)
+	xz = _resample(xz, FLY_STEP)
+	var n := xz.size()
 	_fly_length = 0.0
-	for i in range(1, _fly_path.size()):
-		_fly_length += _fly_path[i - 1].distance_to(_fly_path[i])
+	for i in range(1, n):
+		_fly_length += xz[i - 1].distance_to(xz[i])
+	_fly_step = _fly_length / maxf(n - 1, 1)
+	# The ground under the path and either side of it.
+	var under := PackedFloat32Array()
+	var wide := PackedFloat32Array()
+	under.resize(n)
+	wide.resize(n)
+	for i in n:
+		var tangent := (xz[mini(i + 1, n - 1)] - xz[maxi(i - 1, 0)]).normalized()
+		var side := Vector2(-tangent.y, tangent.x) * FLY_SIDE
+		var g := _ground2(xz[i])
+		under[i] = g
+		wide[i] = maxf(g, maxf(_ground2(xz[i] + side), _ground2(xz[i] - side)))
+	# Cone envelope: the highest ground nearby, less FLY_GROUND_SLOPE per
+	# metre away, so rises are seen coming and the climb starts early.
+	var drop := FLY_GROUND_SLOPE * _fly_step
+	for i in range(1, n):
+		wide[i] = maxf(wide[i], wide[i - 1] - drop)
+	for i in range(n - 2, -1, -1):
+		wide[i] = maxf(wide[i], wide[i + 1] - drop)
+	# Then the highest of that within 3R and three moving averages R wide:
+	# smooth over a second or more of flight (three passes leave no kinks
+	# in the climb rate), and still never below it, since each average only
+	# mixes in maxima whose window held this point.
+	var spread := maxf(FLY_HEIGHT_SMOOTH, _fly_length / _fly_seconds() * FLY_HEIGHT_SMOOTH_S)
+	var r := maxi(1, roundi(spread * 0.67 / maxf(_fly_step, 0.01)))
+	var floor_h := _running_max(wide, 3 * r)
+	for _pass in 3:
+		floor_h = _smooth_values(floor_h, r)
+	var ground_s := _smooth_values(_smooth_values(under, 10), 10)
+	var ahead := maxi(1, roundi(FLY_LOOK_AHEAD / maxf(_fly_step, 0.01)))
+	for i in n:
+		var s := i * _fly_step
+		var c := fly_clearance(s, _fly_length)
+		var h := maxf(floor_h[i] + c, under[i] + KEEP_ABOVE_GROUND + 2.0)
+		_fly_path.append(Vector3(xz[i].x, h, xz[i].y))
+		var j := mini(i + ahead, n - 1)
+		var look := Vector3(xz[j].x, ground_s[j], xz[j].y)
+		_fly_look_path.append(look.lerp(_fly_pin, smoothstep(0.45, 0.85, s / maxf(_fly_length, 1.0))))
+	_fly_look_path = _smooth_points(_smooth_points(_fly_look_path, 10), 10)
 	_fly_t = 0.0
+	_fly_dt = 1.0 / 60.0
 	position = _fly_path[0]
-	_look_now = _fly_look(0.0)
+	_look_now = _fly_look_path[0]
+	_look = _look_now
 	look_at(_look_now)
+
+
+## The flyover's line over the ground, (x, z): from behind the tee, along
+## the route, to a low spot short of the green and a little to one side.
+## Route points on top of the tee or close to the green are skipped (they
+## made the old path double back on itself).
+static func fly_route(hole: HoleData) -> PackedVector2Array:
+	var tee := Vector2(hole.tee.x, hole.tee.z)
+	var pin := Vector2(hole.pin.x, hole.pin.z)
+	var pts := PackedVector2Array([tee])
+	for r in hole.route:
+		if r.distance_to(pts[pts.size() - 1]) > 8.0 and r.distance_to(pin) > FLY_APPROACH + 5.0:
+			pts.append(r)
+	var into := pin - pts[pts.size() - 1]
+	if into.length() < 1.0:
+		into = Vector2(0.0, 1.0)  # a hole with the pin on the tee: fly straight down +z
+		pin = tee + into * 60.0
+	var first := (pts[1] - pts[0]) if pts.size() > 1 else into
+	first = first.normalized()
+	var last := into.normalized()
+	var out := PackedVector2Array([tee - first * 40.0])
+	out.append_array(pts)
+	if pin.distance_to(pts[pts.size() - 1]) > FLY_APPROACH + 1.0:
+		out.append(pin - last * FLY_APPROACH)
+	out.append(pin - last * 14.0 + Vector2(-last.y, last.x) * 6.0)
+	return out
+
+
+## Height above the (smoothed) ground at distance `s` of `length`: a little
+## lower behind the tee, the full height along the hole, gliding down to a
+## low view of the green over the last stretch.
+static func fly_clearance(s: float, length: float) -> float:
+	var descend := clampf(length * 0.45, 40.0, 170.0)
+	var low := smoothstep(0.0, 1.0, clampf((length - s) / descend, 0.0, 1.0))
+	var c := lerpf(FLYOVER_LOW, FLYOVER_UP, low * low * (3.0 - 2.0 * low))
+	return c * lerpf(0.8, 1.0, smoothstep(0.0, 200.0, s))
+
+
+## Centripetal Catmull-Rom through `pts`, sampled about every metre (no
+## loops or overshoot where the points are unevenly spaced).
+static func _spline(pts: PackedVector2Array) -> PackedVector2Array:
+	var out := PackedVector2Array()
+	var n := pts.size()
+	for i in range(n - 1):
+		var p1 := pts[i]
+		var p2 := pts[i + 1]
+		var p0 := pts[i - 1] if i > 0 else p1 * 2.0 - p2
+		var p3 := pts[i + 2] if i + 2 < n else p2 * 2.0 - p1
+		var steps := maxi(2, ceili(p1.distance_to(p2)))
+		for k in steps:
+			out.append(_centripetal(p0, p1, p2, p3, float(k) / steps))
+	out.append(pts[n - 1])
+	return out
+
+
+static func _centripetal(p0: Vector2, p1: Vector2, p2: Vector2, p3: Vector2, u: float) -> Vector2:
+	var t1 := sqrt(maxf(p0.distance_to(p1), 0.01))
+	var t2 := t1 + sqrt(maxf(p1.distance_to(p2), 0.01))
+	var t3 := t2 + sqrt(maxf(p2.distance_to(p3), 0.01))
+	var t := lerpf(t1, t2, u)
+	var a1 := p0 * (t1 - t) / t1 + p1 * t / t1
+	var a2 := p1 * (t2 - t) / (t2 - t1) + p2 * (t - t1) / (t2 - t1)
+	var a3 := p2 * (t3 - t) / (t3 - t2) + p3 * (t - t2) / (t3 - t2)
+	var b1 := a1 * (t2 - t) / t2 + a2 * t / t2
+	var b2 := a2 * (t3 - t) / (t3 - t1) + a3 * (t - t1) / (t3 - t1)
+	return b1 * (t2 - t) / (t2 - t1) + b2 * (t - t1) / (t2 - t1)
+
+
+## `line` re-sampled at even spacing of about `step` metres, ends kept.
+static func _resample(line: PackedVector2Array, step: float) -> PackedVector2Array:
+	var n := line.size()
+	var along := PackedFloat32Array([0.0])
+	for i in range(1, n):
+		along.append(along[i - 1] + line[i - 1].distance_to(line[i]))
+	var total := along[n - 1]
+	var count := maxi(1, ceili(total / step))
+	var out := PackedVector2Array()
+	var j := 0
+	for k in count + 1:
+		var s := total * k / count
+		while j < n - 2 and along[j + 1] < s:
+			j += 1
+		var seg := along[mini(j + 1, n - 1)] - along[j]
+		var f := clampf((s - along[j]) / seg, 0.0, 1.0) if seg > 0.0 else 0.0
+		out.append(line[j].lerp(line[mini(j + 1, n - 1)], f))
+	return out
+
+
+## Three passes of a moving average `radius` samples either side, the ends
+## held (a window that narrowed towards the ends put a kink in the motion
+## where it reached full width).
+static func _smooth_line(line: PackedVector2Array, radius: int) -> PackedVector2Array:
+	for _pass in 3:
+		var out := line.duplicate()
+		var n := line.size()
+		for i in n:
+			var sum := Vector2.ZERO
+			for k in range(i - radius, i + radius + 1):
+				sum += line[clampi(k, 0, n - 1)]
+			out[i] = sum / (2 * radius + 1)
+		line = out
+	return line
+
+
+static func _running_max(v: PackedFloat32Array, radius: int) -> PackedFloat32Array:
+	var out := v.duplicate()
+	var n := v.size()
+	for i in n:
+		var m := v[i]
+		for k in range(maxi(i - radius, 0), mini(i + radius, n - 1) + 1):
+			m = maxf(m, v[k])
+		out[i] = m
+	return out
+
+
+static func _smooth_points(pts: PackedVector3Array, radius: int) -> PackedVector3Array:
+	var out := pts.duplicate()
+	var n := pts.size()
+	for i in n:
+		var sum := Vector3.ZERO
+		for k in range(i - radius, i + radius + 1):
+			sum += pts[clampi(k, 0, n - 1)]
+		out[i] = sum / (2 * radius + 1)
+	return out
+
+
+static func _smooth_values(v: PackedFloat32Array, radius: int) -> PackedFloat32Array:
+	var out := v.duplicate()
+	var n := v.size()
+	for i in n:
+		var sum := 0.0
+		for k in range(i - radius, i + radius + 1):
+			sum += v[clampi(k, 0, n - 1)]
+		out[i] = sum / (2 * radius + 1)
+	return out
 
 
 func flying() -> bool:
@@ -301,6 +495,7 @@ func end_flyover() -> void:
 	if not flying():
 		return
 	_fly_path = PackedVector3Array()
+	_fly_look_path = PackedVector3Array()
 	position = _aim_pos
 	_look = _aim_look
 	_look_now = _look
@@ -317,42 +512,62 @@ func _fly_seconds() -> float:
 
 
 func _update_flyover(delta: float) -> void:
-	_fly_t += delta
+	# A frame far slower than the ones before it (the course still streaming
+	# in as the hole opens) moves the camera on by about a normal frame, so
+	# the glide slows for an instant rather than jumping.
+	var dt := minf(delta, _fly_dt * 2.0)
+	_fly_dt = lerpf(_fly_dt, dt, 0.1)
+	_fly_t += dt
 	var u := _fly_t / _fly_seconds()
 	if u >= 1.0:
 		end_flyover()
 		return
-	# Ease in and out so the start and the arrival at the green are gentle.
-	var e := u * u * (3.0 - 2.0 * u)
-	position = _above_ground(_fly_point(e))
-	_look_now = _look_now.lerp(_fly_look(e), 1.0 - exp(-delta * 4.0))
+	var s := fly_ease(u) * _fly_length
+	position = _above_ground(_fly_sample(_fly_path, s))
+	_look_now = _fly_sample(_fly_look_path, s)
+	_look = _look_now
 	var to_look := _look_now - position
 	if to_look.length() > 0.1 and absf(to_look.normalized().y) < 0.99:
 		look_at(_look_now)
 
 
-## Point at fraction `u` of the path, Catmull-Rom through its points.
-func _fly_point(u: float) -> Vector3:
-	var n := _fly_path.size()
-	var f := clampf(u, 0.0, 1.0) * (n - 1)
+## Share of the path flown at share `u` of the time: the speed rises
+## smoothly over the first FLY_EASE_IN, holds, and falls away over the last
+## FLY_EASE_OUT (a smoothstep over the whole flight peaked at 1.5 times the
+## average speed in the middle of the hole).
+static func fly_ease(u: float) -> float:
+	u = clampf(u, 0.0, 1.0)
+	var a := FLY_EASE_IN
+	var b := FLY_EASE_OUT
+	var total := 1.0 - a * 0.5 - b * 0.5
+	var d: float
+	if u < a:
+		d = a * _ramp_area(u / a)
+	elif u > 1.0 - b:
+		d = total - b * _ramp_area((1.0 - u) / b)
+	else:
+		d = a * 0.5 + (u - a)
+	return d / total
+
+
+## Area under smoothstep from 0 to `x`.
+static func _ramp_area(x: float) -> float:
+	return x * x * x - x * x * x * x * 0.5
+
+
+## The point `s` metres along an evenly spaced flyover path.
+func _fly_sample(path: PackedVector3Array, s: float) -> Vector3:
+	var n := path.size()
+	var f := clampf(s / maxf(_fly_step, 0.001), 0.0, n - 1.0)
 	var i := mini(int(f), n - 2)
-	var t := f - i
-	var p0 := _fly_path[maxi(i - 1, 0)]
-	var p1 := _fly_path[i]
-	var p2 := _fly_path[i + 1]
-	var p3 := _fly_path[mini(i + 2, n - 1)]
-	return 0.5 * ((2.0 * p1) + (-p0 + p2) * t + (2.0 * p0 - 5.0 * p1 + 4.0 * p2 - p3) * t * t + (-p0 + 3.0 * p1 - 3.0 * p2 + p3) * t * t * t)
+	# Catmull-Rom through the samples, so speed and turn never kink at one.
+	var p0 := path[maxi(i - 1, 0)]
+	var p3 := path[mini(i + 2, n - 1)]
+	return path[i].cubic_interpolate(path[i + 1], p0, p3, f - i)
 
 
-## Looks a little way ahead along the path, and at the pin near the end.
-func _fly_look(u: float) -> Vector3:
-	var ahead := _fly_point(minf(u + 0.3, 1.0))
-	var ground := Vector3(ahead.x, _ground(ahead), ahead.z)
-	return ground.lerp(_fly_pin, smoothstep(0.55, 0.95, u))
-
-
-func _lift(p: Vector3, up: float) -> Vector3:
-	return Vector3(p.x, _ground(p) + up, p.z)
+func _ground2(p: Vector2) -> float:
+	return terrain.height_at(p.x, p.y) if terrain != null else 0.0
 
 
 func _place_for_landing() -> void:
