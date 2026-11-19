@@ -274,6 +274,7 @@ func _test_geo_raster() -> void:
 
 func _test_national_lidar() -> void:
 	check(str(NationalLidar.source_for(51.4, -0.3).get("id", "")) == "ea", "England uses the Environment Agency")
+	check(str(NationalLidar.source_for(53.43, -6.12).get("id", "")) != "ea" and str(NationalLidar.source_for(50.1, -5.5).get("id", "")) == "ea", "Dublin is not England, Cornwall is")
 	check(str(NationalLidar.source_for(52.2, 5.2).get("id", "")) == "ahn", "the Netherlands use AHN")
 	check(str(NationalLidar.source_for(36.57, -121.95).get("id", "")) == "3dep", "California uses 3DEP")
 	check(str(NationalLidar.source_for(-33.9, 151.2).get("id", "")) == "mapterhorn", "Sydney tries Mapterhorn")
@@ -1535,12 +1536,18 @@ func _test_search_ranking() -> void:
 	check(names == ["Pebble Beach Golf Course", "Spyglass Hill Golf Course", "Poppy Hills Golf Course", "", "Pebble Beach Golf Links"], "search ranking (%s)" % [names])
 	var club := [{"name": "The Carnoustie Burnside Course", "golf": true}, {"name": "The Carnoustie Buddon Course", "golf": true}, {"name": "The Carnoustie Championship Course", "golf": true}]
 	check(str(RealCourseFetcher.rank(club, "Carnoustie Golf Links")[0]["name"]) == "The Carnoustie Championship Course", "a club's championship course first")
+	var troon := [{"name": "Troon Lochgreen", "golf": true, "near": 900.0}, {"name": "Old Course", "golf": true, "near": 150.0}, {"name": "Royal Troon Golf Club", "golf": false}]
+	check(str(RealCourseFetcher.rank(troon, "Royal Troon Golf Club")[0]["name"]) == "Old Course", "the Old Course round the club's clubhouse before the town's course")
 	check(RealCourseBuilder.display_name({"name": "ملعب خور دبي للغولف", "name:en": "Dubai Creek Golf Course"}) == "Dubai Creek Golf Course", "an Arabic name gives way to its English one")
 	check(RealCourseBuilder.display_name({"name": "Golf de Saint-Cloud", "name:en": "Saint-Cloud Golf Club"}) == "Golf de Saint-Cloud", "a Latin-script name is kept")
 	check(RealCourseBuilder.display_name({"name": "霞ヶ関カンツリー倶楽部"}) == "霞ヶ関カンツリー倶楽部", "with no English name, its own")
 	var tries := RealCourseFetcher.search_names("Real Club Valderrama")
 	check("valderrama golf club" in Array(tries).map(func(t: String) -> String: return t.to_lower()), "a Spanish club name is also tried as a golf club (%s)" % tries)
 	check(RealCourseFetcher.search_names("Royal County Down Golf Club")[0] == "Royal County Down Golf Course", "the other ending first")
+	var kiawah := [{"name": "Kiawah Island Club - River Course", "golf": true}, {"name": "Cypress Point", "golf": false}]
+	check(not RealCourseFetcher._has_named_golf(kiawah, "Cypress Point Club", false) and RealCourseFetcher._has_named_golf([{"name": "Cypress Point Golf Course", "golf": true}], "Cypress Point Golf Course", true), "a course in a district of the same name is not the club")
+	var cypress := RealCourseFetcher.search_names("Cypress Point Club")
+	check("Cypress Point Golf Course" in cypress and cypress.find("Cypress Point Golf Course") < cypress.find("cypress golf course") and not "Cabo del Golf Course" in RealCourseFetcher.search_names("Cabo del Sol Ocean Course"), "the name cut short a word at a time (%s)" % cypress)
 	check(RealCourseBuilder.is_main_course("Sunningdale Old Course") and not RealCourseBuilder.is_main_course("Sunningdale New Course") and not RealCourseBuilder.is_main_course("Oldham Golf Club"), "a club's main course by name")
 	var inside := {"lat": 46.31, "lon": 7.47, "box": ["46.30", "46.32", "7.46", "7.48"]}
 	var off := {"lat": 46.32, "lon": 7.49, "box": ["46.315", "46.325", "7.485", "7.495"]}
