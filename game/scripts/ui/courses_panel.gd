@@ -27,6 +27,9 @@ var _web_added := PackedStringArray()
 var _confirm := ""  ## "delete:<path>" or "update:<path>" pressed once
 var _web := false
 
+## Each row's course picture.
+const ROW_PICTURE := Vector2(128, 72)
+
 
 func _ready() -> void:
 	MenuStyle.panel(self)
@@ -68,7 +71,10 @@ func _ready() -> void:
 	buttons.add_child(_add_links)
 	_cancel = MenuStyle.button("Cancel update")
 	_cancel.visible = false
-	_cancel.pressed.connect(func() -> void: _updater.cancel())
+	_cancel.pressed.connect(func() -> void:
+		_cancel.text = "Cancelling..."
+		_cancel.disabled = true
+		_updater.cancel())
 	buttons.add_child(_cancel)
 	_back = MenuStyle.button("Back")
 	_back.pressed.connect(func() -> void:
@@ -80,7 +86,7 @@ func _ready() -> void:
 	_files.imported.connect(_on_imported)
 	add_child(_files)
 	_updater = RealCourseUpdate.new()
-	_updater.progress.connect(_set_status)
+	_updater.progress.connect(func(_t: String) -> void: _show_update_progress())
 	_updater.finished.connect(_on_updated)
 	add_child(_updater)
 	visible = false
@@ -190,7 +196,19 @@ func _row(e: Dictionary) -> Control:
 		if _confirm.ends_with(":" + path):
 			note.modulate = MenuStyle.WARNING
 		row.add_child(note)
-	return row
+	# The course's picture at the left of its row.
+	var line := HBoxContainer.new()
+	line.add_theme_constant_override("separation", 14)
+	var pic := CoursePicture.new(ROW_PICTURE)
+	pic.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	pic.show_course(path)
+	if e["hidden"]:
+		pic.modulate = Color(1, 1, 1, 0.5)
+	line.add_child(pic)
+	row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	row.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	line.add_child(row)
+	return line
 
 
 func _set_status(text: String) -> void:
@@ -209,6 +227,8 @@ func _on_delete(path: String) -> void:
 		remove_web_pressed.emit(path)
 		return
 	var err := CourseLibrary.delete_course(path)
+	if err == OK:
+		CoursePictures.forget(path)
 	if CourseDesigner.last_path == path:
 		CourseDesigner.last_path = ""
 	_set_status("Deleted %s." % name if err == OK else "Couldn't delete %s (%s)." % [name, error_string(err)])
@@ -232,12 +252,30 @@ func _on_update(path: String) -> void:
 		_fill()
 		return
 	_confirm = ""
+	_cancel.text = "Cancel update"
+	_cancel.disabled = false
 	_cancel.visible = true
+	set_process(true)
 	_updater.run(path)
 	_fill()
 
 
+## The step under way and the time taken, kept ticking while it waits.
+func _process(_delta: float) -> void:
+	if _updater.busy:
+		_show_update_progress()
+	else:
+		set_process(false)
+
+
+func _show_update_progress() -> void:
+	var secs := floori((Time.get_ticks_msec() - _updater.started_ms) / 1000.0)
+	_set_status("%s  %d:%02d. Big courses take a few minutes; Cancel update stops it and leaves the course as it was." % [
+		_updater.step if not _updater.step.is_empty() else "Starting...", floori(secs / 60.0), secs % 60])
+
+
 func _on_updated(_ok: bool, text: String) -> void:
+	set_process(false)
 	_cancel.visible = false
 	_set_status(text)
 	_fill()

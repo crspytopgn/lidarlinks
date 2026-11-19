@@ -26,6 +26,12 @@ var _courses_help: Label
 var _view_box: VBoxContainer
 var _summary: Label
 var _next: Label
+## The next event's course.
+var _next_picture: CoursePicture
+## A new career: the courses its events are spread over.
+var _course_strip: HFlowContainer
+const STRIP_PICTURE := Vector2(128, 72)
+const STRIP_MAX := 6
 var _board_title: Label
 var _board: Label
 var _money: Label
@@ -100,6 +106,10 @@ func _build_new(box: VBoxContainer) -> void:
 	_new_box.add_child(_tour_help)
 	_courses_help = _small("", 15)
 	_new_box.add_child(_courses_help)
+	_course_strip = HFlowContainer.new()
+	_course_strip.add_theme_constant_override("h_separation", 8)
+	_course_strip.add_theme_constant_override("v_separation", 8)
+	_new_box.add_child(_course_strip)
 
 
 func _build_view(box: VBoxContainer) -> void:
@@ -113,6 +123,7 @@ func _build_view(box: VBoxContainer) -> void:
 	_next.modulate = Color.WHITE
 	_next.add_theme_color_override("font_color", MenuStyle.ACCENT)
 	_view_box.add_child(_next)
+	_next_picture = CoursePicture.beside(_next, Vector2(192, 108))
 	var columns := HBoxContainer.new()
 	columns.add_theme_constant_override("separation", 24)
 	_view_box.add_child(columns)
@@ -183,6 +194,7 @@ func _fill() -> void:
 		var n := _course_keys.size()
 		_courses_help.text = ("Events are spread over your %d course%s." % [n, "" if n == 1 else "s"]) if n > 0 \
 			else "With no course files loaded, every event is on %s, the built-in course. It has nine holes, so every round is nine holes." % PlaceholderCourseLoader.NAME
+		_fill_strip()
 		return
 	var c := _career
 	if c.season_over():
@@ -201,6 +213,9 @@ func _fill() -> void:
 		lines.append(rec)
 	_summary.text = "\n".join(lines)
 	_next.text = c.next_text()
+	_next_picture.visible = not c.season_over() and c.event < c.schedule.size()
+	if _next_picture.visible:
+		_next_picture.show_course(str(c.schedule[c.event].course_key))
 	var board := c.leaderboard_lines(8)
 	if board.is_empty() and not c.results.is_empty():
 		_board_title.text = "Last event: " + str(c.schedule[c.results.size() - 1].name)
@@ -228,6 +243,20 @@ func _fill() -> void:
 		elif e < c.results.size() and int(c.results[e].pos) == 1:
 			l.add_theme_color_override("font_color", Color(0.6, 1.0, 0.6))
 		_schedule.add_child(l)
+
+
+## Small pictures of the courses a new career's events are spread over.
+func _fill_strip() -> void:
+	for child in _course_strip.get_children():
+		child.queue_free()
+	var keys: Array[String] = []
+	keys.assign(_course_keys if not _course_keys.is_empty() else [""])
+	for i in mini(keys.size(), STRIP_MAX):
+		var pic := CoursePicture.new(STRIP_PICTURE)
+		pic.show_course(keys[i])
+		pic.tooltip_text = _course_names[i] if i < _course_names.size() else PlaceholderCourseLoader.NAME
+		pic.mouse_filter = Control.MOUSE_FILTER_PASS
+		_course_strip.add_child(pic)
 
 
 func _on_tour_selected() -> void:

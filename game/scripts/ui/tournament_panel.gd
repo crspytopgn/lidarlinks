@@ -24,6 +24,11 @@ var _format: OptionButton
 var _format_help: Label
 var _courses: Array[OptionButton] = []
 var _course_labels: Array[Label] = []
+## The picked course's picture (the round row last changed), and the next
+## round's course once the event is under way.
+var _picture: CoursePicture
+var _next_picture: CoursePicture
+var _picture_row := 0
 var _rounds: OptionButton
 var _rounds_label: Label
 var _holes: OptionButton
@@ -114,6 +119,11 @@ func _build_new(box: VBoxContainer) -> void:
 	for k in MAX_COURSE_ROWS:
 		_course_labels.append(_label(grid, "Round %d course" % (k + 1)))
 		_courses.append(_option(grid, []))
+		_courses[k].item_selected.connect(func(_i: int) -> void:
+			_picture_row = k
+			_show_picture())
+	_picture = CoursePicture.beside(grid, Vector2(256, 144), 24, false)
+	_picture.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	_holes = _row(grid, "Holes", ["18 holes", "Front nine (quicker)"])
 	_field_kind = _row(grid, "Field", Tournament.FIELD_NAMES)
 	_size = _row(grid, "Field size", [])
@@ -150,6 +160,7 @@ func _build_view(box: VBoxContainer) -> void:
 	_next.modulate = Color.WHITE
 	_next.add_theme_color_override("font_color", MenuStyle.ACCENT)
 	_view_box.add_child(_next)
+	_next_picture = CoursePicture.beside(_next, Vector2(192, 108))
 	var columns := HBoxContainer.new()
 	columns.add_theme_constant_override("separation", 24)
 	_view_box.add_child(columns)
@@ -186,12 +197,20 @@ func open(keys: PackedStringArray, titles: PackedStringArray) -> void:
 		for n in _course_names:
 			o.add_item(n)
 		o.select(clampi(was, 0, o.item_count - 1))
+	_picture_row = 0
+	_show_picture()
 	_t = Tournament.load_saved()
 	_confirm = ""
 	_problem.text = ""
 	_fill()
 	visible = true
 	_play.grab_focus.call_deferred()
+
+
+## Shows the picture of the course picked on round row _picture_row.
+func _show_picture() -> void:
+	var c := _courses[_picture_row].selected
+	_picture.show_course("" if _course_keys.is_empty() else _course_keys[clampi(c, 0, _course_keys.size() - 1)])
 
 
 func close() -> void:
@@ -221,6 +240,9 @@ func _fill() -> void:
 	_heading.text = "%s   ·   %s, %s field of %d" % [t.title, Tournament.FORMAT_NAMES[t.format],
 		str(Tournament.STRENGTHS[t.strength].name).to_lower(), t.names.size()]
 	_next.text = t.next_text()
+	_next_picture.visible = not t.over()
+	if not t.over():
+		_next_picture.show_course(t.course_keys[t.course_index(t.rounds_played())])
 	_play.text = "Done" if t.over() else ("Play the match" if t.format == Tournament.Format.MATCH else "Play round %d" % (t.rounds_played() + 1))
 	if not t.playing() and not t.over():
 		_play.text = "See it out"

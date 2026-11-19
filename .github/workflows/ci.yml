@@ -246,9 +246,9 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           NOTES: |
-            Built from main. No game data is included; the game loads your own Links 2003 files.
+            LidarLinks, built from main. No game data is included; the original courses load from your own Links 2003 files.
 
-            **Launcher (recommended):** download OpenLinks2003-Launcher for your system. It installs the game, keeps it up to date, shows what's new, sets the options worth choosing before you play, and gets your Links 2003 discs, disc images or install ready.
+            **Launcher (recommended):** download OpenLinks2003-Launcher (the LidarLinks launcher) for your system. It installs the game, keeps it up to date, shows what's new, sets the options worth choosing before you play, and gets your Links 2003 discs, disc images or install ready.
 
             **macOS:** unzip, move the app to Applications, then right-click it and choose Open (the apps are ad-hoc signed, not notarized). On macOS 15 or later, if it still won't open, go to System Settings > Privacy & Security and click Open Anyway.
         run: |

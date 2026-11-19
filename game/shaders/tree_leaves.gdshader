@@ -93,6 +93,34 @@ float hash(vec2 p) {
 	return fract(p.x * p.y);
 }
 
+float value_noise(vec2 p) {
+	vec2 i = floor(p);
+	vec2 f = fract(p);
+	vec2 u = f * f * (3.0 - 2.0 * f);
+	return mix(mix(hash(i), hash(i + vec2(1.0, 0.0)), u.x), mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), u.x), u.y);
+}
+
+// Sun through the crown: in the sun's shadow pass, whether a leaf at world
+// position `w` lets the sunlight by. A real crown is not a solid roof: the
+// sun comes through its gaps and lays flecks of light, a few tens of
+// centimetres to a metre across, over the ground, the trunks and anyone standing in
+// its shade. The gaps run along the sun's rays (the pattern is taken across
+// the light's own view, `right` and `up`), so a gap opens through every
+// layer of leaves at once, as a real one does; they bunch in patches a few
+// metres wide and drift a little as the leaves move in the wind.
+// sun_gap_share is the share of the crown's shadow that is open (0 none).
+const float SUN_GAP_SHARE = 0.2;
+bool sun_gap(vec3 w, vec3 right, vec3 up, float sway) {
+	vec2 p = vec2(dot(w, right), dot(w, up));
+	p += vec2(sin(TIME * 1.3 + p.y * 0.4), cos(TIME * 1.1 + p.x * 0.4)) * 0.04 * sway;
+	float clump = value_noise(p * 0.45 + vec2(17.3, 4.1));
+	float fine = value_noise(p * 1.7) * 0.65 + value_noise(p * 4.3 + vec2(3.7, 9.1)) * 0.35;
+	// Open where the fine noise clears a threshold that the patches move:
+	// more gaps in the thin parts of a crown, almost none in the thick.
+	float open = SUN_GAP_SHARE * mix(0.3, 1.9, clump);
+	return fine > 1.0 - open * 1.6;
+}
+
 void vertex() {
 	info = COLOR;
 	crown_up = normalize((MODEL_MATRIX * vec4(NORMAL, 0.0)).xyz).y;
@@ -333,6 +361,15 @@ void fragment() {
 		// renderer's ambient misses (Compatibility has no sky fill), so a
 		// crown's shaded side stays green instead of black.
 		EMISSION = col * fill + col * transmit * TRANSMIT_TINT;
+	}
+	// The sun's shadow pass is the only orthographic view the leaves are
+	// drawn in outside the impostor bake (main and photo cameras are
+	// perspective).
+	if (!bake && !bake_normal && PROJECTION_MATRIX[3][3] > 0.5) {
+		vec3 w = (INV_VIEW_MATRIX * vec4(VERTEX, 1.0)).xyz;
+		if (sun_gap(w, INV_VIEW_MATRIX[0].xyz, INV_VIEW_MATRIX[1].xyz, foliage_sway)) {
+			alpha = 0.0;
+		}
 	}
 	ALPHA = alpha;
 	ALPHA_SCISSOR_THRESHOLD = 0.5;

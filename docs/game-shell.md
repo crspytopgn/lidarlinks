@@ -16,6 +16,7 @@ the browser and on desktop today.
 | Spin ball (under the wind) | Click, tap or drag where the club meets the ball: low for more backspin (higher), high for less (lower), left to draw or hook, right to fade or slice. Right-click or double-click resets |
 | Space or left click | Swing meter: start, set power, set accuracy |
 | Space or left click | Skip the ball flight, continue after a shot |
+| Y (or the View target button) | View target: the camera glides out to stand short of and above where the shot is aimed, looking at the landing area; aiming and changing club still work out there. Y again, the button, or a swing press glides back behind the ball (`TargetView`, `target_view.gd`) |
 | Tab | Show or hide the scorecard |
 | F1 | Broadcast and Tour: bring back the key hints, folded away from the second hole |
 | Esc | Menu: resume, scorecard, settings (quality, fullscreen, v-sync, anti-aliasing, 3D resolution, field of view), restart, main menu |
@@ -43,8 +44,8 @@ before the downswing calls the swing off. A tap starts the swing meter, and
 later taps click it.
 
 On a game pad the left stick or D-pad left and right aim (LB for fine aim),
-D-pad up and down change club, A is the swing meter (and continues), Back
-shows the scorecard and Start opens the menu. The right stick is the mouse
+D-pad up and down change club, A is the swing meter (and continues), Y
+views the target, Back shows the scorecard and Start opens the menu. The right stick is the mouse
 swing: pull it back, then push it forward. B calls it off before the
 downswing; the next swing waits for the stick to come back to rest.
 
@@ -829,6 +830,12 @@ the physics, the swing and the scoring are the same in both.
   ball) and `RoundCamera` follows it. Putts get a low tracking camera.
 - `RoundCamera.start_flyover()`: each hole opens with a flight from behind
   the tee, along the hole's route, down to the green. A click skips it.
+  The route becomes one smoothed curve sampled every 2 m by distance, so
+  the speed is even and eases in and out; the height rides a smoothed
+  envelope of the ground (never climbing faster than a quarter of the
+  distance flown, spread over at least a second of flight) and the view
+  looks 90 m ahead, blending to the pin. A slow frame advances it by about
+  one normal frame, so a streaming hitch never jumps the camera.
 - `scripts/broadcast/ball_tracer.gd`: the shot tracer, a thin
   camera-facing red line with a narrow soft edge and a small dot at the
   ball, as Toptracer draws it on TV, widened across the camera's view so it
@@ -1019,7 +1026,11 @@ Nothing in the round needs to change.
   `tools/audio/build_free_sounds.py` from `tools/audio/free_sounds.json`;
   credits in `game/assets/sounds/CREDITS.md`): a strike per club kind
   (driver, fairway wood or hybrid, iron, wedge) with turf, grass or sand
-  layered in by lie, landings by surface (a firm thump on the fairway and tee, a swish in the rough, a soft thud on the green, sand) and the crowd takes, each played
+  layered in by lie, landings by surface (a firm, crisp thump on the fairway and tee from a real ball
+  bouncing on firm ground, with its low body and a short crack and no grass
+  in it; a dull muffled thud or a swish in the rough; a lighter pock on the
+  green; sand. Each surface comes from a different recording, so the fairway
+  never sounds like the rough) and the crowd takes, each played
   with a little random pitch and level. Courses with no ambient sounds of
   their own get `FreeAmbience`. Like a real course on TV it is mostly
   quiet: wind in the trees (always a little, more with the wind); a bed

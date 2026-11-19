@@ -57,16 +57,18 @@ const char* surface_name(Surface s) {
 
 SurfaceParams surface_params(Surface s) {
   //        restitution, friction, softness, rolling resistance, lie power, lie spin
+  // The rough's lie power and spin are fitted so 5-wood to lob wedge lose
+  // what Links 2003's own lies take off them (carry and total, flat ground).
   switch (s) {
     case Surface::Tee: return {1.00, 0.40, 1.0, 0.16, 1.00, 1.00};
     case Surface::Fairway: return {1.00, 0.40, 1.0, 0.16, 1.00, 1.00};
     case Surface::Fringe: return {0.90, 0.45, 1.0, 0.10, 0.95, 0.90};
     case Surface::Green: return {0.85, 0.45, 1.0, 0.055, 1.00, 1.00};
-    case Surface::Rough: return {0.60, 0.60, 1.2, 0.30, 0.85, 0.60};
-    case Surface::DeepRough: return {0.40, 0.80, 1.4, 0.50, 0.70, 0.40};
+    case Surface::Rough: return {0.60, 0.60, 1.2, 0.30, 0.97, 0.74};
+    case Surface::DeepRough: return {0.40, 0.80, 1.4, 0.50, 0.855, 0.66};
     case Surface::Sand: return {0.12, 0.90, 1.6, 0.90, 0.75, 0.70};
     case Surface::Water: return {0.00, 1.00, 1.0, 1.0, 0.00, 0.00};
-    case Surface::OutOfBounds: return {0.60, 0.60, 1.2, 0.30, 0.85, 0.60};
+    case Surface::OutOfBounds: return {0.60, 0.60, 1.2, 0.30, 0.97, 0.74};
   }
   return {1, 0.4, 1.0, 0.16, 1, 1};
 }

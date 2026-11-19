@@ -1,6 +1,7 @@
 extends RefCounted
 ## Checks for the Courses page: CourseLibrary (adding, deleting, hiding),
-## RealCourseUpdate (rebuilding a real course) and CoursesPanel. run_tests.gd
+## RealCourseUpdate (rebuilding a real course), CoursesPanel and the course
+## pictures (CoursePictures, CoursePicture, CourseSnapshot). run_tests.gd
 ## calls run_all() and reports what it returns.
 
 var failures: Array[String] = []
@@ -14,6 +15,7 @@ func run_all() -> Array[String]:
 	_test_hiding()
 	_test_real_update()
 	_test_panel()
+	_test_pictures()
 	return failures
 
 
@@ -174,4 +176,35 @@ func _test_panel() -> void:
 	panel.open(PackedStringArray(["/games/links/Courses/PANEL.crz"]))
 	check(panel._list.get_child_count() == panel.entries().size(), "courses page: a row per course")
 	check(panel.entries().size() >= 2 + PlaceholderCourseLoader.EPIC.size(), "courses page: the built-in courses and the game's")
+	var row := panel._list.get_child(0)
+	check(row.get_child_count() > 0 and row.get_child(0) is CoursePicture, "courses page: each row starts with the course's picture")
 	panel.free()
+
+
+func _test_pictures() -> void:
+	for key: String in CoursePictures.BUILT_IN:
+		check(CoursePictures.texture_for(key) != null, "pictures: built-in course %s ships a picture" % key)
+		check(not CoursePictures.needs_picture(key), "pictures: a built-in course isn't photographed in play")
+	var key := "/games/links/Courses/PICTURE TEST.crz"
+	CoursePictures.forget(key)
+	check(CoursePictures.texture_for(key) == null, "pictures: a course not played yet has none")
+	check(CoursePictures.needs_picture(key), "pictures: a course not played yet is photographed")
+	var pic := CoursePicture.new()
+	pic.show_course(key)
+	check(not pic.has_picture(), "pictures: the picker shows a placeholder card until then")
+	pic.free()
+	var img := Image.create(CourseSnapshot.RENDER_SIZE.x, CourseSnapshot.RENDER_SIZE.y, false, Image.FORMAT_RGBA8)
+	img.fill(Color(0.2, 0.5, 0.2))
+	check(CoursePictures.save(key, img) == OK, "pictures: a picture is saved")
+	var tex := CoursePictures.texture_for(key)
+	check(tex != null and Vector2i(tex.get_size()) == CoursePictures.SIZE, "pictures: it is read back at the picker size")
+	check(not CoursePictures.needs_picture(key), "pictures: a course with a picture isn't photographed again")
+	CoursePictures.forget(key)
+	check(CoursePictures.texture_for(key) == null and not FileAccess.file_exists(CoursePictures.file_for(key)), "pictures: deleting a course drops its picture")
+	# The camera: up over the tee, a little down the hole, looking down it.
+	var hole := HoleData.new()
+	hole.tee = Vector3.ZERO
+	hole.pin = Vector3(0, 0, 400)
+	var f := CourseSnapshot.framing(hole)
+	check(is_equal_approx(f[0].y, CourseSnapshot.UP_M) and f[0].z > 0.0 and f[0].z < 30.0, "pictures: the camera is high over the tee")
+	check(f[1].is_equal_approx(hole.pin), "pictures: with no ground it looks at the pin")

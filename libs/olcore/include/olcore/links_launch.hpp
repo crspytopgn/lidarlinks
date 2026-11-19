@@ -149,6 +149,15 @@ struct LinksSwing {
 // lie, and sand uses the contact as in links_apply_lie.
 void links_apply_swing(LinksStrike& s, const LinksSwing& w, const LinksSurface& lie, LinksRand& rng);
 
+// The share of ball speed a clean strike (no miss on the meter) from `lie`
+// keeps with `club` at `skill`, as links_apply_swing gives it: the lie's
+// LiePower, or less where the strike quality limit bites. That limit is what
+// makes the driver and the 3-wood weak off the ground (0.6 and 0.8 of the
+// speed from the rough at the hardest level). It leaves out the fairway's
+// random wobble of up to 0.005. Sand and the putter keep LiePower; a ball on
+// the tee peg is not limited at all, so callers should not ask for it.
+double links_clean_strike_speed(int club, const LinksSurface& lie, int skill);
+
 // A computer golfer's steadiness with each kind of shot, 0 to 100 (more is
 // steadier; the game keeps these in each golfer's definition). `max_power` is
 // the most power, in percent, the golfer swings with; a plan past it is

@@ -49,7 +49,7 @@ func _test_release() -> void:
 		"target_commitish": "82a49a2f5c89955e4afdbb2f9066da7c922d9190",
 		"name": "Latest build (82a49a2)",
 		"published_at": "2026-11-01T13:23:21Z",
-		"html_url": "https://github.com/crspytopgn/openlinks2003/releases/tag/latest",
+		"html_url": "https://github.com/crspytopgn/lidarlinks/releases/tag/latest",
 		"assets": [
 			{"name": "OpenLinks2003-Linux.tar.gz", "size": 61283934, "browser_download_url": "https://example.invalid/l.tgz", "digest": "sha256:a3733c4b"},
 			{"name": "OpenLinks2003-macOS.zip", "size": 93642452, "browser_download_url": "https://example.invalid/m.zip", "digest": "sha256:6cf014b0"},

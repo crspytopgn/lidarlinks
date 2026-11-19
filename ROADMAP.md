@@ -116,6 +116,7 @@ product lead builds it.
   - [x] Tour presentation (off by default): leaderboard rail, shot-data bar, driving zone, putt read, hole map with shots ([game-shell.md](docs/game-shell.md#tour))
   - [x] Green reading: Links 2003's grid (yellow or by height), breakline indicator and putting assistant, scaled by skill as the game does; crouch, behind-the-hole, low-side and overhead read views; green speed as a stimp reading ([green-reading.md](docs/formats/green-reading.md))
   - [x] The Green Analyzer's free orbit camera (drag and zoom in the read views), a real-depth cup, and the TV grid's dots running downhill
+  - [x] View target (Y, pad Y or the on-screen button): a smooth glide out to look at the landing area, as 2K25 and GSPro do, and back
   - [ ] The mouse swing's backswing mark for the putting assistant
 - [x] Putting practice: a practice green with several cups on each hole's green, free putting with distance and slope, around the clock and a lag ladder ([game-shell.md](docs/game-shell.md#putting-practice-and-green-reading))
   - [ ] Links 2003's other practice options on a course's holes: driving only, chipping only, play through (the practice range is in)

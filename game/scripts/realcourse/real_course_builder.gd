@@ -559,7 +559,7 @@ func build_steps(c: DesignedCourse, height: Callable, fallback := Callable()) ->
 	var fill := {"gaps": PackedInt32Array(), "diff": 0.0, "n": 0}
 	# The other courses of a club share the ground: it is read once.
 	var cached := _ground_cache.size() == c.heights.size()
-	var rows := maxi(1, HEIGHT_SAMPLES_PER_STEP / c.cols)
+	var rows := maxi(1, HEIGHT_SAMPLES_PER_STEP / (c.cols * (4 if lidar_ground else 1)))
 	if not cached:
 		for j0 in range(0, c.rows, rows):
 			steps.append(_fill_height_rows.bind(c, j0, mini(j0 + rows, c.rows), height, fallback, fill))
@@ -1026,7 +1026,7 @@ func _fill_height_rows(c: DesignedCourse, j0: int, j1: int, height: Callable, fa
 			var p := c.sample_pos(i, j)
 			var lat := frame.lat_of(p)
 			var lon := frame.lon_of(p)
-			var h := float(height.call(lat, lon))
+			var h := _cell_height(height, p) if lidar_ground else float(height.call(lat, lon))
 			var k := j * c.cols + i
 			if is_nan(h):
 				gaps.append(k)
@@ -1038,6 +1038,22 @@ func _fill_height_rows(c: DesignedCourse, j0: int, j1: int, height: Callable, fa
 	fill["gaps"] = gaps
 	fill["diff"] = diff
 	fill["n"] = diff_n
+
+
+## Fine (lidar) ground averaged over the grid cell round `p`, NAN if no
+## sample has data. One point a cell, read between the lidar's pixels,
+## smooths some cells and not others in a regular beat, which drew faint
+## straight lines across the ground every few tens of metres (West Essex).
+func _cell_height(height: Callable, p: Vector2) -> float:
+	var q := DesignedCourse.CELL * 0.25
+	var sum := 0.0
+	var n := 0
+	for o: Vector2 in [Vector2(-q, -q), Vector2(q, -q), Vector2(-q, q), Vector2(q, q)]:
+		var h := float(height.call(frame.lat_of(p + o), frame.lon_of(p + o)))
+		if not is_nan(h):
+			sum += h
+			n += 1
+	return sum / n if n > 0 else NAN
 
 
 func _finish_heights(c: DesignedCourse, _fallback: Callable, fill: Dictionary) -> void:

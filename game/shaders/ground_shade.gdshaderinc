@@ -45,6 +45,9 @@ float cloud_light(vec2 p) {
 	return 1.0 - cloud_shadow * smoothstep(0.5, 0.68, n);
 }
 
+// The least of the sky's light the baked occlusion leaves on the ground.
+const float WOOD_FLOOR_LIGHT = 0.6;
+
 // How much light reaches the ground at world (x, z) `p`, `dist` metres
 // from the camera: multiply the albedo by it.
 float ground_shading(vec2 p, float dist) {
@@ -65,5 +68,10 @@ float ground_shading(vec2 p, float dist) {
 	float fleck = smoothstep(0.58, 0.78, cloud_noise(p * 0.75) * 0.6 + cloud_noise(p * 2.1 + vec2(5.3, 2.9)) * 0.4);
 	float baked = mix(1.0, mix(s.r, 1.0, fleck * 0.65), ground_sun_shadow);
 	float sun = mix(1.0, baked, edge * smoothstep(ground_shade_near * 0.8, ground_shade_near, dist));
-	return clouds * sun * mix(1.0, s.g, edge);
+	// The occlusion stamps multiply, so in a wood where three or four crowns
+	// overlap the grass got an eighth of its light or less on top of the
+	// sun's shadow: near black (2026-11-19). The floor of a real wood still
+	// gets the sky through the gaps and the light bounced off the leaves
+	// and the sunlit ground around.
+	return clouds * sun * mix(1.0, max(s.g, WOOD_FLOOR_LIGHT), edge);
 }

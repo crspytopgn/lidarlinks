@@ -189,10 +189,10 @@ static func companions(path: String) -> Array[String]:
 # --- Adding ------------------------------------------------------------------------
 
 ## What the desktop Add button takes.
-const ADD_FILTERS := ["*.olc ; OpenLinks course", "*.crz, *.rng ; Links course", "*.zip ; Course download"]
+const ADD_FILTERS := ["*.olc ; LidarLinks course", "*.crz, *.rng ; Links course", "*.zip ; Course download"]
 
 
-## Adds the course file at `src` (desktop): an OpenLinks .olc (with its
+## Adds the course file at `src` (desktop): a LidarLinks .olc (with its
 ## photo if it sits beside it), a Links .crz/.rng with its companions, or a
 ## course's .zip download. Returns {"ok", "message", "paths"}.
 static func add_file(src: String) -> Dictionary:
@@ -223,7 +223,7 @@ static func add_design(bytes: PackedByteArray, file_name: String, photo_dir := "
 		bytes = bytes.decompress_dynamic(-1, FileAccess.COMPRESSION_GZIP)
 	var c := DesignedCourse.from_json(bytes.get_string_from_utf8())
 	if c == null:
-		return {"ok": false, "message": "%s isn't an OpenLinks course file." % file_name, "paths": PackedStringArray()}
+		return {"ok": false, "message": "%s isn't a LidarLinks course file." % file_name, "paths": PackedStringArray()}
 	var target := c.save_path()
 	if not photo_dir.is_empty() and photo_dir != DesignedCourse.FOLDER:
 		for key in ["photo", "ground"]:

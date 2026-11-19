@@ -173,6 +173,7 @@ static func create(p_look: PlayerLook = null, p_texture_cap := 0) -> FreeGolfer:
 	golfer._skeleton = skeletons[0]
 	var twist := GolferTwist.rig(golfer._skeleton)
 	golfer._feet = GolferFeet.new()
+	golfer._feet.player = player
 	golfer._skeleton.add_child(golfer._feet)
 	golfer._look = GolferLook.new()
 	golfer._skeleton.add_child(golfer._look)
@@ -277,7 +278,7 @@ func apply_look(p_look: PlayerLook) -> void:
 				_flex.add_material(pm)
 			mat = pm
 		elif tint == "person_hair":
-			mat = _matt(std)
+			mat = _plain(_matt(std))
 		elif is_skin:
 			mat = GolferSurface.skin_shader(std, look, _skin_regions(parts, mat_name), _face_detail(parts, mat_name))
 			if mat == null:
@@ -306,10 +307,10 @@ func apply_look(p_look: PlayerLook) -> void:
 			_cloth.add_occluded(cloth)
 			mat = cloth
 		else:
-			mat = GolferSurface.cloth(std) if _is_cloth(parts, mat_name) else _matt(std)
+			mat = _plain(GolferSurface.cloth(std) if _is_cloth(parts, mat_name) else _matt(std))
 		if mi.mesh.get_surface_count() > 1:
 			mi.set_surface_override_material(0, mat)
-			mi.set_surface_override_material(1, GolferSurface.glove())
+			mi.set_surface_override_material(1, _plain(GolferSurface.glove()))
 		else:
 			mi.material_override = mat
 		if binds.is_empty():
@@ -528,6 +529,14 @@ static func _is_cloth(parts: GolferParts, material_name: String) -> bool:
 
 ## Cloth, skin and hair as matt as they are in daylight: shinier materials
 ## look like plastic under the Photoreal sun.
+## `mat` as GolferSurface.plain, taking the body's shade (GolferCloth).
+func _plain(mat: StandardMaterial3D) -> Material:
+	var m := GolferSurface.plain(mat)
+	if m is ShaderMaterial:
+		_cloth.add_occluded(m)
+	return m
+
+
 static func _matt(mat: StandardMaterial3D) -> StandardMaterial3D:
 	mat.albedo_color = GolferSurface.real_albedo(mat.albedo_color)
 	mat.roughness = maxf(mat.roughness, 0.8)

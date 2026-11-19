@@ -9,12 +9,15 @@ extends PanelContainer
 
 signal start_pressed(setup: RoundSetup, course_index: int)
 signal back_pressed
+## Asks for Select golfer (GolferSelectPanel) on this player.
+signal golfer_pressed(player_name: String)
 
 enum { PLAY_ROUND, PLAY_RANGE, PLAY_TARGETS, PLAY_PUTTING_GREEN, PLAY_COURSE_GREENS, PLAY_COURSE_TEES }
 const PLAY_NAMES: Array[String] = ["A round", "Driving range", "Range target game", "Practice putting green",
 	"Putting on this course's greens", "Hitting from this course's tees"]
 
 var _course: OptionButton
+var _picture: CoursePicture
 var _tees: OptionButton
 var _holes: OptionButton
 var _mode: OptionButton
@@ -32,6 +35,7 @@ var _speed: OptionButton
 var _swing: OptionButton
 var _indexes: Array[LineEdit] = []
 var _records: Array[Label] = []
+var _golfers: Array[Button] = []
 var _profiles := PlayerProfiles.new()
 var _rows: Array[HBoxContainer] = []
 var _problem: Label
@@ -65,6 +69,7 @@ func _ready() -> void:
 	box.add_child(grid)
 	_course = _row(grid, "Course", [])
 	_course.custom_minimum_size = Vector2(300, 40)
+	_course.item_selected.connect(_show_picture.unbind(1))
 	_tees = _row(grid, "Tees", RoundSetup.TEES_NAMES)
 	_holes = _row(grid, "Holes", RoundSetup.HOLES_NAMES)
 	_pins = _row(grid, "Pins", RoundSetup.PINS_NAMES)
@@ -99,10 +104,15 @@ func _ready() -> void:
 	_mode_help.modulate = Color(1, 1, 1, 0.75)
 	box.add_child(_mode_help)
 
+	# The players and the result code, with the chosen course's picture to
+	# their right (the settings above take the full width).
+	var lower := VBoxContainer.new()
+	lower.add_theme_constant_override("separation", 12)
+	box.add_child(lower)
 	var players := GridContainer.new()
 	players.columns = 2
 	players.add_theme_constant_override("h_separation", 24)
-	box.add_child(players)
+	lower.add_child(players)
 	var counts: Array = []
 	for n in RoundSetup.MAX_PLAYERS:
 		counts.append("1 player" if n == 0 else "%d players" % (n + 1))
@@ -125,6 +135,13 @@ func _ready() -> void:
 		who.item_selected.connect(func(_item: int) -> void: _on_name_changed(i))
 		row.add_child(who)
 		_who.append(who)
+		var golfer_button := MenuStyle.button("Golfer")
+		golfer_button.custom_minimum_size = Vector2(170, 34)
+		golfer_button.add_theme_font_size_override("font_size", 15)
+		golfer_button.tooltip_text = "Select golfer: who this player plays as"
+		golfer_button.pressed.connect(func() -> void: golfer_pressed.emit(_player_name(i)))
+		row.add_child(golfer_button)
+		_golfers.append(golfer_button)
 		var index := LineEdit.new()
 		index.max_length = 5
 		index.custom_minimum_size = Vector2(80, 34)
@@ -143,14 +160,14 @@ func _ready() -> void:
 		team.add_item("Team B")
 		team.item_selected.connect(_refresh.unbind(1))
 		row.add_child(team)
-		box.add_child(row)
+		lower.add_child(row)
 		_names.append(edit)
 		_teams.append(team)
 		_rows.append(row)
 
 	var code_row := HBoxContainer.new()
 	code_row.add_theme_constant_override("separation", 8)
-	box.add_child(code_row)
+	lower.add_child(code_row)
 	_code = LineEdit.new()
 	_code.placeholder_text = "A friend's result code (optional): play their course and wind"
 	_code.custom_minimum_size = Vector2(560, 36)
@@ -167,8 +184,10 @@ func _ready() -> void:
 	_challenge_info.custom_minimum_size = Vector2(600, 0)
 	_challenge_info.add_theme_font_size_override("font_size", 15)
 	_challenge_info.visible = false
-	box.add_child(_challenge_info)
+	lower.add_child(_challenge_info)
 
+	_picture = CoursePicture.beside(lower, PICTURE_SIZE, 28, false)
+	_picture.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	_problem = Label.new()
 	_problem.add_theme_color_override("font_color", MenuStyle.WARNING)
 	box.add_child(_problem)
@@ -185,12 +204,19 @@ func _ready() -> void:
 	visible = false
 
 
+## Shows the chosen course's picture.
+func _show_picture() -> void:
+	var i := _course.selected
+	_picture.show_course("" if i <= 0 or i > course_paths.size() else course_paths[i - 1])
+
+
 ## Shows the page with `courses` to choose from and `saved` filled in.
 func open(courses: PackedStringArray, selected: int, saved: RoundSetup) -> void:
 	_course.clear()
 	for c in courses:
 		_course.add_item(c)
 	_course.select(clampi(selected, 0, courses.size() - 1))
+	_show_picture()
 	_tees.select(saved.tees)
 	_holes.select(saved.holes)
 	_pins.select(saved.pins)
@@ -210,6 +236,7 @@ func open(courses: PackedStringArray, selected: int, saved: RoundSetup) -> void:
 		_teams[i].select(saved.teams[i] if i < saved.teams.size() else i % 2)
 		_who[i].select(saved.computer_level(i) + 1)
 		_fill_index(i)
+		_fill_golfer(i)
 	_clear_code()
 	visible = true
 	_start.grab_focus.call_deferred()
@@ -291,7 +318,33 @@ func _fill_index(i: int) -> void:
 
 func _on_name_changed(i: int) -> void:
 	_fill_index(i)
+	_fill_golfer(i)
 	_refresh()
+
+
+## Shows on each human player's Golfer button who they play as (their
+## saved golfer, or the standard one); computer golfers have their own.
+func refresh_golfers() -> void:
+	_profiles = PlayerProfiles.load_saved()
+	for i in _golfers.size():
+		_fill_golfer(i)
+
+
+func _fill_golfer(i: int) -> void:
+	var human := _who[i].selected - 1 == RoundSetup.HUMAN
+	_golfers[i].visible = human
+	if not human:
+		return
+	var look := _profiles.look_of(_player_name(i))
+	_golfers[i].text = "Golfer: " + golfer_name(look if look != null else PlayerLook.default_look())
+
+
+## The name a look's golfer goes by on the setup page.
+static func golfer_name(look: PlayerLook) -> String:
+	for c: Array in GolferSelectPanel.choices():
+		if c[0] == look.person:
+			return c[1]
+	return "Custom"
 
 
 ## Moves the player count into what the mode allows.
@@ -382,6 +435,7 @@ func _open_code() -> void:
 		return
 	_challenge = rec
 	_course.select(slot)
+	_show_picture()
 	_tees.select(rec.tees)
 	_holes.select(rec.holes)
 	_pins.select(rec.pins)
@@ -433,6 +487,8 @@ func _challenge_slot(rec: RoundRecord) -> int:
 
 ## Width of the row labels, the same in every grid so the dropdowns line up.
 const LABEL_W := 100.0
+## The chosen course's picture, right of the players.
+const PICTURE_SIZE := Vector2(320, 180)
 
 
 func _row(grid: GridContainer, label: String, items: Array) -> OptionButton:

@@ -23,6 +23,12 @@ var _online: OnlinePanel
 var _settings: SettingsPanel
 var _players: PlayersPanel
 var _creator: PlayerCreator
+var _golfer_select: GolferSelectPanel
+## Where the player creator goes back to: the Players page, or Select
+## golfer (and from there the round setup page) when opened from it.
+var _creator_from_select := false
+## Select golfer was opened from the round setup page, which it goes back to.
+var _select_from_setup := false
 var _career: CareerPanel
 var _tournament: TournamentPanel
 var _courses: CoursesPanel
@@ -39,7 +45,21 @@ var _busy := false
 static var _opened_from_launcher := false
 
 
+## The name players see. project.godot keeps config/name "OpenLinks2003"
+## because it names the desktop save folder (user://) that the launcher and
+## existing players' courses and settings live in, so the window and the web
+## page are titled here instead.
+const GAME_NAME := "LidarLinks"
+
+
+func _show_title() -> void:
+	get_window().title = GAME_NAME
+	if OS.has_feature("web"):
+		JavaScriptBridge.eval("document.title = '%s'" % GAME_NAME, true)
+
+
 func _ready() -> void:
+	_show_title()
 	_graphics = GraphicsSettings.load_saved()
 	get_window().content_scale_factor = GraphicsSettings.UI_SCALES[_graphics.ui_scale]
 	Glass.allow_blur = _graphics.quality != GraphicsSettings.Quality.LOW
@@ -105,6 +125,11 @@ func _build_ui() -> void:
 	_creator = PlayerCreator.new()
 	_creator.closed.connect(_close_creator)
 	add_child(_creator)
+	_golfer_select = GolferSelectPanel.new()
+	_golfer_select.closed.connect(_close_golfer_select)
+	_golfer_select.edit_requested.connect(_edit_from_select)
+	add_child(_golfer_select)
+	_setup.golfer_pressed.connect(_open_golfer_select_from_setup)
 	_career = CareerPanel.new()
 	_career.back_pressed.connect(_close_career)
 	_career.play_pressed.connect(_on_career_play)
@@ -132,7 +157,7 @@ func _build_ui() -> void:
 	box.add_child(_bar)
 	_build_community(box)
 	var note := Label.new()
-	note.text = "OpenLinks2003 contains nothing from the original game. Your files are read on your own computer.\n" + BuildInfo.label()
+	note.text = "LidarLinks began as a Links 2003 remake and contains nothing from the original game. Your files are read on your own computer.\n" + BuildInfo.label()
 	note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	note.add_theme_font_size_override("font_size", 12)
 	note.modulate = Color(1, 1, 1, 0.5)
@@ -221,6 +246,7 @@ func _ask_for_files(problem := "") -> void:
 		["Tournament", _open_tournament],
 		["Course designer", _open_designer],
 		["Courses", _open_courses],
+		["Select golfer", _open_golfer_select],
 		["Players", _open_players],
 		["Settings", _open_settings],
 	])
@@ -324,7 +350,7 @@ Saved round: %s." % SavedRound.describe()
 	items.append(["Tour event", _open_tour_event])
 	items.append(["Career", _open_career])
 	items.append(["Tournament", _open_tournament])
-	items += extra + [["Players", _open_players], ["Courses", _open_courses], ["Course designer", _open_designer], ["Settings", _open_settings]]
+	items += extra + [["Select golfer", _open_golfer_select], ["Players", _open_players], ["Courses", _open_courses], ["Course designer", _open_designer], ["Settings", _open_settings]]
 	if not OS.has_feature("web"):
 		items.append(["Quit", get_tree().quit])
 	_set_buttons(items)
@@ -428,8 +454,53 @@ func _open_creator(player_name: String) -> void:
 	SceneFade.pop_in(_creator)
 
 
-func _close_creator(_player_name: String) -> void:
+func _close_creator(player_name: String) -> void:
+	if _creator_from_select:
+		_creator_from_select = false
+		_golfer_select.open(player_name)
+		SceneFade.pop_in(_golfer_select)
+		return
 	_open_players()
+
+
+## Select golfer from the main menu: for the player who played last (the
+## round setup's first player), as Play now plays them.
+func _open_golfer_select() -> void:
+	if _busy:
+		return
+	var saved := RoundSetup.load_saved()
+	_main_box.visible = false
+	_settings.close()
+	_players.close()
+	_select_from_setup = false
+	_golfer_select.open(saved.names[0] if not saved.names.is_empty() else "")
+	SceneFade.pop_in(_golfer_select)
+
+
+func _open_golfer_select_from_setup(player_name: String) -> void:
+	_setup.visible = false
+	_select_from_setup = true
+	_golfer_select.open(player_name)
+	SceneFade.pop_in(_golfer_select)
+
+
+func _close_golfer_select(_player_name: String) -> void:
+	if _select_from_setup:
+		_select_from_setup = false
+		_setup.visible = true
+		_setup.refresh_golfers()
+		SceneFade.pop_in(_setup)
+		return
+	_main_box.visible = true
+	SceneFade.pop_in(_main_box)
+	if _play:
+		_play.grab_focus.call_deferred()
+
+
+func _edit_from_select(player_name: String) -> void:
+	_creator_from_select = true
+	_creator.open(player_name)
+	SceneFade.pop_in(_creator)
 
 
 func _close_players() -> void:
@@ -665,6 +736,8 @@ func _unhandled_input(event: InputEvent) -> void:
 			_close_setup()
 		elif _creator.visible:
 			_creator.cancel()
+		elif _golfer_select.visible:
+			_golfer_select.cancel()
 		elif _players.visible:
 			_close_players()
 		elif _career.visible:
@@ -765,6 +838,7 @@ func _show_desktop_choice() -> void:
 		["Tournament", _open_tournament],
 		["Course designer", _open_designer],
 		["Courses", _open_courses],
+		["Select golfer", _open_golfer_select],
 		["Players", _open_players],
 		["Settings", _open_settings],
 	])

@@ -32,7 +32,7 @@ const OVERPASS := [
 	"https://overpass.private.coffee/api/interpreter",
 	"https://maps.mail.ru/osm/tools/overpass/api/interpreter",
 ]
-const USER_AGENT := "OpenLinks2003 course importer (+https://github.com/crspytopgn/openlinks2003)"
+const USER_AGENT := "LidarLinks course importer (+https://github.com/crspytopgn/lidarlinks)"
 ## Metres searched round a place that isn't itself a mapped golf course.
 const POINT_RADIUS := 1500.0
 const PARALLEL := 6  ## downloads at once
@@ -79,7 +79,7 @@ const LAND_SAMPLES_PER_STEP := 20000
 ## Goes up whenever a build gives a better course (new detection, trees,
 ## walls...): courses built before it offer "Update" on the Courses page.
 ## Saved in each course's source as "builder" (RealCourseUpdate).
-const BUILDER_VERSION := 8  ## 5: big lakes as water, native grass from the photo; 6: seas under cliffs, scrub, ponds from the land cover, Ireland off England's lidar; 7: beaches, woods out of the tile ground; 8: tree heights v2, more photo services, dormant photos
+const BUILDER_VERSION := 9  ## 5: big lakes as water, native grass from the photo; 6: seas under cliffs, scrub, ponds from the land cover, Ireland off England's lidar; 7: beaches, woods out of the tile ground; 8: lidar ground without faint grid lines; 9: tree heights v2, more photo services, dormant photos
 
 var busy := false
 ## Use national lidar and aerial photos where they cover the course.

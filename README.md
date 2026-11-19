@@ -1,14 +1,14 @@
 <p align="center">
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/brand/readme/hero-dark.webp">
-  <img alt="OpenLinks2003. The classic golf game, rebuilt. Open source, on Mac, Windows, Linux and the web." src="docs/brand/readme/hero-light.webp">
+  <img alt="LidarLinks. Play any real course on Earth. Open source, on Mac, Windows, Linux and the web." src="docs/brand/readme/hero-light.webp">
 </picture>
 </p>
 
 <p align="center">
-<a href="https://crspytopgn.github.io/openlinks2003/"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/brand/readme/button-play-dark.png"><img alt="Play in your browser" src="docs/brand/readme/button-play-light.png" height="42"></picture></a>
+<a href="https://crspytopgn.github.io/lidarlinks/"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/brand/readme/button-play-dark.png"><img alt="Play in your browser" src="docs/brand/readme/button-play-light.png" height="42"></picture></a>
 &nbsp;
-<a href="https://github.com/crspytopgn/openlinks2003/releases/tag/latest"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/brand/readme/button-download-dark.png"><img alt="Download" src="docs/brand/readme/button-download-light.png" height="42"></picture></a>
+<a href="https://github.com/crspytopgn/lidarlinks/releases/tag/latest"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/brand/readme/button-download-dark.png"><img alt="Download" src="docs/brand/readme/button-download-light.png" height="42"></picture></a>
 </p>
 
 <p align="center">
@@ -19,13 +19,14 @@
 </p>
 
 <p align="center">
-An open-source, cross-platform reimplementation of <b>Links 2003</b>,<br>
-built with Godot 4 and a portable C++ core.
+<b>LidarLinks</b> builds any real golf course from lidar, map data and aerial<br>
+photos, and lets you play it. Built with Godot 4 and a portable C++ core.<br>
+It began as an open-source remake of <b>Links 2003</b> and keeps its physics.
 </p>
 
 > [!IMPORTANT]
-> **You need your own copy of the original game for its courses, golfers and
-> sounds.** This project contains no code, art, audio, course or other data
+> **The original Links 2003 courses, golfers and sounds need your own copy of
+> that game.** This project contains no code, art, audio, course or other data
 > from Links 2003. The engine reads assets at runtime from your copy; out of
 > the box it plays its own course, Kettle Hollow, with its own golfers. See
 > [docs/clean-room.md](docs/clean-room.md).
@@ -66,7 +67,7 @@ built with Godot 4 and a portable C++ core.
 ## Play in the browser
 
 The latest `main` build is published to
-**https://crspytopgn.github.io/openlinks2003/** (desktop Chrome, Firefox,
+**https://crspytopgn.github.io/lidarlinks/** (desktop Chrome, Firefox,
 Edge or Safari, and iPad; needs WebGL 2).
 
 It plays Kettle Hollow out of the box. To use the real courses,
@@ -81,18 +82,18 @@ the files again. **Forget my files** clears the remembered choice.
 ## Download a build
 
 Every push to `main` builds the game for all three platforms and publishes
-it as the **[latest release](https://github.com/crspytopgn/openlinks2003/releases/tag/latest)**
+it as the **[latest release](https://github.com/crspytopgn/lidarlinks/releases/tag/latest)**
 (macOS universal, Windows, Linux). The builds contain no game data.
 
 The easiest way in is the **launcher**: download `OpenLinks2003-Launcher-*`
-for your system from that page. It installs the game and keeps it up to date, shows what's new,
+(the LidarLinks launcher) for your system from that page. It installs the game and keeps it up to date, shows what's new,
 sets the display, quality, sound and swing options before you play, opens the
 course builder, and gets your Links 2003 files ready from your discs, disc
 images or an installed copy, all on your own computer. See
 [docs/launcher.md](docs/launcher.md).
 
 **macOS:** the build is ad-hoc signed, not notarised. Unzip it, move
-OpenLinks2003.app to Applications, then right-click it, choose **Open**, and
+OpenLinks2003.app (LidarLinks) to Applications, then right-click it, choose **Open**, and
 confirm. On macOS 15 or later, if it still won't open, go to **System
 Settings > Privacy & Security** and click **Open Anyway**.
 
@@ -158,12 +159,13 @@ The logo, app icon and the images on this page live in
 
 ## Supporting the project
 
-OpenLinks2003 is free and always will be. If you enjoy it and want to chip in,
+LidarLinks is free and always will be. If you enjoy it and want to chip in,
 you can [sponsor it on GitHub](https://github.com/sponsors/crspytopgn).
 
 More from me: [OpenMCM2](https://github.com/crspytopgn/openmcm2) · [OpenSGolf](https://github.com/crspytopgn/opensgolf) · [Pitwall](https://github.com/crspytopgn/pitwall).
 
 ## Licence
 
-MIT. See [LICENSE](LICENSE). Links 2003 is a trademark of its respective
-owners; this project is not affiliated with or endorsed by them.
+MIT. See [LICENSE](LICENSE). Links and Links 2003 are trademarks of their
+respective owners; this project is not affiliated with or endorsed by them.
+"Links" in LidarLinks is the golf word for a seaside course.
