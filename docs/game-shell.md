@@ -830,6 +830,12 @@ the physics, the swing and the scoring are the same in both.
   ball) and `RoundCamera` follows it. Putts get a low tracking camera.
 - `RoundCamera.start_flyover()`: each hole opens with a flight from behind
   the tee, along the hole's route, down to the green. A click skips it.
+  The route becomes one smoothed curve sampled every 2 m by distance, so
+  the speed is even and eases in and out; the height rides a smoothed
+  envelope of the ground (never climbing faster than a quarter of the
+  distance flown, spread over at least a second of flight) and the view
+  looks 90 m ahead, blending to the pin. A slow frame advances it by about
+  one normal frame, so a streaming hitch never jumps the camera.
 - `scripts/broadcast/ball_tracer.gd`: the shot tracer, a thin
   camera-facing red line with a narrow soft edge and a small dot at the
   ball, as Toptracer draws it on TV, widened across the camera's view so it
