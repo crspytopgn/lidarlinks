@@ -48,6 +48,9 @@ func _initialize() -> void:
 	_run("round_setup", _test_round_setup)
 	_run("round_scoring", _test_round_scoring)
 	_run("career", _test_career)
+	_run("career_playoff", _test_career_playoff)
+	_run("key_remap", _test_key_remap)
+	_run("daily_round", _test_daily_round)
 	_run("tour_pros", _test_tour_pros)
 	_run("tournament_hole_odds", _test_tournament_hole_odds)
 	_run("tournament_stroke_play", _test_tournament_stroke_play)
@@ -1505,6 +1508,28 @@ func _test_drop_rules_hazards_and_bounds() -> void:
 	var free := DropRules.zone(DropRules.Option.FREE_DROP, Vector3(-11, 0, 70), Vector3.ZERO, pin, false, t)
 	_check(free.found, "free relief beside the hazard")
 	_check_spot(free.spot, -12.0840, 69.3776, "free relief beside the hazard")
+	# The ball is dropped and rolls, ending somewhere legal (or placed after
+	# two drops that roll out), the same way for the same seed.
+	var model := StandardShotModel.new()
+	for s in 6:
+		var d := GolfRound.drop_and_roll(model, side, side.spot, pin, t, s)
+		var at: Vector3 = d["spot"]
+		var legal := DropRules.check(side, at, pin, t)
+		_check(legal == DropRules.Check.OK or (legal == DropRules.Check.OUTSIDE_ZONE
+				and Vector2(at.x - side.spot.x, at.z - side.spot.z).length() <= 2.0 * DropRules.CLUB_LENGTH + 0.01)
+				or str(d["note"]).contains("placed"), "drop %d ends legal (%s, %s)" % [s, at, d["note"]])
+		_check(absf(at.y - t.height_at(at.x, at.z)) < 0.05, "drop %d rests on the ground" % s)
+	var d1 := GolfRound.drop_and_roll(model, side, side.spot, pin, t, 7)
+	var d2 := GolfRound.drop_and_roll(model, side, side.spot, pin, t, 7)
+	_check((d1["spot"] as Vector3).is_equal_approx(d2["spot"]), "a drop is the same for the same seed")
+	# Chipping practice: spots round the green, off it, on playable ground.
+	for s in 8:
+		var cs := GolfRound.chip_spot(t, Vector3(0, 2, 100), Vector3.ZERO, s)
+		var dist := Vector2(cs.x, cs.z - 100.0).length()
+		var surf := t.surface_at(cs.x, cs.z)
+		_check(dist >= GolfRound.CHIP_MIN - 0.01 and dist <= GolfRound.CHIP_MAX + 0.01 and surf != Surface.Type.GREEN
+				and surf != Surface.Type.WATER and not t.hazard_at(cs.x, cs.z) and t.in_bounds(cs.x, cs.z),
+				"chip spot %d is off the green, %.1f m out" % [s, dist])
 
 
 ## A hole whose ground ends at z = limit: judged where the ball stops.
@@ -3950,6 +3975,23 @@ func _test_free_golfer() -> void:
 	made.free()
 	golfer.play(&"putt")
 	golfer.play(&"address")
+	# A putt the player strokes: the putter goes back with the stroke, comes
+	# through to the ball, and the ball leaves at once when it gets there.
+	var putter_club := _club("Pt")
+	golfer.set_shot(putter_club, 4.0)
+	golfer.follow_backswing(0.5)
+	_check(golfer._player.current_animation == &"putt" and absf(golfer._player.current_animation_position - FreeGolfer.PUTT_TOP * 0.5) < 0.02
+			and not golfer.at_impact(), "the putter goes halfway back with half the backstroke")
+	golfer.follow_downswing(0.5)
+	_check(not golfer.at_impact(), "halfway through the putter is not at the ball yet")
+	golfer.follow_downswing(1.0)
+	_check(golfer.at_impact(), "the stroke brings the putter to the ball")
+	golfer.play(&"putt")
+	_check(golfer.putt_impact_delay() < 0.05, "a stroked putt leaves at once (%.2f s)" % golfer.putt_impact_delay())
+	golfer.play(&"address")
+	golfer.play(&"putt")
+	_check(is_equal_approx(golfer.putt_impact_delay(), FreeGolfer.PUTT_IMPACT / golfer.tempo), "a putt from address waits for the putter")
+	golfer.play(&"address")
 	# GolferHands: a grip for the driver, iron and putter, the right hand a
 	# hand's width or so from the left; on for swings, off for the walk.
 	var hands: GolferHands = golfer._hands
@@ -5447,6 +5489,89 @@ func _test_saved_round() -> void:
 
 ## Career mode's tour logic, without playing: the field, the schedule, the
 ## purse shares, the cut, a win, a withdrawal, saving and the season's end.
+## The daily round: the same course, seed and wind for a date; the best
+## score and the streak kept.
+func _test_daily_round() -> void:
+	var a := DailyRound.setup("2026-11-19", "Ann")
+	var b := DailyRound.setup("2026-11-19", "Bo")
+	_check(a.course_key == b.course_key and a.round_seed == b.round_seed and a.wind_level == b.wind_level and a.round_seed != 0,
+			"the same round for everyone on a day")
+	_check(a.problem().is_empty() and a.daily == "2026-11-19" and a.pins == 1, "a daily round is a valid random-pin round")
+	var keys := {}
+	for d in 30:
+		keys[DailyRound.course_for(Time.get_date_string_from_unix_time(1700000000 + d * 86400))] = true
+	_check(keys.size() >= 3, "the course changes from day to day (%d courses in 30 days)" % keys.size())
+	var path := "user://test_daily.cfg"
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
+	_check(DailyRound.record("2026-11-18", 3, path) == 3 and DailyRound.record("2026-11-19", 1, path) == 1
+			and DailyRound.record("2026-11-19", 4, path) == 1, "the best score of the day is kept")
+	_check(DailyRound.streak("2026-11-19", path) == 2 and DailyRound.describe("2026-11-19", path).ends_with("best +1"),
+			"two days in a row: %s" % DailyRound.describe("2026-11-19", path))
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
+
+
+## Settings > Keys: a chosen key plays the control; what it did moves to
+## the old key (a swap); saved and loaded; reset.
+func _test_key_remap() -> void:
+	var path := "user://test_keys.cfg"
+	KeyRemap.reset()
+	KeyRemap.assign(KEY_SPACE, KEY_J)
+	_check(KeyRemap.translate(KEY_J) == KEY_SPACE and KeyRemap.key_for(KEY_SPACE) == KEY_J, "J swings")
+	KeyRemap.assign(KEY_UP, KEY_Q)
+	_check(KeyRemap.translate(KEY_Q) == KEY_UP and KeyRemap.translate(KEY_UP) == KEY_Q and KeyRemap.key_for(KEY_Q) == KEY_UP,
+			"Q for the longer club swaps draw spin on to Up")
+	KeyRemap.assign(KEY_UP, KEY_UP)
+	_check(KeyRemap.translate(KEY_UP) == KEY_UP and KeyRemap.translate(KEY_Q) == KEY_Q, "putting Up back swaps Q back")
+	KeyRemap.save_keys(path)
+	KeyRemap.reset()
+	KeyRemap.load_keys(path)
+	_check(KeyRemap.translate(KEY_J) == KEY_SPACE and KeyRemap.swaps.size() == 2, "keys saved and loaded: %s" % [KeyRemap.swaps])
+	var ev := InputEventKey.new()
+	ev.keycode = KEY_J
+	ev.pressed = true
+	var node := KeyRemap.new()
+	root.add_child(node)
+	node._input(ev)
+	_check(ev.keycode == KEY_SPACE, "a pressed J reaches the game as Space")
+	node.queue_free()
+	KeyRemap.reset()
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
+
+
+## A tie for the lead with the person in it is played off for real on the
+## last hole, hole by hole, until someone wins it outright.
+func _test_career_playoff() -> void:
+	Career.path = "user://test_career_playoff.cfg"
+	Career.remove()
+	var keys: Array[String] = ["Courses/A.crz"]
+	var titles: Array[String] = ["Alpha Golf Club"]
+	var c := Career.create("Ann", 0, 2, 1, false, 2, keys, titles, 5)
+	var me := c.player_index()
+	for i in c.names.size():
+		c.scores[i] = [10]
+	c.scores[0] = [-8]
+	c.scores[me] = [-8]
+	c.round_holes.assign([18])
+	c.round_pars.assign([72])
+	_check(c.tied_leaders() == _ints([0, me]) or c.tied_leaders() == _ints([me, 0]), "playoff: Ann and %s tie for the lead" % c.names[0])
+	c.playoff_with = c.tied_leaders()
+	var s := c.next_setup()
+	_check(s != null and s.only_hole == 17 and s.names.size() == 2 and s.names[1] == c.names[0] and s.hole_indices(18) == _ints([17]),
+			"playoff: sudden death on the 18th against the other leader")
+	_check(c.next_text().contains("Playoff hole 1"), "playoff: the career page says so: %s" % c.next_text())
+	var text := c.record_playoff(s.career, {"Ann": 4, c.names[0]: 4})
+	_check(c.in_playoff() and c.playoff_holes == 1 and text.contains("Still tied"), "playoff: a halved hole plays on: %s" % text)
+	_check(c.record_playoff(s.career, {"Ann": 3, c.names[0]: 4}).is_empty(), "playoff: the last hole's card isn't counted twice")
+	s = c.next_setup()
+	text = c.record_playoff(s.career, {"Ann": 3, c.names[0]: 4})
+	_check(not c.in_playoff() and c.event == 1 and int(c.results[0].pos) == 1 and c.results[0].playoff == true,
+			"playoff: Ann wins it on the second hole: %s" % text)
+	c.save()
+	var d := Career.load_saved()
+	_check(d != null and not d.in_playoff(), "playoff: saved and loaded")
+	Career.remove()
+
+
 func _test_career() -> void:
 	Career.path = "user://test_career.cfg"
 	Career.remove()

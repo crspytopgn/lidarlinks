@@ -13,6 +13,7 @@ const ART_DIR := "res://assets/ui/menu/"
 ## Menu items shown as picture tiles: label -> [picture, line under it].
 const TILES := {
 	"Play now": ["play", "Kettle Hollow, ready to go"],
+	"Daily round": ["tournament", "Today's course, the same for everyone"],
 	"Play a round": ["play", "Pick a course and tees"],
 	"Resume round": ["play", "Carry on where you stopped"],
 	"Play online": ["online", "Rounds and leaderboards"],

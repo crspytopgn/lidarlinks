@@ -52,16 +52,16 @@ product lead builds it.
 7. [x] **Career**: a season of events against the computer golfers, with a
    money list and the handicap and stats already kept. Done: main menu >
    Career ([game-shell.md](docs/game-shell.md#career)): three tours, cuts,
-   tour-style prize money, playoffs, promotion. Still to do: playing a
-   playoff hole for real, and tuning the field against measured computer
-   golfer scores. Career partners now play as made-up pros with styles of
+   tour-style prize money, playoffs, promotion. A tie for the lead with the
+   person in it is played off for real, sudden death on the last hole.
+   Still to do: tuning the field against measured computer golfer scores. Career partners now play as made-up pros with styles of
    their own.
 8. [ ] **Menu polish**: a live course flyover behind the menus. (The round
    setup panel and the key hints were fixed in #101.) Owner: lead.
 9. [ ] **Accessibility**: remappable keys, a colour-blind-safe meter and aim
    marker, UI scale, captions for voice and commentary. UI scale
-   (Settings > Interface size) and a colour-blind-safe meter (Settings >
-   Colours) done. Owner: lead.
+   (Settings > Interface size), a colour-blind-safe meter (Settings >
+   Colours) and remappable keys (Settings > Keys) done. Owner: lead.
 10. [x] **Personal records**: longest drive, best rounds per course, birdie,
    eagle and hole-in-one counts on the players page. Owner: lead.
 11. [x] **Hole positions**: Links 2003 courses keep 18 hole positions per
@@ -110,7 +110,7 @@ product lead builds it.
 - [x] Swing controls: real-time mouse swing (Links 2003's PowerStroke mouse swing, the default; irons, chips, putts and the swing help option as the game does them)
 - [x] Scoring basics: stroke play, putting and holing out, water drop, out of bounds, scorecard
 - [x] Rules: unplayable lies, lateral hazards, drop options, free drops from cart paths ([game-shell.md](docs/game-shell.md#drops)). No provisional balls: Links 2003 has no lost balls and out of bounds is known at once
-  - [ ] Drop the ball and let it roll, re-dropping if it leaves the zone, as Links does
+  - [x] Drop the ball and let it roll, re-dropping if it leaves the zone, as Links does (`GolfRound.drop_and_roll`)
 - [ ] Cameras: tee view, ball-follow, landing, green overview **(needs data for feel)**
   - [x] Broadcast presentation (Settings > Presentation): TV camera cuts, hole flyovers, shot tracer, replays, green slope grid, TV graphics, captions and crowd reactions ([game-shell.md](docs/game-shell.md#broadcast-presentation))
   - [x] Tour presentation (off by default): leaderboard rail, shot-data bar, driving zone, putt read, hole map with shots ([game-shell.md](docs/game-shell.md#tour))
@@ -119,7 +119,7 @@ product lead builds it.
   - [x] View target (Y, pad Y or the on-screen button): a smooth glide out to look at the landing area, as 2K25 and GSPro do, and back
   - [ ] The mouse swing's backswing mark for the putting assistant
 - [x] Putting practice: a practice green with several cups on each hole's green, free putting with distance and slope, around the clock and a lag ladder ([game-shell.md](docs/game-shell.md#putting-practice-and-green-reading))
-  - [ ] Links 2003's other practice options on a course's holes: driving only, chipping only, play through (the practice range is in)
+  - [x] Links 2003's other practice options on a course's holes: driving only (Hitting from this course's tees), chipping only (Chipping round this course's greens), play through (Play through, no score)
 - [ ] Wire `olcore` into Godot via GDExtension; drop the GDScript physics port (wasm build needed for Web)
 
 ## Phase 3: look and sound

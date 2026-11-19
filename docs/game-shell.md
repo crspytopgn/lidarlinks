@@ -163,6 +163,16 @@ Settings > Colours swaps the swing meter's green and red (good and bad
 marks, the fill past the snap point) for blue and white, which stay apart
 for red-green colour blindness (`SwingMeter.colour_safe`).
 
+### Keys
+
+Settings > Keys... lists the round's controls with their keys. Click one and
+press the new key (Esc cancels); a key that already did something swaps
+with it, so every key still does one thing. Usual keys puts them all back.
+`KeyRemap` (saved in `[keys]` of `user://settings.cfg`) stays the last node
+under the root and turns the chosen key back into the usual one before the
+game sees it, except while a text box has the focus. The on-screen hints
+still name the usual keys.
+
 ### Captions
 
 Settings > Captions shows what the golfer says (their voice bank's event
@@ -229,6 +239,25 @@ apex and descent angle, and the session's average carry, total and
 left-right spread with that club. With the game's files on the `.RNG`
 driving range course this is the range Links 2003 has.
 
+Chipping round this course's greens: the same, but each ball sits somewhere
+new round the green, 5 to 35 m from the pin, off the green and out of
+water, hazards and out of bounds, mostly on the side the hole is played
+from (`GolfRound.chip_spot`, seeded so a spot can be repeated). The result
+says how close it finished.
+
+Play through (practice, no score): the course played as a round, but no
+profile, records, handicap or replay is saved, the round can't be resumed,
+U takes back any shot, and N and B skip holes (`RoundSetup.play_through`).
+
+### Daily round
+
+The main menu's **Daily round** plays the same round for everyone each day
+(`DailyRound`, by the UTC date): one of the built-in courses, the front
+nine from the middle tees, random hole positions, the wind strength and
+every random draw picked by the date's seed. Mulligans and gimmes are off.
+The best score each day and the number of days in a row are kept in
+`user://daily.cfg`; an online leaderboard can use the same date and seed.
+
 ### Drops
 
 Water costs a stroke and a drop. **D** while aiming declares the ball
@@ -252,8 +281,10 @@ the free drop on paths, and the "you cannot drop..." refusals); the zone
 shapes come from the Rules of Golf (rules 16, 17 and 19), since how Links
 draws its own drop corridor isn't known. Courses don't mark water as yellow
 or red, so every water hazard offers lateral relief (`LATERAL_WATER` in
-`main.gd`). Not done: Links actually drops the ball and lets it roll (and
-re-drops when it rolls out of the zone); here it is placed. Links 2003 has
+`main.gd`). As in Links, the ball is then dropped from about shoulder
+height and rolls on the course (`GolfRound.drop_and_roll`); a ball that rolls
+nearer the pin, into trouble, or more than two club lengths outside the zone
+is dropped again, and after two such drops it is placed. Links 2003 has
 no lost balls, and out of bounds is known at once, so there are no
 provisional balls. The rules are `olcore/rules.cpp`, ported to
 `game/scripts/rules/drop_rules.gd`.
@@ -555,6 +586,13 @@ player (their profile, by name), the tour to start on, 4, 8 or 12 events a
 season, 4-round events with a cut, 2 rounds or 1, full rounds or the front
 nine, and whether two, one or no computer golfers play in the person's
 group. Fewer partners and shorter events keep it quick on slow computers.
+
+A tie for the lead after the last round with the person in it is played
+for real: the Career page offers the playoff, a sudden-death round of the
+event's last hole against everyone still tied (`RoundSetup.only_hole`,
+`Career.record_playoff`). The best score goes on; the person going out
+ends it and the rest is simulated. After six halved holes the rest is
+simulated too.
 
 | Tour | Field | Field average (per 18, to par) | Cut | Purse | Moves |
 |------|-------|-------------------------------|-----|-------|-------|
