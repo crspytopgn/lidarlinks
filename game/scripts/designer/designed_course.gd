@@ -557,7 +557,10 @@ func save_file(path: String) -> Error:
 	var f := FileAccess.open(path, FileAccess.WRITE)
 	if f == null:
 		return FileAccess.get_open_error()
-	f.store_string(to_json())
+	# Compact JSON, gzipped: a real course is 2.5 times smaller on disk
+	# (Whistling Straits 3.0 MB to 1.2 MB). `load_file` reads both; the
+	# designer's Export still writes plain JSON to share.
+	f.store_buffer(JSON.stringify(to_dict()).to_utf8_buffer().compress(FileAccess.COMPRESSION_GZIP))
 	f.close()
 	return OK
 
