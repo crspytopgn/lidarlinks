@@ -115,6 +115,12 @@ var _free_sky: Material  ## the photographed sky (FreeAssets), or null
 var _backdrop_sky: Material  ## the plain sky behind the course's backdrop
 var _photo := false
 var _gi := false  ## global illumination on (Ultra Photoreal on a real GPU)
+## The exposure the time of day sets, before the shade adaptation, and the
+## adaptation itself (adapt_to_shade): 1 in the open, more under trees.
+var _base_exposure := 1.0
+var _adapt := 1.0
+var _adapt_target := 1.0
+var _adapt_clock := 0.0
 ## The sun and fill light apply() set, before the weather scales them.
 var _sun_energy := SUN_ENERGY
 var _sun_color := Color(1.0, 0.95, 0.86)
@@ -181,10 +187,15 @@ func _init() -> void:
 	# grass darkens round the golfer's shoes, the ball, the flagstick and
 	# crowd feet, and a little of it reaches the sunlit side (light_affect),
 	# where real contact shadows show most.
+	# In shade the sky fill is all the light there is, so the occlusion
+	# takes all of it: at intensity 1.6 and power 1.6 the trunks and bark in
+	# a wood's shade went from about 32/255 to 6, near black (2026-11-19,
+	# Michael: "way too dark, not real" under trees at midday). Softer,
+	# and the fine detail halved so bark and leaf normals don't crush.
 	environment.ssao_radius = 0.9
-	environment.ssao_intensity = 1.6
-	environment.ssao_detail = 1.0
-	environment.ssao_power = 1.6
+	environment.ssao_intensity = 1.0
+	environment.ssao_detail = 0.5
+	environment.ssao_power = 1.15
 	environment.ssao_light_affect = 0.2
 	var world_env := WorldEnvironment.new()
 	world_env.environment = environment
@@ -531,9 +542,97 @@ func _apply_time() -> void:
 	var fwd := GraphicsSettings.is_forward_plus()
 	# Compatibility's turf measured about a stop's third darker than real
 	# course photos once its colour matched them (Lab L* 51 against 56).
-	environment.tonemap_exposure = PHOTO_EXPOSURE * float(_time.exposure) * (1.0 if fwd else COMPAT_EXPOSURE_LIFT)
+	_base_exposure = PHOTO_EXPOSURE * float(_time.exposure) * (1.0 if fwd else COMPAT_EXPOSURE_LIFT)
+	environment.tonemap_exposure = _base_exposure * _adapt
 	var sky: Color = _time.sky
 	RenderingServer.global_shader_parameter_set("sky_tint", Vector3(sky.r, sky.g, sky.b))
+
+
+## How much a camera opens up for a subject in deep tree shade: a TV
+## camera or a photographer exposes for the golfer in the trees, so the shade
+## reads bright and the sunlit fairway beyond goes pale, not the other way
+## round (the eye does the same). About two thirds of a stop with the sun
+## and most of the sky shut out.
+const SHADE_ADAPT_MAX := 1.65
+## The same on Compatibility, whose flat fill and stronger shade fill
+## (COMPAT_SHADE_RATIO) already light the shade more: at 1.65 the pale
+## bark went near white and a sun fleck on a face blew out.
+const SHADE_ADAPT_MAX_COMPAT := 1.3
+## How quickly the exposure follows (seconds to get most of the way), as a
+## camera's auto-exposure eases rather than jumps.
+const SHADE_ADAPT_TIME := 0.9
+## How often the cover is measured (seconds).
+const SHADE_ADAPT_EVERY := 0.2
+
+
+## How shut in by tree crowns the point `at` is, from obstacles' CANOPY
+## and SOLID shapes: x the share of the sky blocked (rays over the sky,
+## each ring weighted by its share of the sky dome, so the open sky and
+## sunlit ground all round a lone tree count, as they light a standing
+## golfer from the side), y 1 if the sun is blocked, else 0. `sun_from`
+## points from the ground to the sun.
+static func shade_cover(obstacles: ObstacleField, at: Vector3, sun_from: Vector3) -> Vector2:
+	if obstacles == null or obstacles.size() == 0:
+		return Vector2.ZERO
+	const REACH := 45.0
+	var sun_blocked := 0.0 if obstacles.segment_hit(at, at + sun_from.normalized() * REACH).is_empty() else 1.0
+	# Straight up and 3 rings of directions.
+	var blocked := 0.0
+	var total := 0.0
+	var dirs := [[90.0, 1]]
+	dirs.append([62.0, 4])
+	dirs.append([38.0, 6])
+	dirs.append([16.0, 8])
+	for ring: Array in dirs:
+		var el := deg_to_rad(float(ring[0]))
+		var n: int = ring[1]
+		for i in n:
+			var az := TAU * (float(i) + (0.5 if n % 2 == 0 else 0.0)) / float(n)
+			var d := Vector3(cos(el) * cos(az), sin(el), cos(el) * sin(az))
+			var w := maxf(cos(el), 0.2)
+			total += w
+			if not obstacles.segment_hit(at, at + d * REACH).is_empty():
+				blocked += w
+	return Vector2(blocked / maxf(total, 1e-6), sun_blocked)
+
+
+## The exposure lift for a subject with shade_cover `cover`: none in the
+## open or in a lone tree's shadow on open ground, up to SHADE_ADAPT_MAX
+## with the sun and most of the sky shut out.
+static func shade_adapt_for(cover: Vector2, top := SHADE_ADAPT_MAX) -> float:
+	var shut := cover.y * smoothstep(0.15, 0.75, cover.x)
+	return lerpf(1.0, top, shut)
+
+
+## Called every frame with where the camera's subject stands (a point
+## about chest high) on the current hole: under trees the exposure opens up
+## like a camera's, and closes again out in the open. Photoreal only;
+## Classic keeps Links 2003's fixed light.
+func adapt_to_shade(obstacles: ObstacleField, at: Vector3, delta: float) -> void:
+	if not _photo:
+		_adapt_target = 1.0
+	else:
+		_adapt_clock -= delta
+		if _adapt_clock <= 0.0:
+			_adapt_clock = SHADE_ADAPT_EVERY
+			var top := SHADE_ADAPT_MAX if GraphicsSettings.is_forward_plus() else SHADE_ADAPT_MAX_COMPAT
+			_adapt_target = shade_adapt_for(shade_cover(obstacles, at, sun.global_transform.basis.z), top)
+	var k := 1.0 - exp(-delta * 3.0 / SHADE_ADAPT_TIME)
+	var a := lerpf(_adapt, _adapt_target, clampf(k, 0.0, 1.0))
+	if absf(a - _adapt) < 1e-4 and absf(a - _adapt_target) < 1e-4:
+		return
+	_adapt = a
+	if _photo:
+		environment.tonemap_exposure = _base_exposure * _adapt
+
+
+## Jumps straight to the adaptation for `at` (a new hole, a camera cut).
+func snap_shade(obstacles: ObstacleField, at: Vector3) -> void:
+	_adapt_clock = 0.0
+	adapt_to_shade(obstacles, at, 0.0)
+	_adapt = _adapt_target
+	if _photo:
+		environment.tonemap_exposure = _base_exposure * _adapt
 
 
 ## The time of day's split tone and colour lift (post_process.gdshader

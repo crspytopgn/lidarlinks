@@ -1090,6 +1090,7 @@ func _process(delta: float) -> void:
 		rain_fx.follow(get_viewport().get_camera_3d())
 	_update_wind_shaders(delta)
 	_update_post_view()
+	_adapt_to_shade(delta)
 	# The pause menu and settings stop the round: the swing meter, the ball
 	# in the air and the countdowns all wait.
 	var paused := pause_menu.visible or settings_panel.visible or (photo_mode != null and photo_mode.active)
@@ -3859,6 +3860,25 @@ func _update_post_view() -> void:
 	if hole != null and hole.terrain != null:
 		ground = hole.terrain.height_at(cam.global_position.x, cam.global_position.z)
 	post.update_view(cam, ground, scenery.sun if scenery != null else null)
+
+
+## The exposure opens up when the camera's subject stands in tree shade
+## (Scenery.adapt_to_shade): the point a few metres ahead of the camera,
+## where the golfer stands in the aiming view, about chest high.
+func _adapt_to_shade(delta: float) -> void:
+	if scenery == null or hole == null or hole.terrain == null:
+		return
+	var cam := get_viewport().get_camera_3d()
+	if cam == null:
+		return
+	var fwd := -cam.global_transform.basis.z
+	fwd.y = 0.0
+	var at := cam.global_position + (fwd.normalized() * 3.0 if fwd.length() > 1e-3 else Vector3.ZERO)
+	var ground := hole.terrain.height_at(at.x, at.z)
+	# A camera up in the air (the flyover, a tower view) sees the course
+	# from above the trees, out in the sun.
+	at.y = ground + 1.2 if cam.global_position.y - ground < 4.0 else cam.global_position.y
+	scenery.adapt_to_shade(hole.terrain.obstacles, at, delta)
 
 
 ## Flagstick height: the Rules ask for at least 7 ft (2.13 m).
