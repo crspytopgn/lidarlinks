@@ -43,8 +43,76 @@ jobs:
             build/tools/olcourse/Release/olcourse.exe
           if-no-files-found: ignore
 
+  # The launcher's own slim export templates (tools/templates/launcher.py:
+  # no 3D, Compatibility renderer only, unused modules out), built from
+  # Godot's source once per profile and Godot version, then cached.
+  launcher-templates:
+    name: Launcher templates (${{ matrix.platform }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linuxbsd
+            os: ubuntu-latest
+          - platform: windows
+            os: ubuntu-latest
+          - platform: macos
+            os: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Cache the template
+        id: cache-template
+        uses: actions/cache@v4
+        with:
+          path: template
+          key: launcher-template-${{ matrix.platform }}-${{ env.GODOT_VERSION }}-angle-${{ hashFiles('tools/templates/launcher.py') }}
+      - name: Build the template
+        if: steps.cache-template.outputs.cache-hit != 'true'
+        shell: bash
+        run: |
+          pip3 install --break-system-packages scons 2>/dev/null || pip3 install scons
+          curl -sSL -o /tmp/godot-src.tar.xz "https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-stable/godot-${GODOT_VERSION}-stable.tar.xz"
+          tar xf /tmp/godot-src.tar.xz -C /tmp
+          src=/tmp/godot-${GODOT_VERSION}-stable
+          profile=$PWD/tools/templates/launcher.py
+          mkdir -p template
+          # ANGLE (OpenGL over D3D11 / Metal), as in the official templates:
+          # Windows and macOS fall back to it where native OpenGL is poor.
+          angle() {
+            curl -sSL -o /tmp/angle-$1.zip "https://github.com/godotengine/godot-angle-static/releases/download/chromium%2F6601.2/godot-angle-static-$1-release.zip"
+            mkdir -p /tmp/angle && unzip -q -o /tmp/angle-$1.zip -d /tmp/angle
+          }
+          case "${{ matrix.platform }}" in
+            linuxbsd)
+              (cd $src && scons platform=linuxbsd arch=x86_64 profile=$profile -j4)
+              cp $src/bin/godot.linuxbsd.template_release.x86_64 template/linux_release.x86_64 ;;
+            windows)
+              sudo apt-get update -q && sudo apt-get install -y -q mingw-w64
+              sudo update-alternatives --set x86_64-w64-mingw32-gcc /usr/bin/x86_64-w64-mingw32-gcc-posix
+              sudo update-alternatives --set x86_64-w64-mingw32-g++ /usr/bin/x86_64-w64-mingw32-g++-posix
+              angle x86_64-gcc
+              (cd $src && scons platform=windows arch=x86_64 use_mingw=yes angle_libs=/tmp/angle profile=$profile -j4)
+              cp $src/bin/godot.windows.template_release.x86_64.exe template/windows_release_x86_64.exe ;;
+            macos)
+              angle arm64-macos
+              angle x86_64-macos
+              # ANGLE needs these, which a build without Metal or Vulkan does not link.
+              mac_frameworks="-framework IOSurface -framework Metal -framework QuartzCore"
+              (cd $src && scons platform=macos arch=arm64 angle_libs=/tmp/angle linkflags="$mac_frameworks" profile=$profile -j3 \
+                && scons platform=macos arch=x86_64 angle_libs=/tmp/angle linkflags="$mac_frameworks" profile=$profile -j3)
+              lipo -create $src/bin/godot.macos.template_release.arm64 $src/bin/godot.macos.template_release.x86_64 \
+                -output template/godot_macos_release.universal ;;
+          esac
+          ls -l template
+      - uses: actions/upload-artifact@v4
+        with:
+          name: launcher-template-${{ matrix.platform }}
+          path: template
+
   export:
     name: Godot export
+    needs: launcher-templates
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -143,6 +211,11 @@ jobs:
       # The desktop launcher (launcher/, docs/launcher.md): its own tests,
       # then its three exports, stamped with launcher/'s git tree id so it
       # can tell when a newer launcher is on main.
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: launcher-template-*
+          path: ${{ runner.temp }}/launcher-templates
+
       - name: Launcher tests
         run: |
           # Godot 4.4.1 sometimes segfaults on a first headless import of the
@@ -158,11 +231,32 @@ jobs:
           tree=$(git rev-parse HEAD:launcher)
           sed -i "s/^const LAUNCHER_TREE := \"dev\"/const LAUNCHER_TREE := \"$tree\"/" launcher/scripts/build_info.gd
           grep -q "$tree" launcher/scripts/build_info.gd
+          # The launcher exports with its slim templates: a copy of the
+          # official template folder (which stays cached as it is) with the
+          # three release binaries swapped, found through XDG_DATA_HOME.
+          official=~/.local/share/godot/export_templates/${GODOT_VERSION}.stable
+          export XDG_DATA_HOME=$RUNNER_TEMP/launcher-xdg
+          slim=$XDG_DATA_HOME/godot/export_templates/${GODOT_VERSION}.stable
+          mkdir -p "$slim"
+          cp -r "$official"/. "$slim"/
+          cp $RUNNER_TEMP/launcher-templates/launcher-template-linuxbsd/linux_release.x86_64 "$slim/"
+          cp $RUNNER_TEMP/launcher-templates/launcher-template-windows/windows_release_x86_64.exe "$slim/"
+          rm -rf $RUNNER_TEMP/macos-template && mkdir $RUNNER_TEMP/macos-template
+          unzip -q "$official/macos.zip" -d $RUNNER_TEMP/macos-template
+          cp $RUNNER_TEMP/launcher-templates/launcher-template-macos/godot_macos_release.universal \
+            $RUNNER_TEMP/macos-template/macos_template.app/Contents/MacOS/godot_macos_release.universal
+          chmod +x $RUNNER_TEMP/macos-template/macos_template.app/Contents/MacOS/*
+          rm "$slim/macos.zip"
+          (cd $RUNNER_TEMP/macos-template && zip -qry "$slim/macos.zip" .)
           cd launcher
           mkdir -p export/linux export/windows export/macos
           ~/godot/godot --headless --export-release "Linux" export/linux/OpenLinks2003-Launcher.x86_64
           ~/godot/godot --headless --export-release "Windows" "export/windows/OpenLinks2003 Launcher.exe"
           ~/godot/godot --headless --export-release "macOS" export/macos/OpenLinks2003-Launcher.zip
+          # Smoke test: the slim Linux launcher starts and runs 300 frames
+          # with no script or missing-class errors.
+          HOME=$RUNNER_TEMP/launcher-home timeout 120 export/linux/OpenLinks2003-Launcher.x86_64 --headless --quit-after 300 2>&1 | tee $RUNNER_TEMP/launcher-run.log
+          if grep -E "SCRIPT ERROR|Parse Error|Cannot get class|Failed to load script" $RUNNER_TEMP/launcher-run.log; then exit 1; fi
           ls -lR export
           test -s export/linux/OpenLinks2003-Launcher.x86_64
           test -s "export/windows/OpenLinks2003 Launcher.exe"

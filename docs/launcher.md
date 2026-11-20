@@ -100,3 +100,17 @@ godot --headless --path launcher -s res://tests/run_tests.gd
 `OL_LAUNCHER_DATA` and `OL_GAME_USER_DIR` point the launcher at other
 folders (the tests use them). `--tab=1` opens on Settings, `--import=PATH`
 starts copying from a disc image or folder.
+
+## Slim engine
+
+The launcher ships with its own export templates, built from Godot's source
+by the CI `launcher-templates` job with `tools/templates/launcher.py`: no 3D,
+the Compatibility renderer only (no Vulkan, D3D12 or Metal) and none of the
+modules it doesn't use. That makes its engine about 29% smaller (24.7 to
+17.6 MiB compressed on Linux). Each template is cached by platform, Godot
+version and profile, so it only rebuilds when one of those changes. The
+export step points `XDG_DATA_HOME` at a copy of the official template folder
+with the three release binaries swapped, then starts the exported Linux
+launcher headless for 300 frames to catch a missing class. Local exports
+still use the official templates. If the launcher starts using a module or
+node type the profile leaves out, enable it in the profile.
