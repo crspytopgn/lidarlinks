@@ -123,6 +123,46 @@ static func held(usual: int, action := "") -> bool:
 	return false
 
 
+## The key hints say the usual keys ("Space or click", "D: drop"...): this
+## names the player's own keys instead. Only the keyboard part is changed,
+## not the game pad's buttons ("Pad: ...", "Right stick: ..."), and only
+## words in a key's place: before ":" or "/", after "/", or "Space".
+static func relabel(text: String) -> String:
+	if swaps.is_empty() or text.is_empty():
+		return text
+	var cut := text.find("Pad:")
+	if text.begins_with("Right stick"):
+		cut = 0
+	var head := text if cut < 0 else text.substr(0, cut)
+	var tail := "" if cut < 0 else text.substr(cut)
+	if _token_re == null:
+		_token_re = RegEx.create_from_string("(?<![A-Za-z0-9])(?<!Page )(Space|Tab|Left|Right|Up|Down|[A-Z])(?=[:/]|\\s+or\\b)|(?<=/)(Left|Right|Up|Down|[A-Z])(?![A-Za-z0-9])")
+	var out := ""
+	var at := 0
+	for m in _token_re.search_all(head):
+		var word := m.get_string(1) if not m.get_string(1).is_empty() else m.get_string(2)
+		out += head.substr(at, m.get_start() - at) + _name_for_word(word)
+		at = m.get_end()
+	return out + head.substr(at) + tail
+
+
+static var _token_re: RegEx
+
+
+static func _name_for_word(word: String) -> String:
+	var usual := OS.find_keycode_from_string(word)
+	if usual == KEY_NONE:
+		return word
+	var found := false
+	for a: Array in ACTIONS:
+		if int(a[1]) == usual:
+			found = true
+	if not found:
+		return word
+	var k := key_for(usual)
+	return word if k == usual else key_name(k)
+
+
 static func key_name(code: int) -> String:
 	return "-" if code == 0 else OS.get_keycode_string(code)
 

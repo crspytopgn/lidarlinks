@@ -14,6 +14,7 @@ var hints_folded := false
 var hint_tab: Label
 var _sound_caption_time := 0.0
 var hint: Label
+var _hint_relabelled := ""
 var meter: SwingMeter
 var mouse_swing: MouseSwingControl
 ## Aim, club and menu buttons on a touch screen (hidden elsewhere).
@@ -261,6 +262,10 @@ func _place_target_button() -> void:
 
 
 func _process(delta: float) -> void:
+	# The hints name the player's own keys (Settings > Keys).
+	if hint.text != _hint_relabelled:
+		hint.text = KeyRemap.relabel(hint.text)
+		_hint_relabelled = hint.text
 	if art != null and not broadcast:
 		_update_bars()
 	if _message_time > 0.0:

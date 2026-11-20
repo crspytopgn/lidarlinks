@@ -1357,6 +1357,20 @@ func _test_green_reading() -> void:
 		grid.build(side_hill, Vector3.ZERO, Vector3(0, 0, 6))
 		_check(grid.mesh.get_surface_count() == 1, "grid style %d builds" % style)
 	_check(GreenGrid.height_color(0.0).b > GreenGrid.height_color(0.0).r and GreenGrid.height_color(1.0).r > GreenGrid.height_color(1.0).b, "low blue, high red")
+	# Off the main thread: the same grid as a build now; asking again for
+	# the grid on show starts nothing.
+	var now_verts := (grid.mesh.surface_get_arrays(0)[Mesh.ARRAY_VERTEX] as PackedVector3Array).size()
+	grid.build_async(side_hill, Vector3.ZERO, Vector3(0, 0, 6))
+	_check(grid._job.is_empty(), "the grid on show is not built again")
+	grid.build_async(side_hill, Vector3(1, 0, 0), Vector3(0, 0, 6))
+	_check(not grid._job.is_empty(), "a new spot builds over frames")
+	var frames := 0
+	while not grid._job.is_empty() and frames < 1000:
+		grid._process(0.0)
+		frames += 1
+	_check(grid._job.is_empty() and grid.mesh.get_surface_count() == 1
+			and (grid.mesh.surface_get_arrays(0)[Mesh.ARRAY_VERTEX] as PackedVector3Array).size() > now_verts / 2,
+			"the grid built over frames goes up")
 	grid.free()
 
 
@@ -2182,6 +2196,11 @@ func _test_graphics_settings() -> void:
 		most_pan = maxf(most_pan, RoundCamera.operator_offset(i * 0.1, 1.0).length())
 	_check(most > 0.0 and most < deg_to_rad(0.1), "camera operator: resting drift under 0.1 degree")
 	_check(most_pan > most and most_pan < deg_to_rad(0.3), "camera operator: more drift while panning, under 0.3 degree")
+	# The TV long lens: wide near the player, zoomed on a ball far away,
+	# never past its limits.
+	_check(RoundCamera.zoom_fov(50.0, 10.0) == 50.0, "long lens: the player's lens on a ball close by")
+	_check_near(RoundCamera.zoom_fov(50.0, 60.0), rad_to_deg(2.0 * atan(13.0 / 60.0)), 1e-3, "long lens: 26 m of picture at 60 m")
+	_check(RoundCamera.zoom_fov(50.0, 1000.0) == 15.0 and RoundCamera.zoom_fov(25.0, 1000.0) == 9.0, "long lens: no narrower than its limits")
 	var path := "user://test_settings.cfg"
 	var cfg := ConfigFile.new()
 	cfg.set_value("game", "folder", "/somewhere")
@@ -2387,6 +2406,14 @@ func _test_trees() -> void:
 		_check(box.end.y > 2.5 and box.end.y < 20.0 and box.position.y > -0.5, "scanned %s stands on the ground (%.1f m)" % [spec[1], box.end.y])
 	for v in TreeFactory.SCANNED.size() if TreeFactory.scans_available() else TreeFactory.VARIANTS.size():
 		_check(TreeFactory.frame_size(v) >= TreeFactory.mesh(v).get_aabb().end.y, "tree %d fits its impostor frame" % v)
+	# Ultra's full-size oak leaf atlas, and the usual one otherwise.
+	if ScannedTree.leaf_textures("red_oak").size() == 2:
+		var usual := ScannedTree.leaf_textures("red_oak")[0].get_width()
+		ScannedTree.hd = true
+		var sharp := ScannedTree.leaf_textures("red_oak")[0].get_width()
+		ScannedTree.hd = false
+		_check(sharp == usual * 2 and ScannedTree.leaf_textures("red_oak")[0].get_width() == usual,
+				"Ultra oak leaves at twice the size (%d, %d)" % [usual, sharp])
 	var lib := PlaceholderObjectLibrary.new()
 	TreeFactory.level = 0
 	var classic := lib.instantiate("tree_pine")
@@ -2652,6 +2679,15 @@ func _test_gallery() -> void:
 			arm_mods += 1
 	var arms_ok := arm_mods == g.crowd_count()
 	_check(arms_ok, "each spectator holds their arms like a spectator, not round a club")
+	# Grandstands behind par 3 and last greens, and about half the rest.
+	var h := HoleData.new()
+	var with_stand := 0
+	for n in range(1, 19):
+		h.number = n
+		h.par = 4
+		with_stand += 1 if Gallery.green_stand(h, false) else 0
+	h.par = 3
+	_check(Gallery.green_stand(h, false) and with_stand >= 5 and with_stand <= 13, "grandstands on par 3s and about half the greens (%d of 18)" % with_stand)
 	var spot := Gallery.grandstand_spot(hole)
 	if not spot.is_empty():
 		var capacity := Gallery.STAND_ROWS * (int(Gallery.STAND_WIDTH / Gallery.STAND_SEAT) - 1)
@@ -5556,6 +5592,21 @@ func _test_key_remap() -> void:
 	node._input(ev)
 	_check(ev.keycode == KEY_SPACE, "a pressed J reaches the game as Space")
 	node.queue_free()
+	# The hints name the chosen keys, not the pad's buttons or Page Down.
+	KeyRemap.assign(KEY_D, KEY_G)
+	var hint := KeyRemap.relabel("Space or click: continue    D: drop    Q/E/W/S: spin    Page Down: back    Pad: A meter")
+	_check(hint == "J or click: continue    G: drop    Q/E/W/S: spin    Page Down: back    Pad: A meter", "hints name the chosen keys: %s" % hint)
+	# The putting assistant's backswing mark: a putt a third of the mouse's
+	# full putt is marked where the backswing reads a third.
+	var ms := MouseSwingControl.new()
+	ms.begin(LinksMouse.PUTTER, 0, false, false)
+	ms.target = MouseSwingControl.PUTT_FULL_SHARE / 3.0
+	var mc := ms.club
+	var b := (ms.target_height() - mc.meter.ball_line) / (mc._top - mc.meter.ball_line)
+	_check_near((2.0 + b) * b / 3.0, 1.0 / 3.0, 1e-4, "backswing mark at the putt's power")
+	ms.target = -1.0
+	_check(ms.target_height() < 0.0, "no mark without the assistant")
+	ms.free()
 	KeyRemap.reset()
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
 

@@ -765,8 +765,11 @@ func start_hole(index: int) -> void:
 	if broadcast and dressed and course.tournament:
 		# Tournament dressing: gallery ropes, and a crowd at the tee and green.
 		var crowd := Gallery.CROWD_BY_QUALITY[graphics.quality] if graphics != null else 0
-		# Grandstands go up where tournaments build them: at par 3s and the last green.
-		var stand := hole.par == 3 or hole_index == holes.size() - 1
+		# Grandstands go up where tournaments build them: at par 3s, the last
+		# green and about half the other greens, so the gallery behind a
+		# green rises in rows instead of reading as one thin line from a low
+		# view (Gallery.green_stand).
+		var stand := Gallery.green_stand(hole, hole_index == holes.size() - 1)
 		gallery = Gallery.build(hole, _first_leg(), crowd, hole.number * 7919, stand, graphics.quality if graphics != null else 0)
 		hole_root.add_child(gallery)
 	else:
@@ -3806,6 +3809,9 @@ func _apply_graphics() -> void:
 	post.apply(graphics)
 	dynamic_resolution.setup(get_viewport(), graphics)
 	camera.fov = graphics.fov
+	camera.base_fov = graphics.fov
+	ScannedTree.hd = graphics.quality == GraphicsSettings.Quality.ULTRA and GraphicsSettings.is_forward_plus() \
+		and not OS.has_feature("web")
 	camera.attributes = _camera_attributes()
 	RenderingServer.global_shader_parameter_set("foliage_sway", 1.0 if graphics.foliage_wind else 0.0)
 	# Under a soft overcast the whole sky is cloud: no moving patches of shade.
@@ -4818,7 +4824,7 @@ func _update_green_grid() -> void:
 	green_grid.visible = on
 	if on:
 		green_grid.style = (graphics.putting_grid - 1) as GreenGrid.Style
-		green_grid.build(hole.terrain, ball_at, hole.pin)
+		green_grid.build_async(hole.terrain, ball_at, hole.pin)
 
 
 # --- Golfer voice -------------------------------------------------------------
@@ -5177,6 +5183,7 @@ func _update_assistant() -> void:
 	if level == 0 or not _putting_on_green():
 		assistant.clear()
 		hud.meter.target = -1.0
+		hud.mouse_swing.target = -1.0
 		return
 	if not _assist_from.is_equal_approx(ball_at):
 		_assist = PuttRead.read(shot_model, clubs, hole, ball_at, lie)
@@ -5185,9 +5192,12 @@ func _update_assistant() -> void:
 		assistant.show_read(_assist, ball_at)
 		# The dot is on this putt's meter (Quick pace sizes it to the putt).
 		hud.meter.target = clampf(float(_assist.power) / _putt_range, 0.0, 1.0) if not _assist.is_empty() else -1.0
+		# The mouse swing's backswing mark: its putt isn't sized to the putt.
+		hud.mouse_swing.target = clampf(float(_assist.power), 0.0, 1.0) if not _assist.is_empty() else -1.0
 	else:
 		assistant.show_band(_assist)
 		hud.meter.target = -1.0
+		hud.mouse_swing.target = -1.0
 
 
 ## The putting panel: the practice drill and tally, the speed of the

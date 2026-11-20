@@ -171,7 +171,9 @@ with it, so every key still does one thing. Usual keys puts them all back.
 `KeyRemap` (saved in `[keys]` of `user://settings.cfg`) stays the last node
 under the root and turns the chosen key back into the usual one before the
 game sees it, except while a text box has the focus. The on-screen hints
-still name the usual keys.
+name the player's keys: the HUD runs each new hint through
+`KeyRemap.relabel`, which renames key words in a key's place ("Space or",
+"D:", "Q/E") and leaves the game pad's part alone.
 
 ### Captions
 
@@ -866,6 +868,12 @@ the physics, the swing and the scoring are the same in both.
   cuts for each shot (behind the player, then a chase or side-on camera,
   then a landing camera or a camera behind the green looking back at the
   ball) and `RoundCamera` follows it. Putts get a low tracking camera.
+  The standing cameras (behind the player, side, landing, pin) zoom on the
+  ball like a TV long lens (`RoundCamera.zoom_fov`): about 26 m of picture
+  height round the ball, never narrower than 30% of the player's lens or
+  9 degrees, eased as an operator would and snapped only on a cut, so the
+  ball in the air stays a ball rather than a speck. The chase, follow and
+  putting cameras keep the player's lens.
 - `RoundCamera.start_flyover()`: each hole opens with a flight from behind
   the tee, along the hole's route, down to the green. A click skips it.
   The route becomes one smoothed curve sampled every 2 m by distance, so

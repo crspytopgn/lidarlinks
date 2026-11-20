@@ -917,6 +917,14 @@ const RAIL_POST_GAP := 2.0
 const SEATED_CUT := 0.48
 
 
+## Whether a hole gets its grandstand behind the green: par 3s and the last
+## hole always, other holes by their number (about half), so the same holes
+## get them every round. A replay finds the stands from the shot record
+## (ShotRecord.stands, stand_obstacles), so this choice needn't be replayed.
+static func green_stand(hole: HoleData, last: bool) -> bool:
+	return hole.par == 3 or last or posmod(hash(hole.number * 7919 + 13), 2) == 0
+
+
 static func stand_depth() -> float:
 	return STAND_ROWS * STAND_TREAD
 

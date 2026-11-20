@@ -108,9 +108,63 @@ static func flow_speed(percent: float) -> float:
 	return clampf(FLOW_BASE_SPEED + FLOW_SPEED_PER_PERCENT * percent, FLOW_BASE_SPEED, FLOW_MAX_SPEED)
 
 
-## Rebuilds the grid over the square that holds `ball` and `pin`.
+## What the grid on show was built for, so asking again for the same grid
+## (a club change, the aim settling) costs nothing.
+var _built_key := []
+## A build spread over frames (build_async): its state, or empty.
+var _job := {}
+## Milliseconds of building a frame (build_async).
+const SLICE_MS := 3.0
+
+
+## Builds the grid a few milliseconds a frame, so the 40 to 150 ms it takes
+## on a big green never stalls one; the old grid stays up until it's done.
+## (Not on a worker thread: the caddie's planning crashed there, as Godot
+## 4.4's script arrays aren't safe to share across threads.)
+func build_async(terrain: CourseTerrain, ball: Vector3, pin: Vector3) -> void:
+	var key := [terrain, ball, pin, style]
+	if not _job.is_empty():
+		if key == _job.key:
+			return
+	elif key == _built_key:
+		return
+	_job = _begin(terrain, ball, pin)
+	_job.key = key
+	set_process(true)
+
+
+func _process(_delta: float) -> void:
+	if _job.is_empty():
+		set_process(false)
+		return
+	if _advance(_job, Time.get_ticks_usec() + int(SLICE_MS * 1000.0)):
+		_built_key = _job.key
+		_apply(_finish())
+		_job = {}
+
+
+## Rebuilds the grid over the square that holds `ball` and `pin`, now.
 func build(terrain: CourseTerrain, ball: Vector3, pin: Vector3) -> void:
+	_apply(_build_arrays(terrain, ball, pin))
+	_built_key = [terrain, ball, pin, style]
+
+
+func _apply(arrays: Array) -> void:
 	_mesh.clear_surfaces()
+	if not arrays.is_empty() and not (arrays[Mesh.ARRAY_VERTEX] as PackedVector3Array).is_empty():
+		_mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+
+
+## The grid's mesh arrays over the square that holds `ball` and `pin`.
+func _build_arrays(terrain: CourseTerrain, ball: Vector3, pin: Vector3) -> Array:
+	_job = {}  # a build now replaces one spread over frames
+	var job := _begin(terrain, ball, pin)
+	_advance(job, -1)
+	return _finish()
+
+
+## Starts a build: the square, and the height range for the height colours.
+func _begin(terrain: CourseTerrain, ball: Vector3, pin: Vector3) -> Dictionary:
 	var centre := (ball + pin) * 0.5
 	var half := clampf(Vector2(ball.x - pin.x, ball.z - pin.z).length() * 0.5 + MARGIN, 6.0, MAX_HALF)
 	var x0 := snappedf(centre.x - half, SPACING)
@@ -127,22 +181,43 @@ func build(terrain: CourseTerrain, ball: Vector3, pin: Vector3) -> void:
 	_x0 = x0
 	_z0 = z0
 	_points.clear()
-	_verts.clear()
-	_colors.clear()
-	_normals.clear()
-	_uvs.clear()
-	_uv2s.clear()
-	for a in cells + 1:
+	_verts = PackedVector3Array()
+	_colors = PackedColorArray()
+	_normals = PackedVector3Array()
+	_uvs = PackedVector2Array()
+	_uv2s = PackedVector2Array()
+	return {"terrain": terrain, "cells": cells, "line": 0, "flow": 0}
+
+
+## Builds lines (then streamlines) until `deadline_us` (-1: to the end).
+## True once everything is built.
+@warning_ignore("integer_division")
+func _advance(job: Dictionary, deadline_us: int) -> bool:
+	var terrain: CourseTerrain = job.terrain
+	var cells: int = job.cells
+	while job.line < cells + 1:
+		var a: int = job.line
 		for b in cells:
 			# Line a runs along z at x = x0 + a, and along x at z = z0 + a.
 			_segment(terrain, Vector2i(a * PIECES, b * PIECES), Vector2i(0, 1))
 			_segment(terrain, Vector2i(b * PIECES, a * PIECES), Vector2i(1, 0))
+		job.line = a + 1
+		if deadline_us >= 0 and Time.get_ticks_usec() > deadline_us:
+			return false
 	if style == Style.SLOPE:
-		var seed := 0
-		for a in cells:
-			for b in cells:
-				seed += 1
-				_flow(terrain, Vector2(x0 + (a + 0.5) * SPACING, z0 + (b + 0.5) * SPACING), seed)
+		while job.flow < cells * cells:
+			var i: int = job.flow
+			var a := i / cells
+			var b := i % cells
+			_flow(terrain, Vector2(_x0 + (a + 0.5) * SPACING, _z0 + (b + 0.5) * SPACING), i + 1)
+			job.flow = i + 1
+			if deadline_us >= 0 and Time.get_ticks_usec() > deadline_us:
+				return false
+	return true
+
+
+## The finished build's arrays; the build's own arrays now belong to them.
+func _finish() -> Array:
 	var arrays := []
 	arrays.resize(Mesh.ARRAY_MAX)
 	arrays[Mesh.ARRAY_VERTEX] = _verts
@@ -150,8 +225,13 @@ func build(terrain: CourseTerrain, ball: Vector3, pin: Vector3) -> void:
 	arrays[Mesh.ARRAY_COLOR] = _colors
 	arrays[Mesh.ARRAY_TEX_UV] = _uvs
 	arrays[Mesh.ARRAY_TEX_UV2] = _uv2s
-	_mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
 	_points.clear()
+	_verts = PackedVector3Array()
+	_colors = PackedColorArray()
+	_normals = PackedVector3Array()
+	_uvs = PackedVector2Array()
+	_uv2s = PackedVector2Array()
+	return arrays
 
 
 ## A streamline from `c` downhill, with its running dot (see the shader).
