@@ -5534,6 +5534,21 @@ func _test_key_remap() -> void:
 	node._input(ev)
 	_check(ev.keycode == KEY_SPACE, "a pressed J reaches the game as Space")
 	node.queue_free()
+	# The hints name the chosen keys, not the pad's buttons or Page Down.
+	KeyRemap.assign(KEY_D, KEY_G)
+	var hint := KeyRemap.relabel("Space or click: continue    D: drop    Q/E/W/S: spin    Page Down: back    Pad: A meter")
+	_check(hint == "J or click: continue    G: drop    Q/E/W/S: spin    Page Down: back    Pad: A meter", "hints name the chosen keys: %s" % hint)
+	# The putting assistant's backswing mark: a putt a third of the mouse's
+	# full putt is marked where the backswing reads a third.
+	var ms := MouseSwingControl.new()
+	ms.begin(LinksMouse.PUTTER, 0, false, false)
+	ms.target = MouseSwingControl.PUTT_FULL_SHARE / 3.0
+	var mc := ms.club
+	var b := (ms.target_height() - mc.meter.ball_line) / (mc._top - mc.meter.ball_line)
+	_check_near((2.0 + b) * b / 3.0, 1.0 / 3.0, 1e-4, "backswing mark at the putt's power")
+	ms.target = -1.0
+	_check(ms.target_height() < 0.0, "no mark without the assistant")
+	ms.free()
 	KeyRemap.reset()
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
 

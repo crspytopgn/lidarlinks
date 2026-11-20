@@ -5166,6 +5166,7 @@ func _update_assistant() -> void:
 	if level == 0 or not _putting_on_green():
 		assistant.clear()
 		hud.meter.target = -1.0
+		hud.mouse_swing.target = -1.0
 		return
 	if not _assist_from.is_equal_approx(ball_at):
 		_assist = PuttRead.read(shot_model, clubs, hole, ball_at, lie)
@@ -5174,9 +5175,12 @@ func _update_assistant() -> void:
 		assistant.show_read(_assist, ball_at)
 		# The dot is on this putt's meter (Quick pace sizes it to the putt).
 		hud.meter.target = clampf(float(_assist.power) / _putt_range, 0.0, 1.0) if not _assist.is_empty() else -1.0
+		# The mouse swing's backswing mark: its putt isn't sized to the putt.
+		hud.mouse_swing.target = clampf(float(_assist.power), 0.0, 1.0) if not _assist.is_empty() else -1.0
 	else:
 		assistant.show_band(_assist)
 		hud.meter.target = -1.0
+		hud.mouse_swing.target = -1.0
 
 
 ## The putting panel: the practice drill and tally, the speed of the

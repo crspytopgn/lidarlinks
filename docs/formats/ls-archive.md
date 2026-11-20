@@ -107,3 +107,20 @@ See [carrera-store.md](carrera-store.md) for `.SKL` and `.CLP`, and
 Menu sounds in `SOUNDS.LS`: `BC_CLICK.WAV` (button click); `MUSIC1.WAV` and
 `MUSIC2.WAV` (menu music, stereo MS ADPCM, 44.1 kHz, about 90 s), with the
 `LO` versions at a lower quality.
+
+## `CLUBDIST` (in `GRAPHICS.LS`)
+
+2448 bytes, read on 2026-11-20 from CD1 `GRAPHICS.LS` (LZW). A 16-byte
+header of zeros, then 19 rows of 64 little-endian unsigned 16-bit values.
+Each row rises steadily from 0 or 1 to its maximum. The row maxima split
+into two groups that each fall off steadily, which suggests 7 woods
+(maxima 918, 889, 871, 850, 814, 778, 747) then 12 irons and wedges (856,
+830, 795, 760, 708, 665, 637, 607, 544, 490, 394, 313). If the unit is feet,
+the driver's 918 is 306 yd and the last wedge's 313 is 104 yd, which is
+plausible for full shots. The curves are not straight lines: the first row
+reads 1, 69, 113, 199, 362, 626, 744, 842 and 918 at every eighth step, so
+the 64 steps are probably not even power steps. Neither the unit nor what
+the step means is confirmed yet. Our auto club and caddie already pick
+clubs by running the game's own flight on the shot, so nothing reads this
+table yet. Confirming it needs the code that reads `CLUBDIST`, or numbers
+shown by the running game (the club list's distances).
