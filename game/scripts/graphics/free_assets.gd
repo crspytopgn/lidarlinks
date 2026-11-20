@@ -42,18 +42,20 @@ static func has_grounds() -> bool:
 const FINISHES: Array[String] = ["beach", "pine", "mud", "hardpan", "rock"]
 ## Metres per tile of each finish's scan (its real size).
 const FINISH_METRES: Array[float] = [2.0, 2.0, 2.4, 4.0, 3.0]
+const FINISH_SIZE := 512  ## pixels per layer of finish_array()
 static var _finish_array: Texture2DArray
 static var _finish_luma := PackedFloat32Array()
 
 
 ## The finishes' albedos then normal maps as one texture array (one
-## sampler: Compatibility has few), each layer `size` square, or null when
-## any is missing. 1024 on Forward+, 512 in Compatibility (the browser's
-## video memory).
+## sampler: Compatibility has few), each layer 512 square, or null when
+## any is missing. 512 on every renderer: the array stays uncompressed (an
+## exported game has no block compressor), so 1024 layers took about 53 MB
+## of video memory, and 512 is still 4 mm a pixel on a 2 m tile.
 static func finish_array() -> Texture2DArray:
 	if _finish_array != null:
 		return _finish_array
-	var size := 1024 if GraphicsSettings.is_forward_plus() else 512
+	var size := FINISH_SIZE
 	var albedos: Array[Image] = []
 	var normals: Array[Image] = []
 	var luma := PackedFloat32Array()

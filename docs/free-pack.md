@@ -71,5 +71,6 @@ blades and fescue leave those cells bare. The scans (Poly Haven, CC0):
 dense_sand, forrest_ground_03, mud_forest, dry_ground_01, and the cliff
 slot's cliff_side for rock, fetched as `finish_*` slots at 1k (normals 512)
 and packed into one texture array (`FreeAssets.finish_array`: one sampler,
-as Compatibility has few), 1024 per layer on Forward+ and 512 in
-Compatibility.
+as Compatibility has few), 512 per layer on every renderer: the array is
+uncompressed, and at 1024 it took about 53 MB of video memory, which put
+Forward+ over its render check budget.
