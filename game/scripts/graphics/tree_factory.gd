@@ -862,6 +862,12 @@ static func _mat(v: int, part: String, prefix := "") -> ShaderMaterial:
 	return material(prefix + ("needles" if pine else "leaves"))
 
 
+## Forgets the made materials (ScannedTree.hd changed): trees already built
+## keep theirs.
+static func clear_materials() -> void:
+	_materials.clear()
+
+
 static func material(which: String) -> ShaderMaterial:
 	if _materials.has(which):
 		return _materials[which]

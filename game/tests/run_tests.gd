@@ -2406,6 +2406,14 @@ func _test_trees() -> void:
 		_check(box.end.y > 2.5 and box.end.y < 20.0 and box.position.y > -0.5, "scanned %s stands on the ground (%.1f m)" % [spec[1], box.end.y])
 	for v in TreeFactory.SCANNED.size() if TreeFactory.scans_available() else TreeFactory.VARIANTS.size():
 		_check(TreeFactory.frame_size(v) >= TreeFactory.mesh(v).get_aabb().end.y, "tree %d fits its impostor frame" % v)
+	# Ultra's full-size oak leaf atlas, and the usual one otherwise.
+	if ScannedTree.leaf_textures("red_oak").size() == 2:
+		var usual := ScannedTree.leaf_textures("red_oak")[0].get_width()
+		ScannedTree.hd = true
+		var sharp := ScannedTree.leaf_textures("red_oak")[0].get_width()
+		ScannedTree.hd = false
+		_check(sharp == usual * 2 and ScannedTree.leaf_textures("red_oak")[0].get_width() == usual,
+				"Ultra oak leaves at twice the size (%d, %d)" % [usual, sharp])
 	var lib := PlaceholderObjectLibrary.new()
 	TreeFactory.level = 0
 	var classic := lib.instantiate("tree_pine")

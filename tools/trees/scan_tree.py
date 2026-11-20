@@ -350,6 +350,12 @@ def cluster_atlas(name, leaves, cell, g, src_dir, out_dir):
     atlas.split()[3].resize((rgb.width // 2, rgb.height // 2), Image.LANCZOS).save(os.path.join(out_dir, f"scan_{name}_leaves_alpha.png"), optimize=True)
     write_import(os.path.join(out_dir, f"scan_{name}_leaves.jpg"))
     write_import(os.path.join(out_dir, f"scan_{name}_leaves_alpha.png"))
+    # The full-size atlas for Ultra on desktop (ScannedTree.hd; not in the
+    # web build), so close crowns stay crisp.
+    rgb.save(os.path.join(out_dir, f"scan_{name}_leaves_hd.jpg"), quality=88)
+    atlas.split()[3].save(os.path.join(out_dir, f"scan_{name}_leaves_hd_alpha.png"), optimize=True)
+    write_import(os.path.join(out_dir, f"scan_{name}_leaves_hd.jpg"))
+    write_import(os.path.join(out_dir, f"scan_{name}_leaves_hd_alpha.png"))
     print(f"{name}: leaf atlas from {len(picks)} cells")
 
 

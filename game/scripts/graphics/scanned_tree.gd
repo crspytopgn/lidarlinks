@@ -17,6 +17,16 @@ const DIR := "res://assets/trees/"
 ## oak, CC BY: credits in that folder), committed with the trees and
 ## written by scan_tree.py --atlas.
 const TEXTURE_DIR := "res://assets/trees/textures/"
+## Ultra on desktop (Forward+): the leaf atlases at full size
+## (scan_<asset>_leaves_hd*, written by scan_tree.py --atlas; left out of
+## the web build), so close crowns stay crisp. Set by main from the
+## graphics settings; a change clears TreeFactory's materials so the next
+## trees built use the other atlas.
+static var hd := false:
+	set(v):
+		if v != hd:
+			hd = v
+			TreeFactory.clear_materials()
 ## Leaf cards in a lite mesh (see build).
 const LITE_CARDS := 1000.0
 
@@ -66,8 +76,12 @@ static func leaf_textures(name: String) -> Array[Texture2D]:
 		col = FreeAssets.tree_texture("twig_albedo.jpg")
 		alpha = FreeAssets.tree_texture("twig_opacity.png")
 	else:
-		col = _texture("scan_%s_leaves.jpg" % asset)
-		alpha = _texture("scan_%s_leaves_alpha.png" % asset)
+		if hd and ResourceLoader.exists(TEXTURE_DIR + "scan_%s_leaves_hd.jpg" % asset):
+			col = _texture("scan_%s_leaves_hd.jpg" % asset)
+			alpha = _texture("scan_%s_leaves_hd_alpha.png" % asset)
+		if col == null or alpha == null:
+			col = _texture("scan_%s_leaves.jpg" % asset)
+			alpha = _texture("scan_%s_leaves_alpha.png" % asset)
 	if col != null and alpha != null:
 		out = [col, alpha]
 	return out
