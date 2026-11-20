@@ -639,7 +639,26 @@ placeholder round, holds the first tee and draws it with one feature
 changed at a time (`FrameBenchmark.CASES`), v-sync off. GPU and CPU
 milliseconds per frame for each case go to the log and
 `user://benchmark.txt`, then the game quits. Add `--look=natural` (or
-another look) to start from that preset instead of the saved settings.
+another look) to start from that preset instead of the saved settings,
+`--course=PATH` to play another course (a real course's .olc from the
+builder, say), `--shadow-casters` to list what each owner's sun shadow
+casters cost in the shadow pass, and `--view=x,y,z,tx,ty,tz,out.png`
+(or `--view=tee,out.png`, any number of them) to save frames from fixed
+cameras for before and after comparisons.
+
+On 2026-11-20 (West Essex from the builder, 18,000 trees) the sun's four
+shadow splits drew more triangles than the view itself. Trimmed without
+changing the look: near trees cast their shadow with the full leaves and
+the lite bark (the full bark was 14k of a red oak's 23k triangles, drawn
+again into each split), ground chunks cast only where they fall away from
+the sun more steeply than it is high (a slope facing the sun shades
+nothing), hazard stakes are a MultiMesh per 64 m square so they are culled,
+and flat cart paths cast none. The ground shader reads the rough's and
+the sand's textures only where they have a share. West Essex's first tee
+(Natural, Compatibility): 623 to 570 draws, 1.34M to 1.06M triangles a
+frame; the shadow pass's tree triangles 257k to 132k, ground 149k to 106k
+(132 to 65 chunks casting), stakes 86k to none. Each hole change there was
+also half a second faster: the ponds' water meshes are kept between holes.
 
 On Forward+ (desktop) the free textures, imported as lossy WebP for a
 small download, are block-compressed (BC1/BC3) as they load

@@ -777,6 +777,10 @@ func _path_mesh(p: CoursePath) -> MeshInstance3D:
 		mesh.surface_set_material(_add_railings(mesh, edges, p.width), ScannedSurfaces.uv_material("timber", p.width, _path_material(true)))
 	var inst := MeshInstance3D.new()
 	inst.mesh = mesh
+	# A path lies 5 cm over the ground: its shadow falls under itself, so
+	# it was only extra draws in each shadow split. A bridge keeps its own.
+	if not p.bridge:
+		inst.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	return inst
 
 
@@ -926,6 +930,10 @@ func _add_bridge_obstacles(p: CoursePath) -> void:
 		k = k2
 
 
+## Side (m) of the squares the hazard stakes are grouped in (build_stakes).
+const STAKE_CELL := 64.0
+
+
 func build_water() -> Node3D:
 	var root := Node3D.new()
 	root.name = "Water"
@@ -933,28 +941,17 @@ func build_water() -> Node3D:
 		if s.surface != Surface.Type.WATER:
 			continue
 		var poly := s.outline()
-		if Geometry2D.triangulate_polygon(poly).is_empty():
-			continue
 		var level := water_level(s)
-		var surface := water_surface_mesh(poly, level)
-		var verts: PackedVector3Array = surface[0]
-		var open: PackedColorArray = surface[1]
-		var indices: PackedInt32Array = surface[2]
-		var uvs := PackedVector2Array()
-		uvs.resize(verts.size())
-		uvs.fill(Vector2(0.5, 0.5))
-		var normals := PackedVector3Array()
-		normals.resize(verts.size())
-		normals.fill(Vector3.UP)
-		var arrays := []
-		arrays.resize(Mesh.ARRAY_MAX)
-		arrays[Mesh.ARRAY_VERTEX] = verts
-		arrays[Mesh.ARRAY_NORMAL] = normals
-		arrays[Mesh.ARRAY_TEX_UV] = uvs
-		arrays[Mesh.ARRAY_COLOR] = open
-		arrays[Mesh.ARRAY_INDEX] = indices
-		var mesh := ArrayMesh.new()
-		mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+		# Every hole draws the same water: a pond's mesh is kept for the
+		# next (building them all was half a second at each hole change on
+		# a real course with a hundred ponds).
+		var key := hash([poly, level])
+		var mesh: ArrayMesh = _water_meshes.get(key)
+		if mesh == null:
+			mesh = _water_mesh(poly, level)
+			if mesh == null:
+				continue
+			_water_meshes[key] = mesh
 		var inst := MeshInstance3D.new()
 		inst.mesh = mesh
 		inst.material_override = Materials.water_surface()
@@ -966,8 +963,39 @@ func build_water() -> Node3D:
 	return root
 
 
-## The hazard stakes as one MultiMesh, or null if the course has none.
-func build_stakes() -> MultiMeshInstance3D:
+## Each pond's water mesh by a hash of its outline and level (build_water).
+var _water_meshes := {}
+
+
+## A pond's water surface, or null if its outline can't be filled.
+func _water_mesh(poly: PackedVector2Array, level: float) -> ArrayMesh:
+	if Geometry2D.triangulate_polygon(poly).is_empty():
+		return null
+	var surface := water_surface_mesh(poly, level)
+	var verts: PackedVector3Array = surface[0]
+	var open: PackedColorArray = surface[1]
+	var indices: PackedInt32Array = surface[2]
+	var uvs := PackedVector2Array()
+	uvs.resize(verts.size())
+	uvs.fill(Vector2(0.5, 0.5))
+	var normals := PackedVector3Array()
+	normals.resize(verts.size())
+	normals.fill(Vector3.UP)
+	var arrays := []
+	arrays.resize(Mesh.ARRAY_MAX)
+	arrays[Mesh.ARRAY_VERTEX] = verts
+	arrays[Mesh.ARRAY_NORMAL] = normals
+	arrays[Mesh.ARRAY_TEX_UV] = uvs
+	arrays[Mesh.ARRAY_COLOR] = open
+	arrays[Mesh.ARRAY_INDEX] = indices
+	var mesh := ArrayMesh.new()
+	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+	return mesh
+
+
+## The hazard stakes, a MultiMesh per area of the course, or null if the
+## course has none.
+func build_stakes() -> Node3D:
 	var at: Array[Vector3] = []
 	var colours: Array[Color] = []
 	for s in course.shapes:
@@ -999,25 +1027,48 @@ func build_stakes() -> MultiMeshInstance3D:
 	mesh.height = STAKE_HEIGHT
 	mesh.radial_segments = 6
 	mesh.rings = 1
+	mesh.cap_bottom = false  # knocked 5 cm into the ground
 	var mat := StandardMaterial3D.new()
 	mat.vertex_color_use_as_albedo = true
 	mat.roughness = 0.85
 	mat.metallic_specular = 0.3
 	mesh.material = mat
-	var mm := MultiMesh.new()
-	mm.transform_format = MultiMesh.TRANSFORM_3D
-	mm.use_colors = true
-	mm.mesh = mesh
-	mm.instance_count = at.size()
+	# One MultiMesh per STAKE_CELL square, so the renderer culls the
+	# stakes out of view (and out of each shadow split) instead of drawing
+	# every stake on the course into each of the sun's four shadow maps.
+	var cells := {}
 	for i in at.size():
-		# A little lean, as stakes knocked in by hand stand.
-		var lean := Basis(Vector3(sin(i * 1.7), 0.0, cos(i * 2.3)).normalized(), 0.04 * sin(i * 0.9))
-		mm.set_instance_transform(i, Transform3D(lean, at[i] + Vector3(0.0, STAKE_HEIGHT * 0.5 - 0.05, 0.0)))
-		mm.set_instance_color(i, colours[i])
-	var inst := MultiMeshInstance3D.new()
-	inst.name = "Stakes"
-	inst.multimesh = mm
-	return inst
+		var key := Vector2i(floori(at[i].x / STAKE_CELL), floori(at[i].z / STAKE_CELL))
+		var ids: PackedInt32Array = cells.get(key, PackedInt32Array())
+		ids.append(i)
+		cells[key] = ids  # (a packed array is copied, not shared)
+	var root := Node3D.new()
+	root.name = "Stakes"
+	for key: Vector2i in cells:
+		var ids: PackedInt32Array = cells[key]
+		var mm := MultiMesh.new()
+		mm.transform_format = MultiMesh.TRANSFORM_3D
+		mm.use_colors = true
+		mm.mesh = mesh
+		mm.instance_count = ids.size()
+		for j in ids.size():
+			var i := ids[j]
+			# A little lean, as stakes knocked in by hand stand.
+			var lean := Basis(Vector3(sin(i * 1.7), 0.0, cos(i * 2.3)).normalized(), 0.04 * sin(i * 0.9))
+			mm.set_instance_transform(j, Transform3D(lean, at[i] + Vector3(0.0, STAKE_HEIGHT * 0.5 - 0.05, 0.0)))
+			mm.set_instance_color(j, colours[i])
+		var inst := MultiMeshInstance3D.new()
+		inst.multimesh = mm
+		root.add_child(inst)
+	return root
+
+
+## How many stakes `build_stakes` placed.
+static func stake_count(stakes: Node3D) -> int:
+	var n := 0
+	for c in stakes.get_children():
+		n += (c as MultiMeshInstance3D).multimesh.instance_count
+	return n
 
 
 ## Points every `spacing` metres round a closed outline, evenly spread so
@@ -1675,6 +1726,7 @@ class LodRefiner extends Node:
 	var ground: Node3D  ## the chunks' parent (build_visual's root)
 	var sun: DirectionalLight3D
 	var _sun_tan := -1.0
+	var _light := Vector2.ZERO  ## the way the sunlight ran when the casters were set
 	var _known := 0  ## steepness entries when the casters were last set
 
 	func _init(t: DesignedTerrain, root: Node3D) -> void:
@@ -1704,14 +1756,22 @@ class LodRefiner extends Node:
 		var up := sun.global_transform.basis.z.y  # sin of the sun's height
 		var height := clampf(up, 0.0, 1.0)
 		var t := height / maxf(sqrt(1.0 - height * height), 1e-3)
-		if absf(t - _sun_tan) < 0.005 and terrain.steepness.size() == _known:
+		# The way the light runs over the ground (the light shines along -z).
+		var run := -Vector2(sun.global_transform.basis.z.x, sun.global_transform.basis.z.z)
+		var light := run.normalized() if run.length() > 1e-4 else Vector2.ZERO
+		if absf(t - _sun_tan) < 0.005 and light.distance_to(_light) < 0.01 and terrain.steepness.size() == _known:
 			return
 		_sun_tan = t
+		_light = light
 		_known = terrain.steepness.size()
 		for inst in ground.get_children():
 			if not inst is MeshInstance3D or not inst.has_meta("chunk"):
 				continue
 			var steep: float = terrain.steepness.get(inst.get_meta("chunk"), INF)
+			# Only the ground falling away from the sun counts.
+			var fall: Variant = terrain.falls.get(inst.get_meta("chunk"))
+			if fall != null and light != Vector2.ZERO:
+				steep = minf(steep, DesignedTerrain.fall_toward(fall, light))
 			(inst as MeshInstance3D).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON if DesignedTerrain.casts_sun_shadow(steep, t) else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 
 
@@ -1749,6 +1809,57 @@ static func _steepest(verts: PackedVector3Array, nx: int, nz: int) -> float:
 	return out
 
 
+## Headings the ground's fall is measured along (_falls).
+const FALL_DIRS := 16
+## Below this slope (rise over run) a cell can't shade anything at any sun
+## height the game uses (tan 4 degrees), so _falls skips it.
+const FALL_MIN := 0.07
+
+
+## How steeply the chunk's ground falls away along each of FALL_DIRS
+## headings: entry k is the steepest drop (rise over run, over a 2 m cell)
+## going toward heading k (angle TAU * k / FALL_DIRS from +x toward +z).
+## Ground only shades itself or what stands on it where it falls away from
+## the sun more steeply than the sun is high: a slope facing the sun, however
+## steep, shades nothing.
+static func _falls(verts: PackedVector3Array, nx: int, nz: int) -> PackedFloat32Array:
+	var out := PackedFloat32Array()
+	out.resize(FALL_DIRS)
+	out.fill(0.0)
+	var dirs: Array[Vector2] = []
+	for k in FALL_DIRS:
+		var a := TAU * k / FALL_DIRS
+		dirs.append(Vector2(cos(a), sin(a)))
+	var inv := 1.0 / DesignedCourse.CELL
+	var min2 := FALL_MIN * FALL_MIN
+	for j in nz - 1:
+		var row := j * nx
+		for i in nx - 1:
+			var h := verts[row + i].y
+			var gx := (verts[row + i + 1].y - h) * inv
+			var gz := (verts[row + nx + i].y - h) * inv
+			if gx * gx + gz * gz < min2:
+				continue
+			for k in FALL_DIRS:
+				out[k] = maxf(out[k], -(gx * dirs[k].x + gz * dirs[k].y))
+	return out
+
+
+## The steepest fall in `falls` (see _falls) along the way the sunlight
+## runs, `light` (x, z, unit length): the two nearest headings' worst,
+## grown for the angle between them (the fall along a heading between two
+## measured ones is at most that over cos of half the gap).
+static func fall_toward(falls: PackedFloat32Array, light: Vector2) -> float:
+	var a := fposmod(atan2(light.y, light.x), TAU) / TAU * FALL_DIRS
+	var k0 := int(floor(a)) % FALL_DIRS
+	var k1 := (k0 + 1) % FALL_DIRS
+	return maxf(falls[k0], falls[k1]) / cos(PI / FALL_DIRS)
+
+
+## Each refined chunk's falls (_falls): Vector2i -> PackedFloat32Array.
+var falls := {}
+
+
 ## The switch errors (m) of each chunk's coarser levels, finest first, once
 ## refine_lods() has given it them: Vector2i -> PackedFloat32Array.
 var lod_keys := {}
@@ -1782,6 +1893,7 @@ func _add_lods(job: Dictionary) -> void:
 	var weights: PackedVector2Array = arrays[Mesh.ARRAY_TEX_UV2]
 	var palette: PackedFloat32Array = arrays[Mesh.ARRAY_CUSTOM0]
 	steepness[job.key] = _steepest(verts, nx, nz)
+	falls[job.key] = _falls(verts, nx, nz)
 	var steps := _lod_errors(verts.slice(0, grid), colors.slice(0, grid), weights.slice(0, grid), palette.slice(0, grid * 4), uvs.slice(0, grid), nx, nz)
 	if steps.is_empty():
 		return

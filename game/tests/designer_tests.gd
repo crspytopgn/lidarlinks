@@ -201,7 +201,7 @@ func _test_splat_and_stakes() -> void:
 	check(texel.x <= 1.01 and texel.y <= 1.01, "a long course keeps 1 m green and bunker edges (%s m)" % texel)
 	check(lsplat != null and lsplat.get_width() <= DesignedTerrain.SPLAT_MAX and lsplat.get_height() <= DesignedTerrain.SPLAT_MAX, "its splat map fits the texture limit")
 	var stakes := t.build_stakes()
-	check(stakes != null and stakes.multimesh.instance_count > 5, "the starter pond has hazard stakes")
+	check(stakes != null and DesignedTerrain.stake_count(stakes) > 5, "the starter pond has hazard stakes")
 	if stakes != null:
 		stakes.free()
 
@@ -469,6 +469,19 @@ func _test_ground_lods() -> void:
 	var steep: float = t.steepness.get(t.chunk_count() / 2, 0.0)
 	check(steep > 0.05, "the hill has slopes: %f" % steep)
 	check(DesignedTerrain.casts_sun_shadow(steep, steep * 0.5) and not DesignedTerrain.casts_sun_shadow(steep, steep * 2.0), "a hill casts sun shadows only when the sun is lower than its slopes")
+	# Only ground falling away from the sun shades anything: a slope that
+	# rises along +x (toward the light's run) faces the sun and casts none.
+	var nx := 5
+	var ramp := PackedVector3Array()
+	for j in nx:
+		for i in nx:
+			ramp.append(Vector3(i * DesignedCourse.CELL, 0.5 * i * DesignedCourse.CELL, j * DesignedCourse.CELL))
+	var falls := DesignedTerrain._falls(ramp, nx, nx)
+	check(DesignedTerrain.fall_toward(falls, Vector2(1, 0)) < 0.01, "a slope facing the sun casts no shadow: %s" % falls)
+	check(absf(DesignedTerrain.fall_toward(falls, Vector2(-1, 0)) - 0.5) < 0.05, "with the sun behind it, it falls at its slope: %s" % falls)
+	check(DesignedTerrain.fall_toward(falls, Vector2(-1, 1).normalized()) >= 0.5 * cos(PI / 4.0) - 1e-4, "and never less than its true fall between headings")
+	var hill_falls: PackedFloat32Array = t.falls.get(t.chunk_count() / 2, PackedFloat32Array())
+	check(hill_falls.size() == DesignedTerrain.FALL_DIRS and hill_falls[0] <= steep + 1e-4, "a hill's falls are measured, none steeper than its steepest slope")
 	# Skirts: an inner chunk's edge has them, the course's edge doesn't.
 	var corner := t.chunk_mesh(Vector2i(0, 0))
 	var arrays := corner.surface_get_arrays(0)
