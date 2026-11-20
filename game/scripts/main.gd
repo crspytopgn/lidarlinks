@@ -12,7 +12,7 @@ extends Node3D
 ## ShotModel, so none of them is wired in here.
 
 ## REMOTE: an online round waits for another player's shot or drop.
-enum State { AIM, SWING, FLIGHT, SHOT_RESULT, HOLE_DONE, ROUND_DONE, COMPUTER, DROP, DRIVE, REMOTE }
+enum State { AIM, SWING, FLIGHT, SHOT_RESULT, HOLE_DONE, ROUND_DONE, COMPUTER, DROP, DRIVE, REMOTE, STRIKE }
 
 const YARDS_PER_METRE := 1.0936
 const FEET_PER_METRE := 3.2808
@@ -393,9 +393,9 @@ var _incoming: ShotRecord = null
 
 
 func _exit_tree() -> void:
-	# Shot reads still planning on worker threads (CaddieAdvice) must end
-	# before the game can quit.
-	CaddieAdvice.wait_all()
+	# Physics still running on worker threads (BackgroundWork: the strike,
+	# plans, shot reads) must end before the game can quit.
+	BackgroundWork.wait_all()
 	Gallery.free_spare_people()
 
 
@@ -1025,7 +1025,48 @@ func play_shot(power: float, accuracy: float, monitor: OpenConnect.Launch = null
 		rec.skill = _incoming.skill
 	_mouse_stroke = null
 	_mouse_help = null
-	shot = RoundReplay.run_shot(shot_model, rec, club, hole.terrain, hole.pin, rec.wind, round_seed)
+	# The flight and roll are worked out on a worker thread where the game
+	# has threads (BackgroundWork), on a model of its own, while the club
+	# comes down: worked out here, they stalled the frame of the strike.
+	# Another player's shot online is checked as it arrives.
+	if BackgroundWork.available() and _incoming == null:
+		var model := shot_model.fresh()
+		var terrain := hole.terrain
+		var pin := hole.pin
+		var shot_seed := round_seed
+		var out: Array[ShotResult] = []
+		var work := func() -> void: out.append(RoundReplay.run_shot(model, rec, club, terrain, pin, rec.wind, shot_seed))
+		_strike = {"rec": rec, "club": club, "power": power, "accuracy": accuracy, "out": out}
+		_strike["task"] = BackgroundWork.start(work, "strike")
+		state = State.STRIKE
+		return
+	_struck(rec, club, power, accuracy, RoundReplay.run_shot(shot_model, rec, club, hole.terrain, hole.pin, rec.wind, round_seed))
+
+
+## The strike on a worker thread (play_shot): {rec, club, power, accuracy,
+## out, task} while State.STRIKE.
+var _strike := {}
+
+
+## State.STRIKE: the flight starts once the worker thread has it, or at
+## once with `wait`.
+func _process_strike(wait := false) -> void:
+	if _strike.is_empty():
+		return
+	var task: int = _strike["task"]
+	if wait:
+		BackgroundWork.wait(task)
+	elif not BackgroundWork.done(task):
+		return
+	var s := _strike
+	_strike = {}
+	var out: Array[ShotResult] = s["out"]
+	_struck(s["rec"], s["club"], s["power"], s["accuracy"], out[0])
+
+
+## The rest of play_shot, once the flight and roll are known.
+func _struck(rec: ShotRecord, club: Club, power: float, accuracy: float, result: ShotResult) -> void:
+	shot = result
 	rec.rest = shot.rest
 	rec.outcome = shot.outcome
 	if golfer:
@@ -1076,6 +1117,8 @@ func play_shot(power: float, accuracy: float, monitor: OpenConnect.Launch = null
 func auto_play_step() -> void:
 	hud.hand_over.close()
 	match state:
+		State.STRIKE:
+			_process_strike(true)
 		State.COMPUTER:
 			opponents[shooter].finish()
 			_show_computer_plan()
@@ -1152,6 +1195,8 @@ func _process(delta: float) -> void:
 					_process_aim(delta)
 			State.SWING:
 				_follow_swing()
+			State.STRIKE:
+				_process_strike()
 			State.FLIGHT:
 				_process_flight(delta)
 			State.SHOT_RESULT:
@@ -3427,7 +3472,7 @@ func _process_computer(delta: float) -> void:
 	# Each golfer's own pre-shot routine: a quick player is over the ball and
 	# away while a deliberate one is still reading the shot.
 	if not _computer_ready:
-		if cpu.step() and _computer_timer >= cpu.think_time():
+		if cpu.step_background() and _computer_timer >= cpu.think_time():
 			_show_computer_plan()
 		return
 	var address := cpu.address_time()

@@ -26,7 +26,7 @@ const ABOUT := 3
 ## name, [drive yd, fairways %, approach ft, chip ft, 8 ft putts %, mishits %],
 ## [shape, aggression, management, nerve, streaky, routine s, practice swings],
 ## what they are like.
-const ROSTER := [
+static var ROSTER := [
 	["Callum Reid", [296.0, 68.0, 24.5, 6.4, 49.0, 0.15], [0.6, 0.45, 0.85, 0.4, 0.25, 32.0, 1],
 		"Low, precise fade. Plots his way round and loves a wind."],
 	["Marcus Bell", [318.0, 52.0, 26.5, 6.8, 48.0, 0.3], [-0.3, 0.85, 0.45, 0.2, 0.6, 28.0, 1],
@@ -67,7 +67,7 @@ const FIRST_WOMAN := 10
 ## rounded from published strokes-gained studies (Broadie, "Every Shot
 ## Counts", 2014): 20 yards of driving is worth about 0.75 a round, a foot
 ## closer from 150 yards about 0.2, a point of eight-footers about 0.1.
-const SG_PER := [0.0375, 0.02, -0.22, -0.33, 0.11, -0.21]
+static var SG_PER := [0.0375, 0.02, -0.22, -0.33, 0.11, -0.21]
 ## The average tour pro's score to par on an average par-72 tour course
 ## (Tournament.HOLE_ODDS adds up to this).
 const TOUR_TO_PAR := -0.6
@@ -88,14 +88,14 @@ var named := false
 
 static func roster() -> Array[TourPro]:
 	var out: Array[TourPro] = []
-	for row: Array in ROSTER:
+	for row: Array in TourPro.ROSTER:
 		out.append(_from_row(row))
 	return out
 
 
 static func roster_names() -> Array[String]:
 	var out: Array[String] = []
-	for row: Array in ROSTER:
+	for row: Array in TourPro.ROSTER:
 		out.append(str(row[NAME]))
 	return out
 
@@ -120,7 +120,7 @@ static func _from_row(row: Array) -> TourPro:
 ## The named pro called `who` (any case), or null.
 static func find(who: String) -> TourPro:
 	var key := who.strip_edges().to_lower()
-	for row: Array in ROSTER:
+	for row: Array in TourPro.ROSTER:
 		if str(row[NAME]).to_lower() == key:
 			return _from_row(row)
 	return null
@@ -242,8 +242,8 @@ func skill(level := OpponentSkill.Level.TOUR) -> OpponentSkill:
 ## Strokes gained against the average tour pro per round, from its numbers.
 func strokes_gained() -> float:
 	var sg := 0.0
-	for k in SG_PER.size():
-		sg += float(SG_PER[k]) * (stats[k] - OpponentSkill.TOUR_STATS[k])
+	for k in TourPro.SG_PER.size():
+		sg += float(TourPro.SG_PER[k]) * (stats[k] - OpponentSkill.TOUR_STATS[k])
 	return sg
 
 

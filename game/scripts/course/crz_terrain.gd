@@ -12,10 +12,10 @@ const TILE_METRES := 12.0 * 0.3048
 ## Ground class (see olcore::parse_ground_classes) to how the ball plays.
 ## Ground classes that take a free photographed texture in place of the
 ## disc's own when photo_ground is on (not rocks).
-const PHOTO_CLASSES: Array[int] = [0, 1, 2, 3, 4, 6, 7, 8, 10]
+static var PHOTO_CLASSES: Array[int] = [0, 1, 2, 3, 4, 6, 7, 8, 10]
 ## Ground classes drawn with a photo set of their own rather than the one
 ## of their surface (FreeAssets.slot_for): paths and dirt.
-const CLASS_SLOTS := {6: "path", 7: "dirt"}
+static var CLASS_SLOTS := {6: "path", 7: "dirt"}
 const GROUND_SHADER := preload("res://shaders/course_ground.gdshader")
 const MAPPED_SHADER := preload("res://shaders/terrain_mapped.gdshader")
 
@@ -24,13 +24,13 @@ const MAPPED_SHADER := preload("res://shaders/terrain_mapped.gdshader")
 ## disc's own. Takes effect on the next hole.
 ## Metres per repeat of each photo ground: the turf scans cover about a
 ## metre and a half of lawn.
-const PHOTO_TILES := {"grass": 2.0, "rough": 2.2, "sand": 2.0, "path": 3.0, "dirt": 2.5}
+static var PHOTO_TILES := {"grass": 2.0, "rough": 2.2, "sand": 2.0, "path": 3.0, "dirt": 2.5}
 ## How strongly each scan's light and dark blades show: the lawn scan is
 ## shot in soft light and reads flat at playing distance.
-const PHOTO_GAINS := {"grass": 2.2, "rough": 1.4, "sand": 1.0}
+static var PHOTO_GAINS := {"grass": 2.2, "rough": 1.4, "sand": 1.0}
 ## Per photo set: metres of relief for the parallax and how much darker
 ## its low parts get (GROUND_SHADER's parallax_depth and cavity).
-const PHOTO_RELIEF := {
+static var PHOTO_RELIEF := {
 	"grass": Vector2(0.02, 1.1), "rough": Vector2(0.05, 1.3), "sand": Vector2(0.012, 0.8),
 	"path": Vector2(0.005, 0.6), "dirt": Vector2(0.02, 1.0),
 }
@@ -39,7 +39,7 @@ const MOWN_HUE := 0.27
 static var photo_ground := false
 static var _means := {}  ## Texture2D -> mean colour
 
-const CLASS_SURFACE := {
+static var CLASS_SURFACE := {
 	0: Surface.Type.ROUGH,
 	1: Surface.Type.GREEN,
 	2: Surface.Type.FAIRWAY,
@@ -216,7 +216,7 @@ func surface_at(x: float, z: float) -> int:
 		return Surface.Type.OUT_OF_BOUNDS
 	var m := triangle_material[t]
 	var ground := ground_classes[m] if m < ground_classes.size() else 3
-	return CLASS_SURFACE.get(ground, Surface.Type.ROUGH)
+	return CrzTerrain.CLASS_SURFACE.get(ground, Surface.Type.ROUGH)
 
 
 ## Paths, concrete, asphalt and walls give a free drop, as in Links 2003:
@@ -273,7 +273,7 @@ func ground_color_at(x: float, z: float) -> Color:
 			var tint: Color = info.get("tint", Color.WHITE)
 			c = FreeAssets.mean_color(tex) * tint
 		var ground := ground_classes[m] if m < ground_classes.size() else 3
-		if photo_ground and ground in PHOTO_CLASSES:
+		if photo_ground and ground in CrzTerrain.PHOTO_CLASSES:
 			c = realistic_class(c, ground)
 		_ground_colors[key] = c
 	return _ground_colors[key]
@@ -371,7 +371,7 @@ func _build_mesh() -> ArrayMesh:
 
 func _is_water(m: int) -> bool:
 	var ground := ground_classes[m] if m < ground_classes.size() else 3
-	return CLASS_SURFACE.get(ground, Surface.Type.ROUGH) == Surface.Type.WATER
+	return CrzTerrain.CLASS_SURFACE.get(ground, Surface.Type.ROUGH) == Surface.Type.WATER
 
 
 ## How far each water vertex is from the bank, for the water shader's
@@ -486,7 +486,7 @@ func _blend_of(m: int) -> Variant:
 
 func _material(m: int, mapped := false) -> Material:
 	var ground := ground_classes[m] if m < ground_classes.size() else 3
-	var surface: Surface.Type = CLASS_SURFACE.get(ground, Surface.Type.ROUGH)
+	var surface: Surface.Type = CrzTerrain.CLASS_SURFACE.get(ground, Surface.Type.ROUGH)
 	if surface == Surface.Type.WATER:
 		return Materials.water_surface()
 	var info: Dictionary = materials[m] if m < materials.size() else {}
@@ -496,7 +496,7 @@ func _material(m: int, mapped := false) -> Material:
 			var photo := _photo_blend(info, blend as Dictionary)
 			if photo != null:
 				return photo
-		elif ground in PHOTO_CLASSES:
+		elif ground in CrzTerrain.PHOTO_CLASSES:
 			var photo := _photo_material(ground, info)
 			if photo != null:
 				return photo
@@ -547,11 +547,11 @@ static func _mapped_material(surface: Surface.Type, info: Dictionary, blend: Var
 	mat.set_shader_parameter("has_normal", normal != null)
 	if blend != null:
 		var b: Dictionary = blend
-		var surface_b: Surface.Type = CLASS_SURFACE.get(b.ground_b, Surface.Type.ROUGH)
+		var surface_b: Surface.Type = CrzTerrain.CLASS_SURFACE.get(b.ground_b, Surface.Type.ROUGH)
 		mat.set_shader_parameter("blended", true)
 		mat.set_shader_parameter("texture_b", b.texture_b)
 		mat.set_shader_parameter("mask_tex", b.mask)
-		mat.set_shader_parameter("roughness_a", _disc_roughness(CLASS_SURFACE.get(b.ground_a, surface)))
+		mat.set_shader_parameter("roughness_a", _disc_roughness(CrzTerrain.CLASS_SURFACE.get(b.ground_a, surface)))
 		mat.set_shader_parameter("roughness_b", _disc_roughness(surface_b))
 		_set_variants(mat, {"mid": b.get("mid_b"), "far": b.get("far_b")}, "_b")
 	return mat
@@ -587,7 +587,7 @@ static func _photo_material(ground: int, info: Dictionary) -> ShaderMaterial:
 static func _photo_blend(info: Dictionary, blend: Dictionary) -> ShaderMaterial:
 	var ga: int = blend.ground_a
 	var gb: int = blend.ground_b
-	if not (ga in PHOTO_CLASSES and gb in PHOTO_CLASSES):
+	if not (ga in CrzTerrain.PHOTO_CLASSES and gb in CrzTerrain.PHOTO_CLASSES):
 		return null
 	var a := _photo_params(ga, info)
 	var b := _photo_params(gb, {"texture": blend.texture_b})
@@ -608,8 +608,8 @@ static func _photo_blend(info: Dictionary, blend: Dictionary) -> ShaderMaterial:
 ## The COURSE_GROUND parameters for one photo layer, or empty without the
 ## free textures.
 static func _photo_params(ground: int, info: Dictionary) -> Dictionary:
-	var surface: Surface.Type = CLASS_SURFACE.get(ground, Surface.Type.ROUGH)
-	var slot: String = CLASS_SLOTS.get(ground, FreeAssets.slot_for(surface))
+	var surface: Surface.Type = CrzTerrain.CLASS_SURFACE.get(ground, Surface.Type.ROUGH)
+	var slot: String = CrzTerrain.CLASS_SLOTS.get(ground, FreeAssets.slot_for(surface))
 	var photo := FreeAssets.ground(slot, "albedo")
 	if photo == null:
 		return {}
@@ -629,13 +629,13 @@ static func _photo_params(ground: int, info: Dictionary) -> Dictionary:
 		"has_roughness": rough != null,
 		"height_tex": height,
 		"has_height": height != null,
-		"parallax_depth": PHOTO_RELIEF.get(slot, Vector2(0.01, 0.4)).x,
-		"cavity": PHOTO_RELIEF.get(slot, Vector2(0.01, 0.4)).y,
+		"parallax_depth": CrzTerrain.PHOTO_RELIEF.get(slot, Vector2(0.01, 0.4)).x,
+		"cavity": CrzTerrain.PHOTO_RELIEF.get(slot, Vector2(0.01, 0.4)).y,
 		"height_mean": _mean(height).r if height != null else 0.5,
 		"photo_mean": _mean(photo),
 		"far_color": target,
-		"tile": PHOTO_TILES.get(slot, CrzCourseLoader.FREE_TILE_METRES),
-		"detail_gain": PHOTO_GAINS.get(slot, 1.0),
+		"tile": CrzTerrain.PHOTO_TILES.get(slot, CrzCourseLoader.FREE_TILE_METRES),
+		"detail_gain": CrzTerrain.PHOTO_GAINS.get(slot, 1.0),
 		# The lawn scan's yellow tips would turn the course's greens lime.
 		"photo_hue": 0.1 if slot == "grass" else 0.3,
 		"stripes": 0.0,
@@ -643,7 +643,7 @@ static func _photo_params(ground: int, info: Dictionary) -> Dictionary:
 		"roughness_value": 0.92,
 		"variation": 0.14,
 	}
-	if CLASS_SLOTS.has(ground):
+	if CrzTerrain.CLASS_SLOTS.has(ground):
 		# Paths and dirt: no stripes, a little wear in patches.
 		p.roughness_value = 0.9
 		p.variation = 0.08
@@ -674,9 +674,9 @@ static func _photo_params(ground: int, info: Dictionary) -> Dictionary:
 ## realistic() for ground class `ground`: paths and dirt keep their hue
 ## and colour, a little darker, as the disc draws them pale too.
 static func realistic_class(c: Color, ground: int) -> Color:
-	if CLASS_SLOTS.has(ground):
+	if CrzTerrain.CLASS_SLOTS.has(ground):
 		return Color.from_hsv(c.h, c.s, c.v * 0.85)
-	return realistic(c, CLASS_SURFACE.get(ground, Surface.Type.ROUGH))
+	return realistic(c, CrzTerrain.CLASS_SURFACE.get(ground, Surface.Type.ROUGH))
 
 
 ## A course colour (sRGB) as real ground of that surface would be: the 2003

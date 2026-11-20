@@ -24,7 +24,7 @@ const ALPINE := "alpine"
 ## Desert: the red sand of the Colorado Plateau's valley floors (sRGB about
 ## 190, 115, 75 in photos of Castle Valley and Monument Valley in sun), the
 ## semi-rough a sparser, drier green. Snow: old snow, blue-white.
-const GROUND := {
+static var GROUND := {
 	DESERT: {
 		Surface.Type.ROUGH: Color(0.26, 0.38, 0.15),
 		Surface.Type.DEEP_ROUGH: Color(0.62, 0.36, 0.17),
@@ -45,22 +45,22 @@ const GROUND := {
 }
 ## Surfaces drawn as bare ground (the sand texture, tinted by GROUND) with no
 ## grass blades on them: desert hardpan and snow.
-const BARE := {
+static var BARE := {
 	DESERT: [Surface.Type.DEEP_ROUGH, Surface.Type.OUT_OF_BOUNDS],
 	SNOW: [Surface.Type.DEEP_ROUGH, Surface.Type.OUT_OF_BOUNDS],
 	TROPICAL: [Surface.Type.DEEP_ROUGH, Surface.Type.OUT_OF_BOUNDS],
 }
 ## How much of the deep rough's fescue and wild grass still grows: sparse
 ## bunch grass and scrub in the desert, none through snow.
-const WILD_GRASS := {DESERT: 0.12, SNOW: 0.0, TROPICAL: 1.0}
+static var WILD_GRASS := {DESERT: 0.12, SNOW: 0.0, TROPICAL: 1.0}
 ## The colour wild grass takes in each biome (dry sage scrub in the desert).
-const WILD_TINT := {DESERT: Color(0.4, 0.41, 0.3)}
+static var WILD_TINT := {DESERT: Color(0.4, 0.41, 0.3)}
 
 ## The land round the course (landscape.gdshader): ground on gentle slopes
 ## low and high, rock on steep ones (two tones, for the strata), plants on
 ## the gentle ground (how much), snow above a height (metres over the
 ## course; very high for none), and the sea below one (or none).
-const LAND := {
+static var LAND := {
 	PARKLAND: {low = Color(0.16, 0.24, 0.09), high = Color(0.2, 0.26, 0.12), rock = Color(0.38, 0.36, 0.33),
 		rock2 = Color(0.3, 0.29, 0.27), plants = Color(0.07, 0.12, 0.05), cover = 0.6, snow_from = 99999.0, sea = -99999.0},
 	DESERT: {low = Color(0.58, 0.34, 0.21), high = Color(0.48, 0.27, 0.17), rock = Color(0.52, 0.2, 0.1),
@@ -89,18 +89,18 @@ static func of(terrain: Object) -> String:
 
 
 static func ground_color(biome: String, surface: int, fallback: Color) -> Color:
-	var g: Dictionary = GROUND.get(biome, {})
+	var g: Dictionary = Biome.GROUND.get(biome, {})
 	return g.get(surface, fallback)
 
 
 static func is_bare(biome: String, surface: int) -> bool:
-	var b: Array = BARE.get(biome, [])
+	var b: Array = Biome.BARE.get(biome, [])
 	return b.has(surface)
 
 
 static func wild_grass(biome: String) -> float:
-	return float(WILD_GRASS.get(biome, 1.0))
+	return float(Biome.WILD_GRASS.get(biome, 1.0))
 
 
 static func land(biome: String) -> Dictionary:
-	return LAND.get(biome, LAND[PARKLAND])
+	return Biome.LAND.get(biome, Biome.LAND[PARKLAND])

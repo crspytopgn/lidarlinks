@@ -4,9 +4,9 @@ extends RefCounted
 ## course picker. A course decoder registered with AssetProviders turns the
 ## chosen path into CourseData.
 
-const EXTENSIONS := ["crz", "rng"]
+static var EXTENSIONS := ["crz", "rng"]
 ## Extra files that travel with a course (shadows, preview).
-const COMPANIONS := ["sha", "tip"]
+static var COMPANIONS := ["sha", "tip"]
 
 
 ## Course file paths in `folder`'s Courses (or GAME/Courses) folder, sorted.
@@ -23,7 +23,7 @@ static func in_folder(folder: String) -> PackedStringArray:
 				continue
 			var courses := DirAccess.open(dir_path.path_join(sub))
 			for f in courses.get_files():
-				if f.get_extension().to_lower() in EXTENSIONS:
+				if f.get_extension().to_lower() in CourseFiles.EXTENSIONS:
 					out.append(dir_path.path_join(sub).path_join(f))
 	out.sort()
 	return out
@@ -34,7 +34,7 @@ static func in_list(paths: Array) -> PackedStringArray:
 	var out := PackedStringArray()
 	for p: String in paths:
 		var lower := p.to_lower()
-		if lower.begins_with("courses/") and lower.get_extension() in EXTENSIONS:
+		if lower.begins_with("courses/") and lower.get_extension() in CourseFiles.EXTENSIONS:
 			out.append(p)
 	out.sort()
 	return out

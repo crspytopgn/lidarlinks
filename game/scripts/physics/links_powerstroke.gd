@@ -23,7 +23,7 @@ const LAST := 68  ## a chip's or putt's highest position
 ## the meter object steps once a tick (0x4fefa0), so 60 a second.
 const FRAME_S := 1.0 / 60.0
 ## The earliest a power click takes; an earlier click waits for it.
-const MIN_POWER: Array[int] = [25, 16, 16, 16]
+static var MIN_POWER: Array[int] = [25, 16, 16, 16]
 ## An early snap waits until the marker comes down to here.
 const EARLY_SNAP := 30
 ## Quick pace (Settings > Pace, the default) for chips and putts: the
@@ -42,7 +42,7 @@ const QUICK_SLOW := 8
 const QUICK_SNAP := 5
 ## The ease of the steps: the weight 70 at the middle of a run down to 42,
 ## repeating every 40 positions (the step's wait is inversely proportional).
-const EASE: Array[float] = [70.0, 69.9, 69.6, 69.2, 68.6, 67.9, 66.9, 65.8, 64.6, 63.3, 61.8,
+static var EASE: Array[float] = [70.0, 69.9, 69.6, 69.2, 68.6, 67.9, 66.9, 65.8, 64.6, 63.3, 61.8,
 		60.2, 58.5, 56.7, 54.7, 52.8, 50.6, 48.6, 46.3, 44.2, 42.0]
 
 
@@ -67,7 +67,7 @@ static func fall_frames(mode: int) -> int:
 
 static func _ease(pos: int, centre: int) -> float:
 	var d := posmod(pos - centre, 40)
-	return EASE[d if d <= 20 else 40 - d]
+	return LinksPowerStroke.EASE[d if d <= 20 else 40 - d]
 
 
 static func ease_up(pos: int) -> float:
@@ -174,7 +174,7 @@ class Run:
 		if done or power_pos != 0:
 			return
 		if rising:
-			if pos < MIN_POWER[mode]:
+			if pos < LinksPowerStroke.MIN_POWER[mode]:
 				_wait_power = true
 			else:
 				_set_power(pos)
@@ -209,7 +209,7 @@ class Run:
 		var before := pos
 		if rising:
 			pos += 1
-			if _wait_power and pos >= MIN_POWER[mode]:
+			if _wait_power and pos >= LinksPowerStroke.MIN_POWER[mode]:
 				_set_power(pos)
 			if (mode != Mode.FULL and power_pos != 0 and pos >= _stop) or pos > TOP:
 				rising = false

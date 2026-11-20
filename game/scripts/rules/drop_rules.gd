@@ -19,10 +19,10 @@ enum Reason { WATER, UNPLAYABLE, FREE_RELIEF }
 enum Option { STROKE_AND_DISTANCE, BACK_ON_LINE, LATERAL, FREE_DROP }
 enum Check { OK, OUTSIDE_ZONE, NEARER_PIN, HAZARD, OUT_OF_BOUNDS, GREEN, NOT_SAND, STILL_ON_PATH }
 
-const OPTION_NAMES: Array[String] = [
+static var OPTION_NAMES: Array[String] = [
 	"Replay from the last spot", "Drop back on the line", "Drop within two club lengths", "Free drop",
 ]
-const CHECK_TEXT: Array[String] = [
+static var CHECK_TEXT: Array[String] = [
 	"", "Stay inside the drop zone.", "You can't drop nearer the pin.", "You can't drop in a hazard.",
 	"You can't drop out of bounds.", "You can't drop on the green.", "The drop has to stay in the bunker.",
 	"That's still on the path.",

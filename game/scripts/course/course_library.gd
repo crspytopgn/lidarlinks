@@ -16,7 +16,7 @@ const SETTINGS_SECTION := "courses"
 
 enum Kind { BUILT_IN, DESIGN, REAL, GAME, ADDED }
 
-const KIND_LABELS := {
+static var KIND_LABELS := {
 	Kind.BUILT_IN: "Built in",
 	Kind.DESIGN: "Your design",
 	Kind.REAL: "Real course",
@@ -189,7 +189,7 @@ static func companions(path: String) -> Array[String]:
 # --- Adding ------------------------------------------------------------------------
 
 ## What the desktop Add button takes.
-const ADD_FILTERS := ["*.olc ; LidarLinks course", "*.crz, *.rng ; Links course", "*.zip ; Course download"]
+static var ADD_FILTERS := ["*.olc ; LidarLinks course", "*.crz, *.rng ; Links course", "*.zip ; Course download"]
 
 
 ## Adds the course file at `src` (desktop): a LidarLinks .olc (with its

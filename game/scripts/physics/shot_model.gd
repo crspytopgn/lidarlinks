@@ -15,6 +15,13 @@ var setup := LinksLaunch.Setup.new()
 var backspin := 0
 
 
+## A new model of the same kind on the same tables, square and with nothing
+## of this one's last shot: physics run on a worker thread (BackgroundWork)
+## gets its own, since launch() and the round's replay set fields per shot.
+func fresh() -> ShotModel:
+	return (get_script() as GDScript).new() as ShotModel
+
+
 ## Launch state for a swing, with the ball sitting at `from` on a `lie`.
 func launch(_club: Club, _power: float, _accuracy: float, _aim_deg: float, _lie: int, from: Vector3) -> BallState:
 	push_error("ShotModel.launch() is not implemented")

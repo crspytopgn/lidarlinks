@@ -21,6 +21,10 @@ func _initialize() -> void:
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(PlayerProfiles.path))
 	SavedRound.path = "user://test_saved_round.cfg"
 	SavedRound.clear()
+	# The round's physics runs on the main thread here, so each test sees a
+	# shot fly the moment it is played; the threads have tests of their own.
+	BackgroundWork.enabled = false
+	_run("physics_on_threads", _test_physics_on_threads)
 	_run("physics_matches_olcore", _test_physics_matches_olcore)
 	_run("club_table_matches_physics", _test_club_table_matches_physics)
 	_run("putting", _test_putting)
@@ -33,6 +37,7 @@ func _initialize() -> void:
 	_run("links_objects_match_olcore", _test_links_objects_match_olcore)
 	_run("links_models_match_olcore", _test_links_models_match_olcore)
 	_run("links_launch_matches_olcore", _test_links_launch_matches_olcore)
+	_run("club_distance_table", _test_club_distance_table)
 	_run("links_lie_matches_olcore", _test_links_lie_matches_olcore)
 	_run("links_swing_matches_olcore", _test_links_swing_matches_olcore)
 	_run("obstacles_match_olcore", _test_obstacles_match_olcore)
@@ -137,6 +142,7 @@ func _process(_delta: float) -> bool:
 	_run("team_ball_modes", _test_team_ball_modes)
 	_run("team_drops", _test_team_drops)
 	_run("pause_stops_play", _test_pause_stops_play)
+	_run("strike_on_thread", _test_strike_on_thread)
 	_run("touch_and_stick_swings", _test_touch_and_stick_swings)
 	_run("tee_view", _test_tee_view)
 	_run("rounds_recorded", _test_rounds_recorded)
@@ -1720,6 +1726,18 @@ func _test_computer_golfer_plans() -> void:
 	sliced.plan(model, clubs, hole, Vector3.ZERO, Surface.Type.FAIRWAY, Vector3(3.0, 0.0, 0.0))
 	sliced.finish()
 	_check(sliced.club_index == cpu.club_index and sliced.aim_deg == cpu.aim_deg, "re-planned mid-job, still the same shot")
+	# On a worker thread, on a model of its own, the same plan again.
+	BackgroundWork.enabled = true
+	var threaded := ComputerGolfer.new(OpponentSkill.Level.TOUR, 5, TourPro.find("Callum Reid"))
+	threaded.plan(model, clubs, hole, Vector3.ZERO, Surface.Type.FAIRWAY, Vector3(3.0, 0.0, 0.0))
+	var polls := 0
+	while not threaded.step_background() and polls < 100000:
+		polls += 1
+		OS.delay_usec(100)
+	BackgroundWork.enabled = false
+	_check(threaded.club_index == cpu.club_index and threaded.power == cpu.power and threaded.aim_deg == cpu.aim_deg,
+		"planned on a worker thread, the same shot (%s, %d polls)" % ["threaded" if BackgroundWork.available() or polls > 0 else "no threads here", polls])
+	_check(BackgroundWork.running() == 0, "and its thread is collected")
 
 	# After stroke and distance it doesn't play the same club out of bounds
 	# again: the plan can't see a real swing catch a bunker lip.
@@ -5347,6 +5365,117 @@ func _test_tee_view() -> void:
 	_check(cam.is_position_in_frustum(game.ball_at + Vector3.UP * 0.1), "tee view: the ball is inside the camera's frustum")
 	var seen := RoundCamera.sight_clear(game.hole.terrain, cam._aim_pos, target)
 	print("  tee view: %.1f m up, %.1f m back, target %.0f m %s" % [rise, back, reach, "in sight" if seen else "behind the rise"])
+
+
+## Links 2003's CLUBDIST table (made up here: the real one is the
+## player's): feet at every second point of power from 2, read the way the
+## game reads it, and the reach a Links club shows comes from it.
+func _test_club_distance_table() -> void:
+	var bytes := PackedByteArray()
+	bytes.resize(ClubDistances.HEADER_BYTES + ClubDistances.CLUBS * ClubDistances.STEPS * 2)
+	for c in ClubDistances.CLUBS:
+		for k in ClubDistances.STEPS:
+			bytes.encode_u16(ClubDistances.HEADER_BYTES + 2 * (c * ClubDistances.STEPS + k), (k + 1) * (20 - c))
+	var t := ClubDistances.parse(bytes)
+	_check(t != null, "the table parses")
+	if t == null:
+		return
+	_check_near(t.total_m(0, 112.0), 56 * 20 * 0.3048, 1e-6, "the driver at 112 points is its 56th value, in feet")
+	_check_near(t.total_m(0, 113.0), 56.5 * 20 * 0.3048, 1e-6, "between steps in a straight line")
+	_check_near(t.total_m(0, 1.0), 10 * 0.3048, 1e-6, "below the first step from nothing")
+	_check(t.rating_for(0, 56 * 20 * 0.3048) == 112 and t.rating_for(0, 56 * 20 * 0.3048 + 0.01) == 114, "the rating for a distance is the first step that reaches it")
+	var falling := bytes.duplicate()
+	falling.encode_u16(ClubDistances.HEADER_BYTES + 2 * 5, 0)
+	_check(ClubDistances.parse(falling) == null and ClubDistances.parse(PackedByteArray([1, 2])) == null, "a short or falling table is refused")
+	var model := LinksShotModel.new(null, LinksLaunch.new())
+	var driver: Club = Club.standard_set()[0]
+	_check_near(model.reach_scale(driver), 1.12, 1e-6, "without the table the reach scales by the rating")
+	model.distances = t
+	_check_near(driver.total_m * model.reach_scale(driver), t.total_m(0, 112.0), 1e-4, "with it the driver reaches the table's total")
+	_check((model.fresh() as LinksShotModel).distances == t, "a fresh model keeps the table")
+
+
+## The same shots on worker threads (each with its own model) and on the
+## main thread at the same time end exactly where they do one by one:
+## Godot 4.4 shares a scratch value when threads index a const array, which
+## once crashed planning on threads (BackgroundWork).
+func _test_physics_on_threads() -> void:
+	var course := AssetProviders.load_course("")
+	var clubs := Club.standard_set()
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 11
+	var shots := []
+	for h in mini(3, course.holes.size()):
+		var hole: HoleData = course.holes[h]
+		for k in 8:
+			var from := hole.tee.lerp(hole.pin, rng.randf() * 0.8)
+			from.y = hole.terrain.height_at(from.x, from.z)
+			var heading := rad_to_deg(atan2(hole.pin.x - from.x, hole.pin.z - from.z))
+			shots.append([hole, rng.randi() % (clubs.size() - 1), rng.randf_range(0.3, 1.0), rng.randf_range(-0.3, 0.3), heading + rng.randf_range(-15.0, 15.0), from])
+	var play := func(model: ShotModel, out: Array) -> void:
+		for s: Array in shots:
+			var hole: HoleData = s[0]
+			var st := model.launch(clubs[s[1]], s[2], s[3], s[4], Surface.Type.FAIRWAY, s[5])
+			out.append(model.simulate(st, hole.terrain, hole.pin, Vector3(2.0, 0.0, 1.0)).rest)
+	var base: ShotModel = StandardShotModel.new()
+	var ref := []
+	play.call(base.fresh(), ref)
+	var outs := [[], [], []]
+	var tasks := []
+	for o: Array in outs:
+		tasks.append(WorkerThreadPool.add_task(play.bind(base.fresh(), o)))
+	var here := []
+	play.call(base.fresh(), here)
+	for t: int in tasks:
+		WorkerThreadPool.wait_for_task_completion(t)
+	var bad := 0
+	for o: Array in outs + [here]:
+		for j in ref.size():
+			if j >= o.size() or not (o[j] as Vector3).is_equal_approx(ref[j]):
+				bad += 1
+	_check(ref.size() >= 8 and bad == 0, "%d shots on 3 threads and here match one by one (%d differ)" % [ref.size(), bad])
+	var links := LinksShotModel.new(null, null)
+	links.skill = 1
+	var copy := links.fresh()
+	_check(copy is LinksShotModel and (copy as LinksShotModel).skill == 1 and copy != links, "a Links model's fresh copy keeps its skill")
+
+
+## Where the game has threads the strike's flight and roll are worked out
+## on a worker thread while the club comes down (State.STRIKE), and the
+## shot is the one the replay plays.
+func _test_strike_on_thread() -> void:
+	var game := _game
+	if not game.is_node_ready():
+		return
+	GolfRound.setup = null
+	game.start_round()
+	if game.camera.flying():
+		game.camera.end_flyover()
+	BackgroundWork.enabled = true
+	game.hud.meter.reset()
+	game.state = GolfRound.State.AIM
+	game.play_shot(0.85, 0.0)
+	var threaded := game.state == GolfRound.State.STRIKE
+	_check(threaded == BackgroundWork.available(), "the strike is worked out on a thread where there are threads")
+	var frames := 0
+	while game.state == GolfRound.State.STRIKE and frames < 2000:
+		game._process(0.0)
+		OS.delay_usec(500)
+		frames += 1
+	BackgroundWork.enabled = false
+	_check(game.state == GolfRound.State.FLIGHT, "then the ball flies (%d frames)" % frames)
+	var rec: ShotRecord = game.record.shots[game.record.shots.size() - 1]
+	var again := RoundReplay.run_shot(game.shot_model.fresh(), rec, game.clubs[rec.club], game.hole.terrain, game.hole.pin, rec.wind, game.round_seed)
+	_check(again.rest.is_equal_approx(game.shot.rest) and again.outcome == game.shot.outcome, "and stops where the replay's does")
+	game._complete_flight()
+	while game.state != GolfRound.State.AIM and frames < 4000:
+		game.auto_play_step()
+		frames += 1
+	BackgroundWork.enabled = true
+	game.play_shot(0.5, 0.0)
+	game.auto_play_step()
+	BackgroundWork.enabled = false
+	_check(game.state == GolfRound.State.FLIGHT, "a skip waits for the strike")
 
 
 ## The pause menu holds the round: the meter, the ball in flight and the

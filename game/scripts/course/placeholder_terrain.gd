@@ -12,7 +12,7 @@ const FIRST_CUT := 2.5
 const FIRST_CUT_COLOR := Color(0.25, 0.43, 0.16)
 ## Mowing stripe strength per surface (the terrain shader draws them along
 ## the hole, crisp, from UV: x across the hole, -y the strength).
-const STRIPES := {Surface.Type.FAIRWAY: 1.0, Surface.Type.GREEN: 0.6, Surface.Type.TEE: 0.3}
+static var STRIPES := {Surface.Type.FAIRWAY: 1.0, Surface.Type.GREEN: 0.6, Surface.Type.TEE: 0.3}
 ## Splat map (see the terrain shader): the surfaces rasterised every
 ## SPLAT_STEP metres, so their edges are drawn crisp rather than blended
 ## across the GRID_STEP mesh. Code FIRST_CUT_CODE is the first cut.
@@ -337,7 +337,7 @@ func _build_ground_mesh() -> MeshInstance3D:
 			colors[k] = _color_at(x, z)
 			var surface := surface_at(x, z)
 			weights[k] = Materials.terrain_weights(surface)
-			uvs[k] = Vector2(across.dot(Vector2(x, z)), -float(STRIPES.get(surface, 0.0)))
+			uvs[k] = Vector2(across.dot(Vector2(x, z)), -float(PlaceholderTerrain.STRIPES.get(surface, 0.0)))
 
 	var normals := PackedVector3Array()
 	normals.resize(nx * nz)

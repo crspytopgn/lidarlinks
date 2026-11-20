@@ -29,10 +29,10 @@ const PUTT_PAST_MIN_M := 0.2
 const PUTT_PAST_MAX_M := 0.55
 const MAX_RISK_CANDIDATES := 4  ## best plans re-tried with likely misses
 const SHORT_GAME_M := 45.0  ## inside this, wedges also try lines either side
-const SHORT_GAME_OFFSETS_DEG := [-25.0, -10.0, 10.0, 25.0]
+static var SHORT_GAME_OFFSETS_DEG := [-25.0, -10.0, 10.0, 25.0]
 ## From a bad lie in the short game, wedges also try going this much past the
 ## flag, so the risk check can choose to make sure of getting out and on.
-const SHORT_GAME_PAST_M := [2.5, 5.0]
+static var SHORT_GAME_PAST_M := [2.5, 5.0]
 ## Plans re-tried with likely misses from a bad lie in the short game, on top
 ## of the golfer's own number.
 const SHORT_GAME_EXTRA_RISK := 3
@@ -40,8 +40,8 @@ const SHORT_GAME_EXTRA_RISK := 3
 ## these multiples of its power, then these aim changes, and keeps the best:
 ## a slope or a bank can make the finish jump as the power changes.
 const SHORT_GAME_SCAN_FROM_M := 1.5
-const SHORT_GAME_POWER_SCAN := [0.7, 0.8, 0.9, 1.1, 1.2, 1.35, 1.5]
-const SHORT_GAME_AIM_SCAN_DEG := [-6.0, -3.0, 3.0, 6.0]
+static var SHORT_GAME_POWER_SCAN := [0.7, 0.8, 0.9, 1.1, 1.2, 1.35, 1.5]
+static var SHORT_GAME_AIM_SCAN_DEG := [-6.0, -3.0, 3.0, 6.0]
 ## Timing (OpponentSkill accuracy) of a full shape (TourPro.shape = +/-1):
 ## positive fades, negative draws.
 const SHAPE_ACCURACY := 0.1
@@ -176,6 +176,10 @@ func address_time() -> float:
 
 ## Starts planning a shot from `from` on `lie`.
 func plan(model: ShotModel, clubs: Array[Club], hole: HoleData, from: Vector3, lie: int, wind: Vector3) -> void:
+	# A plan still running on a worker thread ends first.
+	if _task >= 0:
+		BackgroundWork.wait(_task)
+		_task = -1
 	# A job of the last plan still waiting in _simulate ends first, on the
 	# old shot, rather than waking later on this one.
 	if _suspended:
@@ -227,10 +231,10 @@ func plan(model: ShotModel, clubs: Array[Club], hole: HoleData, from: Vector3, l
 		_jobs.append(_job_club.bind(i, 0.0, false))
 		# Round a tree or past a bank: a short game shot may need another line.
 		if lofted and to_pin < SHORT_GAME_M:
-			for offset: float in SHORT_GAME_OFFSETS_DEG:
+			for offset: float in ComputerGolfer.SHORT_GAME_OFFSETS_DEG:
 				_jobs.append(_job_club.bind(i, offset, false))
 			if _bad_lie():
-				for past: float in SHORT_GAME_PAST_M:
+				for past: float in ComputerGolfer.SHORT_GAME_PAST_M:
 					_jobs.append(_job_club.bind(i, 0.0, false, past))
 		# A careful golfer also looks at the safe side of the flag.
 		elif pro.aggression < SAFE_LINE_BELOW and to_pin < reach * 1.05 and to_pin > SHORT_GAME_M:
@@ -260,9 +264,44 @@ func step(budget_ms := 6.0) -> bool:
 	return _jobs.is_empty() and not _suspended
 
 
+## Plans to the end, or waits for the worker thread step_background()
+## started, so the plan is never stepped from two threads at once.
 func finish() -> void:
+	if _task >= 0:
+		BackgroundWork.wait(_task)
+		_task = -1
+		return
+	_plan_all()
+
+
+func _plan_all() -> void:
 	while not step(1e9):
 		pass
+
+
+## Like step(), but where the game has threads (BackgroundWork) the whole
+## plan runs on a worker thread, on a model of its own, so no frame waits
+## for a flight: step() pauses between flights, but one flight and roll is
+## 15 to 60 ms. True once the plan is ready.
+func step_background(budget_ms := 6.0) -> bool:
+	if _task >= 0:
+		if not BackgroundWork.done(_task):
+			return false
+		_task = -1
+		return true
+	if _jobs.is_empty() and not _suspended:
+		return true
+	# A plan already stepped on this thread goes on here: its paused job
+	# would wake on the worker thread.
+	if _suspended or not BackgroundWork.available():
+		return step(budget_ms)
+	_model = _model.fresh()
+	_deadline_us = 1 << 62
+	_task = BackgroundWork.start(_plan_all, "computer plan")
+	return false
+
+
+var _task := -1
 
 
 func is_putt() -> bool:
@@ -350,14 +389,14 @@ func _job_club(i: int, offset_deg: float, safe: bool, past_m := 0.0) -> void:
 			best_aim = c.aim_deg
 	if at_pin and offset_deg == 0.0 and _flat(_from, _hole.pin) < SHORT_GAME_M and _left(best_r) > SHORT_GAME_SCAN_FROM_M:
 		var base := best_power
-		for f: float in SHORT_GAME_POWER_SCAN:
+		for f: float in ComputerGolfer.SHORT_GAME_POWER_SCAN:
 			var p := clampf(base * f, low, top)
 			var t := await _simulate(c.club, p, best_aim, c.accuracy)
 			if _value(t) < _value(best_r):
 				best_r = t
 				best_power = p
 		var aim0 := best_aim
-		for d: float in SHORT_GAME_AIM_SCAN_DEG:
+		for d: float in ComputerGolfer.SHORT_GAME_AIM_SCAN_DEG:
 			var t := await _simulate(c.club, best_power, aim0 + d, c.accuracy)
 			if _value(t) < _value(best_r):
 				best_r = t
