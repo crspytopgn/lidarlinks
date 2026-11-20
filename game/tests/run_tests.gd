@@ -638,6 +638,24 @@ func _test_shot_shape() -> void:
 	var back := ShotRecord.from_dict(rec.to_dict())
 	_check(back.face == 32 and back.stance == 28 and back.ball_position == 3, "setup round-trips")
 	_check(not ShotRecord.new().to_dict().has("setup"), "square shots add nothing to the record")
+	# Extra backspin (not in Classic Links): low on the ball spins it more.
+	shape.reset()
+	shape.nudge_height(3)
+	_check(shape.backspin(false) == 3 and shape.backspin(true) == 0, "backspin steps only away from Classic")
+	_check(is_equal_approx(ShotShape.backspin_scale(3), 1.75) and is_equal_approx(ShotShape.backspin_scale(-3), 0.55)
+			and ShotShape.backspin_scale(0) == 1.0, "backspin scale")
+	model.setup = LinksLaunch.Setup.new()
+	var plain := model.launch(_club("SW"), 1.0, 0.0, 0.0, Surface.Type.FAIRWAY, Vector3.ZERO)
+	model.backspin = 3
+	var spun := model.launch(_club("SW"), 1.0, 0.0, 0.0, Surface.Type.FAIRWAY, Vector3.ZERO)
+	model.backspin = 0
+	var right := Vector3(plain.velocity.x, 0.0, plain.velocity.z).normalized().cross(Vector3.UP)
+	_check(is_equal_approx(spun.spin.dot(right), plain.spin.dot(right) * 1.75), "more backspin off the club")
+	_check(is_equal_approx(spun.spin.dot(Vector3.UP), plain.spin.dot(Vector3.UP)), "backspin leaves sidespin alone")
+	var srec := ShotRecord.new()
+	srec.backspin = 2
+	_check(ShotRecord.from_dict(srec.to_dict()).backspin == 2, "backspin round-trips")
+	_check(not ShotRecord.new().to_dict().has("backspin"), "no backspin adds nothing to the record")
 
 
 func _test_club_ratings() -> void:

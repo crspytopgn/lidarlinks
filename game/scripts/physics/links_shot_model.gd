@@ -109,6 +109,7 @@ func launch(club: Club, power: float, accuracy: float, aim_deg: float, lie: int,
 	w.full_power = rating
 	LinksLaunch.apply_swing(s, w, lie_params, rng)
 	var b := clubs.launch_state(s)
+	ShotShape.add_backspin(b, backspin)
 	b.position = from
 	return b
 

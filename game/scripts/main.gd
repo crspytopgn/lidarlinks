@@ -1010,6 +1010,7 @@ func play_shot(power: float, accuracy: float, monitor: OpenConnect.Launch = null
 		rec.ball_position = setup.ball_position
 		rec.face = setup.face
 		rec.stance = setup.stance
+		rec.backspin = shape.backspin(not broadcast)
 	if monitor != null:
 		rec.monitor = monitor.to_array()
 		rec.stroke = null

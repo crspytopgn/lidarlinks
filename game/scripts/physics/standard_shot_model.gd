@@ -34,12 +34,13 @@ func launch(club: Club, power: float, accuracy: float, aim_deg: float, lie: int,
 		var right := Vector3(s.velocity.x, 0.0, s.velocity.z).normalized().cross(Vector3.UP)
 		# Ball back: lower launch, less spin. Forward: the reverse.
 		s.velocity = s.velocity.rotated(right, -deg_to_rad(LAUNCH_DEG_PER_STEP * back))
-		var backspin := s.spin.dot(right)
+		var back_spin := s.spin.dot(right)
 		var side := s.spin.dot(Vector3.UP)
-		backspin *= maxf(0.2, 1.0 - BACKSPIN_PER_STEP * back)
+		back_spin *= maxf(0.2, 1.0 - BACKSPIN_PER_STEP * back)
 		# A face open to the path slices (negative sidespin, as a late swing).
 		side -= (face - path) * SIDESPIN_RPM_PER_DEG * BallPhysics.RPM_TO_RAD_S
-		s.spin = right * backspin + Vector3.UP * side
+		s.spin = right * back_spin + Vector3.UP * side
+	ShotShape.add_backspin(s, backspin)
 	s.position = from
 	return s
 

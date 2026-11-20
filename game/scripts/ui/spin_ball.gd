@@ -4,7 +4,9 @@ extends BaseButton
 ## set the shot's spin, the way Links 2003's Advanced Shot Setup sets the
 ## trajectory and opens or closes the face and stance (ShotShape). The dot
 ## shows where the club meets the ball: low on the ball is a higher shot with
-## more backspin, high on the ball a lower one with less; left of centre
+## more backspin (enough for a wedge to check or spin back on the green), high
+## on the ball a lower one with less. Classic Links has no backspin setting,
+## so there it is only higher or lower (ShotShape.backspin). Left of centre
 ## draws (far left hooks), right fades (far right slices). Right-click,
 ## double-click or a tap in the middle puts it back to square. Q/E/W/S do
 ## the same from the keyboard.
@@ -86,11 +88,13 @@ func _centre() -> Vector2:
 	return Vector2(size.x * 0.5, _radius() + 2.0)
 
 
-## "Normal spin", "More backspin, fade 2"...
+## "Normal spin", "Backspin 2, fade 2", "Higher 1"...
 func describe() -> String:
 	var parts: Array[String] = []
-	if _height != 0:
-		parts.append("%s backspin" % ("More" if _height > 0 else "Less"))
+	if _height != 0 and modern:
+		parts.append("%s %d" % ["backspin" if _height > 0 else "less spin", absi(_height)])
+	elif _height != 0:
+		parts.append("%s %d" % ["higher" if _height > 0 else "lower", absi(_height)])
 	if _curve != 0:
 		var big := absi(_curve) * 2 > ShotShape.MAX_CURVE
 		var word := ("slice" if big else "fade") if _curve > 0 else ("hook" if big else "draw")
