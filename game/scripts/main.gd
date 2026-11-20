@@ -4807,7 +4807,7 @@ func _update_green_grid() -> void:
 	green_grid.visible = on
 	if on:
 		green_grid.style = (graphics.putting_grid - 1) as GreenGrid.Style
-		green_grid.build(hole.terrain, ball_at, hole.pin)
+		green_grid.build_async(hole.terrain, ball_at, hole.pin)
 
 
 # --- Golfer voice -------------------------------------------------------------

@@ -1335,6 +1335,20 @@ func _test_green_reading() -> void:
 		grid.build(side_hill, Vector3.ZERO, Vector3(0, 0, 6))
 		_check(grid.mesh.get_surface_count() == 1, "grid style %d builds" % style)
 	_check(GreenGrid.height_color(0.0).b > GreenGrid.height_color(0.0).r and GreenGrid.height_color(1.0).r > GreenGrid.height_color(1.0).b, "low blue, high red")
+	# Off the main thread: the same grid as a build now; asking again for
+	# the grid on show starts nothing.
+	var now_verts := (grid.mesh.surface_get_arrays(0)[Mesh.ARRAY_VERTEX] as PackedVector3Array).size()
+	grid.build_async(side_hill, Vector3.ZERO, Vector3(0, 0, 6))
+	_check(grid._job.is_empty(), "the grid on show is not built again")
+	grid.build_async(side_hill, Vector3(1, 0, 0), Vector3(0, 0, 6))
+	_check(not grid._job.is_empty(), "a new spot builds over frames")
+	var frames := 0
+	while not grid._job.is_empty() and frames < 1000:
+		grid._process(0.0)
+		frames += 1
+	_check(grid._job.is_empty() and grid.mesh.get_surface_count() == 1
+			and (grid.mesh.surface_get_arrays(0)[Mesh.ARRAY_VERTEX] as PackedVector3Array).size() > now_verts / 2,
+			"the grid built over frames goes up")
 	grid.free()
 
 
