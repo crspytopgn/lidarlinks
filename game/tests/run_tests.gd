@@ -2649,6 +2649,15 @@ func _test_gallery() -> void:
 			arm_mods += 1
 	var arms_ok := arm_mods == g.crowd_count()
 	_check(arms_ok, "each spectator holds their arms like a spectator, not round a club")
+	# Grandstands behind par 3 and last greens, and about half the rest.
+	var h := HoleData.new()
+	var with_stand := 0
+	for n in range(1, 19):
+		h.number = n
+		h.par = 4
+		with_stand += 1 if Gallery.green_stand(h, false) else 0
+	h.par = 3
+	_check(Gallery.green_stand(h, false) and with_stand >= 5 and with_stand <= 13, "grandstands on par 3s and about half the greens (%d of 18)" % with_stand)
 	var spot := Gallery.grandstand_spot(hole)
 	if not spot.is_empty():
 		var capacity := Gallery.STAND_ROWS * (int(Gallery.STAND_WIDTH / Gallery.STAND_SEAT) - 1)

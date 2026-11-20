@@ -764,8 +764,11 @@ func start_hole(index: int) -> void:
 	if broadcast and dressed and course.tournament:
 		# Tournament dressing: gallery ropes, and a crowd at the tee and green.
 		var crowd := Gallery.CROWD_BY_QUALITY[graphics.quality] if graphics != null else 0
-		# Grandstands go up where tournaments build them: at par 3s and the last green.
-		var stand := hole.par == 3 or hole_index == holes.size() - 1
+		# Grandstands go up where tournaments build them: at par 3s, the last
+		# green and about half the other greens, so the gallery behind a
+		# green rises in rows instead of reading as one thin line from a low
+		# view (Gallery.green_stand).
+		var stand := Gallery.green_stand(hole, hole_index == holes.size() - 1)
 		gallery = Gallery.build(hole, _first_leg(), crowd, hole.number * 7919, stand, graphics.quality if graphics != null else 0)
 		hole_root.add_child(gallery)
 	else:
