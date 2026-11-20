@@ -9,8 +9,12 @@ private pack has a part (its manifest), that part wins; otherwise the game
 reads the free one (`FreeAssets.pack_dir`, `pack_dirs`). `OL_FREE_PACK=0`
 turns it off, to compare before and after.
 
-It is not in the web export (its download budget): the web build keeps
-its plain look there, as it always has without the private pack.
+It is not in the web export (its download budget), and desktop games in
+Compatibility don't read it either: that renderer keeps textures
+uncompressed, so the pack would add about 100 MB of video memory (472 to
+572 MB in the render check, over the 512 MB budget of the low-end tier).
+Both keep their plain look there, as they always have without the private
+pack. Forward+ desktops get it.
 
 | Part | Manifest | What's in it |
 |---|---|---|

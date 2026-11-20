@@ -237,7 +237,8 @@ const MEGASCANS_DIR := "user://megascans/"
 ## (Poly Haven, ambientCG) by tools/fetch_free_assets.py, so every desktop
 ## build has scanned plants, rocks, woodland debris and surfaces. Each
 ## feature reads the private pack's manifest when it has one and this one
-## otherwise. Not in the web export (its download budget), and off with
+## otherwise. Forward+ only: not in the web export (its download budget)
+## nor read in Compatibility (its video memory), and off with
 ## OL_FREE_PACK=0 (to compare before and after).
 const FREE_PACK_DIR := "res://free_assets/pack/"
 static var free_pack := OS.get_environment("OL_FREE_PACK") != "0"
@@ -256,7 +257,10 @@ static func pack_dirs() -> PackedStringArray:
 	if OS.has_feature("web"):
 		return out
 	out.append(megascans_dir())
-	if free_pack:
+	# Compatibility keeps textures uncompressed, so the free pack would
+	# add about 100 MB of video memory there (the low-end tier's budget):
+	# it is for Forward+ only, like the web build that leaves it out.
+	if free_pack and GraphicsSettings.is_forward_plus():
 		out.append(FREE_PACK_DIR)
 	return out
 
