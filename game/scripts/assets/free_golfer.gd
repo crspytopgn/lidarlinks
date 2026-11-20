@@ -69,6 +69,14 @@ const PULL_MAX := 6.0
 ## swing and swing_iron start at the top, the putt at address (Michael's
 ## Mixamo takes, tools/golfer/mixamo_bake.py prints them).
 const SWING_IMPACT := 0.27
+## Where the backswing stops, seconds into its clip (driver, then irons):
+## the takes swing on past parallel (the driver's shaft 33 degrees below
+## level at the clip's end, the irons' 31), a long amateur's swing. A tour
+## driver stops at about parallel and an iron short of it, so a full
+## backswing ends here: the driver's shaft 13 degrees past level, the
+## irons' 9 short of it (game/tests/golfer_pose_render.gd, side views).
+const BACKSWING_TOP := 0.75
+const BACKSWING_TOP_IRON := 0.70
 const PUTT_IMPACT := 1.0
 ## The top of the putt's backstroke, seconds into the putt clip (the trail
 ## hand furthest back in the bake): a stroke the player drives is held
@@ -758,7 +766,7 @@ func _follow_clip(animation: StringName, f: float) -> void:
 	if not _player.has_animation(clip):
 		return
 	var length := _player.get_animation(clip).length
-	var t := f * (SWING_IMPACT if animation == &"swing" else length)
+	var t := f * (SWING_IMPACT if animation == &"swing" else backswing_top(clip, length))
 	if _following != clip:
 		_stop_walk()
 		if _look:
@@ -774,6 +782,12 @@ func _follow_clip(animation: StringName, f: float) -> void:
 		_player.play(clip, 0.0, 1.0)
 	_follow_f = f
 	_player.seek(minf(t, length - 0.02), true)
+
+
+## Seconds into a backswing clip where a full backswing stops
+## (BACKSWING_TOP), never past the clip's `length`.
+static func backswing_top(clip: StringName, length: float) -> float:
+	return minf(length, BACKSWING_TOP_IRON if String(clip).contains("_iron") else BACKSWING_TOP)
 
 
 func impact_delay() -> float:
@@ -804,7 +818,12 @@ func react(animation: StringName, delay: float) -> void:
 ## Plays a clip, the right hand following onto the club or off it.
 func _play(clip: StringName, blend: float, speed := 0.0) -> void:
 	_speed = speed if speed > 0.0 else (tempo if clip in SWING_CLIPS else 1.0 + _rng.randf_range(-SPEED_JITTER, SPEED_JITTER))
-	_player.play(clip, blend, _speed)
+	var length := _player.get_animation(clip).length if _player.has_animation(clip) else 0.0
+	if String(clip).begins_with("backswing"):
+		# Held at a tour top, not the take's overswing.
+		_player.play_section(clip, 0.0, backswing_top(clip, length), blend, _speed)
+	else:
+		_player.play(clip, blend, _speed)
 	var anim := _player.get_animation(clip)
 	if anim and anim.loop_mode != Animation.LOOP_NONE and clip != &"walk":
 		_player.seek(_rng.randf() * anim.length, false)

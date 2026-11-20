@@ -24,7 +24,7 @@ const BUSY := [GolfRound.State.FLIGHT, GolfRound.State.SHOT_RESULT, GolfRound.St
 const DESIGNER_FRAME := 220
 const GOLFER_FRAME := 230
 ## Free golfer poses for the close-up: clip and seconds into it.
-const GOLFER_POSES := [[&"backswing", 0.93], [&"swing", 0.25], [&"swing", 0.29], [&"swing", 1.2]]
+const GOLFER_POSES := [[&"backswing", 0.75], [&"swing", 0.25], [&"swing", 0.29], [&"swing", 1.2]]
 ## Performance budget for the round, per frame, checked at the flyover and
 ## from the tee (Photoreal look at Ultra trees and grass, the heaviest a
 ## player can pick). Counts, not times: the CI machines render in
