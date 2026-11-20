@@ -7,6 +7,8 @@
 # compressed engine goes from 24.7 to 17.6 MiB on Linux (-29%). It keeps
 # HTTPS (mbedtls), ZIPReader, RegEx, WebSocket, JPEG/WebP/TGA/Ogg, SVG and
 # the fallback text server (English UI, no complex-script shaping needed).
+# CI links ANGLE on Windows and macOS like the official templates, so poor
+# native OpenGL drivers still fall back to it.
 # The game keeps Godot's official templates: stripping modules from it only
 # saved 2.4 MiB (the two renderers are most of the engine).
 target = "template_release"

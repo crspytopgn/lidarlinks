@@ -66,7 +66,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: template
-          key: launcher-template-${{ matrix.platform }}-${{ env.GODOT_VERSION }}-${{ hashFiles('tools/templates/launcher.py') }}
+          key: launcher-template-${{ matrix.platform }}-${{ env.GODOT_VERSION }}-angle-${{ hashFiles('tools/templates/launcher.py') }}
       - name: Build the template
         if: steps.cache-template.outputs.cache-hit != 'true'
         shell: bash
@@ -77,6 +77,12 @@ jobs:
           src=/tmp/godot-${GODOT_VERSION}-stable
           profile=$PWD/tools/templates/launcher.py
           mkdir -p template
+          # ANGLE (OpenGL over D3D11 / Metal), as in the official templates:
+          # Windows and macOS fall back to it where native OpenGL is poor.
+          angle() {
+            curl -sSL -o /tmp/angle-$1.zip "https://github.com/godotengine/godot-angle-static/releases/download/chromium%2F6601.2/godot-angle-static-$1-release.zip"
+            mkdir -p /tmp/angle && unzip -q -o /tmp/angle-$1.zip -d /tmp/angle
+          }
           case "${{ matrix.platform }}" in
             linuxbsd)
               (cd $src && scons platform=linuxbsd arch=x86_64 profile=$profile -j4)
@@ -85,10 +91,14 @@ jobs:
               sudo apt-get update -q && sudo apt-get install -y -q mingw-w64
               sudo update-alternatives --set x86_64-w64-mingw32-gcc /usr/bin/x86_64-w64-mingw32-gcc-posix
               sudo update-alternatives --set x86_64-w64-mingw32-g++ /usr/bin/x86_64-w64-mingw32-g++-posix
-              (cd $src && scons platform=windows arch=x86_64 use_mingw=yes profile=$profile -j4)
+              angle x86_64-gcc
+              (cd $src && scons platform=windows arch=x86_64 use_mingw=yes angle_libs=/tmp/angle profile=$profile -j4)
               cp $src/bin/godot.windows.template_release.x86_64.exe template/windows_release_x86_64.exe ;;
             macos)
-              (cd $src && scons platform=macos arch=arm64 profile=$profile -j3 && scons platform=macos arch=x86_64 profile=$profile -j3)
+              angle arm64-macos
+              angle x86_64-macos
+              (cd $src && scons platform=macos arch=arm64 angle_libs=/tmp/angle profile=$profile -j3 \
+                && scons platform=macos arch=x86_64 angle_libs=/tmp/angle profile=$profile -j3)
               lipo -create $src/bin/godot.macos.template_release.arm64 $src/bin/godot.macos.template_release.x86_64 \
                 -output template/godot_macos_release.universal ;;
           esac
