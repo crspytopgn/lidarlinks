@@ -3795,6 +3795,7 @@ func _apply_graphics() -> void:
 	post.apply(graphics)
 	dynamic_resolution.setup(get_viewport(), graphics)
 	camera.fov = graphics.fov
+	camera.base_fov = graphics.fov
 	camera.attributes = _camera_attributes()
 	RenderingServer.global_shader_parameter_set("foliage_sway", 1.0 if graphics.foliage_wind else 0.0)
 	# Under a soft overcast the whole sky is cloud: no moving patches of shade.

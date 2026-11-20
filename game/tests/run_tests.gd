@@ -2174,6 +2174,11 @@ func _test_graphics_settings() -> void:
 		most_pan = maxf(most_pan, RoundCamera.operator_offset(i * 0.1, 1.0).length())
 	_check(most > 0.0 and most < deg_to_rad(0.1), "camera operator: resting drift under 0.1 degree")
 	_check(most_pan > most and most_pan < deg_to_rad(0.3), "camera operator: more drift while panning, under 0.3 degree")
+	# The TV long lens: wide near the player, zoomed on a ball far away,
+	# never past its limits.
+	_check(RoundCamera.zoom_fov(50.0, 10.0) == 50.0, "long lens: the player's lens on a ball close by")
+	_check_near(RoundCamera.zoom_fov(50.0, 60.0), rad_to_deg(2.0 * atan(13.0 / 60.0)), 1e-3, "long lens: 26 m of picture at 60 m")
+	_check(RoundCamera.zoom_fov(50.0, 1000.0) == 15.0 and RoundCamera.zoom_fov(25.0, 1000.0) == 9.0, "long lens: no narrower than its limits")
 	var path := "user://test_settings.cfg"
 	var cfg := ConfigFile.new()
 	cfg.set_value("game", "folder", "/somewhere")

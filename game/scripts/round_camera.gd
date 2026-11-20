@@ -89,6 +89,19 @@ const OPERATOR_PAN_DEG := 0.14  ## extra while following a ball in the air
 const OPERATOR_FOLLOW := 13.5  ## pan spring, radians per second
 const OPERATOR_DAMPING := 0.85  ## below 1: a slight overshoot as the pan stops
 var _look_vel := Vector3.ZERO
+## The player's lens (Settings > Field of view); 0 until it is set. The
+## Broadcast cameras zoom in from it on the ball (zoom_fov).
+var base_fov := 0.0
+## The TV long lens: a standing camera (behind the player, side, landing,
+## pin) keeps about this many metres of picture height round the ball, as
+## a broadcast camera zooms on a ball in the air rather than losing it as
+## a speck. Never narrower than ZOOM_MIN_SHARE of the player's lens or
+## ZOOM_MIN_FOV degrees, and the zoom eases at ZOOM_RATE a second (the
+## operator's hand), snapping only on a cut.
+const ZOOM_FRAME_M := 26.0
+const ZOOM_MIN_SHARE := 0.3
+const ZOOM_MIN_FOV := 9.0
+const ZOOM_RATE := 2.5
 var _operator_t := 0.0
 var _operator_pan := 0.0  ## 0 resting to 1 panning, eased so the drift never jumps
 
@@ -115,6 +128,8 @@ const FLY_EASE_OUT := 0.35
 ## Snaps behind the ball, looking down the aim line `dir` (flat, unit).
 func aim(ball: Vector3, dir: Vector3, putting: bool, reach := 0.0) -> void:
 	_shot = null
+	if base_fov > 0.0:
+		fov = base_fov  # the TV long lens (zoom_fov) is only for the shot
 	var lens := lens_factor(fov)
 	var tv := broadcast and not putting
 	var back := (PUTT_BACK if putting else (BROADCAST_AIM_BACK if tv else AIM_BACK)) * lens
@@ -249,6 +264,11 @@ func update(delta: float, t: float, ball: Vector3) -> void:
 			_look = pose[1]
 			if pose[2]:
 				_look_now = _look
+		if base_fov > 0.0:
+			var want := base_fov
+			if struck and director.standing(t):
+				want = zoom_fov(base_fov, position.distance_to(ball))
+			fov = want if pose[2] else lerpf(fov, want, 1.0 - exp(-delta * ZOOM_RATE))
 	elif _shot != null and struck:
 		if not _cut_to_landing and _landing_time > 0.0 and t >= _landing_time - LANDING_CUT_LEFT:
 			_cut_to_landing = true
@@ -279,6 +299,14 @@ func update(delta: float, t: float, ball: Vector3) -> void:
 			rotate_object_local(Vector3.RIGHT, off.y)
 
 
+## The TV long lens's field of view (degrees) for a ball `distance` metres
+## away, from the player's `base` lens: ZOOM_FRAME_M of picture height at
+## the ball, within the limits above.
+static func zoom_fov(base: float, distance: float) -> float:
+	var want := rad_to_deg(2.0 * atan(ZOOM_FRAME_M * 0.5 / maxf(distance, 1.0)))
+	return clampf(want, maxf(base * ZOOM_MIN_SHARE, ZOOM_MIN_FOV), base)
+
+
 ## The operator's drift at time `t` seconds, `panning` 0 to 1, as (yaw,
 ## pitch) in radians:
 ## a few incommensurate slow sways, so it never visibly repeats.
@@ -301,6 +329,8 @@ static func operator_offset(t: float, panning: float) -> Vector2:
 ## smoothed, so the view turns gently into a dogleg before the camera does;
 ## and the speed eases in and out rather than peaking mid-hole.
 func start_flyover(hole: HoleData) -> void:
+	if base_fov > 0.0:
+		fov = base_fov
 	_fly_path = PackedVector3Array()
 	_fly_look_path = PackedVector3Array()
 	_fly_pin = hole.pin
