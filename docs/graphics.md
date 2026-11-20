@@ -555,7 +555,7 @@ Ultra and use a notch lighter soft-shadow filter.
   sun's direction comes from the `sun_travel` global uniform, which
   Scenery sets with the time of day. One MultiMesh for the 3D people and
   one for the cards, in both renderers.
-- **Grandstand** (`Gallery`, par 3s and the last hole): a temporary
+- **Grandstand** (`Gallery`, par 3s, the last hole and about half the other greens, `Gallery.green_stand`): a temporary
   bleacher stand behind the green, 24 m wide, with 8 rows 0.85 m deep rising
   0.42 m. The first row is 1.0 m up behind a dark green hoarding. It is set
   6 m behind the green rope and turned up to 50 degrees to clear water,
