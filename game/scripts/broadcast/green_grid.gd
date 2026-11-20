@@ -57,7 +57,20 @@ var style: Style = Style.SLOPE
 var _low := 0.0
 var _high := 0.0
 
-var _mesh := ImmediateMesh.new()
+var _mesh := ArrayMesh.new()
+## The mesh being built: arrays filled by _piece, then one surface.
+var _verts := PackedVector3Array()
+var _colors := PackedColorArray()
+var _normals := PackedVector3Array()
+var _uvs := PackedVector2Array()
+var _uv2s := PackedVector2Array()
+## Height and line colour at each point the lines pass through, by its
+## place on the grid in 1 / PIECES metre steps: each point is shared by
+## two pieces of its line and often by a crossing line, and reading the
+## terrain once for it made the build several times faster.
+var _points := {}
+var _x0 := 0.0
+var _z0 := 0.0
 
 
 func _init() -> void:
@@ -111,21 +124,34 @@ func build(terrain: CourseTerrain, ball: Vector3, pin: Vector3) -> void:
 				var y := terrain.height_at(x0 + a * SPACING, z0 + b * SPACING)
 				_low = minf(_low, y)
 				_high = maxf(_high, y)
-	_mesh.surface_begin(Mesh.PRIMITIVE_TRIANGLES)
+	_x0 = x0
+	_z0 = z0
+	_points.clear()
+	_verts.clear()
+	_colors.clear()
+	_normals.clear()
+	_uvs.clear()
+	_uv2s.clear()
 	for a in cells + 1:
 		for b in cells:
 			# Line a runs along z at x = x0 + a, and along x at z = z0 + a.
-			var along_z := Vector2(x0 + a * SPACING, z0 + b * SPACING)
-			_segment(terrain, along_z, along_z + Vector2(0.0, SPACING))
-			var along_x := Vector2(x0 + b * SPACING, z0 + a * SPACING)
-			_segment(terrain, along_x, along_x + Vector2(SPACING, 0.0))
+			_segment(terrain, Vector2i(a * PIECES, b * PIECES), Vector2i(0, 1))
+			_segment(terrain, Vector2i(b * PIECES, a * PIECES), Vector2i(1, 0))
 	if style == Style.SLOPE:
 		var seed := 0
 		for a in cells:
 			for b in cells:
 				seed += 1
 				_flow(terrain, Vector2(x0 + (a + 0.5) * SPACING, z0 + (b + 0.5) * SPACING), seed)
-	_mesh.surface_end()
+	var arrays := []
+	arrays.resize(Mesh.ARRAY_MAX)
+	arrays[Mesh.ARRAY_VERTEX] = _verts
+	arrays[Mesh.ARRAY_NORMAL] = _normals
+	arrays[Mesh.ARRAY_COLOR] = _colors
+	arrays[Mesh.ARRAY_TEX_UV] = _uvs
+	arrays[Mesh.ARRAY_TEX_UV2] = _uv2s
+	_mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+	_points.clear()
 
 
 ## A streamline from `c` downhill, with its running dot (see the shader).
@@ -154,20 +180,35 @@ func _flow(terrain: CourseTerrain, c: Vector2, seed: int) -> void:
 	col = Color(FLOW_COLOR.lerp(col, 0.5), FLOW_COLOR.a)
 	var rate := flow_speed(pct) / travelled
 	var phase := float(absi(hash(seed)) % 16) * 2.0
+	# Each point's height read once: it ends one piece and starts the next.
+	var prev := Vector3(pts[0].x, terrain.height_at(pts[0].x, pts[0].y) + LIFT, pts[0].y)
 	for i in pts.size() - 1:
 		var s0 := float(i) / (pts.size() - 1)
 		var s1 := float(i + 1) / (pts.size() - 1)
-		_piece(terrain, pts[i], pts[i + 1], col, col, FLOW_WIDTH, Vector2(phase + s0, rate), Vector2(phase + s1, rate))
-
-
-func _segment(terrain: CourseTerrain, a: Vector2, b: Vector2) -> void:
-	var prev := _colour_at(terrain, a)
-	for i in PIECES:
-		var p := a.lerp(b, float(i) / PIECES)
-		var q := a.lerp(b, float(i + 1) / PIECES)
-		var next := _colour_at(terrain, q)
-		_piece(terrain, p, q, prev, next)
+		var next := Vector3(pts[i + 1].x, terrain.height_at(pts[i + 1].x, pts[i + 1].y) + LIFT, pts[i + 1].y)
+		_add_piece(prev, next, col, col, FLOW_WIDTH, Vector2(phase + s0, rate), Vector2(phase + s1, rate))
 		prev = next
+
+
+## One metre of grid line from grid point `k` (1 / PIECES metre steps)
+## one step of `dir` at a time.
+func _segment(terrain: CourseTerrain, k: Vector2i, dir: Vector2i) -> void:
+	var prev: Array = _point(terrain, k)
+	for i in PIECES:
+		var next: Array = _point(terrain, k + dir * (i + 1))
+		_add_piece(prev[0], next[0], prev[1], next[1])
+		prev = next
+
+
+## [position on the turf, line colour] at grid point `k`.
+func _point(terrain: CourseTerrain, k: Vector2i) -> Array:
+	var got: Variant = _points.get(k)
+	if got != null:
+		return got
+	var p := Vector2(_x0 + float(k.x) * SPACING / PIECES, _z0 + float(k.y) * SPACING / PIECES)
+	var pt := [Vector3(p.x, terrain.height_at(p.x, p.y) + LIFT, p.y), _colour_at(terrain, p)]
+	_points[k] = pt
+	return pt
 
 
 func _colour_at(terrain: CourseTerrain, p: Vector2) -> Color:
@@ -184,14 +225,11 @@ func _colour_at(terrain: CourseTerrain, p: Vector2) -> Color:
 ## shader widens across the screen (UV.x is the edge, -1 or +1; the normal
 ## carries the way the line runs, UV.y how much wider than LINE_WIDTH).
 ## `flow_a` and `flow_b` are the flowing dot's UV2 at each end (none on the
-## plain lines).
-func _piece(terrain: CourseTerrain, a: Vector2, b: Vector2, col_a: Color, col_b: Color, wide := 1.0, flow_a := Vector2.ZERO, flow_b := Vector2.ZERO) -> void:
-	var pa := Vector3(a.x, terrain.height_at(a.x, a.y) + LIFT, a.y)
-	var pb := Vector3(b.x, terrain.height_at(b.x, b.y) + LIFT, b.y)
+## plain lines). `pa` and `pb` are already lifted off the turf.
+func _add_piece(pa: Vector3, pb: Vector3, col_a: Color, col_b: Color, wide := 1.0, flow_a := Vector2.ZERO, flow_b := Vector2.ZERO) -> void:
 	var run := (pb - pa).normalized()
-	for v: Array in [[pa, col_a, -1.0, flow_a], [pa, col_a, 1.0, flow_a], [pb, col_b, 1.0, flow_b], [pa, col_a, -1.0, flow_a], [pb, col_b, 1.0, flow_b], [pb, col_b, -1.0, flow_b]]:
-		_mesh.surface_set_color(v[1])
-		_mesh.surface_set_uv2(v[3])
-		_mesh.surface_set_normal(run)
-		_mesh.surface_set_uv(Vector2(v[2], wide))
-		_mesh.surface_add_vertex(v[0])
+	_verts.append_array([pa, pa, pb, pa, pb, pb])
+	_colors.append_array([col_a, col_a, col_b, col_a, col_b, col_b])
+	_normals.append_array([run, run, run, run, run, run])
+	_uvs.append_array([Vector2(-1.0, wide), Vector2(1.0, wide), Vector2(1.0, wide), Vector2(-1.0, wide), Vector2(1.0, wide), Vector2(-1.0, wide)])
+	_uv2s.append_array([flow_a, flow_a, flow_b, flow_a, flow_b, flow_b])

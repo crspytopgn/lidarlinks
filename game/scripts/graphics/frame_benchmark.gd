@@ -9,7 +9,8 @@ extends Node
 ## game quits. Each case changes one thing from the device's own look.
 ## Before the cases it lists what the scene is made of (scene_breakdown);
 ## `--scene-only` stops after that and the device's own look, `--play-only`
-## skips the cases, and `--no-vsync` times the play without v-sync.
+## skips the cases, `--no-vsync` times the play without v-sync, and
+## `--course=PATH` (res://, user:// or a file path) plays that course.
 
 const WARM := 1.5
 const MEASURE := 3.0
@@ -51,6 +52,8 @@ static func prepare() -> void:
 	if not wanted():
 		return
 	for arg: String in OS.get_cmdline_user_args():
+		if arg.begins_with("--course="):
+			GolfRound.chosen_course = arg.trim_prefix("--course=")
 		if arg.begins_with("--look="):
 			var name := arg.trim_prefix("--look=").replace("_", " ")
 			for i in GraphicsSettings.LOOK_NAMES.size():
@@ -93,6 +96,13 @@ func _run() -> void:
 	for line in scene_breakdown(_game, get_viewport().get_camera_3d()):
 		print(line)
 		lines.append(line)
+	if await _views():
+		tree.quit()
+		return
+	if OS.get_cmdline_user_args().has("--shadow-casters"):
+		for line in await shadow_casters(_game):
+			print(line)
+			lines.append(line)
 	var only_default := OS.get_cmdline_user_args().has("--scene-only")
 	lines.append("case | gpu ms | cpu ms | frame ms | fps | 3D scale | draws | k prims")
 	var base_gpu := 0.0
@@ -259,6 +269,86 @@ static func scene_breakdown(root: Node, cam: Camera3D = null) -> PackedStringArr
 		var r: Array = groups[k]
 		out.append("%s | %d | %d | %d | %.0f | %d | %d | %d | %.0f" % [k, r[0], r[1], r[2], r[3] / 1000.0, r[4], r[5], r[6], r[7] / 1000.0])
 	out.append("distinct materials %d, shaders %d" % [mats.size(), shaders.size()])
+	return out
+
+
+## `--view=x,y,z,tx,ty,tz,PATH` (any number): draws the scene from the
+## camera at x, y, z looking at tx, ty, tz, or at the ball's spot from
+## the first tee with `--view=tee,PATH`, and saves the frame to PATH (png),
+## for before and after comparisons of a change. True if there were any
+## (the benchmark then ends).
+func _views() -> bool:
+	var tree := get_tree()
+	var any := false
+	for arg: String in OS.get_cmdline_user_args():
+		if not arg.begins_with("--view="):
+			continue
+		any = true
+		var parts := arg.trim_prefix("--view=").split(",")
+		var round_cam := get_viewport().get_camera_3d()
+		var cam: Camera3D = null
+		if parts.size() >= 7:
+			# A camera of its own: the round's camera moves itself each frame.
+			cam = Camera3D.new()
+			cam.fov = round_cam.fov
+			cam.near = round_cam.near
+			cam.far = round_cam.far
+			cam.attributes = round_cam.attributes
+			_game.add_child(cam)
+			cam.global_position = Vector3(parts[0].to_float(), parts[1].to_float(), parts[2].to_float())
+			cam.look_at(Vector3(parts[3].to_float(), parts[4].to_float(), parts[5].to_float()))
+			cam.make_current()
+		for i in 40:
+			await tree.process_frame
+		get_viewport().get_texture().get_image().save_png(parts[parts.size() - 1])
+		if cam != null:
+			round_cam.make_current()
+			cam.queue_free()
+		print("view saved to %s" % parts[parts.size() - 1])
+	return any
+
+
+## What each owner's sun shadow casters cost in the shadow pass: their
+## shadows are switched off one owner at a time and the draws and
+## primitives the frame loses are listed (`--shadow-casters`).
+func shadow_casters(root: Node) -> PackedStringArray:
+	var tree := get_tree()
+	var groups := {}
+	var stack: Array[Node] = [root]
+	while not stack.is_empty():
+		var n: Node = stack.pop_back()
+		for c in n.get_children():
+			stack.append(c)
+		if n is GeometryInstance3D and (n as Node3D).is_visible_in_tree() \
+				and (n as GeometryInstance3D).cast_shadow != GeometryInstance3D.SHADOW_CASTING_SETTING_OFF:
+			var k := _owner_name(n, root)
+			if not groups.has(k):
+				groups[k] = []
+			groups[k].append(n)
+	var measure := func() -> Vector2:
+		for i in 3:
+			await tree.process_frame
+		var sum := Vector2.ZERO
+		for i in 4:
+			await tree.process_frame
+			sum += Vector2(Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME), Performance.get_monitor(Performance.RENDER_TOTAL_PRIMITIVES_IN_FRAME))
+		return sum / 4.0
+	var base: Vector2 = await measure.call()
+	var rows: Array = []
+	for k: String in groups:
+		var saved: Array = []
+		for gi: GeometryInstance3D in groups[k]:
+			saved.append(gi.cast_shadow)
+			gi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		var off: Vector2 = await measure.call()
+		for i in groups[k].size():
+			(groups[k][i] as GeometryInstance3D).cast_shadow = saved[i]
+		rows.append([k, groups[k].size(), base.x - off.x, (base.y - off.y) / 1000.0])
+	rows.sort_custom(func(a: Array, b: Array) -> bool: return a[3] > b[3])
+	var out := PackedStringArray()
+	out.append("shadow casters by owner | nodes | shadow draws | shadow k prims (frame %d draws, %.0fk prims)" % [base.x, base.y / 1000.0])
+	for r: Array in rows:
+		out.append("%s | %d | %.0f | %.0f" % r)
 	return out
 
 
