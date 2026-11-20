@@ -25,9 +25,9 @@ product lead builds it.
    setup (ball position, club face, stance). The launch already reads the
    setup bytes but nothing set them. Done: Q/E and W/S in the round, or click/tap the spin ball under the wind (SpinBall)
    ([game-shell.md](docs/game-shell.md#playing)); the setup screen's own
-   limits are still to read from the game. Away from Classic Links, low on the
-   spin ball also adds backspin (up to 1.75x) so wedges check or spin back
-   through the game's own bounce (ShotShape.backspin).
+   limits are still to read from the game. Away from Classic Links, a backspin
+   slider beside the spin ball adds spin (up to 1.75x) so wedges check or
+   spin back through the game's own bounce (ShotShape.spin).
 2. [x] **Touch and controller swings**: a swipe swing on phones and tablets
    (the web build), and an analog-stick swing on gamepads, both feeding the
    PowerStroke model. Done in #104.

@@ -12,14 +12,15 @@ extends RefCounted
 ##
 ## The limits are our own: the game's setup screen limits are not read yet.
 ##
-## Away from Classic Links the height also carries extra backspin, which
-## Links 2003 has no setting for: low on the ball (higher) spins it more, so a
-## wedge checks or spins back on the green; high on the ball (lower) takes
-## spin off. How much the ball checks still comes from the game's own bounce
-## (club, power, lie and green firmness); see backspin_scale.
+## Away from Classic Links there is also `spin`, extra backspin, which Links
+## 2003 has no setting for: up spins the ball more, so a wedge checks or
+## spins back on the green; down takes spin off. How much the ball checks
+## still comes from the game's own bounce (club, power, lie and green
+## firmness); see backspin_scale.
 
 const MAX_CURVE := 6
 const MAX_HEIGHT := 3
+const MAX_SPIN := 3
 ## Backspin kept per extra step: more per step up, less per step down.
 const BACKSPIN_MORE_PER_STEP := 0.25
 const BACKSPIN_LESS_PER_STEP := 0.15
@@ -28,15 +29,24 @@ const BACKSPIN_LESS_PER_STEP := 0.15
 var curve := 0
 ## Ball-position steps forward of the club's neutral spot: positive is higher.
 var height := 0
+## Extra backspin steps (not in Classic Links): positive spins more.
+var spin := 0
 
 
 func is_square() -> bool:
-	return curve == 0 and height == 0
+	return curve == 0 and height == 0 and spin == 0
 
 
 func reset() -> void:
 	curve = 0
 	height = 0
+	spin = 0
+
+
+func nudge_spin(step: int) -> bool:
+	var before := spin
+	spin = clampi(spin + step, -MAX_SPIN, MAX_SPIN)
+	return spin != before
 
 
 func nudge_curve(step: int) -> bool:
@@ -51,16 +61,16 @@ func nudge_height(step: int) -> bool:
 	return height != before
 
 
-## Extra backspin steps for the shot (ShotModel.backspin): the height away
-## from Classic Links, none in it.
+## Extra backspin steps for the shot (ShotModel.backspin): none in Classic
+## Links.
 func backspin(classic: bool) -> int:
-	return 0 if classic else height
+	return 0 if classic else spin
 
 
 ## What `steps` of extra backspin multiply the launch backspin by: 1.75 at
 ## +3, 0.55 at -3.
 static func backspin_scale(steps: int) -> float:
-	var k := clampi(steps, -MAX_HEIGHT, MAX_HEIGHT)
+	var k := clampi(steps, -MAX_SPIN, MAX_SPIN)
 	return 1.0 + k * (BACKSPIN_MORE_PER_STEP if k > 0 else BACKSPIN_LESS_PER_STEP)
 
 
@@ -95,6 +105,8 @@ func describe() -> String:
 		parts.append("%s %d" % ["Fade" if curve > 0 else "Draw", absi(curve)])
 	if height != 0:
 		parts.append("%s %d" % ["high" if height > 0 else "low", absi(height)])
+	if spin != 0:
+		parts.append("%s %d" % ["backspin" if spin > 0 else "less spin", absi(spin)])
 	if parts.is_empty():
 		return ""
 	var text := ", ".join(parts)
