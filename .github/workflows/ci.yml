@@ -97,8 +97,10 @@ jobs:
             macos)
               angle arm64-macos
               angle x86_64-macos
-              (cd $src && scons platform=macos arch=arm64 angle_libs=/tmp/angle profile=$profile -j3 \
-                && scons platform=macos arch=x86_64 angle_libs=/tmp/angle profile=$profile -j3)
+              # ANGLE needs these, which a build without Metal or Vulkan does not link.
+              mac_frameworks="-framework IOSurface -framework Metal -framework QuartzCore"
+              (cd $src && scons platform=macos arch=arm64 angle_libs=/tmp/angle linkflags="$mac_frameworks" profile=$profile -j3 \
+                && scons platform=macos arch=x86_64 angle_libs=/tmp/angle linkflags="$mac_frameworks" profile=$profile -j3)
               lipo -create $src/bin/godot.macos.template_release.arm64 $src/bin/godot.macos.template_release.x86_64 \
                 -output template/godot_macos_release.universal ;;
           esac
