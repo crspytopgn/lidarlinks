@@ -10,6 +10,16 @@ extends RefCounted
 ## use it; putts ignore it. See ShotShape for the draw, fade, high and low
 ## the round offers.
 var setup := LinksLaunch.Setup.new()
+## Extra backspin steps for the next full swing or chip (ShotShape.backspin):
+## not a Links 2003 setting, so 0 in Classic Links and for computer golfers.
+var backspin := 0
+
+
+## A new model of the same kind on the same tables, square and with nothing
+## of this one's last shot: physics run on a worker thread (BackgroundWork)
+## gets its own, since launch() and the round's replay set fields per shot.
+func fresh() -> ShotModel:
+	return (get_script() as GDScript).new() as ShotModel
 
 
 ## Launch state for a swing, with the ball sitting at `from` on a `lie`.
@@ -33,6 +43,7 @@ func reach_scale(_club: Club) -> float:
 
 
 ## The share of a full swing's ball speed a shot from `lie` keeps in this
-## model, for the reach the game shows and plans with.
-func lie_power(lie: int) -> float:
+## model, for the reach the game shows and plans with. With a `club`, the
+## share that club keeps (a model may hit some clubs worse from a lie).
+func lie_power(lie: int, _club: Club = null) -> float:
 	return Surface.lie_power(lie)

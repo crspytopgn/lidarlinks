@@ -149,18 +149,50 @@ func pond_rings(frame: GeoFrame, area: Rect2, dry: Array[CourseShape], wet: Arra
 	if not any:
 		return out
 	# Clear what is already water or must stay dry (a margin round play).
-	for s in dry + wet:
-		var b := s.bounds().grow(RES if s in dry else 0.0)
-		for j in range(maxi(0, floori((b.position.y - area.position.y) / cell)), mini(rows, ceili((b.end.y - area.position.y) / cell))):
-			for i in range(maxi(0, floori((b.position.x - area.position.x) / cell)), mini(cols, ceili((b.end.x - area.position.x) / cell))):
-				var k := j * cols + i
-				if mask[k] == 0:
-					continue
-				var p := area.position + (Vector2(i, j) + Vector2(0.5, 0.5)) * cell
-				if s.signed_distance(p) < (RES if s in dry else 0.0):
-					mask[k] = 0
+	var origin := area.position + Vector2(0.5, 0.5) * cell
+	clear_near(mask, cols, rows, origin, cell, dry, RES)
+	clear_near(mask, cols, rows, origin, cell, wet, 0.0)
 	var found := NativeGrass.from_mask(area, mask).rings()
 	for r: PackedVector2Array in found["rings"]:
 		if absf(RealCourseBuilder._ring_area(r)) >= min_area:
 			out.append(r)
 	return out
+
+
+## Clears the cells of `mask` (`cols` by `rows`, cell (i, j) at `origin` +
+## (i, j) * `spacing`, clamped into `limit` when it has a size) that lie
+## within `margin` metres of any of `shapes`, inside counting: the same as
+## `signed_distance(p) < margin`, but each shape is grown once and its cells
+## tested in native code. (Testing every cell's distance to every outline
+## froze the game for 7 s at Whistling Straits, with 2,300 shapes.)
+static func clear_near(mask: PackedByteArray, cols: int, rows: int, origin: Vector2, spacing: float, shapes: Array[CourseShape], margin: float, limit := Rect2()) -> void:
+	var clamp_to := limit.has_area()
+	for s in shapes:
+		var b := s.bounds().grow(margin)
+		var i0 := maxi(0, floori((b.position.x - origin.x) / spacing))
+		var i1 := mini(cols, ceili((b.end.x - origin.x) / spacing) + 1)
+		var j0 := maxi(0, floori((b.position.y - origin.y) / spacing))
+		var j1 := mini(rows, ceili((b.end.y - origin.y) / spacing) + 1)
+		if i0 >= i1 or j0 >= j1:
+			continue
+		# The outline grown by the margin (holes come back too, so a point
+		# inside an odd number of these is within the margin).
+		var polys: Array[PackedVector2Array] = [s.outline()]
+		if margin > 0.0:
+			polys = Geometry2D.offset_polygon(s.outline(), margin, Geometry2D.JOIN_ROUND)
+		for j in range(j0, j1):
+			for i in range(i0, i1):
+				var k := j * cols + i
+				if mask[k] == 0:
+					continue
+				var p := origin + Vector2(i, j) * spacing
+				if clamp_to:
+					p = p.clamp(limit.position, limit.end)
+				if not b.has_point(p):
+					continue
+				var inside := false
+				for poly in polys:
+					if Geometry2D.is_point_in_polygon(p, poly):
+						inside = not inside
+				if inside:
+					mask[k] = 0

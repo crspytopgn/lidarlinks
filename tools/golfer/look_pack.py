@@ -13,6 +13,9 @@ Arrays are little-endian: f32 positions, uvs and weights, i32 bone indices
 and triangles, f16 normals, tangents and blend shape position offsets.
 Blend shape normal offsets are u8, 128 + round(offset * NORMAL_STEPS)
 (plenty for shading, and half the size).
+
+Images are jpg, png or webp. The build tools write PNGs; run
+tools/golfer/webp_images.py last to turn them into WebP (3.5 MB smaller).
 """
 
 import gzip

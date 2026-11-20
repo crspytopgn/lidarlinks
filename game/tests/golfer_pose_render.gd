@@ -33,7 +33,13 @@ const VIEWS := {
 	"grip_front": [Vector3(0.05, 0.0, -0.55), "hands", 30.0],
 	"grip_dtl": [Vector3(0.7, 0.05, -0.05), "hands", 30.0],
 	"grip_lead": [Vector3(-0.6, 0.0, -0.3), "hands", 30.0],
+	## The ball at the address spot (FreeGolfer.BALL), close up: does the
+	## club head meet it?
+	"ball_front": [Vector3(0.0, 0.08, -0.6), "ball", 30.0],
+	"ball_dtl": [Vector3(0.6, 0.12, 0.0), "ball", 30.0],
+	"ball_target": [Vector3(-0.6, 0.08, -0.05), "ball", 30.0],
 }
+const BALL_RADIUS := 0.02135
 
 var _out := ""
 var _golfer: FreeGolfer
@@ -81,6 +87,14 @@ func _initialize() -> void:
 	gm.roughness = 0.95
 	ground.material_override = gm
 	scene.add_child(ground)
+	# GROUND_SLOPE=gx,gz: a sloping lie, rising gx metres per metre along x
+	# and gz along z (+z is behind the ball toward his feet), level at the
+	# ball, with GolferFeet on it (as main.gd sets it up).
+	var slope := OS.get_environment("GROUND_SLOPE").split(",", false)
+	var gx := float(slope[0]) if slope.size() == 2 else 0.0
+	var gz := float(slope[1]) if slope.size() == 2 else 0.0
+	ground.position = FreeGolfer.BALL
+	ground.basis = Basis(Quaternion(Vector3.UP, Vector3(-gx, 1.0, -gz).normalized()))
 	var look := PlayerLook.default_look()
 	if args.size() > 1 and args[1] == "-":
 		look.person = ""  # the sculpted "Custom" body
@@ -95,8 +109,18 @@ func _initialize() -> void:
 		var node: Variant = _golfer.get("_" + helper)
 		if node is SkeletonModifier3D:
 			(node as SkeletonModifier3D).active = false
+	if true:  # level ground unless GROUND_SLOPE says otherwise, as in the game
+		var at := FreeGolfer.BALL
+		_golfer.set_ground(func(x: float, z: float) -> float: return gx * (x - at.x) + gz * (z - at.z))
 	_player = _golfer.find_child("AnimationPlayer", true, false) as AnimationPlayer
 	_player.callback_mode_process = AnimationMixer.ANIMATION_CALLBACK_MODE_PROCESS_MANUAL
+	var ball := MeshInstance3D.new()
+	var sphere := SphereMesh.new()
+	sphere.radius = BALL_RADIUS
+	sphere.height = BALL_RADIUS * 2.0
+	ball.mesh = sphere
+	ball.position = FreeGolfer.BALL + Vector3.UP * BALL_RADIUS
+	scene.add_child(ball)
 	_cam = Camera3D.new()
 	_cam.near = 0.02
 	scene.add_child(_cam)
@@ -143,6 +167,7 @@ func _bone(name: String) -> Vector3:
 
 func _run(job: Array) -> void:
 	var clip: StringName = job[1]
+	_golfer._iron = String(clip).ends_with("_iron")
 	_golfer._show_putter(String(clip).contains("putt") or clip == &"read")
 	_player.play(clip)
 	_player.seek(0.0, true)
@@ -158,6 +183,8 @@ func _run(job: Array) -> void:
 	var target: Vector3
 	if str(view[1]).begins_with("@"):
 		target = _bone(str(view[1]).substr(1))
+	elif view[1] == "ball":
+		target = _golfer.global_transform * FreeGolfer.BALL + Vector3.UP * BALL_RADIUS
 	elif view[1] == "hands":
 		target = (_bone("hand_l") + _bone("hand_r")) * 0.5
 	else:

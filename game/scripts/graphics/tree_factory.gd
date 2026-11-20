@@ -96,7 +96,11 @@ static var _waiting: Array[WeakRef] = []
 static var _next := {}
 static var _instanced_meshes: Array[ArrayMesh] = []
 static var _lite_meshes: Array = []  ## per variant: the lite ArrayMesh, or null
+## Per variant: what a near scanned tree casts its sun shadow with, or
+## null (see _shadow_mesh).
+static var _shadow_meshes: Array = []
 static var _instanced_lite: Array = []  ## the same with the instanced materials
+static var _instanced_shadow: Array = []  ## _shadow_meshes with the instanced materials, or null
 static var _instanced_impostor: ShaderMaterial
 static var _impostor_quad: QuadMesh
 
@@ -264,8 +268,22 @@ static func _near_set(trees: PackedFloat32Array, list: PackedInt32Array, v: int)
 static func batch_node(batch: Dictionary, shadows := true) -> GeometryInstance3D:
 	if batch.get("near", false):
 		var near := NearTrees.new(batch.multimesh, batch.transforms)
+		var mesh: Mesh = (batch.multimesh as MultiMesh).mesh
+		var v := _instanced_meshes.find(mesh)
 		if not shadows:
 			near.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		elif v >= 0 and _instanced_shadow[v] != null:
+			# The sun's shadow from the full leaves and the lite bark, as a
+			# hole's own trees cast it (_shadow_mesh).
+			near.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			var mm := MultiMesh.new()
+			mm.transform_format = MultiMesh.TRANSFORM_3D
+			mm.mesh = _instanced_shadow[v]
+			mm.instance_count = (batch.multimesh as MultiMesh).instance_count
+			var twin := NearTrees.new(mm, batch.transforms)
+			twin.name = "NearTreeShadows"
+			twin.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_SHADOWS_ONLY
+			near.add_child(twin)
 		return near
 	var node := MultiMeshInstance3D.new()
 	node.multimesh = batch.multimesh
@@ -356,6 +374,12 @@ static func _ensure_instanced() -> void:
 			lite.surface_set_material(0, _mat(v, "bark", "instancedlite_"))
 			lite.surface_set_material(1, _mat(v, "leaves", "instancedlite_"))
 		_instanced_lite.append(lite)
+		var shadow: ArrayMesh = null
+		if _shadow_meshes[v] != null:
+			shadow = (_shadow_meshes[v] as ArrayMesh).duplicate() as ArrayMesh
+			shadow.surface_set_material(0, _mat(v, "bark", "instanced_"))
+			shadow.surface_set_material(1, _mat(v, "leaves", "instanced_"))
+		_instanced_shadow.append(shadow)
 	_instanced_impostor = ShaderMaterial.new()
 	_instanced_impostor.shader = IMPOSTOR_SHADER
 	_instanced_impostor.set_shader_parameter("frames", float(FRAMES))
@@ -406,6 +430,15 @@ static func make_variant(variant: int) -> Node3D:
 	full.name = "Full"
 	full.mesh = _meshes[variant]
 	root.add_child(full)
+	if _shadow_meshes[variant] != null:
+		# The sun's shadow from the full leaves and the lite bark (see
+		# _shadow_mesh), over the same distances as the full tree.
+		full.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		var shadow := MeshInstance3D.new()
+		shadow.name = "Shadow"
+		shadow.mesh = _shadow_meshes[variant]
+		shadow.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_SHADOWS_ONLY
+		root.add_child(shadow)
 	if _lite_meshes[variant] != null:
 		var lite := MeshInstance3D.new()
 		lite.name = "Lite"
@@ -419,6 +452,23 @@ static func make_variant(variant: int) -> Node3D:
 		_waiting.append(weakref(root))
 		_start_bake()
 	return root
+
+
+## What a scanned tree near the camera casts its sun shadow with: the
+## full mesh's leaves, with the lite mesh's bark in place of the full one.
+## The full bark is most of the tree's triangles (14k of a red oak's 23k)
+## and each is drawn again into every shadow split it reaches, but under
+## the crown its twigs' shadows fall inside the leaves' own, and the lite
+## bark keeps the trunk and limbs. Null without a lite mesh.
+static func _shadow_mesh(full: ArrayMesh, lite: ArrayMesh) -> ArrayMesh:
+	if lite == null or full.get_surface_count() < 2 or lite.get_surface_count() < 1:
+		return null
+	var m := ArrayMesh.new()
+	m.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, lite.surface_get_arrays(0))
+	m.surface_set_material(0, lite.surface_get_material(0))
+	m.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, full.surface_get_arrays(1))
+	m.surface_set_material(1, full.surface_get_material(1))
+	return m
 
 
 ## The mesh of a variant: surface 0 is bark, surface 1 leaves.
@@ -459,6 +509,7 @@ static func _ensure_meshes() -> void:
 		else:
 			m = build_mesh(v[0], v[1])
 		_lite_meshes.append(lite)
+		_shadow_meshes.append(_shadow_mesh(m, lite))
 		var box := m.get_aabb()
 		var half_width := maxf(maxf(absf(box.position.x), absf(box.end.x)), maxf(absf(box.position.z), absf(box.end.z)))
 		_meshes.append(m)
@@ -811,6 +862,12 @@ static func _mat(v: int, part: String, prefix := "") -> ShaderMaterial:
 	return material(prefix + ("needles" if pine else "leaves"))
 
 
+## Forgets the made materials (ScannedTree.hd changed): trees already built
+## keep theirs.
+static func clear_materials() -> void:
+	_materials.clear()
+
+
 static func material(which: String) -> ShaderMaterial:
 	if _materials.has(which):
 		return _materials[which]
@@ -943,6 +1000,10 @@ static func _add_impostor(root: Node3D) -> void:
 		lite.visibility_range_end = distance
 		lite.visibility_range_end_margin = 4.0
 		lite.visible = true
+	var shadow := root.get_node_or_null("Shadow") as GeometryInstance3D
+	if shadow != null:
+		shadow.visibility_range_end = full.visibility_range_end
+		shadow.visibility_range_end_margin = full.visibility_range_end_margin
 	if batched:
 		return
 	var quad := QuadMesh.new()

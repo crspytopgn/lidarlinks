@@ -184,6 +184,43 @@ int links_meter_contact(double miss, int skill, int meter_width) {
   return static_cast<int>(0.2 * t) / 2;
 }
 
+namespace {
+
+// The strike quality limit for `club` at `skill`, from the lie's own figure
+// `quality`: only the driver, the 3-wood and the two longest irons feel it,
+// and the easier levels soften it.
+double club_quality(double quality, int ground_class, int club, int skill) {
+  if (ground_class != kLinksGreen) quality = std::max(quality, 0.3);
+  switch (club) {
+    case 0: break;
+    case 1: quality = 1 - (1 - quality) * 0.5; break;
+    case 7: quality = 1 - (1 - quality) * 0.2; break;
+    case 8: quality = 1 - (1 - quality) * 0.05; break;
+    default: quality = 1; break;
+  }
+  if (skill == 0) quality = (quality + 1) * 0.5;
+  else if (skill == 1) quality = quality * 0.8 + 0.2;
+  else if (skill == 2) quality = quality * 0.9 + 0.1;
+  return quality;
+}
+
+}  // namespace
+
+double links_clean_strike_speed(int club, const LinksSurface& lie, int skill) {
+  if (club == kLinksPutter || lie.ground_class == kLinksSand) return lie.lie_power;
+  double quality;
+  switch (lie.ground_class) {
+    case kLinksGreen: quality = 1; break;
+    case kLinksRough: quality = 0.6; break;
+    case kLinksPath:
+    case kLinksDirt:
+    case kLinksBushes:
+    case kLinksRocks: quality = 0.95; break;
+    default: quality = kSingle09; break;
+  }
+  return std::min(lie.lie_power, club_quality(quality, lie.ground_class, club, std::clamp(skill, 0, kLinksSkillCount - 1)));
+}
+
 void links_apply_swing(LinksStrike& s, const LinksSwing& w, const LinksSurface& lie, LinksRand& rng) {
   const LinksLieSnap ls = links_lie_snap(lie.ground_class);
   const bool sand = lie.ground_class == kLinksSand;
@@ -279,18 +316,7 @@ void links_apply_swing(LinksStrike& s, const LinksSwing& w, const LinksSurface& 
     case kLinksRocks: quality = 0.95 - 0.06 * c; break;
     default: quality = (rng.next() % 200 - 100) * 5e-5 + (kSingle09 - 0.01 * c); break;
   }
-  if (lie.ground_class != kLinksGreen) quality = std::max(quality, 0.3);
-  // Only the driver, the 3-wood and the two longest irons feel it.
-  switch (s.club) {
-    case 0: break;
-    case 1: quality = 1 - (1 - quality) * 0.5; break;
-    case 7: quality = 1 - (1 - quality) * 0.2; break;
-    case 8: quality = 1 - (1 - quality) * 0.05; break;
-    default: quality = 1; break;
-  }
-  if (skill == 0) quality = (quality + 1) * 0.5;
-  else if (skill == 1) quality = quality * 0.8 + 0.2;
-  else if (skill == 2) quality = quality * 0.9 + 0.1;
+  quality = club_quality(quality, lie.ground_class, s.club, skill);
 
   // The easier levels forgive the first steps of a miss.
   int steps = c;

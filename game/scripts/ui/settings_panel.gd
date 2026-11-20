@@ -80,6 +80,9 @@ var _scroll: ScrollContainer
 var _columns: HBoxContainer
 
 
+var _keys: KeysPanel
+
+
 func _ready() -> void:
 	Glass.apply(self, Glass.RADIUS, 22.0)
 
@@ -161,6 +164,17 @@ func _ready() -> void:
 	done.custom_minimum_size.x = 120
 	done.pressed.connect(back_pressed.emit)
 	footer.add_child(done)
+	var keys := MenuStyle.button("Keys...")
+	keys.custom_minimum_size.x = 120
+	footer.add_child(keys)
+	_keys = KeysPanel.new()
+	_keys.visible = false
+	add_child(_keys)
+	keys.pressed.connect(func() -> void:
+		box.visible = false
+		_keys.open())
+	_keys.closed.connect(func() -> void: box.visible = true)
+	KeyRemap.install(get_tree())
 	var hint := Label.new()
 	hint.text = "Esc: close    F11: fullscreen"
 	hint.add_theme_font_size_override("font_size", 14)
@@ -215,6 +229,8 @@ func open(s: GraphicsSettings) -> void:
 
 
 func close() -> void:
+	if _keys != null and _keys.visible:
+		_keys.close_keys()
 	visible = false
 
 

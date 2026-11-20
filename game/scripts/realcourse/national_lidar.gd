@@ -57,6 +57,11 @@ const SOURCES := [
 		"dsm": "https://environment.data.gov.uk/spatialdata/lidar-composite-digital-surface-model-first-return-dsm-1m/wcs",
 		"dsm_layer": "df4e3ec3-315e-48aa-aaaf-b5ae74d7b2bb__Lidar_Composite_Elevation_FZ_DSM_1m",
 		"query": "?service=WCS&version=2.0.1&request=GetCoverage&coverageId={layer}&format=image/tiff&subset=Lat({s},{n})&subset=Long({w},{e})&subsettingCrs=http://www.opengis.net/def/crs/EPSG/0/4326&outputCrs=http://www.opengis.net/def/crs/EPSG/0/4326&scaleSize=i({cols}),j({rows})",
+		# The ground read between its pixels, not the nearest one: the service
+		# resamples its British grid to latitude and longitude, and nearest
+		# pixels drew faint lines across the ground. The surface (for tree
+		# tops) stays nearest, so crowns keep their peaks.
+		"dtm_extra": "&interpolation=http://www.opengis.net/def/interpolation/OGC/1/linear",
 		"credit": "Lidar: Environment Agency, Open Government Licence v3.0",
 	},
 	{
@@ -210,6 +215,8 @@ func url(chunk: Dictionary, surface: bool) -> String:
 		"cols": chunk["cols"], "rows": chunk["rows"],
 		"layer": source["dsm_layer" if surface else "dtm_layer"],
 	})
+	if not surface:
+		q += str(source.get("dtm_extra", ""))
 	return str(source["dsm" if surface else "dtm"]) + q
 
 

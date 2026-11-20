@@ -13,6 +13,9 @@ func run_all() -> Array[String]:
 	_test_simplify()
 	_test_builder()
 	_test_geo_raster()
+	_test_strip_objects()
+	_test_net_door()
+	_test_holes_from_features()
 	_test_national_lidar()
 	_test_photo_trees()
 	_test_extra_trees()
@@ -272,8 +275,116 @@ func _test_geo_raster() -> void:
 	check(GeoRaster.from_tiff(PackedByteArray([1, 2, 3])) == null, "junk isn't a GeoTIFF")
 
 
+func _test_holes_from_features() -> void:
+	# Nine holes up and down a field, no hole lines: hole k plays along
+	# x = 150k, north on even holes and south on odd ones, each next tee
+	# a short walk from the last green; tee boxes in pairs.
+	var greens: Array[PackedVector2Array] = []
+	var tees: Array[PackedVector2Array] = []
+	var fairways: Array[PackedVector2Array] = []
+	var sq := func(c: Vector2, h: Vector2) -> PackedVector2Array:
+		return PackedVector2Array([c + Vector2(-h.x, -h.y), c + Vector2(h.x, -h.y), c + Vector2(h.x, h.y), c + Vector2(-h.x, h.y)])
+	for k in 9:
+		var x := 150.0 * k
+		var north := k % 2 == 0
+		var tz := 0.0 if north else 400.0
+		var gz := 380.0 if north else 20.0
+		greens.append(sq.call(Vector2(x, gz), Vector2(14, 14)))
+		tees.append(sq.call(Vector2(x, tz), Vector2(5, 8)))
+		tees.append(sq.call(Vector2(x, tz + (12.0 if north else -12.0)), Vector2(5, 8)))
+		fairways.append(sq.call(Vector2(x, 200.0), Vector2(20, 130)))
+	var lines := RealCourseBuilder.holes_from_features(greens, tees, fairways)
+	check(lines.size() == 9, "nine holes worked out from greens and tees (%d)" % lines.size())
+	if lines.size() == 9:
+		var xs := []
+		for l in lines:
+			xs.append(roundi(l[0].x))
+		var up := xs == [0, 150, 300, 450, 600, 750, 900, 1050, 1200]
+		var down := xs == [1200, 1050, 900, 750, 600, 450, 300, 150, 0]
+		check(up or down, "holes in walking order: %s" % [xs])
+		check(absf(lines[0][lines[0].size() - 1].y - (380.0 if roundi(lines[0][0].x) == 0 else (380.0 if 8 % 2 == 0 else 20.0))) < 1.0, "each line ends on its green")
+		check(absf(lines[0][0].y - (0.0 if roundi(lines[0][0].x) == 0 else 0.0)) < 1.0, "from the back tee")
+	greens.resize(5)
+	check(RealCourseBuilder.holes_from_features(greens, tees, fairways).is_empty(), "too few greens: no holes made up")
+
+
+func _test_net_door() -> void:
+	check(NetDoor.host_of("https://User@Tile.Example.org:8080/a/b?c") == "tile.example.org:8080", "host of a url")
+	check(NetDoor.retry_after(PackedStringArray(["Retry-After: 7"])) == 7.0 and NetDoor.retry_after(PackedStringArray()) < 0.0, "Retry-After read")
+	var d := NetDoor.new()
+	var h := "a.org"
+	# A cap on requests at once to one server.
+	var ids: Array[int] = []
+	for i in NetDoor.HOST_PARALLEL:
+		check(d.wait_ms(h, 0) == 0, "room for request %d" % i)
+		ids.append(d.started(h, 0))
+	check(d.wait_ms(h, 0) > 0 and d.wait_ms("b.org", 0) == 0, "full server waits, others don't")
+	for id in ids:
+		d.finished(h, id, 200, PackedStringArray(), 10)
+	# Slow down when told to.
+	d.finished(h, d.started(h, 10), 429, PackedStringArray(["retry-after: 3"]), 20)
+	check(d.wait_ms(h, 1000) > 2000 and d.wait_ms(h, 3100) == 0, "429 pauses for Retry-After")
+	check(d.waiting_note(1000).contains("a.org asked us to slow down"), "pause named: %s" % d.waiting_note(1000))
+	# The breaker: five failures in a row and the server is left alone.
+	var t := 4000
+	for i in NetDoor.BREAK_AFTER:
+		d.finished(h, d.started(h, t), 0 if i % 2 == 0 else 502, PackedStringArray(), t)
+	check(d.wait_ms(h, t + 1) < 0 and d.is_open(h, t + 1), "failing server left alone")
+	t += NetDoor.BREAK_MS + 1
+	check(d.wait_ms(h, t) == 0, "one try after the rest")
+	var trial := d.started(h, t)
+	check(d.wait_ms(h, t) > 0, "only one try at a time while testing")
+	d.finished(h, trial, 503, PackedStringArray(), t)
+	check(d.wait_ms(h, t + NetDoor.BREAK_MS + 1) < 0, "a failed try rests it longer")
+	t += NetDoor.BREAK_MS * 2 + 2
+	d.finished(h, d.started(h, t), 404, PackedStringArray(), t)
+	check(d.wait_ms(h, t) == 0 and not d.is_open(h, t), "an answer (even 404) closes the breaker")
+	# A stopped request says nothing about the server, and slow ones are named.
+	for i in NetDoor.BREAK_AFTER + 1:
+		d.dropped(h, d.started(h, t))
+	check(not d.is_open(h, t), "dropped requests don't count as failures")
+	d.started("slow.org", t)
+	check(d.waiting_note(t + 1000) == "" and d.waiting_note(t + NetDoor.WAITING_MS).contains("waiting on slow.org"), "slow server named")
+
+
+func _test_strip_objects() -> void:
+	# Flat ground at 10 m with a 120 m wood standing 15 m on it, and a dune
+	# ridge as narrow standing 8 m in the open.
+	var t := TerrainTiles.for_box(51.0, -1.0, 51.004, -0.996)
+	t.zoom = 15
+	t.count = Vector2i(1, 1)
+	t._h.resize(TerrainTiles.TILE * TerrainTiles.TILE)
+	t._have.resize(1)
+	var px := t.pixel_metres(51.0)
+	for y in TerrainTiles.TILE:
+		for x in TerrainTiles.TILE:
+			var hgt := 10.0
+			if absf(x - 64) * px < 60.0 and absf(y - 128) * px < 60.0:
+				hgt += 15.0
+			if absf(x - 192) * px < 60.0 and absf(y - 128) * px < 60.0:
+				hgt += 8.0
+			t._h[y * TerrainTiles.TILE + x] = hgt
+	var wood_lon := TerrainTiles.tile_lon(t.origin.x + 64.5 / TerrainTiles.TILE, 15)
+	var dune_lon := TerrainTiles.tile_lon(t.origin.x + 192.5 / TerrainTiles.TILE, 15)
+	var mid_lat := TerrainTiles.tile_lat(t.origin.y + 128.5 / TerrainTiles.TILE, 15)
+	var woods := func(_lat: float, lon: float) -> int: return 1 if absf(lon - wood_lon) < absf(lon - dune_lon) else 0
+	var most := t.strip_objects(woods)
+	check(most > 10.0 and absf(t.height_at(mid_lat, wood_lon) - 10.0) < 1.5, "the wood comes off the ground (%.1f m taken, %.1f m left)" % [most, t.height_at(mid_lat, wood_lon)])
+	check(absf(t.height_at(mid_lat, dune_lon) - 18.0) < 0.5, "the dune in the open stays (%.1f m)" % t.height_at(mid_lat, dune_lon))
+
+
 func _test_national_lidar() -> void:
 	check(str(NationalLidar.source_for(51.4, -0.3).get("id", "")) == "ea", "England uses the Environment Agency")
+	var ids := func(la: float, lo: float) -> Array: return AerialPhotos.sources_for(la, lo).map(func(x: Dictionary) -> String: return str(x["id"]))
+	check(ids.call(35.19, -79.47) == ["naip", "usgs"], "Pinehurst: NAIP: %s" % [ids.call(35.19, -79.47)])
+	check(ids.call(40.745, -73.455) == ["naip", "usgs"], "Bethpage: summer NAIP, not the leaf-off state photos")
+	check(ids.call(43.70, -79.40) == ["on", "naip", "usgs"], "Toronto: Ontario first, then the US boxes")
+	check(ids.call(45.42, -75.70)[0] == "on" and ids.call(48.38, -89.25)[0] == "on", "Ottawa and Thunder Bay: Ontario")
+	for us: Vector2 in [Vector2(43.85, -87.73), Vector2(43.12, -77.57), Vector2(42.90, -78.88), Vector2(48.60, -93.40), Vector2(42.55, -83.25)]:
+		check(not "on" in ids.call(us.x, us.y), "%s is in the US: not Ontario" % us)
+	check(ids.call(-41.03, 147.37) == ["tas"], "Barnbougle: Tasmania's photos")
+	check(ids.call(49.61, 6.13)[0] == "lu", "Luxembourg before Wallonia and France")
+	check(ids.call(36.57, -121.95) == ["naip", "usgs"], "California: NAIP as before")
 	check(str(NationalLidar.source_for(53.43, -6.12).get("id", "")) != "ea" and str(NationalLidar.source_for(50.1, -5.5).get("id", "")) == "ea", "Dublin is not England, Cornwall is")
 	check(str(NationalLidar.source_for(52.2, 5.2).get("id", "")) == "ahn", "the Netherlands use AHN")
 	check(str(NationalLidar.source_for(36.57, -121.95).get("id", "")) == "3dep", "California uses 3DEP")
@@ -303,6 +414,10 @@ func _test_national_lidar() -> void:
 	var u := l.url(l.chunks[0], false)
 	check(u.contains("DTM_1m") and u.contains("subset=Lat(51.4000000,"), "WCS url: " + u)
 	check(l.url(l.chunks[0], true).contains("FZ_DSM_1m"), "surface model url")
+	# The ground is resampled linearly (nearest pixels drew lines across
+	# West Essex); the surface keeps its nearest pixels for the tree tops.
+	check(u.contains("interpolation=http://www.opengis.net/def/interpolation/OGC/1/linear"), "the ground is read between pixels")
+	check(not l.url(l.chunks[0], true).contains("interpolation="), "the surface keeps its peaks")
 	# Canopy: a 12 m crown on flat ground, and a flat 8 m roof.
 	var ground := PackedFloat32Array()
 	var top := PackedFloat32Array()
@@ -399,75 +514,83 @@ func _test_mapterhorn_tiles() -> void:
 	check(GeoRaster.from_terrarium(PackedByteArray([1, 2, 3]), b) == null, "junk is no tile")
 
 
-## The canopy height map: which file and rows a course needs, the BigTIFF
-## header, and a row round trip through Deflate and the predictor.
+## The canopy height map: which file and tiles a course needs, the tiled
+## TIFF header, and a tile round trip through Deflate.
 func _test_canopy_heights() -> void:
 	check(CanopyHeights.quadkey(250, 158, 9) == "031133230", "quadkey for Gleneagles")
 	var c := CanopyHeights.new([56.278, -3.760, 56.292, -3.735])
-	check(c.parts.size() == 1 and c.parts[0]["key"] == "031133230", "one file for a course")
+	check(c.parts.size() == 1 and c.parts[0]["key"] == "0311332303", "one file for a course: %s" % [c.parts[0].get("key", "") if not c.parts.is_empty() else ""])
 	var part: Dictionary = c.parts[0]
 	var rows := int(part["r1"]) - int(part["r0"]) + 1
-	check(rows > 2000 and rows < 3000, "rows for 1.6 km at 0.66 m: %d" % rows)
-	# A BigTIFF header like the map's: 65536 px, 8 bit, Deflate, a strip a row.
+	check(rows > 2000 and rows < 3000, "rows for 1.6 km at 0.67 m (1.19 m Mercator pixels at lat 56): %d" % rows)
+	var tiles := CanopyHeights.tiles_for(part)
+	check(tiles.size() >= 20 and tiles.size() <= 40, "a few tiles, not whole rows: %d" % tiles.size())
+	# A classic TIFF header like the map's: 32768 px, 8 bit, Deflate, 512 px tiles.
 	var h := PackedByteArray()
 	h.resize(CanopyHeights.HEADER_BYTES)
 	h.encode_u16(0, 0x4949)
-	h.encode_u16(2, 43)
-	h.encode_u64(8, 16)
-	var tags := [[256, 4, 65536], [257, 4, 65536], [258, 3, 8], [259, 3, 8], [273, 16, 5000], [278, 3, 1], [279, 16, 9000], [317, 3, 2]]
-	h.encode_u64(16, tags.size())
+	h.encode_u16(2, 42)
+	h.encode_u32(4, 8)
+	var tags := [[256, 3, 32768], [257, 3, 32768], [258, 3, 8], [259, 3, 8], [317, 3, 1], [322, 3, 512], [323, 3, 512], [324, 4, 5000], [325, 4, 9000]]
+	h.encode_u16(8, tags.size())
 	for k in tags.size():
-		var p := 24 + k * 20
+		var p := 10 + k * 12
 		h.encode_u16(p, tags[k][0])
 		h.encode_u16(p + 2, tags[k][1])
-		h.encode_u64(p + 4, 1 if tags[k][1] != 16 else 65536)
-		h.encode_u64(p + 12, tags[k][2])
+		h.encode_u32(p + 4, 4096 if tags[k][0] >= 324 else 1)
+		if tags[k][1] == 3:
+			h.encode_u16(p + 8, tags[k][2])
+		else:
+			h.encode_u32(p + 8, tags[k][2])
 	var header := CanopyHeights.parse_header(h)
-	check(int(header.get("offsets", 0)) == 5000 and int(header.get("counts", 0)) == 9000, "header: %s" % header)
-	check(CanopyHeights.offsets_range(header, part).x == 5000 + 8 * int(part["r0"]), "offset index range")
-	h.encode_u64(24 + 2 * 20 + 12, 16)
+	check(int(header.get("offsets", 0)) == 5000 and int(header.get("counts", 0)) == 9000 and int(header.get("entry", 0)) == 4, "header: %s" % header)
+	var ty0 := int(part["r0"]) / 512
+	check(CanopyHeights.index_range(header, "offsets", part).x == 5000 + 4 * 64 * ty0, "tile index range")
+	h.encode_u16(10 + 2 * 12 + 8, 16)
 	check(CanopyHeights.parse_header(h).is_empty(), "16-bit maps are refused")
-	# Two rows: a 12 m tree at the part's first column, else bare.
-	var c0 := int(part["c0"])
-	var blob := PackedByteArray()
-	var counts := PackedByteArray()
+	# One tile: a 12 m tree at the part's first column and row, else bare;
+	# a 255 (no data) next to it reads as bare.
+	var t := tiles[0]
+	var px := PackedByteArray()
+	px.resize(512 * 512)
+	var li := int(part["c0"]) - t.x * 512
+	var lj := int(part["r0"]) - t.y * 512
+	px[lj * 512 + li] = 12
+	px[lj * 512 + li + 1] = 255
+	var z := px.compress(FileAccess.COMPRESSION_DEFLATE)
+	var across := 64
+	var n_idx := (int(part["r1"]) / 512 - ty0 + 1) * across
 	var offsets := PackedByteArray()
-	counts.resize(16)
-	offsets.resize(16)
-	for j in 2:
-		var row := PackedByteArray()
-		row.resize(CanopyHeights.SIZE)
-		row[c0] = 12  # the predictor stores differences
-		row[c0 + 1] = 256 - 12
-		var z := row.compress(FileAccess.COMPRESSION_DEFLATE)
-		offsets.encode_u64(j * 8, 100 + blob.size())
-		counts.encode_u64(j * 8, z.size())
-		blob.append_array(z)
-	var block := CanopyHeights.rows_block(offsets, counts)
-	check(int(block.get("start", 0)) == 100 and int(block.get("end", 0)) == 99 + blob.size(), "rows are one block")
-	var small := part.duplicate()
-	small["r1"] = int(small["r0"]) + 1
-	var raster := CanopyHeights.raster_for(small)
-	check(CanopyHeights.decode_rows(small, header, counts, blob, [0], raster, 0, 2), "rows decode")
-	check(raster.data[0] == 12.0 and raster.data[1] == 0.0 and raster.data[raster.width] == 12.0, "predictor undone: %s %s" % [raster.data[0], raster.data[1]])
-	check(absf(raster.west - TerrainTiles.tile_lon(250.0 + c0 / 65536.0, 9)) < 1e-9, "raster placed at its columns")
+	var counts := PackedByteArray()
+	offsets.resize(n_idx * 4)
+	counts.resize(n_idx * 4)
+	var k0 := ((t.y - ty0) * across + t.x) * 4
+	offsets.encode_u32(k0, 777)
+	counts.encode_u32(k0, z.size())
+	check(CanopyHeights.tile_range(header, offsets, counts, part, t) == Vector2i(777, 776 + z.size()), "tile found in the index")
+	check(CanopyHeights.tile_range(header, offsets, counts, part, tiles[1]).x < 0, "an empty tile is the sea")
+	var raster := CanopyHeights.raster_for(part)
+	check(CanopyHeights.decode_tile(part, header, t, z, raster), "tile decodes")
+	check(raster.data[0] == 12.0 and raster.data[1] == 0.0, "heights placed, no data bare: %s %s" % [raster.data[0], raster.data[1]])
+	check(not CanopyHeights.decode_tile(part, header, t, PackedByteArray([1, 2, 3]), raster), "a damaged tile is refused")
+	check(absf(raster.west - TerrainTiles.tile_lon(float(part["x"]) + float(part["c0"]) / 32768.0, 10)) < 1e-9, "raster placed at its columns")
 	# A cone-shaped crown is found once, at its top.
-	var t := GeoRaster.new()
-	t.width = 30
-	t.height = 30
-	t.west = -3.75
-	t.north = 56.28
-	t.dlon = 0.00001
-	t.dlat = 0.000006
-	t.data.resize(900)
+	var g := GeoRaster.new()
+	g.width = 30
+	g.height = 30
+	g.west = -3.75
+	g.north = 56.28
+	g.dlon = 0.00001
+	g.dlat = 0.000006
+	g.data.resize(900)
 	for j in 30:
 		for i in 30:
-			t.data[j * 30 + i] = maxf(0.0, 14.0 - roundf(Vector2(i - 15, j - 15).length()))
+			g.data[j * 30 + i] = maxf(0.0, 14.0 - roundf(Vector2(i - 15, j - 15).length()))
 	var sm := PackedFloat32Array()
 	sm.resize(900)
-	CanopyHeights.smooth_rows(t, sm, 0, 30)
+	CanopyHeights.smooth_rows(g, sm, 0, 30)
 	var out: Array[Dictionary] = []
-	CanopyHeights.crowns_in_rows(t, sm, out, {}, 0, 30)
+	CanopyHeights.crowns_in_rows(g, sm, out, {}, 0, 30)
 	check(out.size() == 1 and float(out[0]["height"]) > 12.0, "one crown at the top (%d)" % out.size())
 
 
@@ -712,6 +835,22 @@ func _test_land_cover() -> void:
 	check(RealCourseBuilder.add_ponds(pc, f, pl) == 1, "one pond from the land cover, none on the fairway")
 	if pc.shapes.size() == 2:
 		check(pc.shapes[1].surface == Surface.Type.WATER and pc.shapes[1].contains(f.to_local(50.99, -0.99)), "the pond is where the water is")
+	# The fast margin test agrees with the distance to the outline (a
+	# C-shaped fairway, so the grown outline has a notch).
+	var cs := CourseShape.new(Surface.Type.FAIRWAY, PackedVector2Array([Vector2(0, 0), Vector2(120, 0), Vector2(120, 30), Vector2(30, 30), Vector2(30, 90), Vector2(120, 90), Vector2(120, 120), Vector2(0, 120)]))
+	var near_shapes: Array[CourseShape] = [cs]
+	for margin: float in [0.0, 10.0]:
+		var nm := PackedByteArray()
+		nm.resize(40 * 40)
+		nm.fill(1)
+		LandCover.clear_near(nm, 40, 40, Vector2(-30.5, -30.5), 5.0, near_shapes, margin)
+		var wrong := 0
+		for k in nm.size():
+			var p := Vector2(-30.5, -30.5) + Vector2(k % 40, k / 40) * 5.0
+			var d := cs.signed_distance(p)
+			if absf(d - margin) > 0.3 and (nm[k] == 0) != (d < margin):
+				wrong += 1
+		check(wrong == 0, "margin %.0f: %d cells differ from the distance test" % [margin, wrong])
 	# A links course with no photo: fescue between the holes, a first cut
 	# round the fairway.
 	var lk := DesignedCourse.blank(Vector2(600, 400))
@@ -725,6 +864,17 @@ func _test_land_cover() -> void:
 	lr.shapes.append(CourseShape.new(Surface.Type.ROUGH, PackedVector2Array([Vector2(-200, -100), Vector2(200, -100), Vector2(200, 100), Vector2(-200, 100)])))
 	RealCourseBuilder.links_fescue(lr, none)
 	check(lr.shapes[0].surface == Surface.Type.DEEP_ROUGH, "the mapped rough on a links is fescue")
+	# A beach the coarse tiles sank under the sea stands over it again.
+	var bc := DesignedCourse.blank(Vector2(200, 200))
+	bc.shapes.clear()
+	bc.source["sea"] = 0.0
+	bc.source["base_height"] = 0.0
+	for k in bc.heights.size():
+		bc.heights[k] = -1.0
+	var strand := CourseShape.new(Surface.Type.SAND, PackedVector2Array([Vector2(-50, -50), Vector2(50, -50), Vector2(50, 50), Vector2(-50, 50)]))
+	strand.cover = "beach"
+	bc.shapes.append(strand)
+	check(RealLandscape.raise_beaches(bc) > 0 and is_equal_approx(bc.base_height(0, 0), RealLandscape.BEACH_TOP) and bc.base_height(90, 90) < 0.0, "a beach stands over the sea, the sea beyond it stays")
 	var lt := lk.to_course_data().holes[0].terrain if not lk.holes.is_empty() else null
 	var deep := lk.shapes[1]
 	var cut := lk.shapes[2]
@@ -1299,6 +1449,10 @@ func _test_native_grass() -> void:
 	var none := NativeGrass.new(green, area, [] as Array[PackedVector2Array], grass)
 	none.rows(0, 1000)
 	check((none.rings()["rings"] as Array).is_empty(), "a green photo gives no fescue")
+	check(not g.is_dormant() and not none.is_dormant(), "summer fairways aren't dormant")
+	var winter := Image.create(200, 200, false, Image.FORMAT_RGB8)
+	winter.fill(Color(0.62, 0.56, 0.42))  # straw fairways, a leaf-off flight
+	check(NativeGrass.new(winter, area, [] as Array[PackedVector2Array], grass).is_dormant(), "straw fairways are dormant")
 
 
 ## A club whose 27 holes have no numbers or course names (Royal Golf Dar

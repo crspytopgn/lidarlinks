@@ -33,10 +33,12 @@ static func run_shot(model: ShotModel, r: ShotRecord, club: Club, terrain: Cours
 			links.mouse_swing = mouse_outcome(r.stroke, round_seed, r.index, copy_help(r.help))
 		links.rng = LinksLaunch.Rand.new(RoundRecord.shot_seed(round_seed, r.index, RoundRecord.SALT_MODEL))
 	model.setup = r.setup()
+	model.backspin = 0 if r.computer else r.backspin
 	var start := monitor_launch(r, club, model) if not r.monitor.is_empty() \
 			else model.launch(club, r.power, r.accuracy, r.aim_deg, r.lie, r.from)
 	# Back to square, so planners (computer golfers, the caddie) see plain shots.
 	model.setup = LinksLaunch.Setup.new()
+	model.backspin = 0
 	var result := model.simulate(start, terrain, pin, wind)
 	result.launch = start
 	return result

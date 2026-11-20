@@ -35,7 +35,7 @@ const COMPAT_FILL_LIFT := 1.6
 ## (44, 55, 83) on the web and (74, 107, 150) on desktop against 2K25's
 ## pale (97, 159, 205); a deep, saturated sky behind bright cumulus read
 ## as a painted backdrop.
-const COMPAT_SKY_ENERGY := 2.1
+const COMPAT_SKY_ENERGY := 1.75
 const COMPAT_SKY_DEPTH := 0.8
 const COMPAT_SKY_FOG := 0.08
 const FORWARD_SKY_ENERGY := 1.0
@@ -44,6 +44,10 @@ const FORWARD_SKY_DEPTH := 1.2
 ## (1.5 lifted the golfer's shadow off his feet).
 const SUN_ANGLE := 0.15
 const SUN_NORMAL_BIAS := 0.8
+## Where the sun's shadow splits end, as shares of the shadow distance
+## (Godot's are 0.1, 0.2, 0.5): the first covers the golfer and the tee
+## at about four times the detail.
+const SUN_SPLITS := Vector3(0.04, 0.12, 0.4)
 ## Forward+ only: how much brighter the photo sky's clouds are drawn
 ## (photo_sky.gdshader cloud_lift), so they read white under AgX.
 const FORWARD_CLOUD_LIFT := 1.2
@@ -115,6 +119,12 @@ var _free_sky: Material  ## the photographed sky (FreeAssets), or null
 var _backdrop_sky: Material  ## the plain sky behind the course's backdrop
 var _photo := false
 var _gi := false  ## global illumination on (Ultra Photoreal on a real GPU)
+## The exposure the time of day sets, before the shade adaptation, and the
+## adaptation itself (adapt_to_shade): 1 in the open, more under trees.
+var _base_exposure := 1.0
+var _adapt := 1.0
+var _adapt_target := 1.0
+var _adapt_clock := 0.0
 ## The sun and fill light apply() set, before the weather scales them.
 var _sun_energy := SUN_ENERGY
 var _sun_color := Color(1.0, 0.95, 0.86)
@@ -181,10 +191,15 @@ func _init() -> void:
 	# grass darkens round the golfer's shoes, the ball, the flagstick and
 	# crowd feet, and a little of it reaches the sunlit side (light_affect),
 	# where real contact shadows show most.
+	# In shade the sky fill is all the light there is, so the occlusion
+	# takes all of it: at intensity 1.6 and power 1.6 the trunks and bark in
+	# a wood's shade went from about 32/255 to 6, near black (2026-11-19,
+	# Michael: "way too dark, not real" under trees at midday). Softer,
+	# and the fine detail halved so bark and leaf normals don't crush.
 	environment.ssao_radius = 0.9
-	environment.ssao_intensity = 1.6
-	environment.ssao_detail = 1.0
-	environment.ssao_power = 1.6
+	environment.ssao_intensity = 1.0
+	environment.ssao_detail = 0.5
+	environment.ssao_power = 1.15
 	environment.ssao_light_affect = 0.2
 	var world_env := WorldEnvironment.new()
 	world_env.environment = environment
@@ -201,6 +216,13 @@ func _init() -> void:
 	sun.shadow_bias = 0.04
 	sun.shadow_normal_bias = SUN_NORMAL_BIAS
 	sun.directional_shadow_blend_splits = true
+	# The first split ends close (SUN_SPLITS): the golfer always stands near
+	# the camera, and with Godot's 10% of a 400 m shadow distance its texels
+	# were 2 cm across, so a leg's or an arm's shadow on the body had a
+	# ragged, stepped edge.
+	sun.directional_shadow_split_1 = SUN_SPLITS.x
+	sun.directional_shadow_split_2 = SUN_SPLITS.y
+	sun.directional_shadow_split_3 = SUN_SPLITS.z
 	add_child(sun)
 
 
@@ -510,6 +532,7 @@ func _apply_time() -> void:
 	RenderingServer.global_shader_parameter_set("sky_tint", Vector3(1, 1, 1))
 	RenderingServer.global_shader_parameter_set("turf_tone", (1.0 if GraphicsSettings.is_forward_plus() else 1.35) if _photo else 0.0)
 	RenderingServer.global_shader_parameter_set("people_light", people_light(_photo, GraphicsSettings.is_forward_plus()))
+	RenderingServer.global_shader_parameter_set("people_bounce", people_bounce(_photo, GraphicsSettings.is_forward_plus(), _time))
 	_set_grade_look()
 	RenderingServer.global_shader_parameter_set("ground_sun_shadow", float(_time.get("shadow", 1.0)) if _photo else 1.0)
 	if not _photo:
@@ -518,6 +541,11 @@ func _apply_time() -> void:
 	var c: Color = _time.sun
 	sun.light_color = c
 	sun.light_energy = PHOTO_SUN_ENERGY * float(_time.energy)
+	if not GraphicsSettings.is_forward_plus():
+		# With the shade fill at COMPAT_SHADE_RATIO the web's sunlit turf
+		# came out darker than Forward+'s (the green darker than the
+		# fairway); a stronger sun lifts it without filling the shadows.
+		sun.light_energy *= COMPAT_SUN_LIFT
 	# Compatibility has no sky light, so its flat fill is a little stronger,
 	# or shade goes near black.
 	# (Measured against real course photos: our shade was far darker than
@@ -531,9 +559,97 @@ func _apply_time() -> void:
 	var fwd := GraphicsSettings.is_forward_plus()
 	# Compatibility's turf measured about a stop's third darker than real
 	# course photos once its colour matched them (Lab L* 51 against 56).
-	environment.tonemap_exposure = PHOTO_EXPOSURE * float(_time.exposure) * (1.0 if fwd else COMPAT_EXPOSURE_LIFT)
+	_base_exposure = PHOTO_EXPOSURE * float(_time.exposure) * (1.0 if fwd else COMPAT_EXPOSURE_LIFT)
+	environment.tonemap_exposure = _base_exposure * _adapt
 	var sky: Color = _time.sky
 	RenderingServer.global_shader_parameter_set("sky_tint", Vector3(sky.r, sky.g, sky.b))
+
+
+## How much a camera opens up for a subject in deep tree shade: a TV
+## camera or a photographer exposes for the golfer in the trees, so the shade
+## reads bright and the sunlit fairway beyond goes pale, not the other way
+## round (the eye does the same). About two thirds of a stop with the sun
+## and most of the sky shut out.
+const SHADE_ADAPT_MAX := 1.65
+## The same on Compatibility, whose flat fill and stronger shade fill
+## (COMPAT_SHADE_RATIO) already light the shade more: at 1.65 the pale
+## bark went near white and a sun fleck on a face blew out.
+const SHADE_ADAPT_MAX_COMPAT := 1.3
+## How quickly the exposure follows (seconds to get most of the way), as a
+## camera's auto-exposure eases rather than jumps.
+const SHADE_ADAPT_TIME := 0.9
+## How often the cover is measured (seconds).
+const SHADE_ADAPT_EVERY := 0.2
+
+
+## How shut in by tree crowns the point `at` is, from obstacles' CANOPY
+## and SOLID shapes: x the share of the sky blocked (rays over the sky,
+## each ring weighted by its share of the sky dome, so the open sky and
+## sunlit ground all round a lone tree count, as they light a standing
+## golfer from the side), y 1 if the sun is blocked, else 0. `sun_from`
+## points from the ground to the sun.
+static func shade_cover(obstacles: ObstacleField, at: Vector3, sun_from: Vector3) -> Vector2:
+	if obstacles == null or obstacles.size() == 0:
+		return Vector2.ZERO
+	const REACH := 45.0
+	var sun_blocked := 0.0 if obstacles.segment_hit(at, at + sun_from.normalized() * REACH).is_empty() else 1.0
+	# Straight up and 3 rings of directions.
+	var blocked := 0.0
+	var total := 0.0
+	var dirs := [[90.0, 1]]
+	dirs.append([62.0, 4])
+	dirs.append([38.0, 6])
+	dirs.append([16.0, 8])
+	for ring: Array in dirs:
+		var el := deg_to_rad(float(ring[0]))
+		var n: int = ring[1]
+		for i in n:
+			var az := TAU * (float(i) + (0.5 if n % 2 == 0 else 0.0)) / float(n)
+			var d := Vector3(cos(el) * cos(az), sin(el), cos(el) * sin(az))
+			var w := maxf(cos(el), 0.2)
+			total += w
+			if not obstacles.segment_hit(at, at + d * REACH).is_empty():
+				blocked += w
+	return Vector2(blocked / maxf(total, 1e-6), sun_blocked)
+
+
+## The exposure lift for a subject with shade_cover `cover`: none in the
+## open or in a lone tree's shadow on open ground, up to SHADE_ADAPT_MAX
+## with the sun and most of the sky shut out.
+static func shade_adapt_for(cover: Vector2, top := SHADE_ADAPT_MAX) -> float:
+	var shut := cover.y * smoothstep(0.15, 0.75, cover.x)
+	return lerpf(1.0, top, shut)
+
+
+## Called every frame with where the camera's subject stands (a point
+## about chest high) on the current hole: under trees the exposure opens up
+## like a camera's, and closes again out in the open. Photoreal only;
+## Classic keeps Links 2003's fixed light.
+func adapt_to_shade(obstacles: ObstacleField, at: Vector3, delta: float) -> void:
+	if not _photo:
+		_adapt_target = 1.0
+	else:
+		_adapt_clock -= delta
+		if _adapt_clock <= 0.0:
+			_adapt_clock = SHADE_ADAPT_EVERY
+			var top := SHADE_ADAPT_MAX if GraphicsSettings.is_forward_plus() else SHADE_ADAPT_MAX_COMPAT
+			_adapt_target = shade_adapt_for(shade_cover(obstacles, at, sun.global_transform.basis.z), top)
+	var k := 1.0 - exp(-delta * 3.0 / SHADE_ADAPT_TIME)
+	var a := lerpf(_adapt, _adapt_target, clampf(k, 0.0, 1.0))
+	if absf(a - _adapt) < 1e-4 and absf(a - _adapt_target) < 1e-4:
+		return
+	_adapt = a
+	if _photo:
+		environment.tonemap_exposure = _base_exposure * _adapt
+
+
+## Jumps straight to the adaptation for `at` (a new hole, a camera cut).
+func snap_shade(obstacles: ObstacleField, at: Vector3) -> void:
+	_adapt_clock = 0.0
+	adapt_to_shade(obstacles, at, 0.0)
+	_adapt = _adapt_target
+	if _photo:
+		environment.tonemap_exposure = _base_exposure * _adapt
 
 
 ## The time of day's split tone and colour lift (post_process.gdshader
@@ -565,6 +681,24 @@ static func people_light(photo: bool, forward_plus: bool) -> Vector3:
 	if not photo or forward_plus:
 		return Vector3(1.0, 1.0, 0.0)
 	return Vector3(1.0 / COMPAT_EXPOSURE_LIFT, PEOPLE_COMPAT_FILL, 1.0)
+
+
+## The sunlit turf's light bounced up onto people's shaded sides
+## (golfer_occlusion.gdshaderinc people_ground_bounce): Compatibility at
+## Photoreal only, which has no sky light to carry the ground's colour.
+## The sun's colour and strength through a grass green's reflectance,
+## fitted so shaded khaki keeps its warmth (red to blue about 0.8 of the
+## cloth's own, as in photos of golfers' shaded trousers) rather than
+## the flat sky fill's cold grey.
+const PEOPLE_BOUNCE := Vector3(0.34, 0.32, 0.16)
+
+
+static func people_bounce(photo: bool, forward_plus: bool, time: Dictionary) -> Vector3:
+	if not photo or forward_plus:
+		return Vector3.ZERO
+	var c: Color = time.get("sun", Color.WHITE)
+	var k := float(time.get("energy", 1.0)) * float(time.get("shadow", 1.0))
+	return Vector3(c.r * PEOPLE_BOUNCE.x, c.g * PEOPLE_BOUNCE.y, c.b * PEOPLE_BOUNCE.z) * k
 
 
 ## Sets the round's weather (RoundWeather; null for a fine day): cloud dims
@@ -612,6 +746,8 @@ func _apply_weather() -> void:
 ## with only the flat fill its shade came out near black (about 10%); 0.75
 ## here gives the photos' 55% on screen.
 const COMPAT_SHADE_RATIO := 0.5
+## How much stronger the sun is drawn in Compatibility (see _apply_time).
+const COMPAT_SUN_LIFT := 1.3
 ## The same for Forward+. Its sky light fills the shade, but under the
 ## grade and SSAO tree shade still came out near black beside sunlit
 ## grass; 0.35 brings it to a darker green as in the photos (tuned on

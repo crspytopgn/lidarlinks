@@ -39,7 +39,9 @@ const LOWER_THIRD_S := 4.5
 const DETAIL_S := 5.0
 const DETAIL_FADE := 0.5
 const SHOT_CARD_S := 6.0
-const HOLE_CARD_S := 5.5
+## Long enough to read, short enough not to hold the left of the tee view
+## (the gallery) after the player is ready: 5.5 s felt in the way.
+const HOLE_CARD_S := 4.0
 const HOLE_CARD_FADE := 0.35  # the fade of _ease_in_out
 const WIPE_S := 0.55
 const SPRING_IN_S := 0.55
@@ -504,7 +506,7 @@ func _draw_hole_card() -> void:
 	var w := 220.0
 	var x := lerpf(-w - 20.0, 16.0, a)
 	var y := 86.0
-	var map_h := 360.0
+	var map_h := 280.0
 	_panel(Rect2(x, y, w, 64), PANEL_DARK, 1.0, TOP)
 	_text(Vector2(x + 14, y + 28), "HOLE %s" % _hole.get("number", ""), 24, ACCENT)
 	_text_right(Vector2(x + w - 14, y + 28), "PAR %s" % _hole.get("par", ""), 20, TEXT)

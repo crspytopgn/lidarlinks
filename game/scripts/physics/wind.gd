@@ -8,8 +8,8 @@ extends RefCounted
 
 enum Level { OFF, LIGHT, MODERATE, STRONG }
 
-const LEVEL_NAMES := ["Off", "Light", "Moderate", "Strong"]
-const MAX_MPH := [0.0, 8.0, 15.0, 25.0]  ## strongest hole wind at each level
+static var LEVEL_NAMES := ["Off", "Light", "Moderate", "Strong"]
+static var MAX_MPH := [0.0, 8.0, 15.0, 25.0]  ## strongest hole wind at each level
 const MIN_FRACTION := 0.2  ## a hole's wind is 20% to 100% of the level's top speed
 const HOLE_SHIFT_DEG := 45.0  ## a hole's direction strays this far from the prevailing one
 const SHOT_SHIFT_DEG := 10.0  ## and moves this much between shots
@@ -103,4 +103,4 @@ func describe(aim_deg: float) -> String:
 
 
 func _update_speed() -> void:
-	speed_mps = float(MAX_MPH[level]) * _hole_fraction * _shot_factor * MPS_PER_MPH
+	speed_mps = float(Wind.MAX_MPH[level]) * _hole_fraction * _shot_factor * MPS_PER_MPH

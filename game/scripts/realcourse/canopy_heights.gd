@@ -1,29 +1,32 @@
 class_name CanopyHeights
 extends RefCounted
-## Tree heights from Meta and the World Resources Institute's global 1 m
-## canopy height map (CC BY 4.0, AWS Open Data), for courses whose lidar
-## has no surface model (Scotland, Wales, the US, everywhere Mapterhorn
-## covers) or that have no lidar at all.
+## Tree heights from Meta and the World Resources Institute's global canopy
+## height map, version 2 (CC BY 4.0, AWS Open Data), for courses whose
+## lidar has no surface model (Scotland, Wales, the US, everywhere
+## Mapterhorn covers) or that have no lidar at all.
 ##
-## The map is one 65536 px square GeoTIFF per zoom 9 web mercator tile
-## (about 500 MB each), one Deflate-compressed row per strip, heights in
-## whole metres. Only what the course needs is downloaded, with HTTP range
-## requests: the header (1 KB), the course rows' offsets and sizes (a few
-## KB) and those rows themselves, which are contiguous in the file (7 to
-## 35 MB for a 2.5 km course). Each row is the whole tile's width, so only
-## the course's columns are kept.
+## The map is one 32768 px square Cloud-Optimised GeoTIFF per zoom 10 web
+## mercator tile (1.19 m pixels), cut into 512 px Deflate tiles, heights in
+## whole metres (255 for no data). Only the course's tiles are downloaded,
+## with HTTP range requests: the header (1 KB), the tile offsets and sizes
+## for the course's tile rows (a few KB), then each tile (1 to 3 MB for a
+## 2.5 km course, where version 1's whole-width rows took 7 to 35 MB).
+## Version 2 is Meta's DINOv3 model, which the 2025 release says is closer
+## to lidar, above all in tall woods and over hedges.
 ##
 ## Desktop only: the bucket sends no cross-site headers, so a web page
 ## can't read it.
 ##
 ##     var c := CanopyHeights.new(box)
-##     for p in c.parts: header, then index, then rows (see RealCourseFetcher)
+##     for p in c.parts: header, then index, then tiles (see RealCourseFetcher)
 
-const URL := "https://dataforgood-fb-data.s3.amazonaws.com/forests/v1/alsgedi_global_v6_float/chm/%s.tif"
-const ZOOM := 9
-const SIZE := 65536  ## pixels a side of each file
+const URL := "https://dataforgood-fb-data.s3.amazonaws.com/forests/v2/global/dinov3_global_chm_v2_ml3/chm/%s.tif"
+const ZOOM := 10
+const SIZE := 32768  ## pixels a side of each file
+const TILE := 512  ## pixels a side of each compressed tile
 const HEADER_BYTES := 1024
-const CREDIT := "Tree heights: Meta and World Resources Institute, High Resolution Canopy Height Maps (2024), CC BY 4.0"
+const NODATA := 255
+const CREDIT := "Tree heights: Meta and World Resources Institute, Global Canopy Height Map v2 (2025), CC BY 4.0"
 const MAX_ROWS := 6000  ## about 7 km at the equator: bigger boxes are skipped
 
 ## One per file the box touches: {"key", "url", "x", "y", "r0", "r1", "c0", "c1"}
@@ -60,58 +63,78 @@ static func quadkey(x: int, y: int, z: int) -> String:
 	return q
 
 
-## The file layout from its first HEADER_BYTES: {"offsets", "counts"} (file
-## positions of the strip offset and byte count arrays), or {} for anything
-## but the expected BigTIFF (8-bit, Deflate, a strip per row).
+## The file layout from its first HEADER_BYTES: {"offsets", "counts"}
+## (file positions of the tile offset and byte count arrays), "entry" (4 or
+## 8 bytes each), "across" (tiles a row) and "predictor", or {} for anything
+## but the expected tiled TIFF or BigTIFF (8-bit, Deflate, TILE px tiles).
 static func parse_header(b: PackedByteArray) -> Dictionary:
-	if b.size() < 16 or b[0] != 0x49 or b[1] != 0x49 or b.decode_u16(2) != 43:
+	if b.size() < 16 or b[0] != 0x49 or b[1] != 0x49:
 		return {}
-	var ifd := b.decode_u64(8)
-	if ifd + 8 > b.size():
+	var big := b.decode_u16(2) == 43
+	if not big and b.decode_u16(2) != 42:
 		return {}
-	var n := b.decode_u64(ifd)
+	var ifd := b.decode_u64(8) if big else b.decode_u32(4)
+	var n := b.decode_u64(ifd) if big and ifd + 8 <= b.size() else (b.decode_u16(ifd) if ifd + 2 <= b.size() else 0)
+	var esize := 20 if big else 12
+	var first := ifd + (8 if big else 2)
 	var tags := {}
+	var types := {}
 	for k in n:
-		var p := ifd + 8 + k * 20
-		if p + 20 > b.size():
+		var p := first + k * esize
+		if p + esize > b.size():
 			return {}
 		var typ := b.decode_u16(p + 2)
-		var count := b.decode_u64(p + 4)
-		var value := b.decode_u64(p + 12)
+		var count := b.decode_u64(p + 4) if big else b.decode_u32(p + 4)
+		var value := b.decode_u64(p + 12) if big else b.decode_u32(p + 8)
 		if count == 1 and typ == 3:
-			value = b.decode_u16(p + 12)
-		elif count == 1 and typ == 4:
+			value = b.decode_u16(p + 12 if big else p + 8)
+		elif count == 1 and typ == 4 and big:
 			value = b.decode_u32(p + 12)
 		tags[b.decode_u16(p)] = value
+		types[b.decode_u16(p)] = typ
 	if int(tags.get(256, 0)) != SIZE or int(tags.get(257, 0)) != SIZE or int(tags.get(258, 0)) != 8:
 		return {}
-	if int(tags.get(259, 0)) != 8 or int(tags.get(278, 0)) != 1 or not tags.has(273) or not tags.has(279):
+	if int(tags.get(259, 0)) != 8 or int(tags.get(322, 0)) != TILE or int(tags.get(323, 0)) != TILE:
 		return {}
-	return {"offsets": int(tags[273]), "counts": int(tags[279]), "predictor": int(tags.get(317, 1))}
-
-
-## Byte range (first, last) of the strip offsets for a part's rows.
-static func offsets_range(header: Dictionary, part: Dictionary) -> Vector2i:
-	return Vector2i(int(header["offsets"]) + 8 * int(part["r0"]), int(header["offsets"]) + 8 * (int(part["r1"]) + 1) - 1)
-
-
-static func counts_range(header: Dictionary, part: Dictionary) -> Vector2i:
-	return Vector2i(int(header["counts"]) + 8 * int(part["r0"]), int(header["counts"]) + 8 * (int(part["r1"]) + 1) - 1)
-
-
-## Where a part's rows sit in the file, from its offsets and counts:
-## {"start", "end"} (inclusive), or {} if they aren't one block.
-static func rows_block(offsets: PackedByteArray, counts: PackedByteArray) -> Dictionary:
-	var n := offsets.size() / 8
-	if n == 0 or counts.size() != offsets.size():
+	if not tags.has(324) or not tags.has(325):
 		return {}
-	var start := offsets.decode_u64(0)
-	var pos := start
-	for k in n:
-		if offsets.decode_u64(k * 8) != pos:
-			return {}
-		pos += counts.decode_u64(k * 8)
-	return {"start": start, "end": pos - 1}
+	var entry := 8 if int(types[324]) == 16 else 4
+	if entry != (8 if int(types[325]) == 16 else 4):
+		return {}
+	return {"offsets": int(tags[324]), "counts": int(tags[325]), "entry": entry, "across": SIZE / TILE,
+		"predictor": int(tags.get(317, 1))}
+
+
+## The part's tiles, [tile column, tile row] in the file.
+static func tiles_for(part: Dictionary) -> Array[Vector2i]:
+	var out: Array[Vector2i] = []
+	for ty in range(int(part["r0"]) / TILE, int(part["r1"]) / TILE + 1):
+		for tx in range(int(part["c0"]) / TILE, int(part["c1"]) / TILE + 1):
+			out.append(Vector2i(tx, ty))
+	return out
+
+
+## Byte range (first, last) of the `which` ("offsets" or "counts") entries
+## for every tile in the part's tile rows.
+static func index_range(header: Dictionary, which: String, part: Dictionary) -> Vector2i:
+	var e := int(header["entry"])
+	var across := int(header["across"])
+	var first := int(header[which]) + e * across * (int(part["r0"]) / TILE)
+	return Vector2i(first, int(header[which]) + e * across * (int(part["r1"]) / TILE + 1) - 1)
+
+
+## Where tile `t` sits in the file, from index_range()'s offsets and counts
+## (inclusive); x = -1 for a tile with no data (the sea).
+static func tile_range(header: Dictionary, offsets: PackedByteArray, counts: PackedByteArray, part: Dictionary, t: Vector2i) -> Vector2i:
+	var e := int(header["entry"])
+	var k := ((t.y - int(part["r0"]) / TILE) * int(header["across"]) + t.x) * e
+	if k < 0 or k + e > offsets.size() or k + e > counts.size():
+		return Vector2i(-1, -1)
+	var at := offsets.decode_u64(k) if e == 8 else offsets.decode_u32(k)
+	var n := counts.decode_u64(k) if e == 8 else counts.decode_u32(k)
+	if n == 0:
+		return Vector2i(-1, -1)
+	return Vector2i(at, at + n - 1)
 
 
 ## A raster for a part's columns and rows, ready for decode_rows().
@@ -132,30 +155,29 @@ static func raster_for(part: Dictionary) -> GeoRaster:
 	return r
 
 
-## Inflates rows j0 to j1 (of the part's rows) from `rows` (the block
-## rows_block() named) into `raster`, undoing the horizontal predictor.
-## False if a row is damaged.
-static func decode_rows(part: Dictionary, header: Dictionary, counts: PackedByteArray, rows: PackedByteArray, pos: Array, raster: GeoRaster, j0: int, j1: int) -> bool:
-	var c0 := int(part["c0"])
-	var c1 := int(part["c1"])
+## Inflates tile `t` (its bytes in `data`) into the part's `raster`,
+## undoing the horizontal predictor; no data and implausible heights read
+## as bare ground. False if the tile is damaged.
+static func decode_tile(part: Dictionary, header: Dictionary, t: Vector2i, data: PackedByteArray, raster: GeoRaster) -> bool:
+	var px := data.decompress_dynamic(TILE * TILE * 2, FileAccess.COMPRESSION_DEFLATE)
+	if px.size() != TILE * TILE:
+		return false
 	var predict := int(header.get("predictor", 1)) == 2
-	for j in range(j0, j1):
-		var size := counts.decode_u64(j * 8)
-		var at: int = pos[0]
-		pos[0] = at + size
-		if at + size > rows.size():
-			return false
-		var row := rows.slice(at, at + size).decompress_dynamic(SIZE * 2, FileAccess.COMPRESSION_DEFLATE)
-		if row.size() != SIZE:
-			return false
-		var base := j * raster.width
+	var c0 := int(part["c0"])
+	var r0 := int(part["r0"])
+	var i0 := maxi(c0, t.x * TILE)
+	var i1 := mini(int(part["c1"]), t.x * TILE + TILE - 1)
+	for j in range(maxi(r0, t.y * TILE), mini(int(part["r1"]), t.y * TILE + TILE - 1) + 1):
+		var row := (j - t.y * TILE) * TILE
+		var base := (j - r0) * raster.width - c0
 		var acc := 0
 		if predict:
-			for i in c0:
-				acc = (acc + row[i]) & 255
-		for i in range(c0, c1 + 1):
-			acc = ((acc + row[i]) & 255) if predict else row[i]
-			raster.data[base + i - c0] = float(acc) if acc <= 60 else 0.0
+			for i in i0 - t.x * TILE:
+				acc = (acc + px[row + i]) & 255
+		for i in range(i0, i1 + 1):
+			var v := px[row + i - t.x * TILE]
+			acc = ((acc + v) & 255) if predict else v
+			raster.data[base + i] = float(acc) if acc <= 60 else 0.0
 	return true
 
 

@@ -245,6 +245,14 @@ func cut_index(t: float) -> int:
 	return i
 
 
+## True while the live camera stands still and turns after the ball (behind
+## the player, side, landing, pin), so it zooms like a TV camera; the
+## chase, follow and putting cameras move with the ball instead.
+func standing(t: float) -> bool:
+	var cam := cut_cams[cut_index(t)]
+	return cam == Cam.BEHIND or cam == Cam.SIDE or cam == Cam.LANDING or cam == Cam.PIN
+
+
 ## Name of the live camera for the on-screen tag ("" for the plain ones).
 func cam_name(t: float) -> String:
 	return CAM_NAMES[cut_cams[cut_index(t)]]

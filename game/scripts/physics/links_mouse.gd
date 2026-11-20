@@ -18,16 +18,16 @@ const SKILL_COUNT := 4
 const FRAME_MS := 16.6668
 const RAD_TO_DEG := 57.29578
 ## Power per unit of club speed, by club.
-const GAIN: Array[float] = [10.5, 10.5, 10.5, 10.5, 10.0, 9.5, 9.0, 10.5, 9.75, 9.6,
+static var GAIN: Array[float] = [10.5, 10.5, 10.5, 10.5, 10.0, 9.5, 9.0, 10.5, 9.75, 9.6,
 		9.35, 9.15, 8.9, 8.9, 8.6, 8.6, 8.0, 8.5, 8.4, 0.75]
 ## The most power each club gives a mouse swing.
-const MAX_POWER: Array[float] = [112, 108, 106, 104, 102, 100, 98, 98, 96, 94,
+static var MAX_POWER: Array[float] = [112, 108, 106, 104, 102, 100, 98, 98, 96, 94,
 		92, 90, 88, 86, 84, 82, 80, 80, 80, 0]
-const PATH_SCALE: Array[float] = [1.0, 1.3, 1.7, 2.0]
-const PUTT_FACE: Array[float] = [0.5, 0.55, 0.6, 0.65]
-const PUTT_WINDOW: Array[float] = [0.3, 0.33, 0.36, 0.4]
-const DRIFT_POWER_LOSS: Array[float] = [120.0, 120.0, 80.0, 80.0]
-const BONUS: Array[float] = [4500.0, 3000.0, 2250.0, 2250.0]
+static var PATH_SCALE: Array[float] = [1.0, 1.3, 1.7, 2.0]
+static var PUTT_FACE: Array[float] = [0.5, 0.55, 0.6, 0.65]
+static var PUTT_WINDOW: Array[float] = [0.3, 0.33, 0.36, 0.4]
+static var DRIFT_POWER_LOSS: Array[float] = [120.0, 120.0, 80.0, 80.0]
+static var BONUS: Array[float] = [4500.0, 3000.0, 2250.0, 2250.0]
 
 
 ## The meter's size in pixels; mirrors olcore::LinksMouseMeter.
@@ -174,8 +174,8 @@ class MouseClub:
 		_club = clampi(club, 0, PUTTER)
 		meter = p_meter if p_meter != null else Meter.new()
 		_k = LinksMouse.club_response(_club) * (0.75 if _shot == Shot.CHIP else 1.0)
-		_gain = GAIN[_club]
-		_max_power = MAX_POWER[_club]
+		_gain = LinksMouse.GAIN[_club]
+		_max_power = LinksMouse.MAX_POWER[_club]
 		if _skill == 0:
 			_drift_scale = 0.02
 		elif _shot == Shot.PUTT:
@@ -408,7 +408,7 @@ static func swing(m: Stroke, rng: LinksLaunch.Rand, help: Help = null) -> Outcom
 	var putter := club == PUTTER
 	var iron := is_iron(club)
 	var k := club_response(club) * (0.75 if m.shot == Shot.CHIP else 1.0)
-	var gain: float = GAIN[club]
+	var gain: float = LinksMouse.GAIN[club]
 	var f := m.backswing
 	var cap := k * 0.8 * 10.5
 	var speed := minf(absf(m.speed), cap)
@@ -419,7 +419,7 @@ static func swing(m: Stroke, rng: LinksLaunch.Rand, help: Help = null) -> Outcom
 			x = -17.0
 		elif x >= 18.0:
 			x = 17.0
-	var t := (m.drift - m.drift_before) * PATH_SCALE[skill]
+	var t := (m.drift - m.drift_before) * LinksMouse.PATH_SCALE[skill]
 	var path := atan2(t, float(m.down)) * RAD_TO_DEG if t != 0.0 else 0.0
 	if path > 180.0:
 		path -= 360.0
@@ -430,7 +430,7 @@ static func swing(m: Stroke, rng: LinksLaunch.Rand, help: Help = null) -> Outcom
 	var loft: float
 	if m.shot == Shot.PUTT:
 		var mid := f * 2.5 + 1.0
-		var w := 0.5 - PUTT_WINDOW[skill] * f
+		var w := 0.5 - LinksMouse.PUTT_WINDOW[skill] * f
 		var e := w / 15.0
 		var g: float
 		if speed > mid + w:
@@ -444,8 +444,8 @@ static func swing(m: Stroke, rng: LinksLaunch.Rand, help: Help = null) -> Outcom
 		if absf(x) > 18.0:
 			out.whiff = true
 		else:
-			face = PUTT_FACE[skill] * path
-		power *= absf(1.0 - absf(x / DRIFT_POWER_LOSS[skill]))
+			face = LinksMouse.PUTT_FACE[skill] * path
+		power *= absf(1.0 - absf(x / LinksMouse.DRIFT_POWER_LOSS[skill]))
 	elif m.shot == Shot.CHIP:
 		var want := (cap - 1.0) * f + 0.1
 		var g := speed / (want - 0.2) if not (want + 0.2 < speed) and speed < want - 0.2 else 1.0
@@ -466,7 +466,7 @@ static func swing(m: Stroke, rng: LinksLaunch.Rand, help: Help = null) -> Outcom
 			else:
 				path += x
 				face += x * (2.0 / 3.0)
-			power *= absf(1.0 - absf(x / DRIFT_POWER_LOSS[skill]))
+			power *= absf(1.0 - absf(x / LinksMouse.DRIFT_POWER_LOSS[skill]))
 	if iron and m.shot != Shot.PUTT:
 		# Irons and wedges, chips with them too: see olcore.
 		path *= 2.16 - (club - 7) * 0.16
@@ -480,7 +480,7 @@ static func swing(m: Stroke, rng: LinksLaunch.Rand, help: Help = null) -> Outcom
 				face += x * 3.0
 		else:
 			face += ax * 0.05 * x
-		power *= absf(1.0 - absf(x / DRIFT_POWER_LOSS[skill]))
+		power *= absf(1.0 - absf(x / LinksMouse.DRIFT_POWER_LOSS[skill]))
 		if m.shot == Shot.FULL:
 			var fp := minf(f + 0.05, 1.0)
 			loft = power / ((2.0 * fp - fp * fp) * gain * cap) * (f + 0.05)
@@ -515,11 +515,11 @@ static func swing(m: Stroke, rng: LinksLaunch.Rand, help: Help = null) -> Outcom
 	var q := clampf(x * -4.0, -50.0, 50.0)
 	var b := clampi(_round_away(stroke_angle * -2.0) + 10, 0, 20)
 	out.quality = mini(int(absf(q * 0.2) + float(absi(b - 10) / 2)), 15)
-	var bonus := (15.0 - out.quality) * (15.0 - out.quality) / BONUS[skill] + 1.0
+	var bonus := (15.0 - out.quality) * (15.0 - out.quality) / LinksMouse.BONUS[skill] + 1.0
 	if iron or putter:
 		bonus = 1.0
 	else:
-		loft *= bonus / (225.0 / BONUS[skill] + 1.0)
+		loft *= bonus / (225.0 / LinksMouse.BONUS[skill] + 1.0)
 	path *= 0.66667
 	if m.shot == Shot.PUTT:
 		face = -face

@@ -22,6 +22,7 @@ var _code: LineEdit
 var _status: Label
 var _who: Label
 var _course: OptionButton
+var _picture: CoursePicture
 var _holes: OptionButton
 var _computers: OptionButton
 var _host_box: VBoxContainer
@@ -75,6 +76,8 @@ func _ready() -> void:
 	_course = _row(grid, "Course", [])
 	_holes = _row(grid, "Holes", RoundSetup.HOLES_NAMES)
 	_computers = _row(grid, "Computer golfers", ["None", "One", "Two"])
+	_course.item_selected.connect(_show_picture.unbind(1))
+	_picture = CoursePicture.beside(grid, Vector2(192, 108), 24, false)
 	_start = MenuStyle.button("Start the round")
 	_start.pressed.connect(_on_start)
 	_host_box.add_child(_start)
@@ -87,11 +90,18 @@ func _ready() -> void:
 	visible = false
 
 
+## Shows the chosen course's picture.
+func _show_picture() -> void:
+	var i := _course.selected
+	_picture.show_course("" if i <= 0 or i > course_paths.size() else course_paths[i - 1])
+
+
 ## Shows the page with `courses` (the setup page's list) to pick from.
 func open(courses: PackedStringArray, player_name: String) -> void:
 	_course.clear()
 	for c in courses:
 		_course.add_item(c)
+	_show_picture()
 	_name.text = player_name
 	_status.text = "Make a room and send its code to your friends, or type their code and join. Everyone needs the course the host picks."
 	_who.text = ""

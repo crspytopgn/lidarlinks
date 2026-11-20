@@ -35,14 +35,29 @@ func import_file() -> void:
 			input.accept = '.olc,.json,application/json';
 			input.onchange = function () {
 				var f = input.files[0];
-				if (f) { f.text().then(function (t) { window.olcImported(t, f.name); }); }
+				if (!f) { return; }
+				// Saved courses are gzipped JSON; exported ones are plain.
+				f.slice(0, 2).arrayBuffer().then(function (b) {
+					var h = new Uint8Array(b);
+					if (h.length == 2 && h[0] == 0x1f && h[1] == 0x8b && window.DecompressionStream) {
+						return new Response(f.stream().pipeThrough(new DecompressionStream('gzip'))).text();
+					}
+					return f.text();
+				}).then(function (t) { window.olcImported(t, f.name); });
 			};
 			input.click();
 		})();""", true)
 		return
 	var dlg := _dialog(FileDialog.FILE_MODE_OPEN_FILE, "Import a course")
 	dlg.file_selected.connect(func(path: String) -> void:
-		imported.emit(FileAccess.get_file_as_string(path), path.get_file()))
+		imported.emit(read_text(FileAccess.get_file_as_bytes(path)), path.get_file()))
+
+
+## A course file's text: saved courses are gzipped JSON, exported ones plain.
+static func read_text(bytes: PackedByteArray) -> String:
+	if bytes.size() > 2 and bytes[0] == 0x1f and bytes[1] == 0x8b:
+		bytes = bytes.decompress_dynamic(-1, FileAccess.COMPRESSION_GZIP)
+	return bytes.get_string_from_utf8()
 
 
 func _on_js_file(args: Array) -> void:
@@ -56,7 +71,7 @@ func _dialog(mode: FileDialog.FileMode, title: String) -> FileDialog:
 	dlg.access = FileDialog.ACCESS_FILESYSTEM
 	dlg.use_native_dialog = true
 	dlg.title = title
-	dlg.filters = PackedStringArray(["*.%s ; OpenLinks course" % DesignedCourse.EXTENSION])
+	dlg.filters = PackedStringArray(["*.%s ; LidarLinks course" % DesignedCourse.EXTENSION])
 	dlg.close_requested.connect(dlg.queue_free)
 	add_child(dlg)
 	dlg.popup_centered_ratio(0.6)

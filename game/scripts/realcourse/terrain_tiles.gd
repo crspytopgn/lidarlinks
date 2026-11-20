@@ -19,6 +19,20 @@ const MAX_TILES := 36
 ## 1 in 150 by chance; SRTM resampled to the tiles keeps a third or more
 ## (Royal County Down 36 %) on its flat shelves.
 const WHOLE_SHARE := 0.1
+## strip_objects(): the opening's window and its coarse cell, the cut that
+## counts as a wood or a house (the data's noise is 1 to 2 m), how much more
+## a slope needs (times the rise across half a window), and the most taken.
+const OBJECT_WINDOW := 160.0  ## a golf course's tree lines and copses (BeamNG.Earth takes 400 m for city blocks; that reached a coast's shore)
+const OBJECT_CELL := 10.0
+const OBJECT_THRESHOLD := 2.0
+const OBJECT_SLOPE_K := 0.35
+const OBJECT_MAX_CUT := 30.0
+const OBJECT_SHORE := 2.0  ## metres over the sea the cut stops at
+## ...and the relief (highest less lowest opened ground over OBJECT_RELIEF)
+## under which the cut is whole, over which there is none.
+const OBJECT_RELIEF := 600.0
+const OBJECT_FLAT := 40.0
+const OBJECT_HILLS := 90.0
 
 var zoom := MAX_ZOOM
 var origin := Vector2i.ZERO  ## the top-left tile
@@ -146,6 +160,144 @@ func height_step() -> float:
 		if absf(_h[k] - roundf(_h[k])) < 0.003:
 			whole += 1
 	return 1.0 if n >= 100 and whole >= n * WHOLE_SHARE else 0.0
+
+
+## Takes the tree stands and buildings out of coarse ground. SRTM and the
+## like measure the first thing the radar meets: a wood stands 5 to 20 m
+## over the clearing beside it, so fairways cut through trees ran in
+## trenches. A morphological opening (the lowest surface a window of
+## OBJECT_WINDOW can reach from below) keeps the ground's shapes wider than
+## the window; what it cuts beyond a threshold (higher on slopes, where a
+## narrow knoll is real) is taken off where `is_object` (lat, lon) says
+## woods or houses stand, softly at its edge. Dunes, banks and knolls in
+## the open stay. `kind` (lat, lon) says 1 for woods and houses, 2 for
+## water (left out of the opening: by a coast it would take everything down
+## to the sea), 0 for open ground. (The method is BeamNG.Earth's
+## dsmground.py, MIT.)
+## Returns the most taken off anywhere, in metres.
+func strip_objects(kind: Callable) -> float:
+	var w := count.x * TILE
+	var h := count.y * TILE
+	var lat := tile_lat(origin.y + count.y * 0.5, zoom)
+	var px := pixel_metres(lat)
+	var k := maxi(1, roundi(OBJECT_CELL / px))  # pixels a coarse cell
+	var cw := ceili(float(w) / k)
+	var ch := ceili(float(h) / k)
+	var cell := px * k
+	var g := PackedFloat32Array()
+	g.resize(cw * ch)
+	var kinds := PackedByteArray()
+	kinds.resize(cw * ch)
+	var dry := PackedFloat32Array()
+	dry.resize(cw * ch)
+	for j in ch:
+		var y := origin.y + (j * k + 0.5) / TILE
+		var la := tile_lat(y, zoom)
+		for i in cw:
+			var q := j * cw + i
+			g[q] = _h[mini(j * k, h - 1) * w + mini(i * k, w - 1)]
+			kinds[q] = int(kind.call(la, tile_lon(origin.x + (i * k + 0.5) / TILE, zoom)))
+			dry[q] = INF if kinds[q] == 2 else g[q]
+	var r := maxi(1, roundi(OBJECT_WINDOW * 0.5 / cell))
+	var eroded := _box_filter(dry, cw, ch, r, false)
+	for q in eroded.size():
+		if is_inf(eroded[q]):
+			eroded[q] = -INF  # all water: no part in the dilation
+	var opened := _box_filter(eroded, cw, ch, r, true)
+	# The local relief of the opened ground: hills and cliffs (a village on
+	# a bluff) are left alone, only fairly flat land is cut fully.
+	var rr2 := maxi(1, roundi(OBJECT_RELIEF * 0.5 / cell))
+	var high_in := opened.duplicate()
+	var low_in := opened.duplicate()
+	for q in opened.size():
+		if is_inf(opened[q]) or kinds[q] == 2:
+			high_in[q] = -INF
+			low_in[q] = INF
+	var top := _box_filter(high_in, cw, ch, rr2, true)
+	var low := _box_filter(low_in, cw, ch, rr2, false)
+	var cut := PackedFloat32Array()
+	cut.resize(g.size())
+	var rr := maxi(1, r / 2)
+	for j in ch:
+		for i in cw:
+			var q := j * cw + i
+			var c := g[q] - opened[q]
+			if c <= OBJECT_THRESHOLD or kinds[q] != 1 or is_inf(opened[q]):
+				continue
+			# The opened ground's rise across half a window.
+			var dx := opened[j * cw + mini(i + rr, cw - 1)] - opened[j * cw + maxi(i - rr, 0)]
+			var dz := opened[mini(j + rr, ch - 1) * cw + i] - opened[maxi(j - rr, 0) * cw + i]
+			var thr := OBJECT_THRESHOLD + OBJECT_SLOPE_K * sqrt(dx * dx + dz * dz) * 0.5
+			var soft := clampf((c - thr) / OBJECT_THRESHOLD, 0.0, 1.0)
+			soft *= clampf((OBJECT_HILLS - (top[q] - low[q])) / (OBJECT_HILLS - OBJECT_FLAT), 0.0, 1.0)
+			if soft <= 0.0:
+				continue
+			# Never down to the sea: woods don't stand in it, and by a coast the
+			# opening reaches the shore's own level (Teeth of the Dog's palms).
+			cut[q] = clampf(minf(c, OBJECT_MAX_CUT) * soft, 0.0, maxf(0.0, g[q] - OBJECT_SHORE))
+	# Back to the pixels, bilinear between the coarse cells, only where
+	# one of a block's corners has a cut.
+	var most := 0.0
+	for j in ch:
+		var j1 := mini(j + 1, ch - 1)
+		for i in cw:
+			var i1 := mini(i + 1, cw - 1)
+			var c00 := cut[j * cw + i]
+			var c10 := cut[j * cw + i1]
+			var c01 := cut[j1 * cw + i]
+			var c11 := cut[j1 * cw + i1]
+			if c00 <= 0.0 and c10 <= 0.0 and c01 <= 0.0 and c11 <= 0.0:
+				continue
+			most = maxf(most, maxf(maxf(c00, c10), maxf(c01, c11)))
+			for y in range(j * k, mini((j + 1) * k, h)):
+				var fv := float(y - j * k) / k
+				var row := y * w
+				for x in range(i * k, mini((i + 1) * k, w)):
+					var fu := float(x - i * k) / k
+					_h[row + x] -= lerpf(lerpf(c00, c10, fu), lerpf(c01, c11, fu), fv)
+	return most
+
+
+## The running minimum (or maximum) over a (2r + 1) square, rows then
+## columns, by van Herk's blocks (a few steps a sample, whatever r is).
+static func _box_filter(a: PackedFloat32Array, cw: int, ch: int, r: int, take_max: bool) -> PackedFloat32Array:
+	return _run_filter(_run_filter(a, cw, ch, r, take_max, true), cw, ch, r, take_max, false)
+
+
+static func _run_filter(a: PackedFloat32Array, cw: int, ch: int, r: int, take_max: bool, along_rows: bool) -> PackedFloat32Array:
+	var out := PackedFloat32Array()
+	out.resize(a.size())
+	var n := cw if along_rows else ch
+	var lines := ch if along_rows else cw
+	var size := 2 * r + 1
+	var line := PackedFloat32Array()
+	line.resize(n + 2 * r)
+	var pre := PackedFloat32Array()
+	pre.resize(line.size())
+	var suf := PackedFloat32Array()
+	suf.resize(line.size())
+	for l in lines:
+		for t in line.size():
+			var p := clampi(t - r, 0, n - 1)
+			line[t] = a[l * cw + p] if along_rows else a[p * cw + l]
+		for t in line.size():
+			if t % size == 0:
+				pre[t] = line[t]
+			else:
+				pre[t] = maxf(pre[t - 1], line[t]) if take_max else minf(pre[t - 1], line[t])
+		for t in range(line.size() - 1, -1, -1):
+			if t == line.size() - 1 or (t + 1) % size == 0:
+				suf[t] = line[t]
+			else:
+				suf[t] = maxf(suf[t + 1], line[t]) if take_max else minf(suf[t + 1], line[t])
+		for p in n:
+			# The window [p, p + 2r] of the padded line.
+			var v := maxf(suf[p], pre[p + 2 * r]) if take_max else minf(suf[p], pre[p + 2 * r])
+			if along_rows:
+				out[l * cw + p] = v
+			else:
+				out[p * cw + l] = v
+	return out
 
 
 func _tile_of(k: int) -> int:

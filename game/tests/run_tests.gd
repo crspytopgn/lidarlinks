@@ -21,6 +21,10 @@ func _initialize() -> void:
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(PlayerProfiles.path))
 	SavedRound.path = "user://test_saved_round.cfg"
 	SavedRound.clear()
+	# The round's physics runs on the main thread here, so each test sees a
+	# shot fly the moment it is played; the threads have tests of their own.
+	BackgroundWork.enabled = false
+	_run("physics_on_threads", _test_physics_on_threads)
 	_run("physics_matches_olcore", _test_physics_matches_olcore)
 	_run("club_table_matches_physics", _test_club_table_matches_physics)
 	_run("putting", _test_putting)
@@ -33,6 +37,7 @@ func _initialize() -> void:
 	_run("links_objects_match_olcore", _test_links_objects_match_olcore)
 	_run("links_models_match_olcore", _test_links_models_match_olcore)
 	_run("links_launch_matches_olcore", _test_links_launch_matches_olcore)
+	_run("club_distance_table", _test_club_distance_table)
 	_run("links_lie_matches_olcore", _test_links_lie_matches_olcore)
 	_run("links_swing_matches_olcore", _test_links_swing_matches_olcore)
 	_run("obstacles_match_olcore", _test_obstacles_match_olcore)
@@ -48,6 +53,9 @@ func _initialize() -> void:
 	_run("round_setup", _test_round_setup)
 	_run("round_scoring", _test_round_scoring)
 	_run("career", _test_career)
+	_run("career_playoff", _test_career_playoff)
+	_run("key_remap", _test_key_remap)
+	_run("daily_round", _test_daily_round)
 	_run("tour_pros", _test_tour_pros)
 	_run("tournament_hole_odds", _test_tournament_hole_odds)
 	_run("tournament_stroke_play", _test_tournament_stroke_play)
@@ -134,6 +142,7 @@ func _process(_delta: float) -> bool:
 	_run("team_ball_modes", _test_team_ball_modes)
 	_run("team_drops", _test_team_drops)
 	_run("pause_stops_play", _test_pause_stops_play)
+	_run("strike_on_thread", _test_strike_on_thread)
 	_run("touch_and_stick_swings", _test_touch_and_stick_swings)
 	_run("tee_view", _test_tee_view)
 	_run("rounds_recorded", _test_rounds_recorded)
@@ -146,9 +155,11 @@ func _process(_delta: float) -> bool:
 	_run("menu_resume", _test_menu_resume)
 	SavedRound.clear()
 	_run("broadcast_round", _test_broadcast_round)
+	_run("smooth_flyover", _test_smooth_flyover)
 	_run("designer_scene", _test_designer_scene)
 	_run("designed_round", _test_designed_round)
 	_run("caddie_and_buggy_in_round", _test_caddie_and_buggy_in_round)
+	_run("target_view", _test_target_view)
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(PlayerProfiles.path))
 	if _failures > 0:
 		print("%d check(s) failed" % _failures)
@@ -257,6 +268,35 @@ func _test_designer_scene() -> void:
 		d._process(0.5)
 	d._stop_flyover()
 	_check(not d._preview.current and d.camera.current, "and hands back to the designer camera")
+	# Draw area on a big course: more areas than a mesh has surfaces (West
+	# Essex has 263), and the outline being drawn still shows.
+	for i in 300:
+		d.course.shapes.append(CourseShape.oval(Surface.Type.ROUGH, Vector2(i * 0.5, 0.0), Vector2(5.0, 4.0), 0.0))
+	d.panel.select_tool(DesignerPanel.Tool.SHAPE)
+	d._draft = PackedVector2Array([Vector2(0, 0), Vector2(20, 0), Vector2(20, 20)])
+	d._draw_overlay()
+	_check(d._lines.get_surface_count() == 1, "every outline goes in one surface (%d)" % d._lines.get_surface_count())
+	var drawn: int = (d._lines.surface_get_arrays(0)[Mesh.ARRAY_VERTEX] as PackedVector3Array).size()
+	d._draft.clear()
+	d._draw_overlay()
+	_check(drawn > (d._lines.surface_get_arrays(0)[Mesh.ARRAY_VERTEX] as PackedVector3Array).size(), "the outline being drawn is drawn")
+	d._draft = PackedVector2Array([Vector2(0, 0), Vector2(20, 0), Vector2(20, 20)])
+	var shapes_before := d.course.shapes.size()
+	d._finish_draft()
+	_check(d.course.shapes.size() == shapes_before + 1 and d._draft.is_empty(), "finishing the outline adds the area")
+	d._undo_step(d._undo, d._redo, "undo")
+	_check(d.course.shapes.size() == shapes_before, "undo takes the drawn area away")
+	d.panel.select_tool(DesignerPanel.Tool.SELECT)
+	# Update from the map shows only for a saved real course, and asks once.
+	_check(not d.can_update() and not d.panel.update.visible, "no Update for a designed course")
+	d.course.source["kind"] = "openstreetmap"
+	d.path = "user://courses/update_test.olc"
+	d._show_update()
+	_check(d.can_update() and d.panel.update.visible, "a saved real course offers Update in the designer")
+	d._on_update_pressed()
+	_check(d._update_armed and d.panel.update.text == "Sure? Update", "the first press asks to be sure")
+	d._on_file_action("save_none")
+	_check(not d._update_armed and d.panel.update.text == "Update from the map", "another action calls it off")
 	d.queue_free()
 
 
@@ -594,7 +634,7 @@ func _test_shot_shape() -> void:
 	# The spin ball: low on the ball is more backspin (higher), right fades.
 	var c := Vector2(50, 50)
 	_check(SpinBall.steps_at(c, c, 40.0) == Vector2i.ZERO, "the middle of the spin ball is square")
-	_check(SpinBall.steps_at(c + Vector2(0, 40), c, 40.0) == Vector2i(0, ShotShape.MAX_HEIGHT), "low on the ball is the most backspin")
+	_check(SpinBall.steps_at(c + Vector2(0, 40), c, 40.0) == Vector2i(0, ShotShape.MAX_HEIGHT), "low on the ball is the highest shot")
 	_check(SpinBall.steps_at(c + Vector2(-400, 0), c, 40.0) == Vector2i(-ShotShape.MAX_CURVE, 0), "far left on the ball is the biggest draw")
 	# A shaped shot's setup survives a result code.
 	var rec := ShotRecord.new()
@@ -604,6 +644,28 @@ func _test_shot_shape() -> void:
 	var back := ShotRecord.from_dict(rec.to_dict())
 	_check(back.face == 32 and back.stance == 28 and back.ball_position == 3, "setup round-trips")
 	_check(not ShotRecord.new().to_dict().has("setup"), "square shots add nothing to the record")
+	# Extra backspin (not in Classic Links): low on the ball spins it more.
+	shape.reset()
+	shape.nudge_spin(5)
+	_check(shape.spin == ShotShape.MAX_SPIN and not shape.is_square(), "backspin stops at its limit")
+	_check(shape.backspin(false) == 3 and shape.backspin(true) == 0, "backspin steps only away from Classic")
+	_check(shape.describe() == "Backspin 3", "backspin text")
+	_check(SpinBall.bar_steps_at(0.0, 0.0, 60.0) == ShotShape.MAX_SPIN and SpinBall.bar_steps_at(30.0, 0.0, 60.0) == 0
+			and SpinBall.bar_steps_at(99.0, 0.0, 60.0) == -ShotShape.MAX_SPIN, "the top of the slider is the most backspin")
+	_check(is_equal_approx(ShotShape.backspin_scale(3), 1.75) and is_equal_approx(ShotShape.backspin_scale(-3), 0.55)
+			and ShotShape.backspin_scale(0) == 1.0, "backspin scale")
+	model.setup = LinksLaunch.Setup.new()
+	var plain := model.launch(_club("SW"), 1.0, 0.0, 0.0, Surface.Type.FAIRWAY, Vector3.ZERO)
+	model.backspin = 3
+	var spun := model.launch(_club("SW"), 1.0, 0.0, 0.0, Surface.Type.FAIRWAY, Vector3.ZERO)
+	model.backspin = 0
+	var right := Vector3(plain.velocity.x, 0.0, plain.velocity.z).normalized().cross(Vector3.UP)
+	_check(is_equal_approx(spun.spin.dot(right), plain.spin.dot(right) * 1.75), "more backspin off the club")
+	_check(is_equal_approx(spun.spin.dot(Vector3.UP), plain.spin.dot(Vector3.UP)), "backspin leaves sidespin alone")
+	var srec := ShotRecord.new()
+	srec.backspin = 2
+	_check(ShotRecord.from_dict(srec.to_dict()).backspin == 2, "backspin round-trips")
+	_check(not ShotRecord.new().to_dict().has("backspin"), "no backspin adds nothing to the record")
 
 
 func _test_club_ratings() -> void:
@@ -659,6 +721,23 @@ func _test_swing_meter() -> void:
 	_check_near(links_model.lie_power(Surface.Type.ROUGH), 0.927315, 1e-6, "rough keeps 93 percent, as the game strikes it")
 	_check_near(links_model.lie_power(Surface.Type.DEEP_ROUGH), 0.836732, 1e-6, "deep rough keeps 84 percent")
 	_check(links_model.lie_power(Surface.Type.FRINGE) == 1.0, "the fringe plays as fairway")
+	# A clean strike's speed: the driver and 3-wood meet the game's strike
+	# quality limit off the ground (0.6 and 0.8 from the rough at the hardest
+	# level), so the reach shown and the auto club allow for it.
+	var rough_p := LinksGround.surface_for_class(LinksGround.ROUGH)
+	_check_near(LinksLaunch.clean_strike_speed(0, rough_p, 3), 0.6, 1e-12, "driver out of the rough: 60 percent")
+	_check_near(LinksLaunch.clean_strike_speed(1, rough_p, 3), 0.8, 1e-12, "3-wood out of the rough: 80 percent")
+	_check_near(LinksLaunch.clean_strike_speed(3, rough_p, 3), 0.927315, 1e-6, "5-wood out of the rough keeps LiePower")
+	_check_near(LinksLaunch.clean_strike_speed(0, rough_p, 0), 0.8, 1e-12, "easiest level softens it")
+	_check_near(LinksLaunch.clean_strike_speed(0, LinksGround.surface_for_class(LinksGround.FAIRWAY), 3), 0.9, 1e-6, "driver off the deck")
+	for club in [0, 1, 7, 8, 13]:
+		for lvl in LinksLaunch.SKILL_COUNT:
+			var cs := LinksLaunch.Strike.new()
+			cs.club = club
+			var cw := LinksLaunch.SwingInput.new()
+			cw.skill = lvl
+			LinksLaunch.apply_swing(cs, cw, rough_p, LinksLaunch.Rand.new(1))
+			_check_near(cs.speed_scale, LinksLaunch.clean_strike_speed(club, rough_p, lvl), 1e-12, "clean strike matches apply_swing (club %d, level %d)" % [club, lvl])
 	_check_near(LinksPowerStroke.chip_power(15), 7.0, 1e-6, "chip power at the snap line")
 	_check_near(LinksPowerStroke.chip_power(68), 34.95, 1e-4, "chip power at the top")
 	_check_near(LinksPowerStroke.chip_power(32), 14.25, 1e-4, "chip power midway")
@@ -1071,6 +1150,15 @@ func _strs(values: Array) -> Array[String]:
 
 
 func _test_round_setup() -> void:
+	var claim := RoundSetup.new()
+	_check(claim.claim_first_player("Michael", ""), "creator: a new player takes over the standard Player 1")
+	_check(claim.names[0] == "Michael", "creator: first player is the new one")
+	_check(not claim.claim_first_player("Bob", ""), "creator: a second new player doesn't replace a named first player")
+	_check(claim.claim_first_player("Mike", "michael"), "creator: renaming the first player follows them")
+	_check(claim.names[0] == "Mike", "creator: renamed first player")
+	_check(GolferSelectPanel.with_person(PlayerLook.default_look(), "Female_Adult_13").sex >= 0.5, "select golfer: a woman's look takes her sex")
+	_check(GolferSelectPanel.with_person(PlayerLook.default_look(), "").person == "", "select golfer: Custom is the creator's body")
+	_check(RoundSetupPanel.golfer_name(PlayerLook.default_look()) == "Man 1", "setup: the standard golfer is Man 1")
 	var s := RoundSetup.new()
 	_check(s.problem().is_empty(), "one player stroke play is fine")
 	s.mode = GameModes.Mode.MATCH
@@ -1275,6 +1363,20 @@ func _test_green_reading() -> void:
 		grid.build(side_hill, Vector3.ZERO, Vector3(0, 0, 6))
 		_check(grid.mesh.get_surface_count() == 1, "grid style %d builds" % style)
 	_check(GreenGrid.height_color(0.0).b > GreenGrid.height_color(0.0).r and GreenGrid.height_color(1.0).r > GreenGrid.height_color(1.0).b, "low blue, high red")
+	# Off the main thread: the same grid as a build now; asking again for
+	# the grid on show starts nothing.
+	var now_verts := (grid.mesh.surface_get_arrays(0)[Mesh.ARRAY_VERTEX] as PackedVector3Array).size()
+	grid.build_async(side_hill, Vector3.ZERO, Vector3(0, 0, 6))
+	_check(grid._job.is_empty(), "the grid on show is not built again")
+	grid.build_async(side_hill, Vector3(1, 0, 0), Vector3(0, 0, 6))
+	_check(not grid._job.is_empty(), "a new spot builds over frames")
+	var frames := 0
+	while not grid._job.is_empty() and frames < 1000:
+		grid._process(0.0)
+		frames += 1
+	_check(grid._job.is_empty() and grid.mesh.get_surface_count() == 1
+			and (grid.mesh.surface_get_arrays(0)[Mesh.ARRAY_VERTEX] as PackedVector3Array).size() > now_verts / 2,
+			"the grid built over frames goes up")
 	grid.free()
 
 
@@ -1448,6 +1550,28 @@ func _test_drop_rules_hazards_and_bounds() -> void:
 	var free := DropRules.zone(DropRules.Option.FREE_DROP, Vector3(-11, 0, 70), Vector3.ZERO, pin, false, t)
 	_check(free.found, "free relief beside the hazard")
 	_check_spot(free.spot, -12.0840, 69.3776, "free relief beside the hazard")
+	# The ball is dropped and rolls, ending somewhere legal (or placed after
+	# two drops that roll out), the same way for the same seed.
+	var model := StandardShotModel.new()
+	for s in 6:
+		var d := GolfRound.drop_and_roll(model, side, side.spot, pin, t, s)
+		var at: Vector3 = d["spot"]
+		var legal := DropRules.check(side, at, pin, t)
+		_check(legal == DropRules.Check.OK or (legal == DropRules.Check.OUTSIDE_ZONE
+				and Vector2(at.x - side.spot.x, at.z - side.spot.z).length() <= 2.0 * DropRules.CLUB_LENGTH + 0.01)
+				or str(d["note"]).contains("placed"), "drop %d ends legal (%s, %s)" % [s, at, d["note"]])
+		_check(absf(at.y - t.height_at(at.x, at.z)) < 0.05, "drop %d rests on the ground" % s)
+	var d1 := GolfRound.drop_and_roll(model, side, side.spot, pin, t, 7)
+	var d2 := GolfRound.drop_and_roll(model, side, side.spot, pin, t, 7)
+	_check((d1["spot"] as Vector3).is_equal_approx(d2["spot"]), "a drop is the same for the same seed")
+	# Chipping practice: spots round the green, off it, on playable ground.
+	for s in 8:
+		var cs := GolfRound.chip_spot(t, Vector3(0, 2, 100), Vector3.ZERO, s)
+		var dist := Vector2(cs.x, cs.z - 100.0).length()
+		var surf := t.surface_at(cs.x, cs.z)
+		_check(dist >= GolfRound.CHIP_MIN - 0.01 and dist <= GolfRound.CHIP_MAX + 0.01 and surf != Surface.Type.GREEN
+				and surf != Surface.Type.WATER and not t.hazard_at(cs.x, cs.z) and t.in_bounds(cs.x, cs.z),
+				"chip spot %d is off the green, %.1f m out" % [s, dist])
 
 
 ## A hole whose ground ends at z = limit: judged where the ball stops.
@@ -1602,6 +1726,18 @@ func _test_computer_golfer_plans() -> void:
 	sliced.plan(model, clubs, hole, Vector3.ZERO, Surface.Type.FAIRWAY, Vector3(3.0, 0.0, 0.0))
 	sliced.finish()
 	_check(sliced.club_index == cpu.club_index and sliced.aim_deg == cpu.aim_deg, "re-planned mid-job, still the same shot")
+	# On a worker thread, on a model of its own, the same plan again.
+	BackgroundWork.enabled = true
+	var threaded := ComputerGolfer.new(OpponentSkill.Level.TOUR, 5, TourPro.find("Callum Reid"))
+	threaded.plan(model, clubs, hole, Vector3.ZERO, Surface.Type.FAIRWAY, Vector3(3.0, 0.0, 0.0))
+	var polls := 0
+	while not threaded.step_background() and polls < 100000:
+		polls += 1
+		OS.delay_usec(100)
+	BackgroundWork.enabled = false
+	_check(threaded.club_index == cpu.club_index and threaded.power == cpu.power and threaded.aim_deg == cpu.aim_deg,
+		"planned on a worker thread, the same shot (%s, %d polls)" % ["threaded" if BackgroundWork.available() or polls > 0 else "no threads here", polls])
+	_check(BackgroundWork.running() == 0, "and its thread is collected")
 
 	# After stroke and distance it doesn't play the same club out of bounds
 	# again: the plan can't see a real swing catch a bunker lip.
@@ -2078,6 +2214,11 @@ func _test_graphics_settings() -> void:
 		most_pan = maxf(most_pan, RoundCamera.operator_offset(i * 0.1, 1.0).length())
 	_check(most > 0.0 and most < deg_to_rad(0.1), "camera operator: resting drift under 0.1 degree")
 	_check(most_pan > most and most_pan < deg_to_rad(0.3), "camera operator: more drift while panning, under 0.3 degree")
+	# The TV long lens: wide near the player, zoomed on a ball far away,
+	# never past its limits.
+	_check(RoundCamera.zoom_fov(50.0, 10.0) == 50.0, "long lens: the player's lens on a ball close by")
+	_check_near(RoundCamera.zoom_fov(50.0, 60.0), rad_to_deg(2.0 * atan(13.0 / 60.0)), 1e-3, "long lens: 26 m of picture at 60 m")
+	_check(RoundCamera.zoom_fov(50.0, 1000.0) == 15.0 and RoundCamera.zoom_fov(25.0, 1000.0) == 9.0, "long lens: no narrower than its limits")
 	var path := "user://test_settings.cfg"
 	var cfg := ConfigFile.new()
 	cfg.set_value("game", "folder", "/somewhere")
@@ -2218,6 +2359,26 @@ func _test_graphics_settings() -> void:
 	_check(sunset.elevation < dusk.elevation and early.elevation < dawn.elevation, "dawn and sunset sit lowest")
 	_check(absf(float(early.bearing) - float(sunset.bearing)) > 120.0, "dawn and sunset light from opposite sides")
 	_check((sunset.sun as Color).b < (dusk.sun as Color).b, "sunset is the warmest sun")
+	# Shade adaptation: open ground, a lone tree's shadow, a closed wood.
+	var wood := ObstacleField.new()
+	wood.add_cylinder(0.0, 0.0, 0.3, 0.0, 4.0, ObstacleField.Kind.SOLID)
+	wood.add_cylinder(0.0, 0.0, 4.0, 3.0, 12.0, ObstacleField.Kind.CANOPY)
+	wood.finalize()
+	var sun_up := Vector3(0.3, 0.9, 0.3).normalized()
+	var open_cover := Scenery.shade_cover(wood, Vector3(40.0, 1.2, 0.0), sun_up)
+	var lone := Scenery.shade_cover(wood, Vector3(1.5, 1.2, 0.0), sun_up)
+	_check(open_cover == Vector2.ZERO and Scenery.shade_adapt_for(open_cover) == 1.0, "open ground: no shade adaptation")
+	_check(lone.y == 1.0 and lone.x > 0.3 and lone.x < 0.65, "under a lone crown: sun blocked, part of the sky (%.2f)" % lone.x)
+	var forest := ObstacleField.new()
+	for i in range(-4, 5):
+		for j in range(-4, 5):
+			forest.add_cylinder(i * 7.0, j * 7.0, 5.0, 3.0, 14.0, ObstacleField.Kind.CANOPY)
+	forest.finalize()
+	var deep := Scenery.shade_cover(forest, Vector3(3.5, 1.2, 3.5), sun_up)
+	_check(deep.y == 1.0 and deep.x > 0.75, "in a wood most of the sky is shut out (%.2f)" % deep.x)
+	_check(Scenery.shade_adapt_for(deep) > 1.4 and Scenery.shade_adapt_for(deep) <= Scenery.SHADE_ADAPT_MAX, "deep shade opens the exposure up")
+	_check(Scenery.shade_adapt_for(lone) < Scenery.shade_adapt_for(deep), "a lone tree's shade less than a wood's")
+	_check(Scenery.shade_cover(null, Vector3.ZERO, sun_up) == Vector2.ZERO, "no obstacles: open")
 	var grey := Scenery.time_light(GraphicsSettings.TimeOfDay.OVERCAST, 0.0)
 	var aft: Dictionary = Scenery.TIMES["afternoon"]
 	_check(float(grey.energy) < 0.5 * float(aft.energy) and float(grey.fill_fwd) > float(aft.fill_fwd), "overcast: a weak sun and a strong sky fill")
@@ -2263,6 +2424,14 @@ func _test_trees() -> void:
 		_check(box.end.y > 2.5 and box.end.y < 20.0 and box.position.y > -0.5, "scanned %s stands on the ground (%.1f m)" % [spec[1], box.end.y])
 	for v in TreeFactory.SCANNED.size() if TreeFactory.scans_available() else TreeFactory.VARIANTS.size():
 		_check(TreeFactory.frame_size(v) >= TreeFactory.mesh(v).get_aabb().end.y, "tree %d fits its impostor frame" % v)
+	# Ultra's full-size oak leaf atlas, and the usual one otherwise.
+	if ScannedTree.leaf_textures("red_oak").size() == 2:
+		var usual := ScannedTree.leaf_textures("red_oak")[0].get_width()
+		ScannedTree.hd = true
+		var sharp := ScannedTree.leaf_textures("red_oak")[0].get_width()
+		ScannedTree.hd = false
+		_check(sharp == usual * 2 and ScannedTree.leaf_textures("red_oak")[0].get_width() == usual,
+				"Ultra oak leaves at twice the size (%d, %d)" % [usual, sharp])
 	var lib := PlaceholderObjectLibrary.new()
 	TreeFactory.level = 0
 	var classic := lib.instantiate("tree_pine")
@@ -2362,7 +2531,29 @@ func _test_wind_gusts() -> void:
 	_check(absf(rad_to_deg(seen.angle())) <= 8.01, "gusts swing the direction only a few degrees")
 	var mat := ShaderMaterial.new()
 	mat.shader = load("res://shaders/flag.gdshader")
-	_check(mat.shader != null and mat.shader.get_code().contains("wind_vector"), "flag shader reads the wind")
+	_check(mat.shader != null and mat.shader.get_code().contains("flag_wind") and mat.shader.get_code().contains("flag_phase"), "flag shader reads the eased flag wind and phase")
+	_check(not mat.shader.get_code().contains("TIME"), "flag ripple phase is integrated, not TIME * a gusting frequency")
+	# The ripple quickens with the wind but stays a ripple, not a thrash.
+	_check(FlagMotion.ripple_hz(2.0) < 1.0 and FlagMotion.ripple_hz(9.0) < 3.0, "flag ripple is lazy in light air, brisk at 20 mph")
+	_check(FlagMotion.ripple_hz(40.0) <= FlagMotion.RIPPLE_MAX_HZ, "flag ripple capped")
+	# The phase never jumps, however hard the gusts swing.
+	var fm := FlagMotion.new()
+	fm.snap(Vector2(9, 0))
+	var worst := 0.0
+	for i in 600:
+		var before := fm.phase
+		fm.step(WindGust.visual_wind(Vector2(9, 0), 1000.0 + i / 60.0), 1.0 / 60.0)
+		var moved := fposmod(fm.phase - before, 1.0)
+		worst = maxf(worst, moved)
+	_check(worst <= FlagMotion.RIPPLE_MAX_HZ / 60.0 + 1e-5, "flag ripple advances smoothly through gusts (%.4f cycles/frame)" % worst)
+	# The cloth eases into a gust instead of snapping.
+	var ease := FlagMotion.new()
+	ease.snap(Vector2(5, 0))
+	ease.step(Vector2(10, 0), 1.0 / 60.0)
+	_check(ease.wind.x > 5.0 and ease.wind.x < 5.5, "flag eases into a gust (%.2f m/s)" % ease.wind.x)
+	var calm := FlagMotion.new()
+	calm.snap(Vector2.ZERO)
+	_check(calm.wind == Vector2.ZERO, "flag hangs in a calm")
 
 
 func _test_course_marks() -> void:
@@ -2506,6 +2697,15 @@ func _test_gallery() -> void:
 			arm_mods += 1
 	var arms_ok := arm_mods == g.crowd_count()
 	_check(arms_ok, "each spectator holds their arms like a spectator, not round a club")
+	# Grandstands behind par 3 and last greens, and about half the rest.
+	var h := HoleData.new()
+	var with_stand := 0
+	for n in range(1, 19):
+		h.number = n
+		h.par = 4
+		with_stand += 1 if Gallery.green_stand(h, false) else 0
+	h.par = 3
+	_check(Gallery.green_stand(h, false) and with_stand >= 5 and with_stand <= 13, "grandstands on par 3s and about half the greens (%d of 18)" % with_stand)
 	var spot := Gallery.grandstand_spot(hole)
 	if not spot.is_empty():
 		var capacity := Gallery.STAND_ROWS * (int(Gallery.STAND_WIDTH / Gallery.STAND_SEAT) - 1)
@@ -3402,6 +3602,22 @@ func _test_full_round() -> void:
 	game.sounds.play_detail(&"hit", {"club": _club("Dr"), "lie": Surface.Type.ROUGH, "power": 1.0})
 	game.sounds.play_detail(&"land", {"surface": Surface.Type.SAND, "speed": 15.0})
 	_check(game.sounds.get_child_count() == before + 3, "driver from the rough plays strike and grass, sand landing plays")
+	# Off the fairway the strike plays alone (no rough swish), and each
+	# landing surface plays its own recording: the fairway's firm thump is
+	# not the rough's grass.
+	before = game.sounds.get_child_count()
+	game.sounds.play_detail(&"hit", {"club": _club("7i"), "lie": Surface.Type.FAIRWAY, "power": 1.0})
+	_check(game.sounds.get_child_count() == before + 1, "an iron off the fairway plays only the strike")
+	var landed := {}
+	for s: int in [Surface.Type.FAIRWAY, Surface.Type.TEE, Surface.Type.ROUGH, Surface.Type.DEEP_ROUGH, Surface.Type.GREEN]:
+		game.sounds.play_detail(&"land", {"surface": s, "speed": 25.0})
+		var p := game.sounds.get_child(game.sounds.get_child_count() - 1) as AudioStreamPlayer
+		landed[s] = p.stream.resource_path.get_file().rsplit("_", true, 1)[0] if p != null and p.stream != null else ""
+	_check(landed[Surface.Type.FAIRWAY] == "land_fairway" and landed[Surface.Type.TEE] == "land_fairway", "fairway and tee land with a thump: %s" % landed)
+	_check(landed[Surface.Type.ROUGH] == "land_grass" and landed[Surface.Type.DEEP_ROUGH] == "land_grass", "rough lands in the grass: %s" % landed)
+	_check(landed[Surface.Type.GREEN] == "land_green", "the green has its own landing: %s" % landed)
+	var fairway_takes: Array = (game.sounds as FreeSoundBank).takes("land_fairway")
+	_check(fairway_takes.size() >= 3, "three fairway landing takes")
 
 
 ## The full round was recorded and plays again to the same card; a changed
@@ -3834,6 +4050,23 @@ func _test_free_golfer() -> void:
 	_check(made is FreeGolfer, "the placeholder assets use the free golfer")
 	made.free()
 	golfer.play(&"putt")
+	golfer.play(&"address")
+	# A putt the player strokes: the putter goes back with the stroke, comes
+	# through to the ball, and the ball leaves at once when it gets there.
+	var putter_club := _club("Pt")
+	golfer.set_shot(putter_club, 4.0)
+	golfer.follow_backswing(0.5)
+	_check(golfer._player.current_animation == &"putt" and absf(golfer._player.current_animation_position - FreeGolfer.PUTT_TOP * 0.5) < 0.02
+			and not golfer.at_impact(), "the putter goes halfway back with half the backstroke")
+	golfer.follow_downswing(0.5)
+	_check(not golfer.at_impact(), "halfway through the putter is not at the ball yet")
+	golfer.follow_downswing(1.0)
+	_check(golfer.at_impact(), "the stroke brings the putter to the ball")
+	golfer.play(&"putt")
+	_check(golfer.putt_impact_delay() < 0.05, "a stroked putt leaves at once (%.2f s)" % golfer.putt_impact_delay())
+	golfer.play(&"address")
+	golfer.play(&"putt")
+	_check(is_equal_approx(golfer.putt_impact_delay(), FreeGolfer.PUTT_IMPACT / golfer.tempo), "a putt from address waits for the putter")
 	golfer.play(&"address")
 	# GolferHands: a grip for the driver, iron and putter, the right hand a
 	# hand's width or so from the left; on for swings, off for the walk.
@@ -5134,6 +5367,117 @@ func _test_tee_view() -> void:
 	print("  tee view: %.1f m up, %.1f m back, target %.0f m %s" % [rise, back, reach, "in sight" if seen else "behind the rise"])
 
 
+## Links 2003's CLUBDIST table (made up here: the real one is the
+## player's): feet at every second point of power from 2, read the way the
+## game reads it, and the reach a Links club shows comes from it.
+func _test_club_distance_table() -> void:
+	var bytes := PackedByteArray()
+	bytes.resize(ClubDistances.HEADER_BYTES + ClubDistances.CLUBS * ClubDistances.STEPS * 2)
+	for c in ClubDistances.CLUBS:
+		for k in ClubDistances.STEPS:
+			bytes.encode_u16(ClubDistances.HEADER_BYTES + 2 * (c * ClubDistances.STEPS + k), (k + 1) * (20 - c))
+	var t := ClubDistances.parse(bytes)
+	_check(t != null, "the table parses")
+	if t == null:
+		return
+	_check_near(t.total_m(0, 112.0), 56 * 20 * 0.3048, 1e-6, "the driver at 112 points is its 56th value, in feet")
+	_check_near(t.total_m(0, 113.0), 56.5 * 20 * 0.3048, 1e-6, "between steps in a straight line")
+	_check_near(t.total_m(0, 1.0), 10 * 0.3048, 1e-6, "below the first step from nothing")
+	_check(t.rating_for(0, 56 * 20 * 0.3048) == 112 and t.rating_for(0, 56 * 20 * 0.3048 + 0.01) == 114, "the rating for a distance is the first step that reaches it")
+	var falling := bytes.duplicate()
+	falling.encode_u16(ClubDistances.HEADER_BYTES + 2 * 5, 0)
+	_check(ClubDistances.parse(falling) == null and ClubDistances.parse(PackedByteArray([1, 2])) == null, "a short or falling table is refused")
+	var model := LinksShotModel.new(null, LinksLaunch.new())
+	var driver: Club = Club.standard_set()[0]
+	_check_near(model.reach_scale(driver), 1.12, 1e-6, "without the table the reach scales by the rating")
+	model.distances = t
+	_check_near(driver.total_m * model.reach_scale(driver), t.total_m(0, 112.0), 1e-4, "with it the driver reaches the table's total")
+	_check((model.fresh() as LinksShotModel).distances == t, "a fresh model keeps the table")
+
+
+## The same shots on worker threads (each with its own model) and on the
+## main thread at the same time end exactly where they do one by one:
+## Godot 4.4 shares a scratch value when threads index a const array, which
+## once crashed planning on threads (BackgroundWork).
+func _test_physics_on_threads() -> void:
+	var course := AssetProviders.load_course("")
+	var clubs := Club.standard_set()
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 11
+	var shots := []
+	for h in mini(3, course.holes.size()):
+		var hole: HoleData = course.holes[h]
+		for k in 8:
+			var from := hole.tee.lerp(hole.pin, rng.randf() * 0.8)
+			from.y = hole.terrain.height_at(from.x, from.z)
+			var heading := rad_to_deg(atan2(hole.pin.x - from.x, hole.pin.z - from.z))
+			shots.append([hole, rng.randi() % (clubs.size() - 1), rng.randf_range(0.3, 1.0), rng.randf_range(-0.3, 0.3), heading + rng.randf_range(-15.0, 15.0), from])
+	var play := func(model: ShotModel, out: Array) -> void:
+		for s: Array in shots:
+			var hole: HoleData = s[0]
+			var st := model.launch(clubs[s[1]], s[2], s[3], s[4], Surface.Type.FAIRWAY, s[5])
+			out.append(model.simulate(st, hole.terrain, hole.pin, Vector3(2.0, 0.0, 1.0)).rest)
+	var base: ShotModel = StandardShotModel.new()
+	var ref := []
+	play.call(base.fresh(), ref)
+	var outs := [[], [], []]
+	var tasks := []
+	for o: Array in outs:
+		tasks.append(WorkerThreadPool.add_task(play.bind(base.fresh(), o)))
+	var here := []
+	play.call(base.fresh(), here)
+	for t: int in tasks:
+		WorkerThreadPool.wait_for_task_completion(t)
+	var bad := 0
+	for o: Array in outs + [here]:
+		for j in ref.size():
+			if j >= o.size() or not (o[j] as Vector3).is_equal_approx(ref[j]):
+				bad += 1
+	_check(ref.size() >= 8 and bad == 0, "%d shots on 3 threads and here match one by one (%d differ)" % [ref.size(), bad])
+	var links := LinksShotModel.new(null, null)
+	links.skill = 1
+	var copy := links.fresh()
+	_check(copy is LinksShotModel and (copy as LinksShotModel).skill == 1 and copy != links, "a Links model's fresh copy keeps its skill")
+
+
+## Where the game has threads the strike's flight and roll are worked out
+## on a worker thread while the club comes down (State.STRIKE), and the
+## shot is the one the replay plays.
+func _test_strike_on_thread() -> void:
+	var game := _game
+	if not game.is_node_ready():
+		return
+	GolfRound.setup = null
+	game.start_round()
+	if game.camera.flying():
+		game.camera.end_flyover()
+	BackgroundWork.enabled = true
+	game.hud.meter.reset()
+	game.state = GolfRound.State.AIM
+	game.play_shot(0.85, 0.0)
+	var threaded := game.state == GolfRound.State.STRIKE
+	_check(threaded == BackgroundWork.available(), "the strike is worked out on a thread where there are threads")
+	var frames := 0
+	while game.state == GolfRound.State.STRIKE and frames < 2000:
+		game._process(0.0)
+		OS.delay_usec(500)
+		frames += 1
+	BackgroundWork.enabled = false
+	_check(game.state == GolfRound.State.FLIGHT, "then the ball flies (%d frames)" % frames)
+	var rec: ShotRecord = game.record.shots[game.record.shots.size() - 1]
+	var again := RoundReplay.run_shot(game.shot_model.fresh(), rec, game.clubs[rec.club], game.hole.terrain, game.hole.pin, rec.wind, game.round_seed)
+	_check(again.rest.is_equal_approx(game.shot.rest) and again.outcome == game.shot.outcome, "and stops where the replay's does")
+	game._complete_flight()
+	while game.state != GolfRound.State.AIM and frames < 4000:
+		game.auto_play_step()
+		frames += 1
+	BackgroundWork.enabled = true
+	game.play_shot(0.5, 0.0)
+	game.auto_play_step()
+	BackgroundWork.enabled = false
+	_check(game.state == GolfRound.State.FLIGHT, "a skip waits for the strike")
+
+
 ## The pause menu holds the round: the meter, the ball in flight and the
 ## pause after a shot all wait until it closes.
 func _test_pause_stops_play() -> void:
@@ -5332,6 +5676,104 @@ func _test_saved_round() -> void:
 
 ## Career mode's tour logic, without playing: the field, the schedule, the
 ## purse shares, the cut, a win, a withdrawal, saving and the season's end.
+## The daily round: the same course, seed and wind for a date; the best
+## score and the streak kept.
+func _test_daily_round() -> void:
+	var a := DailyRound.setup("2026-11-19", "Ann")
+	var b := DailyRound.setup("2026-11-19", "Bo")
+	_check(a.course_key == b.course_key and a.round_seed == b.round_seed and a.wind_level == b.wind_level and a.round_seed != 0,
+			"the same round for everyone on a day")
+	_check(a.problem().is_empty() and a.daily == "2026-11-19" and a.pins == 1, "a daily round is a valid random-pin round")
+	var keys := {}
+	for d in 30:
+		keys[DailyRound.course_for(Time.get_date_string_from_unix_time(1700000000 + d * 86400))] = true
+	_check(keys.size() >= 3, "the course changes from day to day (%d courses in 30 days)" % keys.size())
+	var path := "user://test_daily.cfg"
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
+	_check(DailyRound.record("2026-11-18", 3, path) == 3 and DailyRound.record("2026-11-19", 1, path) == 1
+			and DailyRound.record("2026-11-19", 4, path) == 1, "the best score of the day is kept")
+	_check(DailyRound.streak("2026-11-19", path) == 2 and DailyRound.describe("2026-11-19", path).ends_with("best +1"),
+			"two days in a row: %s" % DailyRound.describe("2026-11-19", path))
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
+
+
+## Settings > Keys: a chosen key plays the control; what it did moves to
+## the old key (a swap); saved and loaded; reset.
+func _test_key_remap() -> void:
+	var path := "user://test_keys.cfg"
+	KeyRemap.reset()
+	KeyRemap.assign(KEY_SPACE, KEY_J)
+	_check(KeyRemap.translate(KEY_J) == KEY_SPACE and KeyRemap.key_for(KEY_SPACE) == KEY_J, "J swings")
+	KeyRemap.assign(KEY_UP, KEY_Q)
+	_check(KeyRemap.translate(KEY_Q) == KEY_UP and KeyRemap.translate(KEY_UP) == KEY_Q and KeyRemap.key_for(KEY_Q) == KEY_UP,
+			"Q for the longer club swaps draw spin on to Up")
+	KeyRemap.assign(KEY_UP, KEY_UP)
+	_check(KeyRemap.translate(KEY_UP) == KEY_UP and KeyRemap.translate(KEY_Q) == KEY_Q, "putting Up back swaps Q back")
+	KeyRemap.save_keys(path)
+	KeyRemap.reset()
+	KeyRemap.load_keys(path)
+	_check(KeyRemap.translate(KEY_J) == KEY_SPACE and KeyRemap.swaps.size() == 2, "keys saved and loaded: %s" % [KeyRemap.swaps])
+	var ev := InputEventKey.new()
+	ev.keycode = KEY_J
+	ev.pressed = true
+	var node := KeyRemap.new()
+	root.add_child(node)
+	node._input(ev)
+	_check(ev.keycode == KEY_SPACE, "a pressed J reaches the game as Space")
+	node.queue_free()
+	# The hints name the chosen keys, not the pad's buttons or Page Down.
+	KeyRemap.assign(KEY_D, KEY_G)
+	var hint := KeyRemap.relabel("Space or click: continue    D: drop    Q/E/W/S: spin    Page Down: back    Pad: A meter")
+	_check(hint == "J or click: continue    G: drop    Q/E/W/S: spin    Page Down: back    Pad: A meter", "hints name the chosen keys: %s" % hint)
+	# The putting assistant's backswing mark: a putt a third of the mouse's
+	# full putt is marked where the backswing reads a third.
+	var ms := MouseSwingControl.new()
+	ms.begin(LinksMouse.PUTTER, 0, false, false)
+	ms.target = MouseSwingControl.PUTT_FULL_SHARE / 3.0
+	var mc := ms.club
+	var b := (ms.target_height() - mc.meter.ball_line) / (mc._top - mc.meter.ball_line)
+	_check_near((2.0 + b) * b / 3.0, 1.0 / 3.0, 1e-4, "backswing mark at the putt's power")
+	ms.target = -1.0
+	_check(ms.target_height() < 0.0, "no mark without the assistant")
+	ms.free()
+	KeyRemap.reset()
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
+
+
+## A tie for the lead with the person in it is played off for real on the
+## last hole, hole by hole, until someone wins it outright.
+func _test_career_playoff() -> void:
+	Career.path = "user://test_career_playoff.cfg"
+	Career.remove()
+	var keys: Array[String] = ["Courses/A.crz"]
+	var titles: Array[String] = ["Alpha Golf Club"]
+	var c := Career.create("Ann", 0, 2, 1, false, 2, keys, titles, 5)
+	var me := c.player_index()
+	for i in c.names.size():
+		c.scores[i] = [10]
+	c.scores[0] = [-8]
+	c.scores[me] = [-8]
+	c.round_holes.assign([18])
+	c.round_pars.assign([72])
+	_check(c.tied_leaders() == _ints([0, me]) or c.tied_leaders() == _ints([me, 0]), "playoff: Ann and %s tie for the lead" % c.names[0])
+	c.playoff_with = c.tied_leaders()
+	var s := c.next_setup()
+	_check(s != null and s.only_hole == 17 and s.names.size() == 2 and s.names[1] == c.names[0] and s.hole_indices(18) == _ints([17]),
+			"playoff: sudden death on the 18th against the other leader")
+	_check(c.next_text().contains("Playoff hole 1"), "playoff: the career page says so: %s" % c.next_text())
+	var text := c.record_playoff(s.career, {"Ann": 4, c.names[0]: 4})
+	_check(c.in_playoff() and c.playoff_holes == 1 and text.contains("Still tied"), "playoff: a halved hole plays on: %s" % text)
+	_check(c.record_playoff(s.career, {"Ann": 3, c.names[0]: 4}).is_empty(), "playoff: the last hole's card isn't counted twice")
+	s = c.next_setup()
+	text = c.record_playoff(s.career, {"Ann": 3, c.names[0]: 4})
+	_check(not c.in_playoff() and c.event == 1 and int(c.results[0].pos) == 1 and c.results[0].playoff == true,
+			"playoff: Ann wins it on the second hole: %s" % text)
+	c.save()
+	var d := Career.load_saved()
+	_check(d != null and not d.in_playoff(), "playoff: saved and loaded")
+	Career.remove()
+
+
 func _test_career() -> void:
 	Career.path = "user://test_career.cfg"
 	Career.remove()
@@ -5801,7 +6243,9 @@ func _test_broadcast_pieces() -> void:
 	grid.free()
 	# The sim look (Broadcast, Tour): faint white grid on flat ground, a thin
 	# white aim ring, and a putt ring that rims the cup instead of a hoop.
-	_check(GreenGrid.slope_color(0.0).s < 0.05 and GreenGrid.slope_color(0.0).a <= 0.4, "TV grid is faint white on flat ground")
+	_check(GreenGrid.slope_color(0.0).s < 0.05 and GreenGrid.slope_color(0.0).a >= 0.35 and GreenGrid.slope_color(0.0).a <= 0.5,
+		"TV grid is a clear but see-through white on flat ground")
+	_check(GreenGrid.slope_color(GreenGrid.STEEP_PERCENT).a > GreenGrid.slope_color(0.0).a, "steep lines stand out more than flat ones")
 	var sim_aim := GolfRound.aim_style(true)
 	var links_aim := GolfRound.aim_style(false)
 	var putt_r: float = sim_aim.putt
@@ -5887,6 +6331,84 @@ func _test_broadcast_pieces() -> void:
 	wav.append_array("data".to_ascii_buffer())
 	wav.append_array(PackedByteArray([4, 0, 0, 0, 0, 0, 0, 0]))
 	_check(MenuSounds._stream(wav) != null, "menu sound past the block header")
+
+
+## The hole flyover glides: even speed with no spikes, no sudden turns or
+## bobbing, and it stays clear of the ground, also on a route as ragged as
+## a mapped real course gives (points bunched up, zig-zagging, one on the
+## tee and one by the pin).
+func _test_smooth_flyover() -> void:
+	var course := PlaceholderCourseLoader.new().load_course("")
+	for ragged in [false, true]:
+		for h in [0, 3, 6]:
+			var hole: HoleData = course.holes[h]
+			var real := hole
+			if ragged:
+				real = HoleData.new()
+				real.number = hole.number
+				real.tee = hole.tee
+				real.pin = hole.pin
+				real.terrain = hole.terrain
+				var tee := Vector2(hole.tee.x, hole.tee.z)
+				var pin := Vector2(hole.pin.x, hole.pin.z)
+				var side := (pin - tee).normalized().orthogonal()
+				real.route.append(tee)
+				for k in range(1, 24):
+					real.route.append(tee.lerp(pin, k / 24.0) + side * (6.0 if k % 2 == 0 else -6.0))
+				real.route.append(pin + side * 2.0)
+			var cam := RoundCamera.new()
+			root.add_child(cam)
+			cam.terrain = real.terrain if real.terrain != null else course.terrain
+			cam.start_flyover(real)
+			var dt := 1.0 / 60.0
+			var prev := cam.position
+			var prev_v := Vector3.ZERO
+			var prev_fwd := -cam.global_transform.basis.z
+			var prev_w := 0.0
+			var worst_acc := 0.0
+			var worst_turn := 0.0
+			var lowest := INF
+			var frames := 0
+			while frames < 2000:
+				cam.update(dt, 0.0, real.tee)
+				if not cam.flying():
+					break
+				var v := (cam.position - prev) / dt
+				var fwd := -cam.global_transform.basis.z
+				var w := rad_to_deg(prev_fwd.angle_to(fwd)) / dt
+				if frames > 1:
+					worst_acc = maxf(worst_acc, (v - prev_v).length() / dt)
+					worst_turn = maxf(worst_turn, absf(w - prev_w) / dt)
+				lowest = minf(lowest, cam.position.y - cam.terrain.height_at(cam.position.x, cam.position.z))
+				prev = cam.position
+				prev_v = v
+				prev_fwd = fwd
+				prev_w = w
+				frames += 1
+			cam.free()
+			var what := "hole %d%s" % [hole.number, " (ragged route)" if ragged else ""]
+			_check(frames > 60 and frames < 2000, "the flyover of %s ends by itself (%d frames)" % [what, frames])
+			_check(worst_acc < 90.0, "the flyover of %s changes speed and line smoothly (%.0f m/s2)" % [what, worst_acc])
+			_check(worst_turn < 90.0, "the flyover of %s turns smoothly (%.0f deg/s2)" % [what, worst_turn])
+			_check(lowest > 5.0, "the flyover of %s stays well clear of the ground (%.1f m)" % [what, lowest])
+	# A slow frame (the course streaming in) slows the glide, never jumps it.
+	var hole1: HoleData = course.holes[0]
+	var cam := RoundCamera.new()
+	root.add_child(cam)
+	cam.terrain = hole1.terrain if hole1.terrain != null else course.terrain
+	cam.start_flyover(hole1)
+	cam.update(1.0 / 60.0, 0.0, hole1.tee)
+	var before := cam.position
+	cam.update(0.5, 0.0, hole1.tee)
+	_check(cam.position.distance_to(before) < 2.0, "a half-second hitch moves the flyover on by about one frame (%.1f m)" % cam.position.distance_to(before))
+	# Paused frames (delta 0) don't stall it once play resumes.
+	for i in 30:
+		cam.update(0.0, 0.0, hole1.tee)
+	var t0 := cam.flyover_progress()
+	for i in 30:
+		cam.update(1.0 / 30.0, 0.0, hole1.tee)
+	_check(cam.flyover_progress() > t0 + 0.05, "the flyover carries on after a pause")
+	cam.free()
 
 
 ## A round in each presentation, with a replay, a flyover and the green grid.
@@ -6577,3 +7099,69 @@ func _test_weather() -> void:
 	_check_near(Scenery.overcast_of(1.0), 1.0, 1e-6, "full deck")
 	_check_near(Scenery.fog_scale(0.0), 1.0, 1e-6, "no mist")
 	_check(RainFx.hiss().data.size() == RainFx.MIX_RATE * 4, "rain loop is two seconds")
+
+
+## "View target": out to stand short of and above the aim point looking at
+## it, back to exactly the aim view, smoothly both ways.
+func _test_target_view() -> void:
+	var flat := CourseTerrain.new()
+	var ball := Vector3.ZERO
+	var target := Vector3(0, 0, 230)
+	var pose := TargetView.pose(flat, ball, target, false)
+	var pos: Vector3 = pose[0]
+	var look: Vector3 = pose[1]
+	_check(pos.z < target.z and pos.z > target.z - TargetView.BACK_MAX - 0.01, "the view stands short of a drive's target (%.1f m)" % (target.z - pos.z))
+	_check(pos.y >= TargetView.UP_MIN and pos.y <= TargetView.UP_MAX, "and above it (%.1f m)" % pos.y)
+	_check(look.z >= target.z and look.z < target.z + 15.0 and absf(look.x) < 0.01, "looking at the target down the line")
+	var down := rad_to_deg(atan2(pos.y - look.y, look.z - pos.z))
+	_check(down > 10.0 and down < 45.0, "looking down on the landing area (%.0f degrees)" % down)
+	var putt := TargetView.pose(flat, ball, Vector3(0, 0, 6), true)
+	_check((putt[0] as Vector3).y < 3.0 and (putt[0] as Vector3).z > 2.0, "a putt's view is low, near the hole")
+	# A ridge just short of the target is climbed over.
+	var hill := _RidgeTerrain.new()
+	var over := TargetView.pose(hill, ball, target, false)
+	_check(RoundCamera.sight_clear(hill, over[0], target + Vector3.UP * 0.3), "the view climbs to see over a ridge (%.1f m up)" % (over[0] as Vector3).y)
+	var tv := TargetView.new()
+	tv.terrain = flat
+	var home := [Vector3(0, 1.75, -4.2), Vector3(0, 2, 70)]
+	tv.start(home[0], home[1], pose, home)
+	_check(tv.busy() and tv.out(), "flying out")
+	var steps := 0
+	var biggest := 0.0
+	var last := tv.position
+	while tv.phase == TargetView.Phase.OUT and steps < 1000:
+		tv.step(1.0 / 60.0)
+		biggest = maxf(biggest, tv.position.distance_to(last))
+		last = tv.position
+		steps += 1
+	_check(tv.phase == TargetView.Phase.THERE and tv.position.is_equal_approx(pos), "arrives at the target view")
+	_check_near(steps / 60.0, TargetView.OUT_S, 0.05, "in about a second")
+	_check(biggest < 6.0, "with no jumps on the way (largest step %.2f m)" % biggest)
+	_check(TargetView.ease_in_out(0.0) == 0.0 and TargetView.ease_in_out(1.0) == 1.0 and TargetView.ease_in_out(0.02) < 0.001, "eases in and out")
+	# Aiming while out there moves the view smoothly.
+	var moved := TargetView.pose(flat, ball, Vector3(20, 0, 225), false)
+	tv.retarget(moved, home)
+	tv.step(1.0 / 60.0)
+	_check(tv.position.distance_to(pos) > 0.01 and tv.position.distance_to(moved[0]) > 1.0, "follows a new aim smoothly")
+	tv.go_home()
+	var landed := false
+	steps = 0
+	while not landed and steps < 1000:
+		landed = tv.step(1.0 / 60.0)
+		steps += 1
+	_check(landed and not tv.busy() and tv.position.is_equal_approx(home[0]), "lands home on the aim view")
+	_check(not tv.step(1.0 / 60.0), "and stays there")
+	tv.start(home[0], home[1], pose, home)
+	tv.step(0.3)
+	tv.go_home()
+	_check(tv.phase == TargetView.Phase.BACK, "turns for home part way out")
+	tv.go_out(pose)
+	_check(tv.phase == TargetView.Phase.OUT, "and out again")
+	tv.cancel()
+	_check(not tv.busy(), "cancel hands the camera back")
+
+
+class _RidgeTerrain extends CourseTerrain:
+	func height_at(_x: float, z: float) -> float:
+		# A 12 m ridge 15 m short of a 230 m target.
+		return 12.0 * maxf(0.0, 1.0 - absf(z - 215.0) / 6.0)

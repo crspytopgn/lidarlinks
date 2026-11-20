@@ -288,6 +288,13 @@ vec4 two_scale(sampler2D tex, vec2 uv) {
 	return mix(texture(tex, uv), texture(tex, uv * 0.137 + vec2(0.31, 0.71)), 0.35);
 }
 
+// The same with the screen-space gradients given (dx, dy of uv), for use
+// where a surface has no share and the samples are skipped: implicit
+// gradients are undefined in a branch that neighbouring pixels skip.
+vec4 two_scale_grad(sampler2D tex, vec2 uv, vec2 dx, vec2 dy) {
+	return mix(textureGrad(tex, uv, dx, dy), textureGrad(tex, uv * 0.137 + vec2(0.31, 0.71), dx * 0.137, dy * 0.137), 0.35);
+}
+
 void fragment() {
 	vec2 p = world_pos.xz;
 	// Derivatives in uniform control flow, before any branch.
@@ -297,6 +304,8 @@ void fragment() {
 	vec2 pr = vec2(world_pos.x + world_pos.z, world_pos.y * 1.6);
 	vec2 pr_dx = dFdx(pr);
 	vec2 pr_dy = dFdy(pr);
+	vec2 uv_dx = p_dx / texture_metres;
+	vec2 uv_dy = p_dy / texture_metres;
 	vec2 hole_mow_line = mow_line_from(stripes.x, p);
 	float mow_seam = 1.0 - smoothstep(1.3, 2.0, mow_rate(stripes.x, p));
 	vec3 from_eye = world_pos - CAMERA_POSITION_WORLD;
@@ -435,12 +444,25 @@ void fragment() {
 		if (has_height && dist < 110.0) {
 			vec3 view = normalize(CAMERA_POSITION_WORLD - world_pos);
 			float turf = w_grass + w_rough;
-			float h = w_grass * (texture(grass_height, uv).r - grass_height_mean) + w_rough * (texture(rough_height, uv).r - rough_height_mean);
+			// (Each surface's maps are read only where it has a share.)
+			float h = 0.0;
+			if (w_grass > 0.0) {
+				h += w_grass * (textureGrad(grass_height, uv, uv_dx, uv_dy).r - grass_height_mean);
+			}
+			if (w_rough > 0.0) {
+				h += w_rough * (textureGrad(rough_height, uv, uv_dx, uv_dy).r - rough_height_mean);
+			}
 			// Greens and tees are cut to a few millimetres: little relief.
 			float near_relief = (1.0 - smoothstep(10.0, 35.0, dist)) * (1.0 - 0.75 * cut);
 			// One parallax step: blades and clumps stand up near the camera.
 			uv -= view.xz / max(view.y, 0.3) * (relief_metres / texture_metres) * h * near_relief;
-			h = w_grass * (texture(grass_height, uv).r - grass_height_mean) + w_rough * (texture(rough_height, uv).r - rough_height_mean);
+			h = 0.0;
+			if (w_grass > 0.0) {
+				h += w_grass * (textureGrad(grass_height, uv, uv_dx, uv_dy).r - grass_height_mean);
+			}
+			if (w_rough > 0.0) {
+				h += w_rough * (textureGrad(rough_height, uv, uv_dx, uv_dy).r - rough_height_mean);
+			}
 			shade_relief = mix(1.0, clamp(1.0 + h * 2.0 * cavity, 0.3, 1.4), turf * (1.0 - smoothstep(25.0, 110.0, dist)) * (1.0 - 0.7 * cut));
 		}
 		// The green's blades are a few millimetres long: the lawn scan
@@ -452,8 +474,21 @@ void fragment() {
 		// up close; a green's sward is dense and even, with no dead blades
 		// lying on top, so clip its highlights on close-cut turf.
 		g = mix(g, min(g, grass_mean * 1.2), cut * cut);
-		vec3 r = two_scale(rough_albedo, uv).rgb;
-		vec3 s = two_scale(sand_albedo, uv).rgb;
+		// Most of the ground is one surface: the rough's and the sand's
+		// textures are read only where they have a share (the same
+		// result, fewer samples).
+		vec3 r = rough_mean;
+		vec3 rn = vec3(0.5, 0.5, 1.0);
+		if (w_rough > 0.0) {
+			r = two_scale_grad(rough_albedo, uv, uv_dx, uv_dy).rgb;
+			rn = two_scale_grad(rough_normal, uv, uv_dx, uv_dy).rgb;
+		}
+		vec3 s = sand_mean;
+		vec3 sn = vec3(0.5, 0.5, 1.0);
+		if (w_sand > 0.0) {
+			s = two_scale_grad(sand_albedo, uv, uv_dx, uv_dy).rgb;
+			sn = two_scale_grad(sand_normal, uv, uv_dx, uv_dy).rgb;
+		}
 		vec3 detail = w_grass * g / max(grass_mean, vec3(0.02)) + w_rough * r / max(rough_mean, vec3(0.02))
 			+ w_sand * s / max(sand_mean, vec3(0.02));
 		vec3 photo = w_grass * g + w_rough * r + w_sand * s;
@@ -464,8 +499,7 @@ void fragment() {
 		float strength = texture_strength * mix(0.35, 1.0, 1.0 - smoothstep(40.0, 250.0, length(VERTEX))) * (1.0 - 0.4 * cut);
 		col = mix(col * mix(vec3(1.0), detail, strength), photo_toned, photo_mix * strength);
 		col *= shade_relief;
-		vec3 n = w_grass * two_scale(grass_normal, uv_g).rgb + w_rough * two_scale(rough_normal, uv).rgb
-			+ w_sand * two_scale(sand_normal, uv).rgb;
+		vec3 n = w_grass * two_scale(grass_normal, uv_g).rgb + w_rough * rn + w_sand * sn;
 		n = n * 2.0 - 1.0;
 		// The textures lie flat on the ground: u along +x, v along +z. The
 		// maps are OpenGL style (green points up the image, toward -v).

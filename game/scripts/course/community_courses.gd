@@ -8,7 +8,7 @@ extends RefCounted
 
 ## Picked from the fictional, free courses near the top of Links Corner's
 ## user-rated list (linkscorner.org/courses/index.php?SearchType=Top250).
-const COURSES := [
+static var COURSES := [
 	{"name": "Bull Run HD", "designer": "Eddie Schmidt", "id": 2243},
 	{"name": "Pilgrim Trails Golf Club", "designer": "Mike Jones", "id": 1890},
 	{"name": "East Coast Links", "designer": "McCoist", "id": 2191},

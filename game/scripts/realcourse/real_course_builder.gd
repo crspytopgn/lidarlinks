@@ -70,6 +70,8 @@ var _pick := Vector2.ZERO  ## the picked point, local
 var _boundary: Array[PackedVector2Array] = []  ## golf course outlines, local
 var _polys: Array[Dictionary] = []  ## {"surface", "ring"} or {"wood", "ring", "leaf"}
 var _holes: Array[Dictionary] = []  ## {"ref", "par", "line"}
+## Holes worked out from the mapped greens and tees (no hole lines mapped).
+var holes_made := 0
 var _trees: Array[Dictionary] = []  ## {"p", "leaf", "height"}
 var _rows: Array[Dictionary] = []  ## tree rows: {"line", "leaf"}
 var _streams: Array[Dictionary] = []  ## {"line", "width"}
@@ -181,6 +183,13 @@ func _init(data: Dictionary, lat: float, lon: float, p_name := "") -> void:
 			rings.append(_local_ring(ring))
 		b["rings"] = rings
 	_read(elements)
+	if _holes.is_empty():
+		# No hole lines, but greens and tees mapped (common): the holes
+		# worked out from them.
+		var made := holes_from_features(_rings_of(Surface.Type.GREEN), _rings_of(Surface.Type.TEE), _rings_of(Surface.Type.FAIRWAY))
+		for i in made.size():
+			_holes.append({"ref": str(i + 1), "par": "", "si": "", "course": "", "name": "", "line": made[i]})
+		holes_made = made.size()
 	_group_holes()
 
 
@@ -559,7 +568,7 @@ func build_steps(c: DesignedCourse, height: Callable, fallback := Callable()) ->
 	var fill := {"gaps": PackedInt32Array(), "diff": 0.0, "n": 0}
 	# The other courses of a club share the ground: it is read once.
 	var cached := _ground_cache.size() == c.heights.size()
-	var rows := maxi(1, HEIGHT_SAMPLES_PER_STEP / c.cols)
+	var rows := maxi(1, HEIGHT_SAMPLES_PER_STEP / (c.cols * (4 if lidar_ground else 1)))
 	if not cached:
 		for j0 in range(0, c.rows, rows):
 			steps.append(_fill_height_rows.bind(c, j0, mini(j0 + rows, c.rows), height, fallback, fill))
@@ -608,6 +617,13 @@ func build_steps(c: DesignedCourse, height: Callable, fallback := Callable()) ->
 			# from the holes (Torrey Pines' canyons are city land).
 			var reach := grown_rings(_boundary, NATIVE_REACH)
 			native["grass"] = NativeGrass.new(img, c.area, reach, grass_points())
+			# A photo flown in winter or drought, with dormant fairways, can't
+			# tell fescue from them: the summer satellite image instead.
+			if img == photo and (native["grass"] as NativeGrass).is_dormant():
+				native["grass"] = null
+				if native_photo != null and not native_photo.is_empty():
+					native["grass"] = NativeGrass.new(native_photo, c.area, reach, grass_points())
+				return
 			# Scrub only from a real aerial photo: the satellite image is too
 			# coarse and dark to tell it from woods.
 			if img == photo:
@@ -677,7 +693,7 @@ func build_steps(c: DesignedCourse, height: Callable, fallback := Callable()) ->
 		_lines = line_cells(lines)
 		_add_trees(c)
 		var detected: int = counts["detected"]
-		summary = {"missing_holes": missing_holes(), "greens_graded": playability["greens"], "holes": c.holes.size(), "areas": c.shapes.size(), "trees": c.objects.size(), "paths": c.paths.size(), "buildings": c.buildings.size(), "guessed": _guessed.size() - detected, "detected": detected, "native": native["count"]})
+		summary = {"missing_holes": missing_holes(), "greens_graded": playability["greens"], "holes": c.holes.size(), "areas": c.shapes.size(), "trees": c.objects.size(), "paths": c.paths.size(), "buildings": c.buildings.size(), "guessed": _guessed.size() - detected, "detected": detected, "native": native["count"], "holes_made": holes_made})
 	return steps
 
 
@@ -812,6 +828,10 @@ func _read(elements: Array) -> void:
 		elif natural == "water" or t.has("water") or str(t.get("landuse", "")) in ["reservoir", "basin"]:
 			if closed:
 				_add_poly(e, {"surface": Surface.Type.WATER})
+		elif natural in ["beach", "sand"] and closed:
+			# A beach or open sand (a links' blowouts, a desert course's
+			# waste areas): sand where the ground lies, kept out of the sea.
+			_add_poly(e, {"surface": Surface.Type.SAND, "cover": "beach"})
 		elif natural in ["scrub", "heath", "wetland", "dune"] and closed:
 			# Played as deep rough; the cover says what grows there.
 			_add_poly(e, {"surface": Surface.Type.DEEP_ROUGH, "cover": natural})
@@ -1015,7 +1035,7 @@ func _fill_height_rows(c: DesignedCourse, j0: int, j1: int, height: Callable, fa
 			var p := c.sample_pos(i, j)
 			var lat := frame.lat_of(p)
 			var lon := frame.lon_of(p)
-			var h := float(height.call(lat, lon))
+			var h := _cell_height(height, p) if lidar_ground else float(height.call(lat, lon))
 			var k := j * c.cols + i
 			if is_nan(h):
 				gaps.append(k)
@@ -1027,6 +1047,22 @@ func _fill_height_rows(c: DesignedCourse, j0: int, j1: int, height: Callable, fa
 	fill["gaps"] = gaps
 	fill["diff"] = diff
 	fill["n"] = diff_n
+
+
+## Fine (lidar) ground averaged over the grid cell round `p`, NAN if no
+## sample has data. One point a cell, read between the lidar's pixels,
+## smooths some cells and not others in a regular beat, which drew faint
+## straight lines across the ground every few tens of metres (West Essex).
+func _cell_height(height: Callable, p: Vector2) -> float:
+	var q := DesignedCourse.CELL * 0.25
+	var sum := 0.0
+	var n := 0
+	for o: Vector2 in [Vector2(-q, -q), Vector2(q, -q), Vector2(-q, q), Vector2(q, q)]:
+		var h := float(height.call(frame.lat_of(p + o), frame.lon_of(p + o)))
+		if not is_nan(h):
+			sum += h
+			n += 1
+	return sum / n if n > 0 else NAN
 
 
 func _finish_heights(c: DesignedCourse, _fallback: Callable, fill: Dictionary) -> void:
@@ -1146,6 +1182,124 @@ func _add_holes(c: DesignedCourse) -> void:
 		# OpenStreetMap's handicap tag is the stroke index on the scorecard.
 		h.stroke_index = clampi(int(d["si"]), 0, 36) if str(d["si"]).is_valid_int() else 0
 		c.holes.append(h)
+
+
+## Hole lines (tee to green, numbered in order) worked out from mapped
+## greens, tees and fairways when a club has no golf=hole lines: tee boxes
+## within TEE_GROUP of each other are one hole's tees; each green takes
+## the tee group whose line to it runs most along a fairway (a par 3, with
+## none, the nearest unused group 80 to 230 m off); the holes are then put
+## in the order a round walks them, each green to the nearest next tee,
+## from whichever start walks least. A line bends through the fairway's
+## middle on a dogleg. Empty unless at least MADE_MIN holes come out.
+const TEE_GROUP := 35.0
+const MADE_MIN := 9
+static func holes_from_features(greens: Array[PackedVector2Array], tees: Array[PackedVector2Array], fairways: Array[PackedVector2Array]) -> Array[PackedVector2Array]:
+	var out: Array[PackedVector2Array] = []
+	if greens.size() < MADE_MIN or tees.is_empty():
+		return out
+	# Tee groups.
+	var groups: Array[Dictionary] = []  # {"at", "n", "far"}
+	for t in tees:
+		var c := _centroid(t)
+		var joined := false
+		for g in groups:
+			if (g["at"] as Vector2).distance_to(c) <= TEE_GROUP:
+				g["pts"].append(c)
+				joined = true
+				break
+		if not joined:
+			groups.append({"at": c, "pts": [c]})
+	var gc: Array[Vector2] = []
+	for g in greens:
+		gc.append(_centroid(g))
+	# Candidate pairings, scored by how much of the line runs on fairway.
+	var cands: Array = []
+	for gi in gc.size():
+		for ti in groups.size():
+			var tee: Vector2 = groups[ti]["at"]
+			var d := tee.distance_to(gc[gi])
+			if d < 80.0 or d > 600.0:
+				continue
+			var best_cover := 0.0
+			var best_fw := -1
+			for fi in fairways.size():
+				var on := 0
+				for k in range(1, 8):
+					if Geometry2D.is_point_in_polygon(tee.lerp(gc[gi], k / 8.0), fairways[fi]):
+						on += 1
+				var mid := _centroid(fairways[fi])
+				# A dogleg: the fairway's middle off the straight line but
+				# nearer the line's ends than the hole is long.
+				if on == 0 and mid.distance_to(tee) + mid.distance_to(gc[gi]) < d * 1.25:
+					on = 3
+				if on / 7.0 > best_cover:
+					best_cover = on / 7.0
+					best_fw = fi
+			# Another green in the way says this isn't the hole.
+			var blocked := false
+			for oi in gc.size():
+				if oi != gi and Geometry2D.get_closest_point_to_segment(gc[oi], tee, gc[gi]).distance_to(gc[oi]) < 15.0 and gc[oi].distance_to(tee) > 30.0:
+					blocked = true
+					break
+			if blocked:
+				continue
+			if best_cover >= 0.3 or d <= 230.0:
+				cands.append({"g": gi, "t": ti, "d": d, "cover": best_cover if best_cover >= 0.3 else 0.0, "fw": best_fw if best_cover >= 0.3 else -1})
+	cands.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+		return a["cover"] > b["cover"] if a["cover"] != b["cover"] else a["d"] < b["d"])
+	var used_g := {}
+	var used_t := {}
+	var holes: Array[Dictionary] = []
+	for c: Dictionary in cands:
+		if used_g.has(c["g"]) or used_t.has(c["t"]):
+			continue
+		used_g[c["g"]] = true
+		used_t[c["t"]] = true
+		var tee: Vector2 = groups[c["t"]]["at"]
+		# The back tee: the group's box furthest from the green.
+		for p: Vector2 in groups[c["t"]]["pts"]:
+			if p.distance_to(gc[c["g"]]) > tee.distance_to(gc[c["g"]]):
+				tee = p
+		var line := PackedVector2Array([tee])
+		if int(c["fw"]) >= 0:
+			var mid := _centroid(fairways[int(c["fw"])])
+			var off := Geometry2D.get_closest_point_to_segment(mid, tee, gc[c["g"]]).distance_to(mid)
+			if off > 20.0 and mid.distance_to(gc[c["g"]]) > 60.0 and mid.distance_to(tee) > 60.0:
+				line.append(mid)
+		line.append(gc[c["g"]])
+		holes.append({"line": line})
+	if holes.size() < MADE_MIN:
+		return out
+	# The order a round walks: each green to the nearest next tee.
+	var best_order: Array[int] = []
+	var best_walk := INF
+	for start in holes.size():
+		var order: Array[int] = [start]
+		var left := {}
+		for i in holes.size():
+			if i != start:
+				left[i] = true
+		var walk := 0.0
+		while not left.is_empty():
+			var here: PackedVector2Array = holes[order[-1]]["line"]
+			var green := here[here.size() - 1]
+			var next := -1
+			var nd := INF
+			for i: int in left:
+				var d := green.distance_to((holes[i]["line"] as PackedVector2Array)[0])
+				if d < nd:
+					nd = d
+					next = i
+			walk += nd
+			order.append(next)
+			left.erase(next)
+		if walk < best_walk:
+			best_walk = walk
+			best_order = order
+	for i in best_order:
+		out.append(holes[i]["line"])
+	return out
 
 
 ## `p` moved toward `toward` until it is 6 m clear of every green but the

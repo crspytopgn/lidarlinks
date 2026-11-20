@@ -13,6 +13,7 @@ const ART_DIR := "res://assets/ui/menu/"
 ## Menu items shown as picture tiles: label -> [picture, line under it].
 const TILES := {
 	"Play now": ["play", "Kettle Hollow, ready to go"],
+	"Daily round": ["tournament", "Today's course, the same for everyone"],
 	"Play a round": ["play", "Pick a course and tees"],
 	"Resume round": ["play", "Carry on where you stopped"],
 	"Play online": ["online", "Rounds and leaderboards"],
@@ -22,7 +23,7 @@ const TILES := {
 	"Course designer": ["designer", "Make your own course"],
 }
 ## Menu items that go in the top bar instead.
-const NAV := ["Courses", "Players", "Settings", "Quit"]
+const NAV := ["Select golfer", "Courses", "Players", "Settings", "Quit"]
 const GOLD := Color(0.914, 0.78, 0.4)
 const TILE_SIZE := Vector2(212, 196)
 const RADIUS := 22.0
@@ -284,7 +285,7 @@ func _top_bar() -> Control:
 	word.add_theme_font_override("italics_font", GlassTheme.font(300))
 	word.add_theme_font_size_override("normal_font_size", 20)
 	word.add_theme_font_size_override("italics_font_size", 20)
-	word.text = "OpenLinks[i][color=#ffffffbb]2003[/color][/i]"
+	word.text = "Lidar[i][color=#ffffffbb]Links[/color][/i]"
 	row.add_child(word)
 	var spring := Control.new()
 	spring.size_flags_horizontal = Control.SIZE_EXPAND_FILL

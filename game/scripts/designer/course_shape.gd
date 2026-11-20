@@ -19,9 +19,11 @@ var found := false
 ## What grows here besides turf, from the map (one of COVERS, or "" for
 ## nothing special): the foliage dresser picks its plants by it (heather and
 ## gorse on heath, bushes on scrub, reeds on wetland, marram on dunes).
+## On sand, "beach" is a beach or open sand: lying where the ground is,
+## not dug like a bunker.
 var cover := ""
 
-const COVERS := ["heath", "scrub", "wetland", "dune", "meadow"]
+const COVERS := ["heath", "scrub", "wetland", "dune", "meadow", "beach"]
 
 var _outline := PackedVector2Array()
 var _bounds := Rect2()

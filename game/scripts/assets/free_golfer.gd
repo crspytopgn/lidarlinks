@@ -70,6 +70,10 @@ const PULL_MAX := 6.0
 ## Mixamo takes, tools/golfer/mixamo_bake.py prints them).
 const SWING_IMPACT := 0.27
 const PUTT_IMPACT := 1.0
+## The top of the putt's backstroke, seconds into the putt clip (the trail
+## hand furthest back in the bake): a stroke the player drives is held
+## from address up to here, then brought through to PUTT_IMPACT.
+const PUTT_TOP := 0.63
 ## Each golfer's own tempo (speed of the backswing, swing and putt),
 ## picked from the look: tour downswings run ~0.25 s (quick players) to
 ## ~0.33 s (smooth ones).
@@ -78,6 +82,14 @@ const TEMPO_MAX := 1.15
 ## Everything else plays this much faster or slower each time, and a
 ## looping clip starts at a random point, so no two shots look the same.
 const SPEED_JITTER := 0.06
+## Each club head's toe, heel, sole, top and tip in the club bone's frame,
+## for GolferFeet to keep out of the ground (read from the glb after
+## tools/golfer/club_length.py; rerun if the club meshes change).
+const CLUB_HEAD_POINTS := {
+	"driver": [Vector3(-0.036, -0.149, -1.17), Vector3(0.073, -0.134, -1.16), Vector3(0.016, -0.192, -1.124), Vector3(-0.001, -0.092, -1.182), Vector3(0.015, -0.112, -1.211)],
+	"iron": [Vector3(-0.027, -0.141, -0.906), Vector3(0.017, -0.08, -0.917), Vector3(-0.027, -0.148, -0.921), Vector3(0.004, -0.062, -0.934), Vector3(-0.007, -0.084, -0.967)],
+	"putter": [Vector3(-0.024, -0.128, -0.818), Vector3(0.016, -0.13, -0.884), Vector3(0.012, -0.152, -0.891), Vector3(-0.009, -0.055, -0.92), Vector3(0.011, -0.065, -0.939)],
+}
 const SURVEY_JITTER := 0.5  ## seconds either side of SURVEY_TIME
 const SWING_CLIPS: Array[StringName] = [&"backswing", &"swing", &"backswing_iron", &"swing_iron", &"putt"]
 ## Where the ball sits in the rig (GolferRig): a taller or shorter golfer is
@@ -101,6 +113,9 @@ var look: PlayerLook
 ## follow_downswing), or empty.
 var _following := &""
 var _follow_f := 0.0
+## Where play(&"putt") started the putt clip, seconds in: 0 from address,
+## or as far as the player's stroke had brought the putter.
+var _putt_from := 0.0
 ## False to settle into address on the spot (the player creator's preview).
 var walk_in := true
 ## Largest texture side for this golfer's look (0: the pack's own). The
@@ -173,6 +188,7 @@ static func create(p_look: PlayerLook = null, p_texture_cap := 0) -> FreeGolfer:
 	golfer._skeleton = skeletons[0]
 	var twist := GolferTwist.rig(golfer._skeleton)
 	golfer._feet = GolferFeet.new()
+	golfer._feet.player = player
 	golfer._skeleton.add_child(golfer._feet)
 	golfer._look = GolferLook.new()
 	golfer._skeleton.add_child(golfer._look)
@@ -277,7 +293,7 @@ func apply_look(p_look: PlayerLook) -> void:
 				_flex.add_material(pm)
 			mat = pm
 		elif tint == "person_hair":
-			mat = _matt(std)
+			mat = _plain(_matt(std))
 		elif is_skin:
 			mat = GolferSurface.skin_shader(std, look, _skin_regions(parts, mat_name), _face_detail(parts, mat_name))
 			if mat == null:
@@ -306,10 +322,10 @@ func apply_look(p_look: PlayerLook) -> void:
 			_cloth.add_occluded(cloth)
 			mat = cloth
 		else:
-			mat = GolferSurface.cloth(std) if _is_cloth(parts, mat_name) else _matt(std)
+			mat = _plain(GolferSurface.cloth(std) if _is_cloth(parts, mat_name) else _matt(std))
 		if mi.mesh.get_surface_count() > 1:
 			mi.set_surface_override_material(0, mat)
-			mi.set_surface_override_material(1, GolferSurface.glove())
+			mi.set_surface_override_material(1, _plain(GolferSurface.glove()))
 		else:
 			mi.material_override = mat
 		if binds.is_empty():
@@ -528,6 +544,14 @@ static func _is_cloth(parts: GolferParts, material_name: String) -> bool:
 
 ## Cloth, skin and hair as matt as they are in daylight: shinier materials
 ## look like plastic under the Photoreal sun.
+## `mat` as GolferSurface.plain, taking the body's shade (GolferCloth).
+func _plain(mat: StandardMaterial3D) -> Material:
+	var m := GolferSurface.plain(mat)
+	if m is ShaderMaterial:
+		_cloth.add_occluded(m)
+	return m
+
+
 static func _matt(mat: StandardMaterial3D) -> StandardMaterial3D:
 	mat.albedo_color = GolferSurface.real_albedo(mat.albedo_color)
 	mat.roughness = maxf(mat.roughness, 0.8)
@@ -624,6 +648,16 @@ func play(animation: StringName) -> void:
 		_player.play(_player.assigned_animation, 0.0, tempo)
 		_player.seek(SWING_IMPACT, true)
 		return
+	# A putt the player's stroke has been driving goes on from where the
+	# putter is, at his tempo, rather than from address again.
+	_putt_from = 0.0
+	if animation == &"putt" and _following == &"putt":
+		_following = &""
+		_putt_from = minf(_player.current_animation_position, PUTT_IMPACT)
+		_speed = tempo
+		_player.play(&"putt", 0.0, tempo)
+		_player.seek(_putt_from, true)
+		return
 	_following = &""
 	if animation == &"address" and _putting:
 		clip = &"address_putt"
@@ -673,15 +707,45 @@ func _ball_spot() -> Vector3:
 
 
 func follow_backswing(f: float) -> void:
-	_follow_clip(&"backswing", clampf(f, 0.0, 1.0))
+	if _putting:
+		_follow_putt(clampf(f, 0.0, 1.0) * PUTT_TOP, f)
+	else:
+		_follow_clip(&"backswing", clampf(f, 0.0, 1.0))
 
 
 func follow_downswing(f: float) -> void:
-	_follow_clip(&"swing", clampf(f, 0.0, 1.0))
+	if _putting:
+		_follow_putt(lerpf(PUTT_TOP, PUTT_IMPACT, clampf(f, 0.0, 1.0)), 1.0 + f)
+	else:
+		_follow_clip(&"swing", clampf(f, 0.0, 1.0))
 
 
+## The putter is at the ball: for a putt, _follow_f runs 0 to 1 on the
+## backstroke and 1 to 2 coming through.
 func at_impact() -> bool:
+	if _following == &"putt":
+		return _follow_f >= 1.0 + IMPACT_NEAR
 	return _following != &"" and String(_following).begins_with("swing") and _follow_f >= IMPACT_NEAR
+
+
+## Holds the putt clip `t` seconds in (the player's stroke).
+func _follow_putt(t: float, f: float) -> void:
+	if not _player.has_animation(&"putt"):
+		return
+	if _following != &"putt":
+		_stop_walk()
+		if _look:
+			_look.track(null, 0.0)
+		_show_putter(true)
+		_speed = 1.0
+		_player.play(&"putt", BLEND_TIME * 0.5, 1.0)
+		if _hands:
+			_hands.follow(&"putt", BLEND_TIME * 0.5)
+		_following = &"putt"
+	elif not _player.is_playing():
+		_player.play(&"putt", 0.0, 1.0)
+	_follow_f = f
+	_player.seek(t, true)
 
 
 ## Holds `animation` (its iron take for an iron) at share `f` of the way
@@ -717,7 +781,7 @@ func impact_delay() -> float:
 
 
 func putt_impact_delay() -> float:
-	return PUTT_IMPACT / tempo
+	return maxf(PUTT_IMPACT - _putt_from, 0.0) / tempo
 
 
 ## A tempo for a look, the same every time for the same golfer.
@@ -1008,6 +1072,8 @@ static func _near_yaw(from: float, yaw: float) -> float:
 ## Empty-handed on the way to the bag.
 func _hide_clubs() -> void:
 	_holding = false
+	if _feet:
+		_feet.club_points = PackedVector3Array()
 	for node in _driver + _iron_meshes + _putter:
 		node.visible = false
 
@@ -1030,3 +1096,5 @@ func _show_putter(on: bool) -> void:
 		node.visible = not on and _iron
 	for node in _putter:
 		node.visible = on
+	if _feet:
+		_feet.club_points = PackedVector3Array(CLUB_HEAD_POINTS["putter" if on else ("iron" if _iron else "driver")])

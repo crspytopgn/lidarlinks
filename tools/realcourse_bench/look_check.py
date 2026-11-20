@@ -13,6 +13,10 @@ what the built course gets wrong, in patches big enough to see:
   fescue the picture shows straw native grass where the game has mown grass
   sand   the picture shows sand where the game has none
 
+and notes how well the trees agree: the share of the picture's tree cover
+(dark green, in the course's box) with a game tree within a cell, and the
+share of the game's tree cells standing on picture trees.
+
 Prints one line per finding and a LOOK summary, and writes <base>_look.png
 (picture | game | findings) to look at. Exit code 1 when anything is
 flagged, so it can gate a batch.
@@ -212,6 +216,13 @@ def main():
             missing += 1
     if green and len(bunkers) >= 8 and missing > 0.5 * len(bunkers):
         findings.append(f"sand: {missing} of the picture's {len(bunkers)} sand patches have no sand in the game")
+    # Trees: dark green cover in the course's box against the game's crowns.
+    pic_trees = trees & ~water & (hue > 0.1) & (hue < 0.5) & (val > 0.04) & (game != 5) & (game != 7)
+    g_trees = (game == 4)
+    if pic_trees.sum() * area >= 20000.0 and g_trees.sum() > 0:
+        recall = float((pic_trees & grow(g_trees, 1)).sum()) / float(pic_trees.sum())
+        precision = float((g_trees & grow(pic_trees, 1)).sum()) / float(g_trees.sum())
+        notes.append(f"trees: {recall * 100:.0f}% of the picture's {pic_trees.sum() * area / 1e4:.1f} ha of tree cover has game trees, {precision * 100:.0f}% of the game's tree cells are on picture trees")
     # The side-by-side to look at.
     colours = np.array([[70, 120, 50], [170, 160, 90], [230, 215, 160], [60, 110, 190], [30, 60, 30], [110, 110, 100], [40, 80, 150], [90, 100, 80]], np.uint8)
     gimg = colours[np.clip(game, 0, 7)]

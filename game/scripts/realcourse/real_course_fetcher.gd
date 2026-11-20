@@ -32,7 +32,7 @@ const OVERPASS := [
 	"https://overpass.private.coffee/api/interpreter",
 	"https://maps.mail.ru/osm/tools/overpass/api/interpreter",
 ]
-const USER_AGENT := "OpenLinks2003 course importer (+https://github.com/crspytopgn/openlinks2003)"
+const USER_AGENT := "LidarLinks course importer (+https://github.com/crspytopgn/lidarlinks)"
 ## Metres searched round a place that isn't itself a mapped golf course.
 const POINT_RADIUS := 1500.0
 const PARALLEL := 6  ## downloads at once
@@ -79,7 +79,7 @@ const LAND_SAMPLES_PER_STEP := 20000
 ## Goes up whenever a build gives a better course (new detection, trees,
 ## walls...): courses built before it offer "Update" on the Courses page.
 ## Saved in each course's source as "builder" (RealCourseUpdate).
-const BUILDER_VERSION := 6  ## 5: big lakes as water, native grass from the photo; 6: seas under cliffs, scrub, ponds from the land cover, Ireland off England's lidar
+const BUILDER_VERSION := 9  ## 5: big lakes as water, native grass from the photo; 6: seas under cliffs, scrub, ponds from the land cover, Ireland off England's lidar; 7: beaches, woods out of the tile ground; 8: lidar ground without faint grid lines; 9: tree heights v2, more photo services, dormant photos
 
 var busy := false
 ## Use national lidar and aerial photos where they cover the course.
@@ -95,6 +95,9 @@ var use_landscape := true
 var configure_request: Callable
 ## Overpass servers, all asked at once (see _overpass).
 var servers: Array = OVERPASS.duplicate()
+## Per-server limits, back-off and circuit breaker for every download.
+var door := NetDoor.new()
+var _last_object_cut := 0.0  ## metres of wood or house taken off the coarse ground
 var _last_summary := {}
 var _cancelled := false
 var _last_yield := 0
@@ -117,6 +120,7 @@ func cancel() -> void:
 			var req := c as HTTPRequest
 			if req != null:
 				# cancel_request() is silent; the waiting step needs its answer.
+				req.set_meta("dropped", true)
 				req.cancel_request()
 				req.request_completed.emit(HTTPRequest.RESULT_REQUEST_FAILED, 0, PackedStringArray(), PackedByteArray())
 
@@ -330,6 +334,7 @@ func _build(place: Dictionary) -> DesignedCourse:
 	var light := light_mode()
 	if light:
 		builder.max_trees = LIGHT_MAX_TREES
+	_last_object_cut = 0.0
 	var gb := builder.geo_box()
 	var tiles := TerrainTiles.for_box(gb[0], gb[1], gb[2], gb[3])
 	var urls := tiles.urls()
@@ -474,8 +479,10 @@ func _build(place: Dictionary) -> DesignedCourse:
 				cover = land.ground_image(builder.frame, builder.area)
 
 	builder.photo = photo
-	if photo == null and use_photos:
-		# No aerial photo: the satellite image, for the native grass only.
+	var dormant := photo != null and NativeGrass.new(photo, builder.area, [] as Array[PackedVector2Array], builder.grass_points()).is_dormant()
+	if (photo == null or dormant) and use_photos:
+		# No aerial photo, or one flown with the fairways dormant: the
+		# (summer) satellite image, for the native grass only.
 		var sat := AerialPhotos.new(AerialPhotos.SATELLITE, gb)
 		var surls := sat.urls()
 		var sgot := await _fetch_all(surls, "Fetching the satellite image", TRIES)
@@ -492,6 +499,14 @@ func _build(place: Dictionary) -> DesignedCourse:
 		# Open elevation tiles: speckled, and stepped at their edges.
 		builder.ground_smooth = clampf(tiles.pixel_metres(lat) * 2.0, 4.0, 10.0)
 		builder.ground_step = tiles.height_step()
+		# Whole-metre tiles are SRTM and the like, which stand on the woods'
+		# and houses' tops: taken off where the land cover has them.
+		if builder.ground_step > 0.0 and land_cover != null:
+			await _step("Taking the woods out of the ground...")
+			var lc := land_cover
+			_last_object_cut = tiles.strip_objects(func(la: float, lo: float) -> int:
+				var k := lc.class_at(la, lo)
+				return 2 if k == LandCover.WATER else (1 if k in [LandCover.TREES, LandCover.BUILT] else 0))
 	await _step("Building %s..." % builder.course_name)
 	if _cancelled:
 		return null
@@ -524,6 +539,9 @@ func _build(place: Dictionary) -> DesignedCourse:
 			await _step("Letting the sea in...")
 			for c: DesignedCourse in [course] + others:
 				RealLandscape.sea_from_cover(c, builder.frame, land_cover)
+		for c: DesignedCourse in [course] + others:
+			RealLandscape.raise_beaches(c, builder.frame, land_cover)
+		if land_cover != null:
 			await _step("Finding the ponds the map leaves out...")
 			for c: DesignedCourse in [course] + others:
 				RealCourseBuilder.add_ponds(c, builder.frame, land_cover)
@@ -539,6 +557,7 @@ func _build(place: Dictionary) -> DesignedCourse:
 	_last_summary = first_summary
 	_last_summary["ground"] = ground_name
 	_last_summary["ground_terraced"] = builder.ground_step > 0.0
+	_last_summary["woods_cut"] = snappedf(_last_object_cut, 0.1)
 	if not lidar_sources.is_empty() and (lidar == null or lidar_gaps > 0) and not (lidar == null and lidar_outside == lidar_sources.size()):
 		# Say so, rather than leave coarse ground looking like the lidar's.
 		_last_summary["lidar_failed"] = str(lidar_sources[0]["name"]) if lidar == null else ""
@@ -853,6 +872,7 @@ func _overpass(query: String) -> Dictionary:
 		# Stop the slower servers: their answers aren't needed.
 		for req in reqs:
 			if is_instance_valid(req) and req.get_http_client_status() != HTTPClient.STATUS_DISCONNECTED:
+				req.set_meta("dropped", true)
 				req.cancel_request()
 				req.request_completed.emit(HTTPRequest.RESULT_REQUEST_FAILED, 0, PackedStringArray(), PackedByteArray())
 		if not won.is_empty():
@@ -890,7 +910,7 @@ static func overpass_status(answers: Array, reqs: Array, secs: float) -> String:
 ## Over `tries` rounds, the ones that failed (no answer, or a server error
 ## or rate limit) are asked for again; `timeout` is seconds per request.
 ## Tree crowns from CanopyHeights for the box (south, west, north, east):
-## only the course's rows are downloaded, and read a band at a time between
+## only the course's tiles are downloaded, and read one at a time between
 ## frames. Empty if the map can't be read.
 func _canopy_trees(box: Array) -> Array[Dictionary]:
 	var crowns: Array[Dictionary] = []
@@ -903,27 +923,30 @@ func _canopy_trees(box: Array) -> Array[Dictionary]:
 		var header := CanopyHeights.parse_header(head)
 		if header.is_empty():
 			return crowns
-		var offsets := await fetch_range(url, CanopyHeights.offsets_range(header, part))
-		var counts := await fetch_range(url, CanopyHeights.counts_range(header, part))
-		var block := CanopyHeights.rows_block(offsets, counts)
-		if block.is_empty() or _cancelled:
+		var offsets := await fetch_range(url, CanopyHeights.index_range(header, "offsets", part))
+		var counts := await fetch_range(url, CanopyHeights.index_range(header, "counts", part))
+		if offsets.is_empty() or counts.is_empty() or _cancelled:
 			return crowns
-		progress.emit("Fetching the tree heights (%.0f MB)..." % ((int(block["end"]) - int(block["start"])) / 1e6))
-		var rows := await fetch_range(url, Vector2i(int(block["start"]), int(block["end"])), 300.0)
-		if rows.size() != int(block["end"]) - int(block["start"]) + 1 or _cancelled:
+		var tiles := CanopyHeights.tiles_for(part)
+		var ranges: Array[Vector2i] = []
+		for t in tiles:
+			ranges.append(CanopyHeights.tile_range(header, offsets, counts, part, t))
+		var got := await fetch_ranges(url, ranges, "Fetching the tree heights")
+		if _cancelled:
 			return crowns
 		var raster := CanopyHeights.raster_for(part)
 		var band := maxi(1, LIDAR_PIXELS_PER_STEP / 4 / maxi(raster.width, 1) * 4)
-		var pos := [0]
-		for j in range(0, raster.height, band):
-			if j % (band * 8) == 0:
-				await _step("Reading the tree heights (%d%%)..." % (100 * j / raster.height))
-			if not CanopyHeights.decode_rows(part, header, counts, rows, pos, raster, j, mini(j + band, raster.height)):
+		for k in tiles.size():
+			if ranges[k].x < 0:
+				continue  # the sea: bare
+			if (got[k] as PackedByteArray).is_empty() or not CanopyHeights.decode_tile(part, header, tiles[k], got[k], raster):
 				return crowns
+			if k % 4 == 0:
+				await _step("Reading the tree heights (%d%%)..." % (100 * k / tiles.size()))
 			await _breathe()
 			if _cancelled:
 				return crowns
-		rows = PackedByteArray()
+		got.clear()
 		var smooth := PackedFloat32Array()
 		smooth.resize(raster.width * raster.height)
 		await _step("Finding the trees in the tree heights...")
@@ -947,6 +970,35 @@ func fetch_range(url: String, r: Vector2i, timeout := LIDAR_TIMEOUT) -> PackedBy
 		if int(got[0]) != 0 and int(got[0]) < 500:
 			break
 	return PackedByteArray()
+
+
+## Byte ranges of one file, PARALLEL at a time, each asked for again on a
+## failure (fetch_range); an empty array for a failed range or one with x < 0.
+func fetch_ranges(url: String, ranges: Array[Vector2i], label: String) -> Array:
+	var out: Array = []
+	out.resize(ranges.size())
+	var state := [0, 0]  # started, finished
+	var todo: Array[int] = []
+	for i in ranges.size():
+		if ranges[i].x < 0:
+			out[i] = PackedByteArray()
+		else:
+			todo.append(i)
+	while (state[0] < todo.size() and not _cancelled) or state[0] > state[1]:
+		while state[0] - state[1] < PARALLEL and state[0] < todo.size() and not _cancelled:
+			_range_into(url, ranges[todo[state[0]]], out, todo[state[0]], state)
+			state[0] += 1
+		await get_tree().process_frame
+		progress.emit("%s (%d of %d)...%s" % [label, state[1], todo.size(), door.waiting_note(Time.get_ticks_msec())])
+	for i in out.size():
+		if out[i] == null:
+			out[i] = PackedByteArray()
+	return out
+
+
+func _range_into(url: String, r: Vector2i, out: Array, i: int, state: Array) -> void:
+	out[i] = await fetch_range(url, r)
+	state[1] += 1
 
 
 ## Downloads `urls` a few at a time, asking again for failures: one
@@ -979,7 +1031,7 @@ func _fetch_all(urls: PackedStringArray, label: String, tries := 1, timeout := 1
 				_fetch_into(urls[i], out, i, done, timeout)
 			await get_tree().process_frame
 			running = (next - done[0])
-			progress.emit("%s (%d of %d)..." % [label, done[0], todo.size()])
+			progress.emit("%s (%d of %d)...%s" % [label, done[0], todo.size(), door.waiting_note(Time.get_ticks_msec())])
 	return out
 
 
@@ -1029,12 +1081,30 @@ func _make_request(timeout: float) -> HTTPRequest:
 func _send(req: HTTPRequest, url: String, method: int, body: String, headers: Array) -> Array:
 	if not OS.has_feature("web"):
 		headers = headers + ["User-Agent: " + USER_AGENT]
+	var host := NetDoor.host_of(url)
+	while true:
+		var wait := door.wait_ms(host, Time.get_ticks_msec())
+		if _cancelled or wait < 0:
+			# A server failing again and again is left alone for a while.
+			req.queue_free()
+			return [0, PackedByteArray()]
+		if wait == 0:
+			break
+		await get_tree().create_timer(minf(wait, 250) / 1000.0).timeout
+	var id := door.started(host, Time.get_ticks_msec())
 	var err := req.request(url, PackedStringArray(headers), method, body)
 	if err != OK:
+		door.finished(host, id, 0, PackedStringArray(), Time.get_ticks_msec())
 		req.queue_free()
 		return [0, PackedByteArray()]
 	var res: Array = await req.request_completed
+	var dropped := req.has_meta("dropped")  # we stopped it: not the server's fault
 	req.queue_free()
-	if res[0] != HTTPRequest.RESULT_SUCCESS:
+	if dropped:
+		door.dropped(host, id)
+		return [0, PackedByteArray()]
+	var ok: bool = res[0] == HTTPRequest.RESULT_SUCCESS
+	door.finished(host, id, int(res[1]) if ok else 0, res[2] if ok else PackedStringArray(), Time.get_ticks_msec())
+	if not ok:
 		return [0, PackedByteArray()]
 	return [res[1], res[3]]

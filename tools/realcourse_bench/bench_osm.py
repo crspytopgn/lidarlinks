@@ -1,7 +1,7 @@
 # Dev only: fetch a course's OSM data from the OSM API (Overpass is down) as an Overpass answer.
 import json, sys, time, urllib.request, urllib.parse, subprocess
 slug, q = sys.argv[1], sys.argv[2]
-UA = {'User-Agent': 'openlinks2003-dev-bench (github.com/crspytopgn/openlinks2003)'}
+UA = {'User-Agent': 'openlinks2003-dev-bench (github.com/crspytopgn/lidarlinks)'}
 def get(u):
     return urllib.request.urlopen(urllib.request.Request(u, headers=UA), timeout=120).read()
 r = json.loads(get('https://nominatim.openstreetmap.org/search?format=jsonv2&limit=10&q=' + urllib.parse.quote(q)))

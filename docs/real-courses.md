@@ -122,16 +122,27 @@ the first tee, and fewer from inside the woods.
 Where the lidar has no surface model (Scotland, Wales and everywhere else
 Mapterhorn covers, the US, Japan) or there is no lidar, `CanopyHeights`
 (`game/scripts/realcourse/canopy_heights.gd`) reads Meta and the World
-Resources Institute's global 1 m canopy height map (CC BY 4.0, on AWS Open
-Data). Each file is a 65536 px square per zoom 9 web mercator tile (about
-500 MB), one Deflate row per strip, heights in whole metres. Only the
-course's rows are downloaded, with range requests: the 1 KB header, the
-rows' offsets and sizes, then the rows as one block (7 MB for Gleneagles,
-up to about 35 MB for a big wooded course, since each row spans the whole
-tile). The heights are smoothed over a plus of pixels, and each highest
+Resources Institute's global canopy height map, version 2 (2025, CC BY
+4.0, on AWS Open Data). Each file is a 32768 px square Cloud-Optimised
+GeoTIFF per zoom 10 web mercator tile (1.19 m pixels), cut into 512 px
+Deflate tiles, heights in whole metres (255 for no data). Only the
+course's tiles are downloaded, with range requests: the 1 KB header, the
+tile offsets and sizes for the course's tile rows, then each tile (1 to 3
+MB for a course; version 1's whole-tile-wide rows took 7 to 35 MB).
+Version 2 (Meta's DINOv3 model) finds more of the real trees: against the
+photo, the share of the tree cover with game trees rose by 6 to 16 points
+on Augusta, Oakmont, Gleneagles, Kingston Heath, Medinah and Pinehurst,
+with as few false trees as before. The heights are smoothed over a plus of pixels, and each highest
 pixel within 1.5 m at least 3 m tall is a crown, one per 4 m, planted like
 lidar trees. Gleneagles: 2,461 crowns in 7 s, on the trees in the photo.
 The bucket sends no cross-site headers, so the web build skips it.
+
+**Not used: ESA WorldCover.** Its 10 m land cover splits shrubland from
+grassland, which the land cover above doesn't, so it was tried for
+heather and scrub. It reads Sunningdale's and Wentworth's heather as
+grassland, and the land cover above already has bare ground, so it adds
+nothing for a course (tested 2026-11-19 on Sunningdale, Wentworth,
+Ballybunion, Scottsdale, Torrey Pines and Cape Kidnappers).
 
 ### Aerial photos
 
@@ -162,6 +173,26 @@ photo**), to check and trace the course against.
 | Queensland (Australia) | Queensland Government latest state imagery | CC BY 4.0 |
 | Czechia | CUZK orthophoto (WMS) | CC BY 4.0 |
 | Portugal | DGT OrtoSat 2023 (WMS) | CC BY 4.0 |
+| Luxembourg | geoportail.lu orthophoto | CC0 |
+| Berlin | Geoportal Berlin TrueDOP 2024 (WMS) | dl-de/zero-2-0 |
+| Baden-Wuerttemberg | LGL DOP 20 cm (WMS) | dl-de/by-2-0 |
+| Hong Kong | Lands Department aerial photo | credit |
+| Tasmania (Australia) | theLIST orthophoto | credit |
+| Ontario (Canada) | Ontario GEO imagery (ArcGIS export) | Open Government Licence - Ontario |
+
+These six were found through BeamNG.Earth's source list (MIT). So were 12
+US state services (15 to 30 cm). They were tried and left out: they are
+spring leaf-off flights, and their dormant straw fairways hid Pinehurst's
+sandy native areas and Shinnecock's fescue from the native grass reader
+while painting false fescue on Muirfield Village. NAIP is flown in
+summer. Indiana's cache (404), South Tyrol (blank) and Lower Saxony (down)
+didn't answer when tested.
+
+**Dormant photos:** where a course's own photo shows dormant fairways
+(median fairway hue at or under 0.17, or saturation at or under 0.18: a
+winter, spring or drought flight), the native grass is read from the
+summer Sentinel-2 image instead, since straw fescue can't be told from
+straw fairways. A photo of any service can be flown that way.
 
 **Satellite guide (designer only):** on a real course the designer also
 offers **Show the satellite guide (Esri)**. It streams Esri World Imagery
@@ -264,6 +295,21 @@ OpenStreetMap from the club's own published scorecard.
   at the end of the line, else the green's centre; tees are the tee boxes
   along the start of the line, back to forward (up to three); the line's
   bends become aim points. A line drawn green to tee is turned round.
+- **Holes worked out from the greens and tees:** a club with greens, tees
+  and fairways mapped but no `golf=hole` lines (common on OpenStreetMap)
+  gets its holes worked out (`RealCourseBuilder.holes_from_features`):
+  - tee boxes within 35 m of each other are one hole's tees;
+  - each green takes the tee group whose line to it runs most along a
+    fairway, or bends through one on a dogleg; a par 3 with no fairway
+    takes the nearest free group 80 to 230 m off;
+  - a pairing with another green in the way is skipped;
+  - the holes are numbered in the order a round walks them, each green to
+    the nearest next tee, from the start that walks least.
+
+  It needs at least 9 greens. Shiskine, which failed before, now builds as
+  13 holes. The holes are a best guess, since the map has no numbers: check
+  them in the designer. Clubs with nothing mapped still fail with the
+  "no holes mapped" message.
 - **Trees:** `natural=tree` points (sized by their `height` tag),
   `natural=tree_row` lines (a tree every 7 m) and woods (`natural=wood`,
   `landuse=forest`) filled on a jittered 9 m grid, thinned to keep the
@@ -400,6 +446,18 @@ or not at all. What that found, and what the builder now does:
 - **Coarse ground smoothed:** without lidar the open elevation tiles (3 to
   5 m a pixel) carry speckle and steps at their tile edges, a metre or two
   high; they are smoothed over about two of their pixels (4 to 10 m).
+- **Woods and roofs out of the ground:** the open elevation tiles are
+  partly a surface model, so a wood or a town stands up to 30 m proud of
+  the ground and a fairway beside it climbs into the trees. Where there is
+  no lidar, the ground is opened (the lowest height over 160 m, then the
+  highest over the same, on a 10 m grid, the sea left out) and the bumps
+  above it are cut back, but only on cells the land cover calls trees or
+  buildings, by more on steep ground than flat, not in hill country (over
+  90 m of relief within 600 m), and never to within 2 m of the sea. Dunes,
+  greens and mounds stand. The idea is from BeamNG.Earth's `dsmground.py`
+  (MIT licence), sized down from its 400 m city blocks to a course's tree
+  lines. Woods came down 7 to 14 m on Kingston Heath, Lahinch, Al Mouj and
+  Tobermory.
 - **Lines of play clear:** trees the lidar, photo or land cover finds
   within 8 m of a hole's line (each tee along its route to the pin, past
   its first 10 m) are left out; Hirono's 12th had 93 photo trees on it.
@@ -441,6 +499,19 @@ or not at all. What that found, and what the builder now does:
   (2 % of the land deeper than 8 m below sea level) the course gets a sea
   (`source.sea`), as at St Andrews, but only when hardly any of the
   course's own ground lies below sea level.
+- **One door for every download:** every request goes through `NetDoor`
+  (`game/scripts/realcourse/net_door.gd`). It allows at most 6 requests at
+  once to a server. When a server answers 429 (or 503 with Retry-After),
+  it pauses that server for as long as it asks (up to 2 minutes; 2 s, then
+  doubling, without a header). When a server fails 5 times in a row (no
+  answer or 5xx), it stops asking it for a minute, then lets one request
+  through to test it, resting it twice as long each time it still fails.
+  So a dead source fails in seconds, not after minutes of time-outs, and
+  the build falls back to the next source. The requests we stop ourselves
+  (a cancel, the slower map servers once one has answered) don't count.
+  The progress line names a server that keeps the build waiting more than
+  20 s, or one that asked us to slow down. The back-off and breaker follow
+  BeamNG.Earth's `netfetch.py` (MIT licence).
 - **Lidar must agree with the tiles:** England's lidar answers outside
   England with zeros, which put Royal County Down at sea level and let the
   sea in over it. Lidar is used only when its ground and the open tiles'
@@ -534,6 +605,11 @@ or not at all. What that found, and what the builder now does:
   each fairway (15 m round greens, 8 m round tees), as on any links. The
   rough the map draws becomes fescue too (it is painted over deep rough,
   so Hoylake's rough between the holes came out mown).
+- **Beaches and open sand:** the map's `natural=beach` and `natural=sand`
+  are sand where the ground lies (cover "beach"), not bunkers dug into it,
+  and a beach the coarse ground puts under the sea is lifted 0.4 m above
+  it, except where the land cover shows water. Ballybunion's strand,
+  Kiawah's beach, Al Mouj and Bude were sea or bunkers before.
 - **Ponds the map leaves out:** water in the 10 m land cover that no
   mapped pond covers, 1 ha or more and clear of the fairways, greens,
   tees and bunkers, becomes a pond (`RealCourseBuilder.add_ponds`).
@@ -558,6 +634,17 @@ or not at all. What that found, and what the builder now does:
   game has as land, straw fescue it has mown, bunkers it lacks. Winter
   (dormant) pictures skip the grass tests, and the course edges, woods
   and houses are left out. It writes picture | game | flags side by side.
+
+- **No freezes from the long steps:** the sea and pond steps tested every
+  land cover pixel's distance to every fairway, green, tee and bunker
+  outline, which froze the game for up to 7 s on a big course (Whistling
+  Straits, 2,300 shapes). `LandCover.clear_near` now grows each outline
+  once and tests only the pixels inside its box, in native code: the same
+  course comes out, and the freeze is under 1 s. `e2e_build.gd` prints the
+  longest freeze (`MAXGAP`) and the step it was in.
+- **No wasted photo requests:** each photo service's boxes keep to its
+  own ground, so a US course by the Ontario border (Whistling Straits)
+  doesn't ask Ontario first and get a blank.
 
 `tools/realcourse_bench/e2e.sh` builds a course the way the game does and
 audits it (each hole's tee and pin surfaces, green slope, par for its
@@ -606,6 +693,7 @@ game/scripts/realcourse/
   course_playability.gd   CoursePlayability: greens that hold, level tees, smooth coarse ground
   real_landscape.gd       RealLandscape: the land round the course to the horizon
   real_course_fetcher.gd  RealCourseFetcher: the Nominatim, Overpass and tile requests
+  net_door.gd             NetDoor: per-server limits, back-off and circuit breaker
   real_course_dialog.gd   RealCourseDialog: the designer's window
 game/tests/realcourse_tests.gd  checks on a made-up map (no network)
 ```

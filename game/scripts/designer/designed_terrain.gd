@@ -44,7 +44,7 @@ const GREEN_EDGE_RANGE := 2.0
 ## the line), so the splat stays as small as it was with greens alone: two
 ## blocks of 1 m texels fit under the 0.5 m codes. Bunkers, which hug
 ## greens and tees, get their own.
-const EDGE_BLOCKS := [[Surface.Type.GREEN, Surface.Type.TEE], [Surface.Type.SAND]]
+static var EDGE_BLOCKS := [[Surface.Type.GREEN, Surface.Type.TEE], [Surface.Type.SAND]]
 ## Bunkers are built as real ones are, not as even dishes: a flat floor,
 ## a low, gently ramped side where the player walks in and the ball runs
 ## in, and on the side facing the hole's target a steep face of flashed sand
@@ -65,11 +65,11 @@ const SHORE_STEP := 4.0
 const SHORE_REACH := 10.0
 const APRON := 700.0  ## ground drawn beyond the course edge
 ## Paint order: later layers cover earlier ones.
-const LAYERS := [
+static var LAYERS := [
 	Surface.Type.DEEP_ROUGH, Surface.Type.OUT_OF_BOUNDS, Surface.Type.ROUGH, Surface.Type.FAIRWAY,
 	Surface.Type.FRINGE, Surface.Type.TEE, Surface.Type.GREEN, Surface.Type.SAND, Surface.Type.WATER,
 ]
-const COLORS := [
+static var COLORS := [
 	Color(0.29, 0.48, 0.19),  # tee (olive, as real turf reads in sun)
 	Color(0.29, 0.47, 0.18),  # fairway
 	Color(0.28, 0.47, 0.18),  # fringe (the approach; the collar is COLLAR_COLOR)
@@ -85,12 +85,12 @@ const COLORS := [
 ## courses with a photo): a little on the mown grass, so it keeps its game
 ## colours and stripes, more on the rough and beyond, so worn patches,
 ## fields, tracks and dry grass look as they really do. Same order as COLORS.
-const PHOTO_TINT := [0.15, 0.2, 0.2, 0.1, 0.55, 0.65, 0.5, 0.0, 0.75]
+static var PHOTO_TINT := [0.15, 0.2, 0.2, 0.1, 0.55, 0.65, 0.5, 0.0, 0.75]
 ## Mowing stripes: how strong per surface, and how wide (the cut of the
 ## mower that mows it: fairway units about 3 m, triplex tee mowers 1.5 m,
 ## walk-behind greens mowers 0.55 m).
-const MOWN := {Surface.Type.FAIRWAY: 1.0, Surface.Type.FRINGE: 0.7, Surface.Type.TEE: 0.6, Surface.Type.GREEN: 0.35}
-const STRIPE_METRES := {Surface.Type.FAIRWAY: 3.0, Surface.Type.FRINGE: 3.0, Surface.Type.TEE: 1.5, Surface.Type.GREEN: 0.55}
+static var MOWN := {Surface.Type.FAIRWAY: 1.0, Surface.Type.FRINGE: 0.7, Surface.Type.TEE: 0.6, Surface.Type.GREEN: 0.35}
+static var STRIPE_METRES := {Surface.Type.FAIRWAY: 3.0, Surface.Type.FRINGE: 3.0, Surface.Type.TEE: 1.5, Surface.Type.GREEN: 0.55}
 const PHOTO_BLUR := 6.0  ## metres; crowns, cars and flags blur out
 ## Largest splat map side in texels (older phones and browsers top out at
 ## 4096); a bigger course gets a coarser one.
@@ -163,7 +163,7 @@ func rebuild() -> void:
 	_img = Image.create_empty(_sw, _sh, false, Image.FORMAT_R8)
 	_fin = PackedByteArray()
 	_edge_w = maxi(1, ceili(course.area.size.x / GREEN_EDGE_RES))
-	_edge_img = Image.create_empty(_edge_w * EDGE_BLOCKS.size(), maxi(1, ceili(course.area.size.y / GREEN_EDGE_RES)), false, Image.FORMAT_R8)
+	_edge_img = Image.create_empty(_edge_w * DesignedTerrain.EDGE_BLOCKS.size(), maxi(1, ceili(course.area.size.y / GREEN_EDGE_RES)), false, Image.FORMAT_R8)
 	_h = course.heights.duplicate()
 	_g = _h.duplicate()
 	_vc = PackedColorArray()
@@ -533,7 +533,7 @@ func build_visual() -> Node3D:
 ## The colour of `surface` (a Surface.Type) on this course: its biome's
 ## (Biome.GROUND) or the parkland default.
 func surface_color(surface: int) -> Color:
-	return Biome.ground_color(course.biome, surface, COLORS[surface])
+	return Biome.ground_color(course.biome, surface, DesignedTerrain.COLORS[surface])
 
 
 ## The terrain shader's texture weights for `surface` (bare ground keeps
@@ -612,14 +612,14 @@ func material() -> ShaderMaterial:
 		var mown := PackedFloat32Array()
 		var widths := PackedFloat32Array()
 		var cut := PackedFloat32Array()
-		for i in COLORS.size():
+		for i in DesignedTerrain.COLORS.size():
 			# Under the water line, the bank: darker rough rather than the
 			# map's blue, which would ring each pond.
 			var c: Color = surface_color(Surface.Type.ROUGH).darkened(0.35) if i == Surface.Type.WATER else surface_color(i)
 			cols.append(Vector3(c.r, c.g, c.b))
 			wts.append(surface_weights(i))
-			mown.append(float(MOWN.get(i, 0.0)))
-			widths.append(float(STRIPE_METRES.get(i, 0.0)))
+			mown.append(float(DesignedTerrain.MOWN.get(i, 0.0)))
+			widths.append(float(DesignedTerrain.STRIPE_METRES.get(i, 0.0)))
 			cut.append(Materials.terrain_cut(i))
 		# The splat's tenth entry: the first cut; the eleventh the collar.
 		cols.append(Vector3(FIRST_CUT_COLOR.r, FIRST_CUT_COLOR.g, FIRST_CUT_COLOR.b))
@@ -638,8 +638,8 @@ func material() -> ShaderMaterial:
 		_material.set_shader_parameter("surface_weights", wts)
 		_material.set_shader_parameter("surface_mown", mown)
 		var bare := PackedFloat32Array()
-		for i in COLORS.size() + 2:
-			bare.append(1.0 if i < COLORS.size() and Biome.is_bare(course.biome, i) else 0.0)
+		for i in DesignedTerrain.COLORS.size() + 2:
+			bare.append(1.0 if i < DesignedTerrain.COLORS.size() and Biome.is_bare(course.biome, i) else 0.0)
 		_material.set_shader_parameter("surface_bare", bare)
 		var land := Biome.land(course.biome)
 		_material.set_shader_parameter("rock_slopes", Biome.BARE.has(course.biome))
@@ -666,7 +666,7 @@ func _update_splat() -> void:
 		codes = codes.duplicate() as Image if codes == _img else codes
 		codes.resize(maxi(1, floori(_sw * k)), maxi(1, floori(_sh * k)), Image.INTERPOLATE_NEAREST)
 	var edges := _edge_img
-	var blocks := EDGE_BLOCKS.size()
+	var blocks := DesignedTerrain.EDGE_BLOCKS.size()
 	# The edge blocks go where the texture has most room for them: below
 	# the codes side by side, or to their right, stacked or side by side.
 	# Ember Coast's codes fill 3,836 of the 4,096 rows: below them the
@@ -721,7 +721,7 @@ func _update_splat() -> void:
 
 
 ## The surfaces a cart path is not drawn over (it stops at their edge).
-const PATH_NOT_ON := [Surface.Type.SAND, Surface.Type.GREEN, Surface.Type.WATER]
+static var PATH_NOT_ON := [Surface.Type.SAND, Surface.Type.GREEN, Surface.Type.WATER]
 
 
 ## Cart paths draped on the ground, and bridges with their rails.
@@ -763,7 +763,7 @@ func _path_mesh(p: CoursePath) -> MeshInstance3D:
 	# than being draped over it (as a flat grey slab across the sand).
 	var clear := PackedByteArray()
 	for v in verts.size():
-		clear.append(1 if p.bridge or not PATH_NOT_ON.has(surface_at(verts[v].x, verts[v].z)) else 0)
+		clear.append(1 if p.bridge or not DesignedTerrain.PATH_NOT_ON.has(surface_at(verts[v].x, verts[v].z)) else 0)
 	var indices := PackedInt32Array()
 	for k in samples.size() - 1:
 		var a := 2 * k
@@ -791,6 +791,10 @@ func _path_mesh(p: CoursePath) -> MeshInstance3D:
 		mesh.surface_set_material(_add_railings(mesh, edges, p.width), ScannedSurfaces.uv_material("timber", p.width, _path_material(true)))
 	var inst := MeshInstance3D.new()
 	inst.mesh = mesh
+	# A path lies 5 cm over the ground: its shadow falls under itself, so
+	# it was only extra draws in each shadow split. A bridge keeps its own.
+	if not p.bridge:
+		inst.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	return inst
 
 
@@ -940,6 +944,10 @@ func _add_bridge_obstacles(p: CoursePath) -> void:
 		k = k2
 
 
+## Side (m) of the squares the hazard stakes are grouped in (build_stakes).
+const STAKE_CELL := 64.0
+
+
 func build_water() -> Node3D:
 	var root := Node3D.new()
 	root.name = "Water"
@@ -947,28 +955,17 @@ func build_water() -> Node3D:
 		if s.surface != Surface.Type.WATER:
 			continue
 		var poly := s.outline()
-		if Geometry2D.triangulate_polygon(poly).is_empty():
-			continue
 		var level := water_level(s)
-		var surface := water_surface_mesh(poly, level)
-		var verts: PackedVector3Array = surface[0]
-		var open: PackedColorArray = surface[1]
-		var indices: PackedInt32Array = surface[2]
-		var uvs := PackedVector2Array()
-		uvs.resize(verts.size())
-		uvs.fill(Vector2(0.5, 0.5))
-		var normals := PackedVector3Array()
-		normals.resize(verts.size())
-		normals.fill(Vector3.UP)
-		var arrays := []
-		arrays.resize(Mesh.ARRAY_MAX)
-		arrays[Mesh.ARRAY_VERTEX] = verts
-		arrays[Mesh.ARRAY_NORMAL] = normals
-		arrays[Mesh.ARRAY_TEX_UV] = uvs
-		arrays[Mesh.ARRAY_COLOR] = open
-		arrays[Mesh.ARRAY_INDEX] = indices
-		var mesh := ArrayMesh.new()
-		mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+		# Every hole draws the same water: a pond's mesh is kept for the
+		# next (building them all was half a second at each hole change on
+		# a real course with a hundred ponds).
+		var key := hash([poly, level])
+		var mesh: ArrayMesh = _water_meshes.get(key)
+		if mesh == null:
+			mesh = _water_mesh(poly, level)
+			if mesh == null:
+				continue
+			_water_meshes[key] = mesh
 		var inst := MeshInstance3D.new()
 		inst.mesh = mesh
 		inst.material_override = Materials.water_surface()
@@ -980,8 +977,39 @@ func build_water() -> Node3D:
 	return root
 
 
-## The hazard stakes as one MultiMesh, or null if the course has none.
-func build_stakes() -> MultiMeshInstance3D:
+## Each pond's water mesh by a hash of its outline and level (build_water).
+var _water_meshes := {}
+
+
+## A pond's water surface, or null if its outline can't be filled.
+func _water_mesh(poly: PackedVector2Array, level: float) -> ArrayMesh:
+	if Geometry2D.triangulate_polygon(poly).is_empty():
+		return null
+	var surface := water_surface_mesh(poly, level)
+	var verts: PackedVector3Array = surface[0]
+	var open: PackedColorArray = surface[1]
+	var indices: PackedInt32Array = surface[2]
+	var uvs := PackedVector2Array()
+	uvs.resize(verts.size())
+	uvs.fill(Vector2(0.5, 0.5))
+	var normals := PackedVector3Array()
+	normals.resize(verts.size())
+	normals.fill(Vector3.UP)
+	var arrays := []
+	arrays.resize(Mesh.ARRAY_MAX)
+	arrays[Mesh.ARRAY_VERTEX] = verts
+	arrays[Mesh.ARRAY_NORMAL] = normals
+	arrays[Mesh.ARRAY_TEX_UV] = uvs
+	arrays[Mesh.ARRAY_COLOR] = open
+	arrays[Mesh.ARRAY_INDEX] = indices
+	var mesh := ArrayMesh.new()
+	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+	return mesh
+
+
+## The hazard stakes, a MultiMesh per area of the course, or null if the
+## course has none.
+func build_stakes() -> Node3D:
 	var at: Array[Vector3] = []
 	var colours: Array[Color] = []
 	for s in course.shapes:
@@ -1013,25 +1041,48 @@ func build_stakes() -> MultiMeshInstance3D:
 	mesh.height = STAKE_HEIGHT
 	mesh.radial_segments = 6
 	mesh.rings = 1
+	mesh.cap_bottom = false  # knocked 5 cm into the ground
 	var mat := StandardMaterial3D.new()
 	mat.vertex_color_use_as_albedo = true
 	mat.roughness = 0.85
 	mat.metallic_specular = 0.3
 	mesh.material = mat
-	var mm := MultiMesh.new()
-	mm.transform_format = MultiMesh.TRANSFORM_3D
-	mm.use_colors = true
-	mm.mesh = mesh
-	mm.instance_count = at.size()
+	# One MultiMesh per STAKE_CELL square, so the renderer culls the
+	# stakes out of view (and out of each shadow split) instead of drawing
+	# every stake on the course into each of the sun's four shadow maps.
+	var cells := {}
 	for i in at.size():
-		# A little lean, as stakes knocked in by hand stand.
-		var lean := Basis(Vector3(sin(i * 1.7), 0.0, cos(i * 2.3)).normalized(), 0.04 * sin(i * 0.9))
-		mm.set_instance_transform(i, Transform3D(lean, at[i] + Vector3(0.0, STAKE_HEIGHT * 0.5 - 0.05, 0.0)))
-		mm.set_instance_color(i, colours[i])
-	var inst := MultiMeshInstance3D.new()
-	inst.name = "Stakes"
-	inst.multimesh = mm
-	return inst
+		var key := Vector2i(floori(at[i].x / STAKE_CELL), floori(at[i].z / STAKE_CELL))
+		var ids: PackedInt32Array = cells.get(key, PackedInt32Array())
+		ids.append(i)
+		cells[key] = ids  # (a packed array is copied, not shared)
+	var root := Node3D.new()
+	root.name = "Stakes"
+	for key: Vector2i in cells:
+		var ids: PackedInt32Array = cells[key]
+		var mm := MultiMesh.new()
+		mm.transform_format = MultiMesh.TRANSFORM_3D
+		mm.use_colors = true
+		mm.mesh = mesh
+		mm.instance_count = ids.size()
+		for j in ids.size():
+			var i := ids[j]
+			# A little lean, as stakes knocked in by hand stand.
+			var lean := Basis(Vector3(sin(i * 1.7), 0.0, cos(i * 2.3)).normalized(), 0.04 * sin(i * 0.9))
+			mm.set_instance_transform(j, Transform3D(lean, at[i] + Vector3(0.0, STAKE_HEIGHT * 0.5 - 0.05, 0.0)))
+			mm.set_instance_color(j, colours[i])
+		var inst := MultiMeshInstance3D.new()
+		inst.multimesh = mm
+		root.add_child(inst)
+	return root
+
+
+## How many stakes `build_stakes` placed.
+static func stake_count(stakes: Node3D) -> int:
+	var n := 0
+	for c in stakes.get_children():
+		n += (c as MultiMeshInstance3D).multimesh.instance_count
+	return n
 
 
 ## Points every `spacing` metres round a closed outline, evenly spread so
@@ -1192,7 +1243,7 @@ func _raster(px: Rect2i) -> void:
 	_img.fill_rect(px, _code(Surface.Type.ROUGH))
 	var o := course.area.position
 	var world := Rect2(o + Vector2(px.position) * RES, Vector2(px.size) * RES)
-	for layer: int in LAYERS:
+	for layer: int in DesignedTerrain.LAYERS:
 		for s in course.shapes:
 			if s.surface == layer and s.is_valid() and s.bounds().intersects(world):
 				_fill(s.outline(), layer, px)
@@ -1211,8 +1262,8 @@ func _raster(px: Rect2i) -> void:
 	_first_cut(px)
 	_collar(px)
 	_img.set_data(_sw, _sh, false, Image.FORMAT_R8, _surf)
-	for k in EDGE_BLOCKS.size():
-		_bake_edges(world, EDGE_BLOCKS[k], k * _edge_w)
+	for k in DesignedTerrain.EDGE_BLOCKS.size():
+		_bake_edges(world, DesignedTerrain.EDGE_BLOCKS[k], k * _edge_w)
 	_paint_finishes()
 
 
@@ -1448,7 +1499,7 @@ func _derive(cells: Rect2i) -> void:
 		for i in range(cells.position.x, cells.end.x):
 			_h[j * cols + i] = course.heights[j * cols + i]
 	for s in course.shapes:
-		if s.is_valid() and s.surface == Surface.Type.SAND:
+		if s.is_valid() and s.surface == Surface.Type.SAND and s.cover != "beach":
 			# The bank starts a little outside the outline: begun at it, the
 			# drop fell between whichever 2 m grid points happened to be
 			# inside, so the bank wandered up to a cell either side of the
@@ -1598,7 +1649,7 @@ func _vertex_surfaces(cells: Rect2i) -> void:
 	var off := 2  # raster cells, 1 m
 	var palette: Array[Color] = []
 	var wts: Array[Vector2] = []
-	for s in COLORS.size():
+	for s in DesignedTerrain.COLORS.size():
 		palette.append(surface_color(s))
 		wts.append(surface_weights(s))
 	palette.append(FIRST_CUT_COLOR)
@@ -1655,7 +1706,7 @@ func _make_tint() -> void:
 ## keeping roughly the game's brightness. Deep shade, crowns and water in
 ## the photo are left out.
 func _photo_tinted(col: Color, surface: int, k: int) -> Color:
-	var amount: float = PHOTO_TINT[Surface.Type.ROUGH if surface == FIRST_CUT_CODE else (Surface.Type.FRINGE if surface == COLLAR_CODE else surface)]
+	var amount: float = DesignedTerrain.PHOTO_TINT[Surface.Type.ROUGH if surface == FIRST_CUT_CODE else (Surface.Type.FRINGE if surface == COLLAR_CODE else surface)]
 	if amount <= 0.0:
 		return col
 	var t := Color8(_tint[k * 3], _tint[k * 3 + 1], _tint[k * 3 + 2])
@@ -1784,6 +1835,7 @@ class LodRefiner extends Node:
 	var ground: Node3D  ## the chunks' parent (build_visual's root)
 	var sun: DirectionalLight3D
 	var _sun_tan := -1.0
+	var _light := Vector2.ZERO  ## the way the sunlight ran when the casters were set
 	var _known := 0  ## steepness entries when the casters were last set
 
 	func _init(t: DesignedTerrain, root: Node3D) -> void:
@@ -1813,14 +1865,22 @@ class LodRefiner extends Node:
 		var up := sun.global_transform.basis.z.y  # sin of the sun's height
 		var height := clampf(up, 0.0, 1.0)
 		var t := height / maxf(sqrt(1.0 - height * height), 1e-3)
-		if absf(t - _sun_tan) < 0.005 and terrain.steepness.size() == _known:
+		# The way the light runs over the ground (the light shines along -z).
+		var run := -Vector2(sun.global_transform.basis.z.x, sun.global_transform.basis.z.z)
+		var light := run.normalized() if run.length() > 1e-4 else Vector2.ZERO
+		if absf(t - _sun_tan) < 0.005 and light.distance_to(_light) < 0.01 and terrain.steepness.size() == _known:
 			return
 		_sun_tan = t
+		_light = light
 		_known = terrain.steepness.size()
 		for inst in ground.get_children():
 			if not inst is MeshInstance3D or not inst.has_meta("chunk"):
 				continue
 			var steep: float = terrain.steepness.get(inst.get_meta("chunk"), INF)
+			# Only the ground falling away from the sun counts.
+			var fall: Variant = terrain.falls.get(inst.get_meta("chunk"))
+			if fall != null and light != Vector2.ZERO:
+				steep = minf(steep, DesignedTerrain.fall_toward(fall, light))
 			(inst as MeshInstance3D).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON if DesignedTerrain.casts_sun_shadow(steep, t) else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 
 
@@ -1858,6 +1918,57 @@ static func _steepest(verts: PackedVector3Array, nx: int, nz: int) -> float:
 	return out
 
 
+## Headings the ground's fall is measured along (_falls).
+const FALL_DIRS := 16
+## Below this slope (rise over run) a cell can't shade anything at any sun
+## height the game uses (tan 4 degrees), so _falls skips it.
+const FALL_MIN := 0.07
+
+
+## How steeply the chunk's ground falls away along each of FALL_DIRS
+## headings: entry k is the steepest drop (rise over run, over a 2 m cell)
+## going toward heading k (angle TAU * k / FALL_DIRS from +x toward +z).
+## Ground only shades itself or what stands on it where it falls away from
+## the sun more steeply than the sun is high: a slope facing the sun, however
+## steep, shades nothing.
+static func _falls(verts: PackedVector3Array, nx: int, nz: int) -> PackedFloat32Array:
+	var out := PackedFloat32Array()
+	out.resize(FALL_DIRS)
+	out.fill(0.0)
+	var dirs: Array[Vector2] = []
+	for k in FALL_DIRS:
+		var a := TAU * k / FALL_DIRS
+		dirs.append(Vector2(cos(a), sin(a)))
+	var inv := 1.0 / DesignedCourse.CELL
+	var min2 := FALL_MIN * FALL_MIN
+	for j in nz - 1:
+		var row := j * nx
+		for i in nx - 1:
+			var h := verts[row + i].y
+			var gx := (verts[row + i + 1].y - h) * inv
+			var gz := (verts[row + nx + i].y - h) * inv
+			if gx * gx + gz * gz < min2:
+				continue
+			for k in FALL_DIRS:
+				out[k] = maxf(out[k], -(gx * dirs[k].x + gz * dirs[k].y))
+	return out
+
+
+## The steepest fall in `falls` (see _falls) along the way the sunlight
+## runs, `light` (x, z, unit length): the two nearest headings' worst,
+## grown for the angle between them (the fall along a heading between two
+## measured ones is at most that over cos of half the gap).
+static func fall_toward(falls: PackedFloat32Array, light: Vector2) -> float:
+	var a := fposmod(atan2(light.y, light.x), TAU) / TAU * FALL_DIRS
+	var k0 := int(floor(a)) % FALL_DIRS
+	var k1 := (k0 + 1) % FALL_DIRS
+	return maxf(falls[k0], falls[k1]) / cos(PI / FALL_DIRS)
+
+
+## Each refined chunk's falls (_falls): Vector2i -> PackedFloat32Array.
+var falls := {}
+
+
 ## The switch errors (m) of each chunk's coarser levels, finest first, once
 ## refine_lods() has given it them: Vector2i -> PackedFloat32Array.
 var lod_keys := {}
@@ -1891,6 +2002,7 @@ func _add_lods(job: Dictionary) -> void:
 	var weights: PackedVector2Array = arrays[Mesh.ARRAY_TEX_UV2]
 	var palette: PackedFloat32Array = arrays[Mesh.ARRAY_CUSTOM0]
 	steepness[job.key] = _steepest(verts, nx, nz)
+	falls[job.key] = _falls(verts, nx, nz)
 	var steps := _lod_errors(verts.slice(0, grid), colors.slice(0, grid), weights.slice(0, grid), palette.slice(0, grid * 4), uvs.slice(0, grid), nx, nz)
 	if steps.is_empty():
 		return
@@ -1922,7 +2034,7 @@ func _add_lods(job: Dictionary) -> void:
 ## of the coarser cell instead, so painted detail stays sharp until it is
 ## far smaller than a pixel. Returns [[step, error], ...], finest first.
 const LOD_ENABLED := true
-const LOD_STEPS := [2, 4, 8]
+static var LOD_STEPS := [2, 4, 8]
 ## Below this, two vertices' colours, weights or stripe UVs count as the same.
 const LOD_ATTRIBUTE_TOLERANCE := 0.01
 ## Where they vary, the error a level counts is this share of its cell.
@@ -1933,7 +2045,7 @@ const SKIRT_DROP := 4.0
 const SKIRT_MIN := 0.3
 ## Per side (first row, last row, first column, last column): which
 ## winding of a skirt quad faces out of the chunk.
-const SKIRT_WINDING := [true, false, false, true]
+static var SKIRT_WINDING := [true, false, false, true]
 
 
 func _lod_errors(verts: PackedVector3Array, colors: PackedColorArray, weights: PackedVector2Array, palette: PackedFloat32Array, uvs: PackedVector2Array, nx: int, nz: int) -> Array:
@@ -1961,11 +2073,11 @@ func _lod_errors(verts: PackedVector3Array, colors: PackedColorArray, weights: P
 	# vertices plus the finer level's own error: a quarter of the work of
 	# measuring every vertex. Chunks cut short at the course's edge are
 	# measured at every vertex.
-	var nested := (nx - 1) % LOD_STEPS[-1] == 0 and (nz - 1) % LOD_STEPS[-1] == 0
+	var nested: bool = (nx - 1) % int(DesignedTerrain.LOD_STEPS[-1]) == 0 and (nz - 1) % int(DesignedTerrain.LOD_STEPS[-1]) == 0
 	var finer := 1
 	var finer_err := 0.0
 	var finer_uv := 0.0
-	for step: int in LOD_STEPS:
+	for step: int in DesignedTerrain.LOD_STEPS:
 		if step >= nx - 1 or step >= nz - 1:
 			break
 		var share := step * DesignedCourse.CELL * LOD_ATTRIBUTE_SHARE
@@ -2094,7 +2206,7 @@ static func _ring(nx: int, nz: int) -> PackedInt32Array:
 ## order).
 static func _skirt_indices(xs: PackedInt32Array, zs: PackedInt32Array, nx: int, nz: int, base: int, wanted: Array) -> PackedInt32Array:
 	var out := PackedInt32Array()
-	var side_out := SKIRT_WINDING
+	var side_out := DesignedTerrain.SKIRT_WINDING
 	var sides := [
 		[xs, 0, func(i: int) -> int: return i, base],
 		[xs, 0, func(i: int) -> int: return (nz - 1) * nx + i, base + nx],

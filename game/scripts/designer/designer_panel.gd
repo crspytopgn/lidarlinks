@@ -4,7 +4,7 @@ extends PanelContainer
 ## and the hole being edited. CourseDesigner reads the controls and listens
 ## to the signals.
 
-signal file_action(action: String)  ## new, open, save, import, export, real, play, menu
+signal file_action(action: String)  ## new, open, save, import, export, real, update, play, menu
 signal tool_changed(tool: int)
 signal surface_changed(surface: int)
 signal hole_selected(index: int)
@@ -43,6 +43,7 @@ var tournament: CheckBox
 var credits: Label
 var photo: CheckBox
 var guide: CheckBox
+var update: Button
 var surface: OptionButton
 var brush_size: HSlider
 var strength: HSlider
@@ -121,6 +122,11 @@ func _ready() -> void:
 	real.tooltip_text = "Build a real golf course from open map and lidar data: type the club's name."
 	real.pressed.connect(func() -> void: file_action.emit("real"))
 	box.add_child(real)
+	update = MenuStyle.button("Update from the map")
+	update.tooltip_text = "Build this real course again from the map with the newest course builder. Changes you made to it here are replaced."
+	update.visible = false
+	update.pressed.connect(func() -> void: file_action.emit("update"))
+	box.add_child(update)
 	var play := MenuStyle.button("Play this course")
 	play.pressed.connect(func() -> void: file_action.emit("play"))
 	box.add_child(play)
@@ -264,6 +270,13 @@ func show_course_name(text: String, is_tournament := false) -> void:
 	course_name.text = text
 	tournament.button_pressed = is_tournament
 	_quiet = false
+
+
+## Shows the Update button for a saved real course; `label` is its text
+## ("Update from the map", or "Sure? Update" after one press).
+func show_update(available: bool, label := "Update from the map") -> void:
+	update.visible = available
+	update.text = label
 
 
 ## The data credits a real course keeps (empty hides them).

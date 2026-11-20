@@ -19,6 +19,16 @@ const FRAME := 1.0 / 60.0
 const METER_SHARE := 0.46
 ## Our multiplier on mouse movement (1 is the original's).
 var sensitivity := 1.0
+## A putt's power from a full mouse backswing struck at the right speed
+## (LinksMouse.swing: (f + 2) f / 3 * 14.6), against the meter's full putt.
+const PUTT_FULL_SHARE := 14.6 / LinksShotModel.PUTT_POWER_AT_FULL
+## Links 2003's Putting Assistant (Amateur): the putt's power, as a share of
+## the meter's full putt (ShotModel power), marked on the backswing so the player knows how far back
+## to take the putter. Below 0: no mark.
+var target := -1.0:
+	set(v):
+		target = v
+		queue_redraw()
 var club: LinksMouse.MouseClub = null
 var _rng := LinksLaunch.Rand.new(randi())
 var _pending := Vector2.ZERO  ## mouse movement not yet given to a frame
@@ -131,6 +141,17 @@ func _describe(m: LinksMouse.Stroke) -> String:
 	return "%d%%" % roundi(m.backswing * 100.0)
 
 
+## The meter height (game pixels) of the Putting Assistant's mark: where the
+## backswing reads the putt's power. A full backswing gives
+## PUTT_FULL_SHARE of the meter's full putt, and the putt's reading is (2 + b) b / 3 of
+## the backswing b, so b = sqrt(1 + 3 p) - 1. Below 0: no mark (no putt).
+func target_height() -> float:
+	if club == null or target < 0.0 or club._shot != LinksMouse.Shot.PUTT:
+		return -1.0
+	var b := sqrt(1.0 + 3.0 * clampf(target / PUTT_FULL_SHARE, 0.0, 1.0)) - 1.0
+	return club.meter.ball_line + b * (club._top - club.meter.ball_line)
+
+
 ## The meter's rectangle on screen and its pixels per game meter pixel.
 func meter_rect() -> Rect2:
 	var vh := get_viewport_rect().size.y if is_inside_tree() else 600.0
@@ -162,6 +183,11 @@ func _draw() -> void:
 	var off := clampf(x / 18.0, -1.0, 1.0) * r.size.x * 1.5
 	var colour := Color(1, 0.3, 0.25) if absf(x) > 10.0 else Color.WHITE
 	draw_rect(Rect2(r.position.x - 4 + off, club_y - 3, r.size.x + 8, 6), colour)
+	var mark := target_height()
+	if mark >= 0.0:
+		var my: float = y_of.call(mark)
+		draw_circle(Vector2(r.position.x - 12, my), 5.0, Color(0.95, 0.15, 0.12))
+		draw_line(Vector2(r.position.x - 6, my), Vector2(r.end.x, my), Color(0.95, 0.15, 0.12, 0.8), 2.0)
 	var font := ThemeDB.fallback_font
 	var text := _result if not _result.is_empty() else "%d%%" % roundi(club.backswing_percent())
 	var at := Vector2(r.position.x - 4, r.position.y - 12)

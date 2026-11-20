@@ -228,7 +228,14 @@ func texture(index: int, max_size := 0) -> Texture2D:
 	var entry: Dictionary = info.images[index]
 	var bytes := _slice(entry.data)
 	var img := Image.new()
-	var err := img.load_png_from_buffer(bytes) if entry.kind == "png" else img.load_jpg_from_buffer(bytes)
+	var err := OK
+	match str(entry.kind):
+		"png":
+			err = img.load_png_from_buffer(bytes)
+		"webp":
+			err = img.load_webp_from_buffer(bytes)
+		_:
+			err = img.load_jpg_from_buffer(bytes)
 	if err != OK:
 		push_warning("GolferParts: image %d did not decode" % index)
 		return null

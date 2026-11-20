@@ -343,7 +343,7 @@ func save_photo() -> void:
 		_show_info("Couldn't take the picture")
 		return
 	var stamp := Time.get_datetime_string_from_system().replace(":", "").replace("-", "").replace("T", "-")
-	var file := "openlinks-%s.png" % stamp
+	var file := "lidarlinks-%s.png" % stamp
 	if OS.has_feature("web"):
 		JavaScriptBridge.download_buffer(img.save_png_to_buffer(), file, "image/png")
 		_show_info("Saved %s to your downloads" % file)

@@ -53,7 +53,7 @@ SCAN_TREES = {
     "island_tree_02": {"leaves.jpg": ("leaves_diff", "jpg", 512), "leaves_alpha.png": ("leaves_alpha", "png", 512),
                        "trunk.jpg": ("Diffuse", "jpg", 512), "trunk_normal.jpg": ("nor_gl", "jpg", 512), "bark.jpg": ("branches_diff", "jpg", 512)},
 }
-USER_AGENT = "OpenLinks2003-asset-fetch (https://github.com/crspytopgn/openlinks2003)"
+USER_AGENT = "OpenLinks2003-asset-fetch (https://github.com/crspytopgn/lidarlinks)"
 
 
 
@@ -201,6 +201,27 @@ def fetch_slot(out_dir, slot, spec):
 # Slots seen mostly from a distance, kept at 1024 pixels to save video
 # memory in the browser.
 SMALL_SLOTS = ("path_", "dirt_", "bark_", "cliff_", "finish_")
+
+
+# Lossy WebP quality of the detail maps (normal, height and roughness).
+# They are high-frequency noise that shading turns into sparkle, so 0.75 is
+# indistinguishable from 0.85 at 1:1 (checked side by side) and saves about
+# 3 MB of every download. Colour maps keep TEXTURE_IMPORT's 0.85.
+DETAIL_QUALITY = 0.75
+DETAIL_MAPS = ("_normal.", "_height.", "_roughness.")
+
+
+def tune_detail_quality(out_dir):
+    """Lowers the lossy quality of every detail map's import in out_dir."""
+    for name in os.listdir(out_dir):
+        if not name.endswith(".import") or not any(k in name for k in DETAIL_MAPS):
+            continue
+        path = os.path.join(out_dir, name)
+        with open(path) as f:
+            text = f.read()
+        if "compress/mode=1" in text:
+            with open(path, "w") as f:
+                f.write(text.replace("compress/lossy_quality=0.85", f"compress/lossy_quality={DETAIL_QUALITY}"))
 
 
 def size_limit(out_name):
@@ -453,6 +474,7 @@ def main():
     except Exception as e:  # noqa: BLE001 - the golfers' cloth stays plain
         print(f"WARNING: couldn't fetch the fabrics: {e}")
         failed.append("fabrics")
+    tune_detail_quality(args.out)
     with open(os.path.join(args.out, "CREDITS.md"), "w") as f:
         f.write("# Free assets\n\nDownloaded by tools/fetch_free_assets.py from Poly Haven and ambientCG (CC0).\n\n")
         f.write("\n".join(credits) + "\n")

@@ -17,8 +17,8 @@ images you point the script at.
 ## One command
 
 ```bash
-git clone https://github.com/crspytopgn/openlinks2003.git
-cd openlinks2003
+git clone https://github.com/crspytopgn/lidarlinks.git
+cd lidarlinks
 tools/mac/links2003-mac.sh setup --discs /path/to/folder/with/images
 ```
 

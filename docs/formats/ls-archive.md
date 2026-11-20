@@ -107,3 +107,35 @@ See [carrera-store.md](carrera-store.md) for `.SKL` and `.CLP`, and
 Menu sounds in `SOUNDS.LS`: `BC_CLICK.WAV` (button click); `MUSIC1.WAV` and
 `MUSIC2.WAV` (menu music, stereo MS ADPCM, 44.1 kHz, about 90 s), with the
 `LO` versions at a lower quality.
+
+## `CLUBDIST` (in `GRAPHICS.LS`)
+
+2448 bytes, read on 2026-11-20 from CD1 `GRAPHICS.LS` (LZW). A 16-byte
+header of zeros, then 19 rows of 64 little-endian unsigned 16-bit values,
+one row per club in the game's club order (7 woods, then 12 irons and
+wedges, as `LinksLaunch.CLUB_INDEX`). Confirmed on 2026-11-20 from how the
+1.07 executable uses it and from our own port of its physics:
+
+- The unit is feet of total distance (carry and roll on flat ground, no
+  wind).
+- Value `j` of a row (from 0) is a full swing at `2 * (j + 1)` points of
+  power, so the row covers 2 to 128 points.
+- The game reads the table when a player sets how far a club should go: for
+  each club it takes the first value at or past that distance and makes
+  twice its step number (counted from 1) the club's power rating. The
+  default ratings are 112 for the driver down to 80 for the wedges
+  (`LinksMouse.MAX_POWER`).
+- At its default rating each club's value is its full-swing total. For
+  example, the driver at 112 is value 55, 827 ft (276 yd), and the lob
+  wedge at 80 is value 39, 240 ft (80 yd).
+- `LinksShotModel` (the game's launch, flight and roll, read from the
+  user's executable) sends every club within about 1% of its row at its
+  rating, 0.1% to 1.3% short. That also checks our physics port against a
+  table the original made with its own physics.
+- How it is used here: `ClubDistances` reads the table from the player's
+  `GRAPHICS.LS` at run time (nothing of it is committed).
+  `LinksShotModel.reach_scale` then gives every club the table's total at
+  its rating. The auto club, the caddie, the computer golfers' planning
+  and the reach the HUD shows all use that number.
+- Before this, the reach was the rating times our club's distance at power
+  100. That put the woods up to 15% long and the wedges up to 19% short.

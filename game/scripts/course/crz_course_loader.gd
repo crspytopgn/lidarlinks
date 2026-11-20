@@ -13,8 +13,8 @@ const FEET := 0.3048
 const KEYS_PATH := "user://crz_keys.cfg"
 const CACHE_DIR := "user://course_cache"
 const CACHE_VERSION := 5
-const EXE_NAMES := ["LINKSM_1.EXE", "LinksMMIII.exe", "LinksM~1.exe"]
-const TEXTURE_LIBRARIES := ["STDTER_1.LIB", "StdTerrain.lib", "StdTer~1.lib"]
+static var EXE_NAMES := ["LINKSM_1.EXE", "LinksMMIII.exe", "LinksM~1.exe"]
+static var TEXTURE_LIBRARIES := ["STDTER_1.LIB", "StdTerrain.lib", "StdTer~1.lib"]
 ## How far one repeat of a free ground texture spans.
 const FREE_TILE_METRES := 2.5
 
@@ -92,7 +92,7 @@ static func _game_keys(course_path: String) -> Dictionary:
 		if tables.size() == Bunky.P_WORDS + Bunky.S_WORDS and key.size() == 8:
 			_keys = {"tables": tables, "key": key}
 			return _keys
-	var exe_path := GameFolder.find_file(PackedStringArray(EXE_NAMES))
+	var exe_path := GameFolder.find_file(PackedStringArray(CrzCourseLoader.EXE_NAMES))
 	if exe_path.is_empty():
 		return {}
 	var found := CrzArchive.find_keys(FileAccess.get_file_as_bytes(exe_path), course_path)
@@ -584,7 +584,7 @@ static func _shadow_file(path: String) -> Dictionary:
 ## while a course loads (_build clears it).
 static func _texture_library() -> Arc0:
 	if _library == null:
-		var lib_path := GameFolder.find_file(PackedStringArray(TEXTURE_LIBRARIES))
+		var lib_path := GameFolder.find_file(PackedStringArray(CrzCourseLoader.TEXTURE_LIBRARIES))
 		if not lib_path.is_empty():
 			_library = Arc0.from_bytes(FileAccess.get_file_as_bytes(lib_path))
 	return _library
