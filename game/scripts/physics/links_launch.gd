@@ -19,7 +19,7 @@ const FEET_PER_METRE := 1.0 / 0.3048
 
 ## Which of the game's clubs each of ours swings, by Club.short_name. The
 ## game has seven woods (driver first) then twelve irons and wedges.
-const CLUB_INDEX := {
+static var CLUB_INDEX := {
 	"Dr": 0, "3W": 1, "5W": 3, "3H": 4, "4i": 10, "5i": 11, "6i": 12,
 	"7i": 13, "8i": 14, "9i": 15, "PW": 16, "SW": 17, "LW": 18,
 }

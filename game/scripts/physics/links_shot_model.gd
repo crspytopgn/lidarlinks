@@ -42,6 +42,9 @@ var chip := false
 ## From the ball to the hole, metres, for computer_ratings.
 var to_hole_m := 0.0
 var rng := LinksLaunch.Rand.new(randi())
+## The game's own club distance table (ClubDistances, from the player's
+## GRAPHICS.LS), or null: with it a club's reach is the game's own figure.
+var distances: ClubDistances = null
 
 
 func _init(p_aero: LinksAero, p_clubs: LinksLaunch = null) -> void:
@@ -49,10 +52,23 @@ func _init(p_aero: LinksAero, p_clubs: LinksLaunch = null) -> void:
 	clubs = p_clubs
 
 
+## The same tables (read only once loaded, so threads can share them) and
+## skill level; see ShotModel.fresh.
+func fresh() -> ShotModel:
+	var m := LinksShotModel.new(aero, clubs)
+	m.skill = skill
+	m.distances = distances
+	return m
+
+
 ## Null when no game folder is set up or its executable lacks the tables.
 static func from_game_folder() -> LinksShotModel:
 	var found := LinksAero.from_game_folder()
-	return LinksShotModel.new(found, LinksLaunch.from_game_folder()) if found != null else null
+	if found == null:
+		return null
+	var m := LinksShotModel.new(found, LinksLaunch.from_game_folder())
+	m.distances = ClubDistances.from_game_folder()
+	return m
 
 
 func launch(club: Club, power: float, accuracy: float, aim_deg: float, lie: int, from: Vector3) -> BallState:
@@ -159,11 +175,16 @@ static func club_rating(club: Club) -> float:
 
 
 ## Club distances (Club.total_m) are at power 100; a full swing here gives
-## the club's rating instead, so reach scales by it (a little rough, as
-## distance isn't quite in proportion to power).
+## the club's rating instead. With the game's own table (distances) the
+## reach is its total at that rating, which this model's flight and roll
+## match within about 1%; without it the reach scales by the rating, which
+## put the long clubs up to 15% long and the wedges up to 19% short, as
+## distance isn't in proportion to power.
 func reach_scale(club: Club) -> float:
 	if clubs == null:
 		return 1.0
+	if distances != null and not club.is_putter and club.total_m > 0.0 and LinksLaunch.CLUB_INDEX.has(club.short_name):
+		return distances.total_m(LinksLaunch.CLUB_INDEX[club.short_name], club_rating(club)) / club.total_m
 	return club_rating(club) / 100.0
 
 

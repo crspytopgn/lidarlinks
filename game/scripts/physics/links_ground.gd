@@ -101,7 +101,7 @@ const GRAVITY_VECTOR := Vector3(0, 0, -GRAVITY)
 
 ## class, restitution, impact friction, skid friction, impact drag, roll, stop, spin grip
 ## (and for rough and deep grass: lie spin, lie power)
-const SURFACES := {
+static var SURFACES := {
 	GREEN: [0.23, 0.08, 0.383486, 0.496454, 0.10538, 0.5, 1.219],
 	FAIRWAY: [0.266579, 0.1308, 0.132528, 0.441, 0.18, 0.5, 1.00211],
 	ROUGH: [0.242881, 0.087621, 0.104659, 0.522788, 0.604758, 1.0, 2.0, 0.406505, 0.927315],
@@ -307,11 +307,15 @@ static func surface_for_class(ground_class: int) -> Params:
 		return greens
 	# Made once per class: every step on the ground asks for one, and nothing
 	# changes a record once made.
+	# Shots are played on worker threads too (ShotWorker), so the cache is
+	# read and filled under a lock.
+	_class_lock.lock()
 	var made: Params = _class_records.get(ground_class)
+	_class_lock.unlock()
 	if made != null:
 		return made
-	var c := ground_class if SURFACES.has(ground_class) else FAIRWAY
-	var v: Array = SURFACES[c]
+	var c := ground_class if LinksGround.SURFACES.has(ground_class) else FAIRWAY
+	var v: Array = LinksGround.SURFACES[c]
 	var p := Params.new()
 	p.ground_class = c
 	p.restitution = v[0]
@@ -324,12 +328,15 @@ static func surface_for_class(ground_class: int) -> Params:
 	if v.size() > 7:
 		p.lie_spin = v[7]
 		p.lie_power = v[8]
+	_class_lock.lock()
 	_class_records[ground_class] = p
+	_class_lock.unlock()
 	return p
 
 
 ## surface_for_class()'s records, by the class asked for.
 static var _class_records := {}
+static var _class_lock := Mutex.new()
 
 
 enum GreenFirmness { SOFT, MEDIUM, FIRM }
@@ -355,7 +362,7 @@ static func green_for(firmness: int, speed: int) -> Params:
 	# by the same step again).
 	var ladder := [2.0 * soft - medium, soft, medium, firm, 2.0 * firm - medium]
 	var p := Params.new()
-	var v: Array = SURFACES[GREEN]
+	var v: Array = LinksGround.SURFACES[GREEN]
 	match firmness:
 		GreenFirmness.SOFT:
 			v = [0.209999993, 0.0900000036, 0.314999998, 0.549284995, soft, 0.5, 0.899999976]

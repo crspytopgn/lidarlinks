@@ -44,7 +44,7 @@ const GREEN_EDGE_RANGE := 2.0
 ## the line), so the splat stays as small as it was with greens alone: two
 ## blocks of 1 m texels fit under the 0.5 m codes. Bunkers, which hug
 ## greens and tees, get their own.
-const EDGE_BLOCKS := [[Surface.Type.GREEN, Surface.Type.TEE], [Surface.Type.SAND]]
+static var EDGE_BLOCKS := [[Surface.Type.GREEN, Surface.Type.TEE], [Surface.Type.SAND]]
 ## Bunkers are built as real ones are, not as even dishes: a flat floor,
 ## a low, gently ramped side where the player walks in and the ball runs
 ## in, and on the side facing the hole's target a steep face of flashed sand
@@ -65,11 +65,11 @@ const SHORE_STEP := 4.0
 const SHORE_REACH := 10.0
 const APRON := 700.0  ## ground drawn beyond the course edge
 ## Paint order: later layers cover earlier ones.
-const LAYERS := [
+static var LAYERS := [
 	Surface.Type.DEEP_ROUGH, Surface.Type.OUT_OF_BOUNDS, Surface.Type.ROUGH, Surface.Type.FAIRWAY,
 	Surface.Type.FRINGE, Surface.Type.TEE, Surface.Type.GREEN, Surface.Type.SAND, Surface.Type.WATER,
 ]
-const COLORS := [
+static var COLORS := [
 	Color(0.29, 0.48, 0.19),  # tee (olive, as real turf reads in sun)
 	Color(0.29, 0.47, 0.18),  # fairway
 	Color(0.28, 0.47, 0.18),  # fringe (the approach; the collar is COLLAR_COLOR)
@@ -85,12 +85,12 @@ const COLORS := [
 ## courses with a photo): a little on the mown grass, so it keeps its game
 ## colours and stripes, more on the rough and beyond, so worn patches,
 ## fields, tracks and dry grass look as they really do. Same order as COLORS.
-const PHOTO_TINT := [0.15, 0.2, 0.2, 0.1, 0.55, 0.65, 0.5, 0.0, 0.75]
+static var PHOTO_TINT := [0.15, 0.2, 0.2, 0.1, 0.55, 0.65, 0.5, 0.0, 0.75]
 ## Mowing stripes: how strong per surface, and how wide (the cut of the
 ## mower that mows it: fairway units about 3 m, triplex tee mowers 1.5 m,
 ## walk-behind greens mowers 0.55 m).
-const MOWN := {Surface.Type.FAIRWAY: 1.0, Surface.Type.FRINGE: 0.7, Surface.Type.TEE: 0.6, Surface.Type.GREEN: 0.35}
-const STRIPE_METRES := {Surface.Type.FAIRWAY: 3.0, Surface.Type.FRINGE: 3.0, Surface.Type.TEE: 1.5, Surface.Type.GREEN: 0.55}
+static var MOWN := {Surface.Type.FAIRWAY: 1.0, Surface.Type.FRINGE: 0.7, Surface.Type.TEE: 0.6, Surface.Type.GREEN: 0.35}
+static var STRIPE_METRES := {Surface.Type.FAIRWAY: 3.0, Surface.Type.FRINGE: 3.0, Surface.Type.TEE: 1.5, Surface.Type.GREEN: 0.55}
 const PHOTO_BLUR := 6.0  ## metres; crowns, cars and flags blur out
 ## Largest splat map side in texels (older phones and browsers top out at
 ## 4096); a bigger course gets a coarser one.
@@ -157,7 +157,7 @@ func rebuild() -> void:
 	_sh = int(ceil(course.area.size.y / RES))
 	_img = Image.create_empty(_sw, _sh, false, Image.FORMAT_R8)
 	_edge_w = maxi(1, ceili(course.area.size.x / GREEN_EDGE_RES))
-	_edge_img = Image.create_empty(_edge_w * EDGE_BLOCKS.size(), maxi(1, ceili(course.area.size.y / GREEN_EDGE_RES)), false, Image.FORMAT_R8)
+	_edge_img = Image.create_empty(_edge_w * DesignedTerrain.EDGE_BLOCKS.size(), maxi(1, ceili(course.area.size.y / GREEN_EDGE_RES)), false, Image.FORMAT_R8)
 	_h = course.heights.duplicate()
 	_g = _h.duplicate()
 	_vc = PackedColorArray()
@@ -523,7 +523,7 @@ func build_visual() -> Node3D:
 ## The colour of `surface` (a Surface.Type) on this course: its biome's
 ## (Biome.GROUND) or the parkland default.
 func surface_color(surface: int) -> Color:
-	return Biome.ground_color(course.biome, surface, COLORS[surface])
+	return Biome.ground_color(course.biome, surface, DesignedTerrain.COLORS[surface])
 
 
 ## The terrain shader's texture weights for `surface` (bare ground keeps
@@ -602,14 +602,14 @@ func material() -> ShaderMaterial:
 		var mown := PackedFloat32Array()
 		var widths := PackedFloat32Array()
 		var cut := PackedFloat32Array()
-		for i in COLORS.size():
+		for i in DesignedTerrain.COLORS.size():
 			# Under the water line, the bank: darker rough rather than the
 			# map's blue, which would ring each pond.
 			var c: Color = surface_color(Surface.Type.ROUGH).darkened(0.35) if i == Surface.Type.WATER else surface_color(i)
 			cols.append(Vector3(c.r, c.g, c.b))
 			wts.append(surface_weights(i))
-			mown.append(float(MOWN.get(i, 0.0)))
-			widths.append(float(STRIPE_METRES.get(i, 0.0)))
+			mown.append(float(DesignedTerrain.MOWN.get(i, 0.0)))
+			widths.append(float(DesignedTerrain.STRIPE_METRES.get(i, 0.0)))
 			cut.append(Materials.terrain_cut(i))
 		# The splat's tenth entry: the first cut; the eleventh the collar.
 		cols.append(Vector3(FIRST_CUT_COLOR.r, FIRST_CUT_COLOR.g, FIRST_CUT_COLOR.b))
@@ -628,8 +628,8 @@ func material() -> ShaderMaterial:
 		_material.set_shader_parameter("surface_weights", wts)
 		_material.set_shader_parameter("surface_mown", mown)
 		var bare := PackedFloat32Array()
-		for i in COLORS.size() + 2:
-			bare.append(1.0 if i < COLORS.size() and Biome.is_bare(course.biome, i) else 0.0)
+		for i in DesignedTerrain.COLORS.size() + 2:
+			bare.append(1.0 if i < DesignedTerrain.COLORS.size() and Biome.is_bare(course.biome, i) else 0.0)
 		_material.set_shader_parameter("surface_bare", bare)
 		var land := Biome.land(course.biome)
 		_material.set_shader_parameter("rock_slopes", Biome.BARE.has(course.biome))
@@ -652,7 +652,7 @@ func _update_splat() -> void:
 		codes = _img.duplicate() as Image
 		codes.resize(maxi(1, floori(_sw * k)), maxi(1, floori(_sh * k)), Image.INTERPOLATE_NEAREST)
 	var edges := _edge_img
-	var blocks := EDGE_BLOCKS.size()
+	var blocks := DesignedTerrain.EDGE_BLOCKS.size()
 	# The edge blocks go where the texture has most room for them: below
 	# the codes side by side, or to their right, stacked or side by side.
 	# Ember Coast's codes fill 3,836 of the 4,096 rows: below them the
@@ -707,7 +707,7 @@ func _update_splat() -> void:
 
 
 ## The surfaces a cart path is not drawn over (it stops at their edge).
-const PATH_NOT_ON := [Surface.Type.SAND, Surface.Type.GREEN, Surface.Type.WATER]
+static var PATH_NOT_ON := [Surface.Type.SAND, Surface.Type.GREEN, Surface.Type.WATER]
 
 
 ## Cart paths draped on the ground, and bridges with their rails.
@@ -749,7 +749,7 @@ func _path_mesh(p: CoursePath) -> MeshInstance3D:
 	# than being draped over it (as a flat grey slab across the sand).
 	var clear := PackedByteArray()
 	for v in verts.size():
-		clear.append(1 if p.bridge or not PATH_NOT_ON.has(surface_at(verts[v].x, verts[v].z)) else 0)
+		clear.append(1 if p.bridge or not DesignedTerrain.PATH_NOT_ON.has(surface_at(verts[v].x, verts[v].z)) else 0)
 	var indices := PackedInt32Array()
 	for k in samples.size() - 1:
 		var a := 2 * k
@@ -1229,7 +1229,7 @@ func _raster(px: Rect2i) -> void:
 	_img.fill_rect(px, _code(Surface.Type.ROUGH))
 	var o := course.area.position
 	var world := Rect2(o + Vector2(px.position) * RES, Vector2(px.size) * RES)
-	for layer: int in LAYERS:
+	for layer: int in DesignedTerrain.LAYERS:
 		for s in course.shapes:
 			if s.surface == layer and s.is_valid() and s.bounds().intersects(world):
 				_fill(s.outline(), layer, px)
@@ -1248,8 +1248,8 @@ func _raster(px: Rect2i) -> void:
 	_first_cut(px)
 	_collar(px)
 	_img.set_data(_sw, _sh, false, Image.FORMAT_R8, _surf)
-	for k in EDGE_BLOCKS.size():
-		_bake_edges(world, EDGE_BLOCKS[k], k * _edge_w)
+	for k in DesignedTerrain.EDGE_BLOCKS.size():
+		_bake_edges(world, DesignedTerrain.EDGE_BLOCKS[k], k * _edge_w)
 
 
 ## Marks the rough within FIRST_CUT_WIDTH of each fairway (not of cart
@@ -1540,7 +1540,7 @@ func _vertex_surfaces(cells: Rect2i) -> void:
 	var off := 2  # raster cells, 1 m
 	var palette: Array[Color] = []
 	var wts: Array[Vector2] = []
-	for s in COLORS.size():
+	for s in DesignedTerrain.COLORS.size():
 		palette.append(surface_color(s))
 		wts.append(surface_weights(s))
 	palette.append(FIRST_CUT_COLOR)
@@ -1597,7 +1597,7 @@ func _make_tint() -> void:
 ## keeping roughly the game's brightness. Deep shade, crowns and water in
 ## the photo are left out.
 func _photo_tinted(col: Color, surface: int, k: int) -> Color:
-	var amount: float = PHOTO_TINT[Surface.Type.ROUGH if surface == FIRST_CUT_CODE else (Surface.Type.FRINGE if surface == COLLAR_CODE else surface)]
+	var amount: float = DesignedTerrain.PHOTO_TINT[Surface.Type.ROUGH if surface == FIRST_CUT_CODE else (Surface.Type.FRINGE if surface == COLLAR_CODE else surface)]
 	if amount <= 0.0:
 		return col
 	var t := Color8(_tint[k * 3], _tint[k * 3 + 1], _tint[k * 3 + 2])
@@ -1925,7 +1925,7 @@ func _add_lods(job: Dictionary) -> void:
 ## of the coarser cell instead, so painted detail stays sharp until it is
 ## far smaller than a pixel. Returns [[step, error], ...], finest first.
 const LOD_ENABLED := true
-const LOD_STEPS := [2, 4, 8]
+static var LOD_STEPS := [2, 4, 8]
 ## Below this, two vertices' colours, weights or stripe UVs count as the same.
 const LOD_ATTRIBUTE_TOLERANCE := 0.01
 ## Where they vary, the error a level counts is this share of its cell.
@@ -1936,7 +1936,7 @@ const SKIRT_DROP := 4.0
 const SKIRT_MIN := 0.3
 ## Per side (first row, last row, first column, last column): which
 ## winding of a skirt quad faces out of the chunk.
-const SKIRT_WINDING := [true, false, false, true]
+static var SKIRT_WINDING := [true, false, false, true]
 
 
 func _lod_errors(verts: PackedVector3Array, colors: PackedColorArray, weights: PackedVector2Array, palette: PackedFloat32Array, uvs: PackedVector2Array, nx: int, nz: int) -> Array:
@@ -1964,11 +1964,11 @@ func _lod_errors(verts: PackedVector3Array, colors: PackedColorArray, weights: P
 	# vertices plus the finer level's own error: a quarter of the work of
 	# measuring every vertex. Chunks cut short at the course's edge are
 	# measured at every vertex.
-	var nested := (nx - 1) % LOD_STEPS[-1] == 0 and (nz - 1) % LOD_STEPS[-1] == 0
+	var nested: bool = (nx - 1) % int(DesignedTerrain.LOD_STEPS[-1]) == 0 and (nz - 1) % int(DesignedTerrain.LOD_STEPS[-1]) == 0
 	var finer := 1
 	var finer_err := 0.0
 	var finer_uv := 0.0
-	for step: int in LOD_STEPS:
+	for step: int in DesignedTerrain.LOD_STEPS:
 		if step >= nx - 1 or step >= nz - 1:
 			break
 		var share := step * DesignedCourse.CELL * LOD_ATTRIBUTE_SHARE
@@ -2097,7 +2097,7 @@ static func _ring(nx: int, nz: int) -> PackedInt32Array:
 ## order).
 static func _skirt_indices(xs: PackedInt32Array, zs: PackedInt32Array, nx: int, nz: int, base: int, wanted: Array) -> PackedInt32Array:
 	var out := PackedInt32Array()
-	var side_out := SKIRT_WINDING
+	var side_out := DesignedTerrain.SKIRT_WINDING
 	var sides := [
 		[xs, 0, func(i: int) -> int: return i, base],
 		[xs, 0, func(i: int) -> int: return (nz - 1) * nx + i, base + nx],

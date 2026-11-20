@@ -24,8 +24,8 @@ const HD_MAX_SPRITE := 1024
 const HD_ATLAS_HEIGHT := 4096
 ## Billboards below each height (m) are hidden beyond the matching distance
 ## (CLASS_RANGE; 0 = always drawn). The last class is everything taller.
-const CLASS_LIMITS: Array[float] = [0.6, 2.0, 5.0]
-const CLASS_RANGE: Array[float] = [150.0, 300.0, 700.0, 0.0]
+static var CLASS_LIMITS: Array[float] = [0.6, 2.0, 5.0]
+static var CLASS_RANGE: Array[float] = [150.0, 300.0, 700.0, 0.0]
 const CLASSES := 4
 const CROWD_RANGE := 250.0
 const FAR_REACH := 900.0  ## how far from a hole the always-drawn chunks go
@@ -36,9 +36,9 @@ const TREE_MIN_HEIGHT := 3.0
 ## Bushes lower than this keep their billboards (tufts and flowers).
 const BUSH_MIN_HEIGHT := 0.6
 const TREE_CELL := 50.0
-const CROWD_GROUPS: Array[String] = ["fan", "Sit", "media", "Official"]
+static var CROWD_GROUPS: Array[String] = ["fan", "Sit", "media", "Official"]
 const CROWD_SPRITE_FEET := 6.0  ## a 128-pixel spectator sprite
-const CROWD_LIBRARIES: Array[String] = ["CROWDS.LIB", "Crowds.lib"]
+static var CROWD_LIBRARIES: Array[String] = ["CROWDS.LIB", "Crowds.lib"]
 const SHADER_CODE := """
 shader_type spatial;
 render_mode unshaded, cull_disabled;
@@ -624,7 +624,7 @@ static func build(read: Callable, decoded: Dictionary, crowd_library: Arc0 = nul
 
 ## CROWDS.LIB from the game folder, or null.
 static func find_crowd_library() -> Arc0:
-	var path := GameFolder.find_file(PackedStringArray(CROWD_LIBRARIES))
+	var path := GameFolder.find_file(PackedStringArray(CourseObjects.CROWD_LIBRARIES))
 	if path.is_empty():
 		return null
 	return Arc0.from_bytes(FileAccess.get_file_as_bytes(path))
@@ -669,7 +669,7 @@ func _load_crowds(bytes: PackedByteArray, library: Arc0) -> void:
 	if placements.is_empty():
 		return
 	var people := {}  # group -> sorted front-view sprite names
-	for g in CROWD_GROUPS:
+	for g in CourseObjects.CROWD_GROUPS:
 		var list := PackedStringArray()
 		for e: Dictionary in library.entries:
 			var n: String = e.name
@@ -690,9 +690,9 @@ func _load_crowds(bytes: PackedByteArray, library: Arc0) -> void:
 	var instances: PackedInt32Array = placements.instance
 	var xyz: PackedFloat32Array = placements.xyz
 	for i in kinds.size():
-		if kinds[i] >= CROWD_GROUPS.size() or not people.has(CROWD_GROUPS[kinds[i]]):
+		if kinds[i] >= CourseObjects.CROWD_GROUPS.size() or not people.has(CourseObjects.CROWD_GROUPS[kinds[i]]):
 			continue
-		var list: PackedStringArray = people[CROWD_GROUPS[kinds[i]]]
+		var list: PackedStringArray = people[CourseObjects.CROWD_GROUPS[kinds[i]]]
 		var name := list[instances[i] % list.size()]
 		if not sprite_of.has(name):
 			var img := Btcv.decode(library.read_named(name))
@@ -1149,10 +1149,10 @@ static func _material(texture: Texture2D) -> ShaderMaterial:
 
 ## Height class of a billboard (an index into CLASS_RANGE).
 static func height_class(height_m: float) -> int:
-	for c in CLASS_LIMITS.size():
-		if height_m < CLASS_LIMITS[c]:
+	for c in CourseObjects.CLASS_LIMITS.size():
+		if height_m < CourseObjects.CLASS_LIMITS[c]:
 			return c
-	return CLASS_LIMITS.size()
+	return CourseObjects.CLASS_LIMITS.size()
 
 
 ## Sorts the placements of `s` into chunk and height-class buckets.
@@ -1236,7 +1236,7 @@ func _add_billboards(root: Node3D, s: Sprites, path: PackedVector2Array) -> void
 				var b := chunk * CLASSES + c
 				if s.start[b] == s.start[b + 1]:
 					continue
-				var range_end := s.fixed_range if s.fixed_range >= 0.0 else CLASS_RANGE[c]
+				var range_end := s.fixed_range if s.fixed_range >= 0.0 else CourseObjects.CLASS_RANGE[c]
 				if away > (range_end + 150.0 if range_end > 0.0 else FAR_REACH):
 					continue
 				if quad == null:

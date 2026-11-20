@@ -5,12 +5,12 @@ extends RefCounted
 
 enum Type { TEE, FAIRWAY, FRINGE, GREEN, ROUGH, DEEP_ROUGH, SAND, WATER, OUT_OF_BOUNDS }
 
-const NAMES := [
+static var NAMES := [
 	"Tee", "Fairway", "Fringe", "Green", "Rough", "Deep rough", "Sand", "Water", "Out of bounds",
 ]
 
 # restitution scale, friction, softness, rolling resistance, lie power, lie spin
-const PARAMS := [
+static var PARAMS := [
 	[1.00, 0.40, 1.0, 0.16, 1.00, 1.00],  # tee
 	[1.00, 0.40, 1.0, 0.16, 1.00, 1.00],  # fairway
 	[0.90, 0.45, 1.0, 0.10, 0.95, 0.90],  # fringe
@@ -24,28 +24,28 @@ const PARAMS := [
 
 
 static func name_of(s: int) -> String:
-	return NAMES[s]
+	return Surface.NAMES[s]
 
 
 static func restitution_scale(s: int) -> float:
-	return PARAMS[s][0]
+	return Surface.PARAMS[s][0]
 
 
 static func friction(s: int) -> float:
-	return PARAMS[s][1]
+	return Surface.PARAMS[s][1]
 
 
 static func softness(s: int) -> float:
-	return PARAMS[s][2]
+	return Surface.PARAMS[s][2]
 
 
 static func rolling_resistance(s: int) -> float:
-	return PARAMS[s][3]
+	return Surface.PARAMS[s][3]
 
 
 static func lie_power(s: int) -> float:
-	return PARAMS[s][4]
+	return Surface.PARAMS[s][4]
 
 
 static func lie_spin(s: int) -> float:
-	return PARAMS[s][5]
+	return Surface.PARAMS[s][5]

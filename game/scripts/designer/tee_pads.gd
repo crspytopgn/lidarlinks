@@ -24,7 +24,7 @@ const SHOULDER := 0.4  ## metres over which the shoulder rounds from level to th
 const TOE := 0.12  ## metres of height over which the bank's foot eases into the ground
 const REACH := 6.5  ## metres out from the outline beyond which the ground is untouched
 ## Offsets of the rings of points from the outline (negative inside).
-const RINGS := [-0.7, -0.2, 0.0, 0.1, 0.25, 0.45, 0.7, 1.0, 1.35, 1.75, 2.2, 2.7, 3.25, 3.85, 4.5, 5.2, 6.0, 6.5]
+static var RINGS := [-0.7, -0.2, 0.0, 0.1, 0.25, 0.45, 0.7, 1.0, 1.35, 1.75, 2.2, 2.7, 3.25, 3.85, 4.5, 5.2, 6.0, 6.5]
 const RING_STEP := 0.6  ## metres between points along a ring
 const PAD_STEP := 1.5  ## metres between points on the level top
 const BUCKET := 1.0  ## metres per side of the triangle lookup buckets
@@ -237,7 +237,7 @@ func _build(course: DesignedCourse, g: PackedFloat32Array, h: PackedFloat32Array
 	# Rings round each outline, down the bank and out to the ground.
 	for t in tees.size():
 		var outline := tees[t].outline()
-		for off: float in RINGS:
+		for off: float in TeePads.RINGS:
 			var ring := outline
 			if absf(off) > 1e-4:
 				var rings := Geometry2D.offset_polygon(outline, off, Geometry2D.JOIN_ROUND)

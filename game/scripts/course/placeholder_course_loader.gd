@@ -13,7 +13,7 @@ const NAME := "Kettle Hollow"
 ## tools/homecourse/build_epic_course.py, or a real course's mapped layout
 ## dressed by tools/homecourse/dress_real_course.py): designer files played
 ## by DesignedCourseLoader, listed after Kettle Hollow. Path -> display name.
-const EPIC := {
+static var EPIC := {
 	"res://assets/courses/red_spire.olc": "Red Spire",
 	"res://assets/courses/vermilion_ridge.olc": "Vermilion Ridge",
 	"res://assets/courses/glacier_crown.olc": "Glacier Crown",
