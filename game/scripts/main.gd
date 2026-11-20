@@ -430,6 +430,7 @@ func _ready() -> void:
 	hud.touch_pad.menu_pressed.connect(_escape)
 	hud.target_button.pressed.connect(_toggle_target_view)
 	hud.spin.spin_picked.connect(_pick_spin)
+	hud.spin.backspin_picked.connect(_pick_backspin)
 	if online == null:
 		online = next_online
 	next_online = null
@@ -1013,6 +1014,7 @@ func play_shot(power: float, accuracy: float, monitor: OpenConnect.Launch = null
 		rec.ball_position = setup.ball_position
 		rec.face = setup.face
 		rec.stance = setup.stance
+		rec.backspin = shape.backspin(not broadcast)
 	if monitor != null:
 		rec.monitor = monitor.to_array()
 		rec.stroke = null
@@ -1918,6 +1920,15 @@ func _pick_spin(curve: int, height: int) -> void:
 		return
 	shape.curve = clampi(curve, -ShotShape.MAX_CURVE, ShotShape.MAX_CURVE)
 	shape.height = clampi(height, -ShotShape.MAX_HEIGHT, ShotShape.MAX_HEIGHT)
+	sounds.play(&"club")
+	_update_hud()
+
+
+## The backspin slider on the spin ball (ShotShape.spin; not in Classic Links).
+func _pick_backspin(steps: int) -> void:
+	if state != State.AIM or opponents[shooter] != null or clubs[club_index].is_putter:
+		return
+	shape.spin = clampi(steps, -ShotShape.MAX_SPIN, ShotShape.MAX_SPIN)
 	sounds.play(&"club")
 	_update_hud()
 

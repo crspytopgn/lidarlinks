@@ -10,6 +10,9 @@ extends RefCounted
 ## use it; putts ignore it. See ShotShape for the draw, fade, high and low
 ## the round offers.
 var setup := LinksLaunch.Setup.new()
+## Extra backspin steps for the next full swing or chip (ShotShape.backspin):
+## not a Links 2003 setting, so 0 in Classic Links and for computer golfers.
+var backspin := 0
 
 
 ## Launch state for a swing, with the ball sitting at `from` on a `lie`.

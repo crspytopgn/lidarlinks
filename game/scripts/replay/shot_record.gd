@@ -44,6 +44,8 @@ var help: LinksMouse.Help = null
 var ball_position := -1
 var face := 30
 var stance := 30
+## Extra backspin steps (ShotShape.backspin); 0 in Classic Links.
+var backspin := 0
 ## A real swing from a launch monitor (OpenConnect.Launch.to_array):
 ## played as measured instead of through the swing. Empty otherwise.
 var monitor: Array = []
@@ -67,6 +69,8 @@ func to_dict() -> Dictionary:
 	}
 	if ball_position >= 0 or face != 30 or stance != 30:
 		d["setup"] = [ball_position, face, stance]
+	if backspin != 0:
+		d["backspin"] = backspin
 	if not monitor.is_empty():
 		d["monitor"] = monitor
 	if not cpu_ratings.is_empty():
@@ -115,6 +119,7 @@ static func from_dict(d: Dictionary) -> ShotRecord:
 		r.ball_position = int(setup[0])
 		r.face = int(setup[1])
 		r.stance = int(setup[2])
+	r.backspin = int(d.get("backspin", 0))
 	r.mulligan = bool(d.get("mulligan", false))
 	r.stands = bool(d.get("stands", false))
 	var mon: Variant = d.get("monitor")
