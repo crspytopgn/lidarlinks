@@ -3992,6 +3992,16 @@ func _test_free_golfer() -> void:
 		and is_equal_approx(FreeGolfer.backswing_top(&"backswing_iron", 0.9), FreeGolfer.BACKSWING_TOP_IRON)
 		and is_equal_approx(FreeGolfer.backswing_top(&"backswing", 0.5), 0.5),
 		"a full backswing stops at a tour top, short of the take's overswing")
+	# A trail knee bowed 14 cm out (7 cm toward the ball) is turned about
+	# its hip-ankle line back to 3 cm plus a fifth of the rest, its bend kept.
+	var turn := GolferKnees.swivel(0.14, 0.07)
+	var r := Vector2(0.14, 0.07).length()
+	var turned := Vector2(0.14, 0.07).rotated(turn)
+	_check(GolferKnees.swivel(0.02, 0.1) == 0.0 and absf(turned.x - (GolferKnees.MAX_OUT + 0.11 * GolferKnees.KEEP)) < 1e-4
+		and absf(turned.length() - r) < 1e-6 and turned.y > 0.0,
+		"a bowed knee is braced back over its foot (%.3f m out)" % turned.x)
+	_check(absf(GolferKnees.bow(Vector3(0, 1, 0), Vector3(-0.1, 0.5, -0.1), Vector3(0, 0, 0), Vector3(-1, 0, 0)) - 0.1) < 1e-5,
+		"knee bow is measured off the hip-ankle line")
 	if golfer == null:
 		return
 	for anim_name in [&"address", &"address_putt", &"backswing", &"swing", &"putt", &"celebrate", &"fist_pump", &"slump", &"upset", &"walk", &"idle", &"read", &"survey", &"fore_left", &"fore_right", &"address_iron", &"backswing_iron", &"swing_iron", &"pull_club"]:
