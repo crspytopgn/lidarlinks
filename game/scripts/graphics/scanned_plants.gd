@@ -41,7 +41,7 @@ const FLORA := {
 	FreeAmbience.Setting.PARKLAND: {"grass": 0.5, "fern": 0.25, "flower": 0.25},
 	FreeAmbience.Setting.WOODLAND: {"fern": 0.6, "grass": 0.25, "flower": 0.15},
 	FreeAmbience.Setting.SEASIDE: {"dune": 0.6, "grass": 0.3, "flower": 0.1},
-	FreeAmbience.Setting.DESERT: {"dune": 0.4, "grass": 0.4, "wet": 0.2},
+	FreeAmbience.Setting.DESERT: {"dry": 0.5, "dune": 0.25, "grass": 0.25, "wet": 0.1},
 }
 ## How many plants a biome's beds grow against a temperate course's.
 const BIOME_DENSITY := {Biome.DESERT: 0.3, Biome.SNOW: 0.0}
@@ -246,7 +246,7 @@ func _grow(spots: Array[Dictionary], centre: Vector3, reach: float, seed: int) -
 	add_child(holder)
 	# The kinds this centre grows: a couple per group, by seed.
 	var kinds := {}
-	for g: String in ["fern", "grass", "flower", "dune", "wet"]:
+	for g: String in ["fern", "grass", "flower", "dune", "wet", "dry"]:
 		var list := MegascansPlants.for_group(g)
 		if list.is_empty():
 			continue

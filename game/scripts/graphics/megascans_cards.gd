@@ -26,7 +26,7 @@ static var _loaded := false
 static func cards() -> Array[Dictionary]:
 	if not _loaded:
 		_loaded = true
-		var dir := FreeAssets.megascans_dir()
+		var dir := FreeAssets.pack_dir(MANIFEST)
 		if not dir.is_empty() and FileAccess.file_exists(dir + MANIFEST):
 			_cards = parse(FileAccess.get_file_as_string(dir + MANIFEST))
 	return _cards

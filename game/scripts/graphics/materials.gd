@@ -35,7 +35,24 @@ static func terrain() -> ShaderMaterial:
 				_terrain.set_shader_parameter("grass_height_mean", FreeAssets.mean_color(gh).r)
 				_terrain.set_shader_parameter("rough_height_mean", FreeAssets.mean_color(rh).r)
 				_terrain.set_shader_parameter("has_height", true)
+			var fin := FreeAssets.finish_array()
+			if fin != null:
+				_terrain.set_shader_parameter("finish_tex", fin)
+				_terrain.set_shader_parameter("finish_metres", PackedFloat32Array(FreeAssets.FINISH_METRES))
+				_terrain.set_shader_parameter("finish_luma", FreeAssets.finish_luma())
+				var tints := PackedVector3Array()
+				for k in FreeAssets.FINISHES.size():
+					tints.append(FINISH_TINT[k])
+				_terrain.set_shader_parameter("finish_tint", tints)
+				_terrain.set_shader_parameter("has_finish", true)
 	return _terrain
+
+
+## Each finish's colour (FreeAssets.FINISHES) against its scan, so it sits
+## with the turf's tone (the scans are shot in flat light): pine straw a
+## little warmer, as fallen longleaf needles weather to a russet brown; the
+## mud scan (wet, shot dark) lifted to damp earth.
+const FINISH_TINT: Array[Vector3] = [Vector3(0.95, 0.93, 0.9), Vector3(1.05, 0.86, 0.7), Vector3(4.2, 3.9, 3.5), Vector3.ONE, Vector3(0.85, 0.85, 0.85)]
 
 
 ## The UV2 value terrain() reads for a surface: x is the rough weight, y the

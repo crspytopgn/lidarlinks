@@ -85,6 +85,13 @@ func cover_at(_x: float, _z: float) -> String:
 	return ""
 
 
+## The bare-ground finish drawn here (DesignedTerrain.Finish: 0 none, else
+## beach sand, pine straw or mud), where grass and plants don't grow.
+## Looks only.
+func finish_at(_x: float, _z: float) -> int:
+	return 0
+
+
 ## True in the first cut: the band of rough beside a fairway mown a little
 ## longer than the fairway and shorter than the rough. Looks only: it plays
 ## as rough (surface_at says ROUGH).

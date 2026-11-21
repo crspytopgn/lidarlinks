@@ -59,6 +59,18 @@ uniform vec3 sand_vertex = vec3(0.78, 0.72, 0.55);
 // which is swapped for the raster's; the photo tint and mowing stripes in
 // the vertex colour stay.
 uniform bool has_splat = false;
+// The ground's finishes (DesignedTerrain.Finish, the splat code's high four
+// bits): photoscans of what bare ground is where it isn't turf, in one
+// array (FreeAssets.finish_array): albedo layers 0 beach sand, 1 pine
+// straw, 2 mud, 3 desert hardpan, 4 bare rock, then their normal maps in
+// the same order. One sampler for all, as Compatibility has few.
+uniform bool has_finish = false;
+uniform sampler2DArray finish_tex : source_color, filter_linear_mipmap, repeat_enable;
+uniform float finish_metres[5]; // one tile of each finish
+uniform vec3 finish_tint[5]; // each finish's colour scale (linear)
+uniform float finish_luma[5]; // each photo's mean luminance (linear)
+// Steep, unmown banks steeper than this (the normal's y) show bare rock.
+uniform float rock_from_up = 0.62;
 uniform sampler2D splat_tex : filter_nearest, repeat_disable;
 uniform vec2 splat_origin = vec2(0.0); // world x, z of the raster's corner
 uniform vec2 splat_size = vec2(1.0); // metres it covers
@@ -159,8 +171,11 @@ void vertex() {
 
 // The raster's colour and weights at ground point p, blended over a
 // fraction of a texel with a ragged, natural line.
-void splat_add(ivec2 t, ivec2 size, float a, inout vec3 col, inout vec2 w, inout float mown, inout float stripe_m, inout float cut, inout vec2 green, inout float deep, inout float bare) {
-	int s = clamp(int(texelFetch(splat_tex, clamp(t, ivec2(0), size - 1), 0).r * 255.0 + 0.5), 0, 10);
+void splat_add(ivec2 t, ivec2 size, float a, inout vec3 col, inout vec2 w, inout float mown, inout float stripe_m, inout float cut, inout vec2 green, inout float deep, inout float bare, inout vec3 fin) {
+	int raw = int(texelFetch(splat_tex, clamp(t, ivec2(0), size - 1), 0).r * 255.0 + 0.5);
+	int s = clamp(raw & 15, 0, 10);
+	int f = raw >> 4;
+	fin += vec3(f == 1 ? a : 0.0, f == 2 ? a : 0.0, f == 3 ? a : 0.0); // beach, pine straw, mud
 	green += vec2(s == 3 ? a : 0.0, s == 0 ? a : 0.0); // Surface.Type.GREEN, TEE
 	deep += s == 5 ? a : 0.0; // Surface.Type.DEEP_ROUGH
 	bare += surface_bare[s] * a;
@@ -188,7 +203,7 @@ float baked_edge(vec2 p, int k) {
 }
 
 // `green` is the share of green and of tee in the blend; `deep` the deep rough's.
-void splat_at(vec2 p, out vec3 col, out vec2 w, out float mown, out float stripe_m, out float cut, out vec2 green, out float deep, out float bare) {
+void splat_at(vec2 p, out vec3 col, out vec2 w, out float mown, out float stripe_m, out float cut, out vec2 green, out float deep, out float bare, out vec3 fin) {
 	ivec2 size = splat_codes.x > 0 ? splat_codes : textureSize(splat_tex, 0);
 	// A slow wobble, so an edge wanders a little like a mower's line
 	// rather than following the raster.
@@ -197,7 +212,7 @@ void splat_at(vec2 p, out vec3 col, out vec2 w, out float mown, out float stripe
 	// Not round a green and its collar, a tee or a bunker, though: they
 	// are cut with a steady hand in one smooth curve, and the wobble
 	// scalloped the edge.
-	int here = int(texelFetch(splat_tex, clamp(ivec2(floor(q + 0.5)), ivec2(0), size - 1), 0).r * 255.0 + 0.5);
+	int here = int(texelFetch(splat_tex, clamp(ivec2(floor(q + 0.5)), ivec2(0), size - 1), 0).r * 255.0 + 0.5) & 15;
 	q += wobble * (here == 3 || here == 10 || here == 0 || here == 6 ? 0.15 : 1.2);
 	col = vec3(0.0);
 	w = vec2(0.0);
@@ -207,6 +222,7 @@ void splat_at(vec2 p, out vec3 col, out vec2 w, out float mown, out float stripe
 	green = vec2(0.0);
 	deep = 0.0;
 	bare = 0.0;
+	fin = vec3(0.0);
 	// Away from edges the nearest texel is the answer. On an edge, a
 	// quadratic B-spline over the 3x3 texels round it: its contours are
 	// smooth curves, where a bilinear blend of a 0.5 m raster draws stair
@@ -219,22 +235,38 @@ void splat_at(vec2 p, out vec3 col, out vec2 w, out float mown, out float stripe
 		|| int(texelFetch(splat_tex, clamp(c + ivec2(0, d.y), ivec2(0), size - 1), 0).r * 255.0 + 0.5) != s0
 		|| int(texelFetch(splat_tex, clamp(c + d, ivec2(0), size - 1), 0).r * 255.0 + 0.5) != s0;
 	if (!edge) {
-		splat_add(c, size, 1.0, col, w, mown, stripe_m, cut, green, deep, bare);
+		splat_add(c, size, 1.0, col, w, mown, stripe_m, cut, green, deep, bare, fin);
 		return;
 	}
 	vec3 bx = vec3(0.5 * (0.5 - t.x) * (0.5 - t.x), 0.75 - t.x * t.x, 0.5 * (0.5 + t.x) * (0.5 + t.x));
 	vec3 by = vec3(0.5 * (0.5 - t.y) * (0.5 - t.y), 0.75 - t.y * t.y, 0.5 * (0.5 + t.y) * (0.5 + t.y));
 	for (int j = 0; j < 3; j++) {
 		for (int i = 0; i < 3; i++) {
-			splat_add(c + ivec2(i - 1, j - 1), size, bx[i] * by[j], col, w, mown, stripe_m, cut, green, deep, bare);
+			splat_add(c + ivec2(i - 1, j - 1), size, bx[i] * by[j], col, w, mown, stripe_m, cut, green, deep, bare, fin);
 		}
 	}
 	// The stripe width is the nearest texel's, never a blend: the stripe
 	// coordinate is metres across the whole hole, so dividing it by a width
 	// that drifts over half a metre drew dense fingerprint rings along
 	// every surface edge.
-	s0 = clamp(s0, 0, 10);
+	s0 = clamp(s0 & 15, 0, 10);
 	stripe_m = surface_stripe_metres[s0] > 0.0 ? surface_stripe_metres[s0] : splat_stripe_metres;
+}
+
+// Finish layer k's colour (linear) and its normal map's tilt (x, z), at
+// two scales so its repeat is hard to see.
+// They're sampled inside branches, so with the ground point's own
+// derivatives (dx, dy: taken where every pixel of the quad runs).
+vec3 finish_albedo(int k, vec2 p, vec2 dx, vec2 dy) {
+	float m = finish_metres[k];
+	vec3 a = mix(textureGrad(finish_tex, vec3(p / m, float(k)), dx / m, dy / m).rgb,
+		textureGrad(finish_tex, vec3(p * 0.29 / m + vec2(0.31, 0.71), float(k)), dx * 0.29 / m, dy * 0.29 / m).rgb, 0.2);
+	return a * finish_tint[k];
+}
+vec2 finish_tilt(int k, vec2 p, vec2 dx, vec2 dy) {
+	float m = finish_metres[k];
+	vec3 n = textureGrad(finish_tex, vec3(p / m, float(k + 5)), dx / m, dy / m).rgb * 2.0 - 1.0;
+	return vec2(n.x, -n.y);
 }
 
 // Takes surface k's share out of the splat blend and puts surface k back
@@ -266,8 +298,14 @@ vec4 two_scale_grad(sampler2D tex, vec2 uv, vec2 dx, vec2 dy) {
 void fragment() {
 	vec2 p = world_pos.xz;
 	// Derivatives in uniform control flow, before any branch.
-	vec2 uv_dx = dFdx(p) / texture_metres;
-	vec2 uv_dy = dFdy(p) / texture_metres;
+	vec2 p_dx = dFdx(p);
+	vec2 p_dy = dFdy(p);
+	// The bare rock's photo lies on the slope: across and up the bank.
+	vec2 pr = vec2(world_pos.x + world_pos.z, world_pos.y * 1.6);
+	vec2 pr_dx = dFdx(pr);
+	vec2 pr_dy = dFdy(pr);
+	vec2 uv_dx = p_dx / texture_metres;
+	vec2 uv_dy = p_dy / texture_metres;
 	vec2 hole_mow_line = mow_line_from(stripes.x, p);
 	float mow_seam = 1.0 - smoothstep(1.3, 2.0, mow_rate(stripes.x, p));
 	vec3 from_eye = world_pos - CAMERA_POSITION_WORLD;
@@ -298,6 +336,8 @@ void fragment() {
 	float lip_w = wy;
 	float deep_rough = 0.0; // the deep rough's share here (splat map only)
 	float bare = 0.0; // bare ground's share here (splat map only)
+	vec3 fin = vec3(0.0); // the finishes' shares here: beach, pine straw, mud
+	float mown_here = 0.0;
 	vec2 sq = (p - splat_origin) / splat_size;
 	bool on_splat = has_splat && all(greaterThanEqual(sq, vec2(0.0))) && all(lessThanEqual(sq, vec2(1.0)));
 	if (on_splat) {
@@ -309,7 +349,8 @@ void fragment() {
 		float mown;
 		float stripe_m;
 		vec2 green;
-		splat_at(p, crisp, w, mown, stripe_m, cut, green, deep_rough, bare);
+		splat_at(p, crisp, w, mown, stripe_m, cut, green, deep_rough, bare, fin);
+		mown_here = clamp(mown, 0.0, 1.0);
 		bool baked = splat_codes.x > 0;
 		// The green's edge is a mown line too: crisp, like the bunker's,
 		// so the darker collar reads as a clean ring round it.
@@ -489,6 +530,37 @@ void fragment() {
 	col *= mix(1.0, 0.9 - 0.22 * damp, sand);
 	col *= 1.0 + 0.07 * rake * sand * (0.6 + 0.4 * value_noise(p * 0.4));
 	vec3 albedo = clamp(tone_turf(col), vec3(0.0), vec3(1.0));
+	// The finishes: beach sand on mapped beaches and dunes, pine straw
+	// under the conifers, mud along the water, bare rock on banks too steep
+	// for turf. Each only where the ground isn't mown turf (beach sand only
+	// where it is sand), with a ragged edge.
+	if (has_finish) {
+		float unmown = (1.0 - mown_here) * (1.0 - cut) * (1.0 - sand);
+		float rag = (value_noise(p * 0.9) - 0.5) * 0.5 + (value_noise(p * 3.1 + vec2(5.1, 2.7)) - 0.5) * 0.25;
+		vec4 fw = vec4(fin.x * sand,
+			smoothstep(0.35, 0.65, fin.y + rag) * unmown,
+			smoothstep(0.3, 0.6, fin.z + rag) * unmown,
+			rock_slopes ? 0.0 : smoothstep(rock_from_up + 0.06, rock_from_up - 0.06, ground_up + rag * 0.08) * unmown * (1.0 - fin.y));
+		float near_f = 1.0 - smoothstep(30.0, 200.0, length(VERTEX));
+		vec2 tilt_f = vec2(0.0);
+		if (fw.x > 0.001) {
+			albedo = mix(albedo, finish_albedo(0, p, p_dx, p_dy), fw.x);
+			tilt_f += finish_tilt(0, p, p_dx, p_dy) * fw.x;
+		}
+		if (fw.y > 0.001) {
+			albedo = mix(albedo, finish_albedo(1, p, p_dx, p_dy), fw.y);
+			tilt_f += finish_tilt(1, p, p_dx, p_dy) * fw.y;
+		}
+		if (fw.z > 0.001) {
+			albedo = mix(albedo, finish_albedo(2, p, p_dx, p_dy), fw.z);
+			tilt_f += finish_tilt(2, p, p_dx, p_dy) * fw.z;
+		}
+		if (fw.w > 0.001) {
+			albedo = mix(albedo, finish_albedo(4, pr, pr_dx, pr_dy), fw.w);
+			tilt_f += finish_tilt(4, pr, pr_dx, pr_dy) * fw.w;
+		}
+		NORMAL = normalize(NORMAL + (VIEW_MATRIX * vec4(tilt_f.x, 0.0, tilt_f.y, 0.0)).xyz * mix(0.35, 0.9, near_f));
+	}
 	// Bare ground as it really lies: one tinted sand texture read as a
 	// smooth painted floor (desert as pink felt, lava as chocolate).
 	float bare_w = clamp(bare, 0.0, 1.0);
@@ -513,6 +585,14 @@ void fragment() {
 			styled *= 1.0 + 0.12 * grit;
 			styled = mix(styled, styled * 0.62, stone * 0.55);
 			bump_b = 0.35 * gravel + 0.5 * stone;
+			// The photoscanned hardpan's crust and grit, toned to the
+			// course's own ground colour.
+			if (has_finish) {
+				float hp = dot(finish_albedo(3, p, p_dx, p_dy) / max(finish_tint[3], vec3(0.01)), vec3(0.2126, 0.7152, 0.0722)) / max(finish_luma[3], 0.02);
+				styled *= mix(1.0, hp, 0.7 * mix(0.4, 1.0, near_b));
+				vec2 ht = finish_tilt(3, p, p_dx, p_dy);
+				NORMAL = normalize(NORMAL + (VIEW_MATRIX * vec4(ht.x, 0.0, ht.y, 0.0)).xyz * 0.6 * bare_w);
+			}
 		} else {
 			// A'a: black clinker, rusty where it has weathered, pitted and
 			// rough at every scale, so it catches the light in crumbs.

@@ -1,0 +1,82 @@
+{
+ "source": "Poly Haven and ambientCG (CC0), see docs/free-pack.md",
+ "slots": {
+  "path": {
+   "title": "clean_asphalt",
+   "size_m": 2.1,
+   "albedo": "clean_asphalt_albedo.webp",
+   "normal": "clean_asphalt_normal.webp",
+   "roughness": "clean_asphalt_roughness.webp"
+  },
+  "path@us": {
+   "title": "Concrete034",
+   "size_m": 2.0,
+   "albedo": "Concrete034_albedo.webp",
+   "normal": "Concrete034_normal.webp",
+   "roughness": "Concrete034_roughness.webp"
+  },
+  "path@desert": {
+   "title": "Concrete034",
+   "size_m": 2.0,
+   "albedo": "Concrete034_albedo.webp",
+   "normal": "Concrete034_normal.webp",
+   "roughness": "Concrete034_roughness.webp"
+  },
+  "path@tropical": {
+   "title": "Concrete034",
+   "size_m": 2.0,
+   "albedo": "Concrete034_albedo.webp",
+   "normal": "Concrete034_normal.webp",
+   "roughness": "Concrete034_roughness.webp"
+  },
+  "deck": {
+   "title": "Planks023A",
+   "size_m": 0.85,
+   "albedo": "Planks023A_albedo.webp",
+   "normal": "Planks023A_normal.webp",
+   "roughness": "Planks023A_roughness.webp"
+  },
+  "timber": {
+   "title": "Planks023A",
+   "size_m": 0.85,
+   "albedo": "Planks023A_albedo.webp",
+   "normal": "Planks023A_normal.webp",
+   "roughness": "Planks023A_roughness.webp"
+  },
+  "deck@us": {
+   "title": "Planks011",
+   "size_m": 2.24,
+   "albedo": "Planks011_albedo.webp",
+   "normal": "Planks011_normal.webp",
+   "roughness": "Planks011_roughness.webp"
+  },
+  "timber@us": {
+   "title": "Planks011",
+   "size_m": 2.24,
+   "albedo": "Planks011_albedo.webp",
+   "normal": "Planks011_normal.webp",
+   "roughness": "Planks011_roughness.webp"
+  },
+  "deck@tropical": {
+   "title": "Planks037A",
+   "size_m": 2.2,
+   "albedo": "Planks037A_albedo.webp",
+   "normal": "Planks037A_normal.webp",
+   "roughness": "Planks037A_roughness.webp"
+  },
+  "timber@tropical": {
+   "title": "Planks037A",
+   "size_m": 2.2,
+   "albedo": "Planks037A_albedo.webp",
+   "normal": "Planks037A_normal.webp",
+   "roughness": "Planks037A_roughness.webp"
+  },
+  "bench": {
+   "title": "Wood060",
+   "size_m": 0.5,
+   "albedo": "Wood060_albedo.webp",
+   "normal": "Wood060_normal.webp",
+   "roughness": "Wood060_roughness.webp"
+  }
+ }
+}

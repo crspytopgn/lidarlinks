@@ -144,8 +144,9 @@ jobs:
       # download leaves the build untextured rather than failing it.
       - name: Fetch free assets
         run: |
-          # Pillow builds the trees' leaf spray atlas from the leaf set.
-          sudo apt-get update -q && sudo apt-get install -y -q python3-pil
+          # Pillow builds the trees' leaf spray atlas from the leaf set;
+          # numpy and Pillow prepare the free pack's textures.
+          sudo apt-get update -q && sudo apt-get install -y -q python3-pil python3-numpy
           python3 tools/fetch_free_assets.py
 
       - name: Import project

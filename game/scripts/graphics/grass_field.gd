@@ -330,7 +330,7 @@ static func build_chunk(t: CourseTerrain, key: Vector2i, density: float) -> Mult
 		var size := rng.randf()
 		var phase := rng.randf()
 		var surface := t.surface_at(x, z)
-		if not HEIGHTS.has(surface) or Biome.is_bare(biome, surface):
+		if not HEIGHTS.has(surface) or Biome.is_bare(biome, surface) or (surface != Surface.Type.FAIRWAY and t.finish_at(x, z) != 0):
 			continue
 		var hr: Vector2 = FIRST_CUT_HEIGHT if surface == Surface.Type.ROUGH and t.first_cut_at(x, z) else HEIGHTS[surface]
 		var h := lerpf(hr.x, hr.y, size)

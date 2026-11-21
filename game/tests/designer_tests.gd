@@ -290,6 +290,18 @@ func _test_starter_surfaces() -> void:
 			pond = i
 	var p: Vector2 = pts.pond
 	check(pond >= 0 and t.height_at(p.x, p.y) < t.water_level(c.shapes[pond]) - 0.5, "pond bed under the water")
+	# Ground finishes (docs/free-pack.md): mud just outside the pond's edge,
+	# none in the water or on the fairway, and in the splat's high bits.
+	var mud := 0
+	var o := c.shapes[pond].outline()
+	for k in range(0, o.size(), maxi(1, o.size() / 12)):
+		var out_dir := (o[k] - p).normalized()
+		var q := o[k] + out_dir * 0.6
+		if t.surface_at(q.x, q.y) in [Surface.Type.ROUGH, Surface.Type.DEEP_ROUGH] and t.finish_at(q.x, q.y) == DesignedTerrain.Finish.MUD:
+			mud += 1
+	check(mud >= 3, "mud along the pond's edge (%d)" % mud)
+	check(t.finish_at(p.x, p.y) == 0 and t.finish_at(pts.fairway.x, pts.fairway.y) == 0, "no finish in the pond or on the fairway")
+	check(t.surface_at(o[0].x + (o[0] - p).normalized().x * 0.6, o[0].y + (o[0] - p).normalized().y * 0.6) < 16, "the finish never reaches the surface codes")
 	# Tee pads are level.
 	var tee2: Vector2 = pts.tee
 	check(absf(t.height_at(tee2.x, tee2.y + 10) - t.height_at(tee2.x, tee2.y - 10)) < 0.05, "tee box is level")
