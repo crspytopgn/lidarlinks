@@ -1058,7 +1058,10 @@ Nothing in the round needs to change.
   plants the feet on slopes (`GolferRig.set_ground`). A full backswing
   stops at a tour top (`FreeGolfer.BACKSWING_TOP`: the driver's shaft about
   level, irons short of it), not at the end of the take, which swings about
-  30 degrees past parallel; the downswing blends on from there. If either file is
+  30 degrees past parallel; the downswing blends on from there.
+  `GolferKnees` (before `GolferFeet`) turns each leg about its hip-ankle
+  line so the knee sits no more than 3 cm outside it: the takes bowed the
+  trail knee 14 cm out at the top and the lead knee 12 cm at impact. If either file is
   missing it falls back to `PlaceholderGolfer`, the figure built from
   primitives.
 - **Audio:** subclass `SoundBank` (`play(event)`, and optionally
