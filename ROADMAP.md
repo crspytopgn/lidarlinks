@@ -34,10 +34,11 @@ product lead builds it.
 3. [x] **Tee view shows the target**: on hilly holes (placeholder hole 1) the
    tee camera looks into the slope and the fairway is out of sight; the
    auto club also picks a 3 hybrid on a 389-yard par 4. Fixed in #101.
-4. [ ] **Gimmes, mulligans and pick-up**: house rules for quicker casual
+4. [x] **Gimmes, mulligans and pick-up**: house rules for quicker casual
    rounds (off in Classic Links). Gimmes done (Settings > Gimmes,
    [game-shell.md](docs/game-shell.md#gimmes)) and mulligans (Settings >
-   Mulligans, U after a shot); a choice of pick-up limit to come. Owner: lead.
+   Mulligans, U after a shot) and the pick-up limit (Settings > Pick up,
+   item 13). Owner: lead.
 5. [x] **Driving range with launch-monitor numbers**: ball speed, launch,
    spin, carry, total and dispersion per club. Done: Play > Practice range
    on any course ([game-shell.md](docs/game-shell.md#practice-range)).
@@ -60,10 +61,11 @@ product lead builds it.
    their own.
 8. [ ] **Menu polish**: a live course flyover behind the menus. (The round
    setup panel and the key hints were fixed in #101.) Owner: lead.
-9. [ ] **Accessibility**: remappable keys, a colour-blind-safe meter and aim
+9. [x] **Accessibility**: remappable keys, a colour-blind-safe meter and aim
    marker, UI scale, captions for voice and commentary. UI scale
    (Settings > Interface size), a colour-blind-safe meter (Settings >
-   Colours) and remappable keys (Settings > Keys) done. Owner: lead.
+   Colours), remappable keys (Settings > Keys) and captions (Settings >
+   Captions) done; the aim ring is white since #225. Owner: lead.
 10. [x] **Personal records**: longest drive, best rounds per course, birdie,
    eagle and hole-in-one counts on the players page. Owner: lead.
 11. [x] **Hole positions**: Links 2003 courses keep 18 hole positions per

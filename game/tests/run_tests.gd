@@ -3988,6 +3988,10 @@ func _test_photo_golfer() -> void:
 func _test_free_golfer() -> void:
 	var golfer := FreeGolfer.create()
 	_check(golfer != null, "free_golfer.glb loads with an AnimationPlayer")
+	_check(is_equal_approx(FreeGolfer.backswing_top(&"backswing", 0.9), FreeGolfer.BACKSWING_TOP)
+		and is_equal_approx(FreeGolfer.backswing_top(&"backswing_iron", 0.9), FreeGolfer.BACKSWING_TOP_IRON)
+		and is_equal_approx(FreeGolfer.backswing_top(&"backswing", 0.5), 0.5),
+		"a full backswing stops at a tour top, short of the take's overswing")
 	if golfer == null:
 		return
 	for anim_name in [&"address", &"address_putt", &"backswing", &"swing", &"putt", &"celebrate", &"fist_pump", &"slump", &"upset", &"walk", &"idle", &"read", &"survey", &"fore_left", &"fore_right", &"address_iron", &"backswing_iron", &"swing_iron", &"pull_club"]:

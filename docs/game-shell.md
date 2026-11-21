@@ -1055,7 +1055,10 @@ Nothing in the round needs to change.
   [Player creator](#player-creator); licence in `LICENSE.md` next to them).
   Two `SkeletonModifier3D`s run on top of the clips: `GolferLook` turns the
   head to follow the ball in flight (`GolferRig.watch`) and `GolferFeet`
-  plants the feet on slopes (`GolferRig.set_ground`). If either file is
+  plants the feet on slopes (`GolferRig.set_ground`). A full backswing
+  stops at a tour top (`FreeGolfer.BACKSWING_TOP`: the driver's shaft about
+  level, irons short of it), not at the end of the take, which swings about
+  30 degrees past parallel; the downswing blends on from there. If either file is
   missing it falls back to `PlaceholderGolfer`, the figure built from
   primitives.
 - **Audio:** subclass `SoundBank` (`play(event)`, and optionally
