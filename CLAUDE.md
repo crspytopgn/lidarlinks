@@ -47,6 +47,11 @@ and don't start a "(needs data)" item on guesses.
   (`course_objects.cpp`) and `game/scripts/course/course_areas.gd`
   (`course_areas.cpp`).
 
+- The free pack (docs/free-pack.md): `tools/free_pack/baked/` holds CC0
+  meshes and manifests in the private Megascans pack's layout, committed;
+  `tools/fetch_free_assets.py` adds their textures. Rebake with
+  `tools/free_pack/free_pack.py bake` when its tables change.
+
 - `launcher/` is a separate small Godot project: the desktop launcher
   (docs/launcher.md). It writes the game's `user://settings.cfg` keys, so
   keep `launcher/scripts/game_config.gd` in step with

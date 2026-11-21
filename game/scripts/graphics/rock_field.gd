@@ -55,7 +55,7 @@ const STYLES := {
 static func rocks() -> Array:
 	if not _loaded:
 		_loaded = true
-		var dir := FreeAssets.megascans_dir()
+		var dir := FreeAssets.pack_dir(MANIFEST)
 		if not dir.is_empty() and FileAccess.file_exists(dir + MANIFEST):
 			var data: Variant = JSON.parse_string(FileAccess.get_file_as_string(dir + MANIFEST))
 			if data is Dictionary and (data as Dictionary).get("rocks") is Array:
@@ -70,21 +70,30 @@ static func available() -> bool:
 ## A rock's mesh (real size, base at y = 0), loaded once; null if missing.
 static func mesh(id: String) -> Mesh:
 	if not _meshes.has(id):
-		var path := FreeAssets.megascans_dir() + "rocks/" + id + ".res"
+		var path := FreeAssets.pack_dir(MANIFEST) + "rocks/" + id + ".res"
 		_meshes[id] = ResourceLoader.load(path) as Mesh if FileAccess.file_exists(path) else null
 	return _meshes[id]
+
+
+## The file of a rock's `map` (albedo, normal or rough) under rocks/: the
+## rock's own, or its set's ("tex") where a set's rocks share one scan.
+static func texture_file(id: String, map: String) -> String:
+	for r: Dictionary in rocks():
+		if str(r.get("id", "")) == id:
+			return "%s_%s.%s" % [str(r.get("tex", id)), map, str(r.get("ext", "jpg"))]
+	return "%s_%s.jpg" % [id, map]
 
 
 ## A rock's material from its scanned maps, made once.
 static func material(id: String) -> Material:
 	if not _materials.has(id):
 		var m := StandardMaterial3D.new()
-		m.albedo_texture = FreeAssets.megascans_texture(id + "_albedo.jpg", "rocks/")
-		var n := FreeAssets.megascans_texture(id + "_normal.jpg", "rocks/", true)
+		m.albedo_texture = FreeAssets.megascans_texture(texture_file(id, "albedo"), "rocks/")
+		var n := FreeAssets.megascans_texture(texture_file(id, "normal"), "rocks/", true)
 		if n != null:
 			m.normal_enabled = true
 			m.normal_texture = n
-		var r := FreeAssets.megascans_texture(id + "_rough.jpg", "rocks/")
+		var r := FreeAssets.megascans_texture(texture_file(id, "rough"), "rocks/")
 		if r != null:
 			m.roughness_texture = r
 			m.roughness_texture_channel = BaseMaterial3D.TEXTURE_CHANNEL_RED

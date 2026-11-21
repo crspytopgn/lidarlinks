@@ -320,7 +320,7 @@ static func build_sward_chunk(t: CourseTerrain, key: Vector2i, density: float) -
 		var size := rng.randf()
 		var pick := rng.randf()
 		var surface := t.surface_at(x, z)
-		if surface != Surface.Type.DEEP_ROUGH or Biome.is_bare(biome, surface):
+		if surface != Surface.Type.DEEP_ROUGH or Biome.is_bare(biome, surface) or t.finish_at(x, z) != 0:
 			continue
 		var h := lerpf(SWARD_HEIGHT.x, SWARD_HEIGHT.y, size)
 		var c := t.ground_color_at(x, z)
@@ -452,7 +452,7 @@ static func _build(t: CourseTerrain, key: Vector2i, density: float, crowns: Pack
 		var pick := rng.randf()
 		var tone := rng.randf()
 		var grow := rng.randf()
-		if not SURFACES.has(t.surface_at(x, z)):
+		if not SURFACES.has(t.surface_at(x, z)) or t.finish_at(x, z) != 0:
 			continue
 		var native := native_at(x, z, t.normal_at(x, z).y)
 		if keep * NATIVE_DENSITY > 1.0 + (NATIVE_DENSITY - 1.0) * native:

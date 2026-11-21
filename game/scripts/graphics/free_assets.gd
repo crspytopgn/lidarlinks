@@ -10,7 +10,8 @@ const DIR := "res://free_assets/"
 const GROUNDS: Array[String] = ["grass", "rough", "sand"]
 
 
-## `slot` is "grass", "rough", "sand", "path" or "dirt"; `map` is "albedo", "normal", "height" or
+## `slot` is "grass", "rough", "sand", "path", "dirt", "cliff" or a
+## finish ("finish_beach" and so on, see FINISHES); `map` is "albedo", "normal", "height" or
 ## "roughness".
 static func ground(slot: String, map: String) -> Texture2D:
 	return _load("%s_%s.jpg" % [slot, map])
@@ -32,6 +33,71 @@ static func has_grounds() -> bool:
 		if ground(slot, "albedo") == null:
 			return false
 	return true
+
+
+## The ground finishes (terrain.gdshader's finish_tex, DesignedTerrain.
+## Finish), in layer order: what bare ground is where it isn't turf.
+## "rock" is the cliff slot's scan. Each is a CC0 photoscan fetched by
+## tools/fetch_free_assets.py as finish_<name>_albedo/normal.jpg.
+const FINISHES: Array[String] = ["beach", "pine", "mud", "hardpan", "rock"]
+## Metres per tile of each finish's scan (its real size).
+const FINISH_METRES: Array[float] = [2.0, 2.0, 2.4, 4.0, 3.0]
+const FINISH_SIZE := 512  ## pixels per layer of finish_array()
+static var _finish_array: Texture2DArray
+static var _finish_luma := PackedFloat32Array()
+
+
+## The finishes' albedos then normal maps as one texture array (one
+## sampler: Compatibility has few), each layer 512 square, or null when
+## any is missing. 512 on every renderer: the array stays uncompressed (an
+## exported game has no block compressor), so 1024 layers took about 53 MB
+## of video memory, and 512 is still 4 mm a pixel on a 2 m tile.
+static func finish_array() -> Texture2DArray:
+	if _finish_array != null:
+		return _finish_array
+	var size := FINISH_SIZE
+	var albedos: Array[Image] = []
+	var normals: Array[Image] = []
+	var luma := PackedFloat32Array()
+	for name in FINISHES:
+		var slot := "cliff" if name == "rock" else "finish_" + name
+		var a := ground(slot, "albedo")
+		var n := ground(slot, "normal")
+		if a == null or n == null:
+			return null
+		var mean := mean_color(a).srgb_to_linear()
+		luma.append(mean.get_luminance())
+		var ai := _layer(a, size)
+		var ni := _layer(n, size)
+		if ai == null or ni == null:
+			return null
+		albedos.append(ai)
+		normals.append(ni)
+	var arr := Texture2DArray.new()
+	if arr.create_from_images(albedos + normals) != OK:
+		return null
+	_finish_array = arr
+	_finish_luma = luma
+	return arr
+
+
+static func _layer(tex: Texture2D, size: int) -> Image:
+	var img := tex.get_image()
+	if img == null or img.is_empty():
+		return null
+	if img.is_compressed():
+		img.decompress()
+	img.clear_mipmaps()
+	img.convert(Image.FORMAT_RGBA8)
+	if img.get_width() != size or img.get_height() != size:
+		img.resize(size, size, Image.INTERPOLATE_LANCZOS)
+	img.generate_mipmaps()
+	return img
+
+
+## Mean luminance (linear) of each finish's photo, after finish_array().
+static func finish_luma() -> PackedFloat32Array:
+	return _finish_luma
 
 
 ## The normal map of a garment's weave for the realistic golfers:
@@ -169,6 +235,15 @@ static var _vram := {}  ## path -> the block-compressed copy (desktop)
 ## passed on. OL_MEGASCANS overrides the folder (the pack's root, holding
 ## foliage/).
 const MEGASCANS_DIR := "user://megascans/"
+## The free pack (docs/free-pack.md): the same layout baked from CC0 scans
+## (Poly Haven, ambientCG) by tools/fetch_free_assets.py, so every desktop
+## build has scanned plants, rocks, woodland debris and surfaces. Each
+## feature reads the private pack's manifest when it has one and this one
+## otherwise. Forward+ only: not in the web export (its download budget)
+## nor read in Compatibility (its video memory), and off with
+## OL_FREE_PACK=0 (to compare before and after).
+const FREE_PACK_DIR := "res://free_assets/pack/"
+static var free_pack := OS.get_environment("OL_FREE_PACK") != "0"
 
 
 static func megascans_dir() -> String:
@@ -178,19 +253,44 @@ static func megascans_dir() -> String:
 	return env.path_join("") if not env.is_empty() else MEGASCANS_DIR
 
 
-## A texture from the Megascans pack's `folder` (foliage/ or ground/), or null. Mipmapped, and
+## The packs to read, best first: the private one, then the free one.
+static func pack_dirs() -> PackedStringArray:
+	var out := PackedStringArray()
+	if OS.has_feature("web"):
+		return out
+	out.append(megascans_dir())
+	# Compatibility keeps textures uncompressed, so the free pack would
+	# add about 100 MB of video memory there (the low-end tier's budget):
+	# it is for Forward+ only, like the web build that leaves it out.
+	if free_pack and GraphicsSettings.is_forward_plus():
+		out.append(FREE_PACK_DIR)
+	return out
+
+
+## The pack whose `manifest` (such as "rocks/rocks.json") a feature reads:
+## the private pack's when it has one, else the free pack's; "" for none.
+static func pack_dir(manifest: String) -> String:
+	for dir in pack_dirs():
+		if FileAccess.file_exists(dir + manifest):
+			return dir
+	return ""
+
+
+## A texture from a pack's `folder` (foliage/ or ground/), or null: the
+## private pack's file, else the free pack's. Mipmapped, and
 ## block-compressed like the free ones on the desktop; halved to 1K in
 ## Compatibility, which keeps them uncompressed.
 static func _load_megascans(file: String, folder := "foliage/", normal := false, max_size := 0) -> Texture2D:
-	var dir := megascans_dir()
-	if dir.is_empty():
+	var path := ""
+	for dir in pack_dirs():
+		if FileAccess.file_exists(dir + folder + file):
+			path = dir + folder + file
+			break
+	if path.is_empty():
 		return null
-	var path := dir + folder + file
 	if _vram.has(path):
 		return _vram[path]
-	if not FileAccess.file_exists(path):
-		return null
-	var img := Image.load_from_file(path)
+	var img := read_image(path)
 	if img == null or img.is_empty():
 		return null
 	var cap := 1024 if not gpu_compress() else 1 << 30
@@ -205,6 +305,27 @@ static func _load_megascans(file: String, folder := "foliage/", normal := false,
 	var tex := ImageTexture.create_from_image(img)
 	_vram[path] = tex
 	return tex
+
+
+## An image file read as it is: from the user's folder, or from the free
+## pack in the game's own files (kept as they are, not imported, so they
+## load the same way in an exported game).
+static func read_image(path: String) -> Image:
+	if not path.begins_with("res://"):
+		return Image.load_from_file(path)
+	var bytes := FileAccess.get_file_as_bytes(path)
+	if bytes.is_empty():
+		return null
+	var img := Image.new()
+	var err := ERR_FILE_UNRECOGNIZED
+	match path.get_extension().to_lower():
+		"webp":
+			err = img.load_webp_from_buffer(bytes)
+		"png":
+			err = img.load_png_from_buffer(bytes)
+		"jpg", "jpeg":
+			err = img.load_jpg_from_buffer(bytes)
+	return img if err == OK else null
 
 
 ## A texture under the pack's surfaces/ folder (ScannedSurfaces), or null.

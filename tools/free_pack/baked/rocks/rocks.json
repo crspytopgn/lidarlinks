@@ -1,0 +1,245 @@
+{
+ "source": "Poly Haven and ambientCG (CC0), see docs/free-pack.md",
+ "rocks": [
+  {
+   "id": "boulder_01",
+   "title": "boulder_01",
+   "size": [
+    1.272,
+    1.004,
+    1.83
+   ],
+   "kind": "upland",
+   "tex": "boulder_01",
+   "ext": "webp"
+  },
+  {
+   "id": "rock_face_02",
+   "title": "rock_face_02",
+   "size": [
+    2.711,
+    2.472,
+    2.127
+   ],
+   "kind": "upland",
+   "tex": "rock_face_02",
+   "ext": "webp"
+  },
+  {
+   "id": "rock_moss_set_01_1",
+   "title": "rock_moss_set_01",
+   "size": [
+    2.238,
+    1.473,
+    3.369
+   ],
+   "kind": "woodland",
+   "tex": "rock_moss_set_01",
+   "ext": "webp"
+  },
+  {
+   "id": "rock_moss_set_01_2",
+   "title": "rock_moss_set_01",
+   "size": [
+    2.655,
+    1.262,
+    3.264
+   ],
+   "kind": "woodland",
+   "tex": "rock_moss_set_01",
+   "ext": "webp"
+  },
+  {
+   "id": "rock_moss_set_01_3",
+   "title": "rock_moss_set_01",
+   "size": [
+    2.126,
+    1.262,
+    2.757
+   ],
+   "kind": "woodland",
+   "tex": "rock_moss_set_01",
+   "ext": "webp"
+  },
+  {
+   "id": "rock_moss_set_01_4",
+   "title": "rock_moss_set_01",
+   "size": [
+    2.128,
+    1.768,
+    1.965
+   ],
+   "kind": "woodland",
+   "tex": "rock_moss_set_01",
+   "ext": "webp"
+  },
+  {
+   "id": "rock_moss_set_02_1",
+   "title": "rock_moss_set_02",
+   "size": [
+    1.954,
+    1.311,
+    1.529
+   ],
+   "kind": "woodland",
+   "tex": "rock_moss_set_02",
+   "ext": "webp"
+  },
+  {
+   "id": "rock_moss_set_02_2",
+   "title": "rock_moss_set_02",
+   "size": [
+    2.091,
+    1.256,
+    1.138
+   ],
+   "kind": "woodland",
+   "tex": "rock_moss_set_02",
+   "ext": "webp"
+  },
+  {
+   "id": "rock_moss_set_02_3",
+   "title": "rock_moss_set_02",
+   "size": [
+    2.203,
+    0.768,
+    1.552
+   ],
+   "kind": "woodland",
+   "tex": "rock_moss_set_02",
+   "ext": "webp"
+  },
+  {
+   "id": "rock_moss_set_02_4",
+   "title": "rock_moss_set_02",
+   "size": [
+    1.58,
+    0.736,
+    1.443
+   ],
+   "kind": "woodland",
+   "tex": "rock_moss_set_02",
+   "ext": "webp"
+  },
+  {
+   "id": "namaqualand_boulder_02",
+   "title": "namaqualand_boulder_02",
+   "size": [
+    2.532,
+    0.883,
+    1.234
+   ],
+   "kind": "sandstone",
+   "tex": "namaqualand_boulder_02",
+   "ext": "webp"
+  },
+  {
+   "id": "namaqualand_boulder_03",
+   "title": "namaqualand_boulder_03",
+   "size": [
+    2.407,
+    1.473,
+    3.065
+   ],
+   "kind": "sandstone",
+   "tex": "namaqualand_boulder_03",
+   "ext": "webp"
+  },
+  {
+   "id": "namaqualand_boulder_04",
+   "title": "namaqualand_boulder_04",
+   "size": [
+    2.522,
+    1.9,
+    2.496
+   ],
+   "kind": "sandstone",
+   "tex": "namaqualand_boulder_04",
+   "ext": "webp"
+  },
+  {
+   "id": "namaqualand_boulder_05",
+   "title": "namaqualand_boulder_05",
+   "size": [
+    1.364,
+    0.538,
+    0.748
+   ],
+   "kind": "sandstone",
+   "tex": "namaqualand_boulder_05",
+   "ext": "webp"
+  },
+  {
+   "id": "namaqualand_boulder_06",
+   "title": "namaqualand_boulder_06",
+   "size": [
+    0.675,
+    0.652,
+    1.212
+   ],
+   "kind": "sandstone",
+   "tex": "namaqualand_boulder_06",
+   "ext": "webp"
+  },
+  {
+   "id": "rock_face_01",
+   "title": "rock_face_01",
+   "size": [
+    4.954,
+    3.564,
+    3.827
+   ],
+   "kind": "dry_outcrop",
+   "tex": "rock_face_01",
+   "ext": "webp"
+  },
+  {
+   "id": "namaqualand_cliff_01",
+   "title": "namaqualand_cliff_01",
+   "size": [
+    8.279,
+    4.961,
+    4.39
+   ],
+   "kind": "dry_outcrop",
+   "tex": "namaqualand_cliff_01",
+   "ext": "webp"
+  },
+  {
+   "id": "coast_rocks_05",
+   "title": "coast_rocks_05",
+   "size": [
+    4.039,
+    1.331,
+    3.748
+   ],
+   "kind": "shore",
+   "tex": "coast_rocks_05",
+   "ext": "webp"
+  },
+  {
+   "id": "sand_rocks_small_01",
+   "title": "sand_rocks_small_01",
+   "size": [
+    4.627,
+    0.535,
+    3.883
+   ],
+   "kind": "shore",
+   "tex": "sand_rocks_small_01",
+   "ext": "webp"
+  },
+  {
+   "id": "coast_land_rocks_02",
+   "title": "coast_land_rocks_02",
+   "size": [
+    4.889,
+    1.398,
+    10.454
+   ],
+   "kind": "shore_outcrop",
+   "tex": "coast_land_rocks_02",
+   "ext": "webp"
+  }
+ ]
+}

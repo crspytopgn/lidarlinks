@@ -1,0 +1,77 @@
+{
+ "source": "Poly Haven and ambientCG (CC0), see docs/free-pack.md",
+ "litter": {
+  "leaves": {
+   "albedo": "debris/litter_leaves.webp",
+   "normal": "debris/litter_leaves_n.webp",
+   "size_m": 2.5
+  },
+  "needles": {
+   "albedo": "debris/litter_needles.webp",
+   "normal": "debris/litter_needles_n.webp",
+   "size_m": 2.5
+  }
+ },
+ "props": [
+  {
+   "uid": "tree_stump_01",
+   "title": "tree_stump_01",
+   "kind": "stump",
+   "under": "conifer",
+   "mesh": "debris/tree_stump_01.olmesh",
+   "albedo": "debris/tree_stump_01.webp",
+   "normal": "debris/tree_stump_01_n.webp",
+   "cutout": false
+  },
+  {
+   "uid": "tree_stump_02",
+   "title": "tree_stump_02",
+   "kind": "stump",
+   "under": "any",
+   "mesh": "debris/tree_stump_02.olmesh",
+   "albedo": "debris/tree_stump_02.webp",
+   "normal": "debris/tree_stump_02_n.webp",
+   "cutout": false
+  },
+  {
+   "uid": "dead_tree_trunk",
+   "title": "dead_tree_trunk",
+   "kind": "log",
+   "under": "any",
+   "mesh": "debris/dead_tree_trunk.olmesh",
+   "albedo": "debris/dead_tree_trunk.webp",
+   "normal": "debris/dead_tree_trunk_n.webp",
+   "cutout": false
+  },
+  {
+   "uid": "dead_tree_trunk_02",
+   "title": "dead_tree_trunk_02",
+   "kind": "log",
+   "under": "broadleaf",
+   "mesh": "debris/dead_tree_trunk_02.olmesh",
+   "albedo": "debris/dead_tree_trunk_02.webp",
+   "normal": "debris/dead_tree_trunk_02_n.webp",
+   "cutout": false
+  },
+  {
+   "uid": "dry_branches_medium_01",
+   "title": "dry_branches_medium_01",
+   "kind": "pine_branches",
+   "under": "conifer",
+   "mesh": "debris/dry_branches_medium_01.olmesh",
+   "albedo": "debris/dry_branches_medium_01.webp",
+   "normal": "debris/dry_branches_medium_01_n.webp",
+   "cutout": false
+  },
+  {
+   "uid": "bark_debris_01",
+   "title": "bark_debris_01",
+   "kind": "twigs",
+   "under": "any",
+   "mesh": "debris/bark_debris_01.olmesh",
+   "albedo": "debris/bark_debris_01.webp",
+   "normal": "debris/bark_debris_01_n.webp",
+   "cutout": false
+  }
+ ]
+}

@@ -115,6 +115,11 @@ var _tile_max := PackedFloat32Array()
 var _tiles_w := 0
 var _pads := TeePads.new()
 var _img: Image  ## surface raster (R8 holds the Surface.Type)
+## The raster as the shader gets it: the codes of _surf with the ground's
+## finish (Finish) in the high four bits, looks only. The shader shows a
+## finish only where the surface allows (beach sand only on sand, the rest
+## only on unmown ground). Empty when no cell has one.
+var _fin := PackedByteArray()
 var _surf := PackedByteArray()
 ## The sea's height (Landscape.sea_level), or NAN on a course with no sea.
 var _sea := NAN
@@ -156,6 +161,7 @@ func rebuild() -> void:
 	_sw = int(ceil(course.area.size.x / RES))
 	_sh = int(ceil(course.area.size.y / RES))
 	_img = Image.create_empty(_sw, _sh, false, Image.FORMAT_R8)
+	_fin = PackedByteArray()
 	_edge_w = maxi(1, ceili(course.area.size.x / GREEN_EDGE_RES))
 	_edge_img = Image.create_empty(_edge_w * DesignedTerrain.EDGE_BLOCKS.size(), maxi(1, ceili(course.area.size.y / GREEN_EDGE_RES)), false, Image.FORMAT_R8)
 	_h = course.heights.duplicate()
@@ -237,6 +243,10 @@ func update_objects() -> void:
 	for b in course.buildings:
 		CourseBuildings.add_obstacles(obstacles, b, self)
 	obstacles.finalize()
+	# Pine straw follows the crowns, so it is painted once they are known.
+	if _sw > 0:
+		_paint_finishes()
+		_update_splat()
 
 
 func height_at(x: float, z: float) -> float:
@@ -647,9 +657,13 @@ func _update_splat() -> void:
 	# The surface codes, and below them the edge distances, coarser
 	# where the codes leave too few rows (the codes keep their detail).
 	var codes := _img
+	if _fin.size() == _sw * _sh:
+		# With the finish (Finish) in the high four bits, for the shader
+		# only: everything else reads the plain codes in _surf.
+		codes = Image.create_from_data(_sw, _sh, false, Image.FORMAT_R8, _fin)
 	if _sw > SPLAT_MAX or _sh > SPLAT_MAX:
 		var k := float(SPLAT_MAX) / maxi(_sw, _sh)
-		codes = _img.duplicate() as Image
+		codes = codes.duplicate() as Image if codes == _img else codes
 		codes.resize(maxi(1, floori(_sw * k)), maxi(1, floori(_sh * k)), Image.INTERPOLATE_NEAREST)
 	var edges := _edge_img
 	var blocks := DesignedTerrain.EDGE_BLOCKS.size()
@@ -1250,6 +1264,101 @@ func _raster(px: Rect2i) -> void:
 	_img.set_data(_sw, _sh, false, Image.FORMAT_R8, _surf)
 	for k in DesignedTerrain.EDGE_BLOCKS.size():
 		_bake_edges(world, DesignedTerrain.EDGE_BLOCKS[k], k * _edge_w)
+	_paint_finishes()
+
+
+## What bare ground looks like where it shows (the splat's high bits; the
+## terrain shader's finish textures, docs/free-pack.md). Looks only: the
+## ball plays the surface underneath.
+enum Finish { NONE, BEACH, PINE_STRAW, MUD }
+## Mud along the water's edge (m), where the bank is unmown.
+const MUD_BAND := 1.2
+## Pine straw under a conifer's crown, out to this share of its radius.
+const STRAW_REACH := 0.95
+
+
+## The finish at (x, z) (Finish), for the grass and foliage that leave
+## bare ground bare.
+func finish_at(x: float, z: float) -> int:
+	var a := course.area
+	if _fin.is_empty() or not a.has_point(Vector2(x, z)):
+		return Finish.NONE
+	var c := mini(int((x - a.position.x) / RES), _sw - 1)
+	var r := mini(int((z - a.position.y) / RES), _sh - 1)
+	return _fin[r * _sw + c] >> 4
+
+
+## Paints the finishes inside `px` (raster cells), as general rules from
+## what the course already says: pine straw under every conifer's crown,
+## mud in a band along every pond, creek and sea shore, and beach sand on
+## every sand shape mapped as a beach (CourseShape cover "beach": beaches,
+## dunes and desert waste, not bunkers). Later rules win. Redone over the
+## whole course: it only walks the cells that get a finish.
+func _paint_finishes() -> void:
+	if _surf.size() != _sw * _sh or _sw <= 0:
+		return
+	_fin = _surf.duplicate()
+	var any := false
+	var px := Rect2i(0, 0, _sw, _sh)
+	var o := course.area.position
+	var world := Rect2(o, Vector2(px.size) * RES)
+	if obstacles != null:
+		var crowns := obstacles.canopies()
+		var conifer := obstacles.canopy_conifers()
+		for k in crowns.size():
+			if k >= conifer.size() or conifer[k] == 0:
+				continue
+			var cr := crowns[k]
+			var rad := cr.z * STRAW_REACH
+			if not world.grow(rad).has_point(Vector2(cr.x, cr.y)):
+				continue
+			_fill_disc(Vector2(cr.x, cr.y), rad, Finish.PINE_STRAW, px)
+			any = true
+	for s in course.shapes:
+		if s.surface == Surface.Type.WATER and s.is_valid() and s.bounds().grow(MUD_BAND).intersects(world):
+			for ring in Geometry2D.offset_polygon(s.outline(), MUD_BAND):
+				_fill_finish(ring, Finish.MUD, px)
+				any = true
+	for s in course.shapes:
+		if s.surface == Surface.Type.SAND and s.cover == "beach" and s.is_valid() and s.bounds().intersects(world):
+			_fill_finish(s.outline(), Finish.BEACH, px)
+			any = true
+	if not any:
+		_fin = PackedByteArray()
+
+
+func _fill_finish(poly: PackedVector2Array, finish: int, px: Rect2i) -> void:
+	var f := finish << 4
+	for span in _spans(poly, px):
+		var row: int = span.x * _sw
+		for c in range(span.y, span.z + 1):
+			if _finish_allowed(_surf[row + c], finish):
+				_fin[row + c] = _surf[row + c] | f
+
+
+## A finish only goes where its ground can be: beach sand on sand, pine
+## straw and mud on the unmown rough, never in water or on mown turf.
+static func _finish_allowed(code: int, finish: int) -> bool:
+	if finish == Finish.BEACH:
+		return code == Surface.Type.SAND
+	return code == Surface.Type.ROUGH or code == Surface.Type.DEEP_ROUGH
+
+
+func _fill_disc(centre: Vector2, radius: float, finish: int, px: Rect2i) -> void:
+	var o := course.area.position
+	var cy := (centre.y - o.y) / RES
+	var cx := (centre.x - o.x) / RES
+	var rr := radius / RES
+	for r in range(maxi(px.position.y, floori(cy - rr)), mini(px.end.y, ceili(cy + rr) + 1)):
+		var dy := r + 0.5 - cy
+		var half := rr * rr - dy * dy
+		if half <= 0.0:
+			continue
+		var w := sqrt(half)
+		var row := r * _sw
+		for c in range(maxi(px.position.x, floori(cx - w)), mini(px.end.x, ceili(cx + w))):
+			if _finish_allowed(_surf[row + c], finish):
+				_fin[row + c] = _surf[row + c] | (finish << 4)
 
 
 ## Marks the rough within FIRST_CUT_WIDTH of each fairway (not of cart
