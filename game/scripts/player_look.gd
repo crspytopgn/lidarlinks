@@ -135,8 +135,10 @@ const PEOPLE := [
 	["Male_Adult_11", "Man 3", 0.0], ["Male_Adult_09", "Man 4", 0.0],
 	["Female_Adult_13", "Woman 1", 1.0], ["Female_Adult_17", "Woman 2", 1.0],
 ]
-## A new player's golfer: the first realistic person.
-const DEFAULT_PERSON := "Male_Adult_14"
+## A new player's golfer (Man 2, Michael's pick on 2026-11-21).
+const DEFAULT_PERSON := "Male_Adult_08"
+## The person rigged on mixamo.com (tools/golfer/mixamo_person.py).
+const MIXAMO_PERSON := "Male_Adult_14"
 
 
 ## The blend shape weights: shape name -> weight.

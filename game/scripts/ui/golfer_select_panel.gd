@@ -21,7 +21,9 @@ static func choices() -> Array:
 	for p: Array in PlayerLook.PEOPLE:
 		var line := "Real scanned person"
 		if p[0] == PlayerLook.DEFAULT_PERSON:
-			line = "Real scanned person, the default golfer (Mixamo rig)"
+			line += ", the default golfer"
+		if p[0] == PlayerLook.MIXAMO_PERSON:
+			line += " (Mixamo rig)"
 		out.append([p[0], p[1], line])
 	out.append(["", "Custom", "The body, face and hair you shape in the player creator"])
 	return out

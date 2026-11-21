@@ -1158,7 +1158,7 @@ func _test_round_setup() -> void:
 	_check(claim.names[0] == "Mike", "creator: renamed first player")
 	_check(GolferSelectPanel.with_person(PlayerLook.default_look(), "Female_Adult_13").sex >= 0.5, "select golfer: a woman's look takes her sex")
 	_check(GolferSelectPanel.with_person(PlayerLook.default_look(), "").person == "", "select golfer: Custom is the creator's body")
-	_check(RoundSetupPanel.golfer_name(PlayerLook.default_look()) == "Man 1", "setup: the standard golfer is Man 1")
+	_check(RoundSetupPanel.golfer_name(PlayerLook.default_look()) == "Man 2", "setup: the standard golfer is Man 2")
 	var s := RoundSetup.new()
 	_check(s.problem().is_empty(), "one player stroke play is fine")
 	s.mode = GameModes.Mode.MATCH
