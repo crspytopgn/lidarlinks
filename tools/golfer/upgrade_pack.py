@@ -9,7 +9,9 @@ Run it on a pack straight from build_free_golfer.py (and golf_shoes.py):
 - collar.py: polo collars, plackets and buttons;
 - tailored.py: tailored trousers instead of jeans;
 - face_detail.py: a scanned face's pores, lines and skin colour on the face
-  (fetches the CC BY scan it uses the first time).
+  (fetches the CC BY scan it uses the first time);
+- skin_occlusion.py: the body's own ambient occlusion (eye sockets, round
+  the nose and mouth, the ears) traced into the skin.
 Each step refuses a pack it has already been run on.
 """
 
@@ -23,7 +25,7 @@ import numpy as np
 sys.path.insert(0, os.path.dirname(__file__))
 import golf_shoes  # noqa: E402
 
-STEPS = ["cap.py", "skin_regions.py", "collar.py", "tailored.py", "face_detail.py"]
+STEPS = ["cap.py", "skin_regions.py", "collar.py", "tailored.py", "face_detail.py", "skin_occlusion.py"]
 SPAN_KEYS = {"positions", "normals", "uvs", "bones", "weights", "indices", "tangents", "rows", "normals_u8", "data",
              "golf_source"}
 

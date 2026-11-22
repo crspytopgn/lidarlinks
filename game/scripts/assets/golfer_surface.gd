@@ -24,6 +24,12 @@ const WHITEST := 0.8
 
 ## How deep the scanned face's lines and pores are on an average man.
 const FACE_RELIEF := 1.0
+## How much of the baked occlusion (tools/golfer/skin_occlusion.py) darkens
+## the skin's colour as well as its ambient light.
+const SKIN_CAVITY := 0.6
+## The sculpted face's hollows are shallower than a real face's: its
+## traced occlusion is deepened this much.
+const SKIN_OCCLUSION_GAIN := 2.5
 
 ## The scanned face detail on the skin (FreeGolfer, from
 ## GraphicsSettings.quality via main.gd): 0 off (Low), 1 at half its
@@ -62,7 +68,7 @@ static func skin(mat: StandardMaterial3D) -> StandardMaterial3D:
 ## `face` is the scanned face detail ({albedo, normal: Texture2D, rect:
 ## Vector4}, see FreeGolfer._face_detail), or empty for none: full on a
 ## weathered older man, softer on a woman's and a young face.
-static func skin_shader(mat: StandardMaterial3D, look: PlayerLook, regions: Texture2D, face := {}) -> ShaderMaterial:
+static func skin_shader(mat: StandardMaterial3D, look: PlayerLook, regions: Texture2D, face := {}, occlusion: Texture2D = null) -> ShaderMaterial:
 	if regions == null:
 		return null
 	var m := ShaderMaterial.new()
@@ -80,6 +86,10 @@ static func skin_shader(mat: StandardMaterial3D, look: PlayerLook, regions: Text
 	m.set_shader_parameter("shave_shadow", (0.35 + 0.65 * look.stubble) if man else 0.0)
 	m.set_shader_parameter("lip_strength", 1.15 if not man else 0.8)
 	m.set_shader_parameter("flush_strength", 1.0)
+	if occlusion != null:
+		m.set_shader_parameter("baked_occlusion", occlusion)
+		m.set_shader_parameter("cavity", SKIN_CAVITY)
+		m.set_shader_parameter("occlusion_gain", SKIN_OCCLUSION_GAIN)
 	if not face.is_empty():
 		var years := clampf(1.0 + 0.3 * look.age, 0.6, 1.4)
 		m.set_shader_parameter("face_albedo", face.albedo)

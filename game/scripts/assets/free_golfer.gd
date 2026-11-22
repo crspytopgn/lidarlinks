@@ -305,7 +305,8 @@ func apply_look(p_look: PlayerLook) -> void:
 		elif tint == "person_hair":
 			mat = _plain(_matt(std))
 		elif is_skin:
-			mat = GolferSurface.skin_shader(std, look, _skin_regions(parts, mat_name), _face_detail(parts, mat_name))
+			mat = GolferSurface.skin_shader(std, look, _skin_regions(parts, mat_name), _face_detail(parts, mat_name),
+				_skin_occlusion(parts, mat_name))
 			if mat == null:
 				mat = GolferSurface.skin(std)
 			else:
@@ -526,6 +527,13 @@ static func under_cap(hair: ArrayMesh, parts: GolferParts, weights: Dictionary) 
 ## The look pack's map of the face's regions for the skin shader, or null.
 static func _skin_regions(parts: GolferParts, material_name: String) -> Texture2D:
 	var index := int(parts.info.materials[material_name].get("regions", -1))
+	return parts.texture(index) if index >= 0 else null
+
+
+## The skin's baked occlusion (tools/golfer/skin_occlusion.py), or null
+## (an older pack).
+static func _skin_occlusion(parts: GolferParts, material_name: String) -> Texture2D:
+	var index := int(parts.info.materials[material_name].get("occlusion", -1))
 	return parts.texture(index) if index >= 0 else null
 
 
