@@ -443,8 +443,7 @@ def regions(surface, colour, skin, names):
     lum = tex @ np.array([0.2126, 0.7152, 0.0722])
     # Skin: near the face's own colour (in chromaticity and brightness).
     chroma = tex / np.maximum(tex.sum(-1, keepdims=True), 1e-6)
-    sk = skin / max(skin.sum(), 1e-6)
-    is_skin = (np.linalg.norm(chroma - sk, axis=-1) < 0.05) & (np.abs(lum - skin @ [0.2126, 0.7152, 0.0722]) < 0.2)
+    is_skin = skin_texels(tex, skin)
     is_skin &= label != 3  # no skin on the feet: brown leather is still shoe
     # Where a tucked-in shirt or a trouser hem moves with the next body
     # part, the cloth's own colour says which garment it is: each texel goes
@@ -475,6 +474,7 @@ def regions(surface, colour, skin, names):
     mask = fill_holes(mask > 0.5, is_skin)
     mask = close_notches(mask > 0.5, is_skin)
     mask = grow_edges(mask > 0.5, tex)
+    mask = seal_seams(mask > 0.5, is_skin)
     img = Image.fromarray((mask * 255).astype(np.uint8)).filter(ImageFilter.GaussianBlur(0.8))
     buf = io.BytesIO()
     img.save(buf, "PNG", optimize=True)
@@ -506,6 +506,36 @@ def grow_edges(mask, tex, steps=GROW_STEPS):
         free = ~out.any(-1)
         for k in range(3):
             out[..., k] |= _dilate(out[..., k]) & free & close[k]
+            free &= ~out[..., k]
+    return out.astype(np.float64)
+
+
+SEAL_STEPS = 1  # mask texels a garment covers past a seam with other cloth
+
+
+def skin_texels(tex, skin):
+    """Texels of `tex` (linear, h x w x 3) near the skin colour `skin`
+    (the face's), in chromaticity and brightness."""
+    lum = tex @ np.array([0.2126, 0.7152, 0.0722])
+    chroma = tex / np.maximum(tex.sum(-1, keepdims=True), 1e-6)
+    sk = skin / max(skin.sum(), 1e-6)
+    return (np.linalg.norm(chroma - sk, axis=-1) < 0.05) & (np.abs(lum - skin @ [0.2126, 0.7152, 0.0722]) < 0.2)
+
+
+def seal_seams(mask, is_skin, steps=SEAL_STEPS):
+    """Each garment's mask (bool, h x w x 3) grown over the seam where its
+    cloth meets cloth the dye leaves alone (a contrast neckband, cuffs, a
+    top under a jacket). The mask is a quarter of the colour texture's
+    resolution and filtered, so along such a seam a line of the source
+    clothes' own colour showed through: a green halo round the white
+    neckband of a shirt dyed navy, which read as an odd fold at the
+    collar. Covering the seam's mask texel takes a millimetre or two off
+    the trim instead. Skin (a neckline) and other garments stay as they are."""
+    out = mask.copy()
+    for _ in range(steps):
+        free = ~out.any(-1) & ~is_skin
+        for k in range(3):
+            out[..., k] |= _dilate(out[..., k]) & free
             free &= ~out[..., k]
     return out.astype(np.float64)
 

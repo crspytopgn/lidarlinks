@@ -10,8 +10,15 @@ shader_type spatial;
 // detail (tools/golfer/face_detail.py) is laid over it: its fine lines,
 // creases and pores as a normal map and its uneven colour as a multiplier
 // (0.5 is none), over `face_rect` of the body's uvs, at three times the
-// body texture's resolution. Light scatters under the skin on Forward+
-// (Compatibility ignores it).
+// body texture's resolution. Only its fine detail is used: what it holds
+// at half a centimetre and more (its blurred mip) is the scan's own face shape
+// and, laid over ours, tipped whole patches of cheek and brow away from
+// the sun in sunburn-like blotches, so it is taken off.
+// `baked_occlusion` (tools/golfer/skin_occlusion.py) is the sky the body
+// hides from itself: the eye sockets, round the nose and mouth, the ears.
+// It shades the ambient light, and `cavity` of it the colour, as a
+// scanned face's photographed texture is shaded.
+// Light scatters under the skin on Forward+ (Compatibility ignores it).
 // light() wraps the sun round the shadow side, red furthest, as light
 // scattered under real skin does, so the shade side of a face stays warm
 // instead of turning grey. The sky's fill is warmed the same way: the
@@ -40,6 +47,12 @@ uniform sampler2D face_normal : hint_normal, filter_linear_mipmap;
 uniform vec4 face_rect = vec4(2.0, 2.0, 3.0, 3.0);
 uniform float face_colour : hint_range(0.0, 2.0) = 0.0;
 uniform float face_relief : hint_range(0.0, 3.0) = 0.0;
+uniform sampler2D baked_occlusion : hint_default_white, filter_linear_mipmap;
+uniform float cavity : hint_range(0.0, 1.0) = 0.0;
+// How much deeper than traced the hollows are shaded (the sculpted face's
+// hollows are shallower than a real face's).
+uniform float occlusion_gain : hint_range(1.0, 4.0) = 1.0;
+const float FACE_SHAPE_TEXELS = 256.0;
 uniform float pore_scale = 40.0;
 uniform float pore_strength = 0.35;
 uniform float stubble_scale = 110.0;
@@ -86,7 +99,10 @@ void fragment() {
 	vec2 inside = step(vec2(0.0), fuv) * step(fuv, vec2(1.0));
 	float on_face = inside.x * inside.y;
 	c *= mix(vec3(1.0), texture(face_albedo, fuv).rgb * 2.0, face_colour * on_face);
-	vec2 face_n = (texture(face_normal, fuv).rg * 2.0 - 1.0) * face_relief * on_face;
+	// Its mip of FACE_SHAPE_TEXELS across holds the scan's own face shape
+	// (half a centimetre and more), taken off: see the top.
+	float shape_lod = max(log2(float(textureSize(face_normal, 0).x) / FACE_SHAPE_TEXELS), 0.0);
+	vec2 face_n = (texture(face_normal, fuv).rg - textureLod(face_normal, fuv, shape_lod).rg) * 2.0 * face_relief * on_face;
 	// Blood under thin skin: less green and blue, more on lighter skin.
 	float light = clamp(dot(albedo.rgb, vec3(0.33)) * 1.4, 0.35, 1.0);
 	c *= mix(vec3(1.0), vec3(1.04, 0.84, 0.82), r.r * flush_strength * light);
@@ -101,8 +117,9 @@ void fragment() {
 	float hairs = clamp(beard * stubble * (0.9 + dots * 1.5), 0.0, 0.95);
 	c = mix(c, beard_colour.rgb, hairs);
 	float occ = body_occlusion(occ_pos, occ_normal);
-	AO = occ * people_fill(occ_normal);
-	ALBEDO = c * warmth * mix(1.0, occ, contact_share) * people_light.x;
+	float baked = clamp(1.0 - (1.0 - texture(baked_occlusion, UV).r) * occlusion_gain, 0.2, 1.0);
+	AO = occ * baked * people_fill(occ_normal);
+	ALBEDO = c * warmth * mix(1.0, occ, contact_share) * mix(1.0, baked, cavity) * people_light.x;
 	EMISSION = people_ground_bounce(ALBEDO, occ_normal, occ);
 	ROUGHNESS = clamp(roughness - r.a * 0.16 - r.b * 0.14 + hairs * 0.25, 0.2, 1.0);
 	SPECULAR = specular + r.a * 0.08;

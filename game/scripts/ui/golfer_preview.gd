@@ -118,10 +118,25 @@ func _pose() -> void:
 		return
 	var player := golfer.find_child("AnimationPlayer", true, false) as AnimationPlayer
 	if face_view:
-		# Standing straight, looking ahead.
-		player.stop()
-		for skeleton in golfer.find_children("*", "Skeleton3D", true, false):
-			(skeleton as Skeleton3D).reset_bone_poses()
+		# Standing at ease, looking ahead: the idle clip's first pose, held.
+		# (The rig's bare rest pose folded the scanned people's arms in
+		# across their chests, which showed as a skin-coloured flap at the
+		# collar of a short-sleeved top.)
+		if player.has_animation(&"idle"):
+			player.play(&"idle")
+			player.seek(0.0, true)
+			player.pause()
+			# The clip's head drops to look at the ground: straight ahead here.
+			for skeleton in golfer.find_children("*", "Skeleton3D", true, false):
+				var sk := skeleton as Skeleton3D
+				for bone_name in ["neck_01", "head"]:
+					var b := sk.find_bone(bone_name)
+					if b >= 0:
+						sk.set_bone_pose_rotation(b, sk.get_bone_rest(b).basis.get_rotation_quaternion())
+		else:
+			player.stop()
+			for skeleton in golfer.find_children("*", "Skeleton3D", true, false):
+				(skeleton as Skeleton3D).reset_bone_poses()
 	else:
 		golfer.play(&"address")
 
