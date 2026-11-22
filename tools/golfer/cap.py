@@ -138,11 +138,23 @@ def build(info, blob):
     top = head_top[head_top[:, 1] > brow_y]
     lo, hi = top.min(axis=0), top.max(axis=0)
     centre = np.array([(lo[0] + hi[0]) / 2, brow_y, (lo[2] + hi[2]) / 2])
-    pos, nrm, uv, tris, band = shell(crown(allp, brow_y, centre), centre)
+    grid = crown(allp, brow_y, centre)
+    pos, nrm, uv, tris, band = shell(grid, centre, band_depth=band_depths(grid, centre, body[on_head]))
     return pos, nrm, uv, tris, head_j, body, on_head, band
 
 
-def shell(grid, centre, peak=None):
+def band_depths(grid, centre, skin):
+    """How far in from the crown's lower edge the sweatband reaches, per
+    segment: to just off the skin. The crown stands off the skull by the
+    hair room and its smoothing (1 to 2 cm at the temples), and with the
+    hair under it cut away a fixed 6 mm band left a gap there that showed
+    the inside of the cap under the sides of the peak."""
+    edge = grid[0] + centre
+    d = np.sqrt(((edge[:, None, :] - skin[None]) ** 2).sum(-1)).min(1)
+    return np.maximum(d - 0.0015, 0.006)
+
+
+def shell(grid, centre, peak=None, band_depth=None):
     """The cap's mesh round a crown grid (crown()): the crown, sweatband,
     pre-curved peak and button. Returns positions, normals, uvs, triangles
     and (peak_start, peak_end, band vertex ids).
@@ -151,8 +163,9 @@ def shell(grid, centre, peak=None):
     curl (m the sides drop) and bend: with bend the sides drop with the
     distance out from the crown (a flat bill bent across, so its ends meet
     the band without a step) and the peak's normals come from its faces.
-    band_lift is how far up the inside the sweatband reaches."""
-    pk = {"half_span": PEAK_HALF_SPAN, "tilt": PEAK_TILT, "length": PEAK_LENGTH, "curl": PEAK_CURL, "bend": False,
+    band_lift is how far up the inside the sweatband reaches; band_depth
+    (per segment, metres) how far in it reaches, 6 mm if None."""
+    pk = {"half_span": PEAK_HALF_SPAN, "tilt": PEAK_TILT, "length": PEAK_LENGTH, "curl": PEAK_CURL, "bend": True,
           "band_lift": 0.012}
     pk.update(peak or {})
     pos, nrm, uv, tris = [], [], [], []
@@ -182,7 +195,8 @@ def shell(grid, centre, peak=None):
     band_in = np.zeros(SEGMENTS + 1, int)
     for k in range(SEGMENTS + 1):
         p = grid[0, k % SEGMENTS]
-        inward = p * (1 - 0.006 / np.linalg.norm(p)) + np.array([0, pk["band_lift"], 0])
+        depth_in = 0.006 if band_depth is None else float(band_depth[k % SEGMENTS])
+        inward = p * (1 - depth_in / np.linalg.norm(p)) + np.array([0, pk["band_lift"], 0])
         u = CROWN_U[0] + (CROWN_U[1] - CROWN_U[0]) * k / SEGMENTS
         band_in[k] = add(inward + centre, -p, (u, BAND_V[0]))
     for k in range(SEGMENTS):
@@ -208,6 +222,8 @@ def shell(grid, centre, peak=None):
     z_front = band_at(math.pi)[2]
     reach_c = (zc - z_front) + pk["length"]
     top_rows, under_rows = [], []
+    grid_q = np.zeros((steps + 1, depth + 1, 3))
+    grid_n = np.zeros((steps + 1, depth + 1, 3))
     for s in range(steps + 1):
         a = -1.0 + 2.0 * s / steps
         root = band_at(math.pi + a * pk["half_span"])
@@ -215,7 +231,6 @@ def shell(grid, centre, peak=None):
         # no gap shows between them.
         root = centre + (root - centre) * (1 - 0.004 / np.linalg.norm(root - centre)) + np.array([0.0, 0.004, 0.0])
         edge = np.array([centre[0] + side_sign * a * half_w * 1.04, root[1], zc - reach_c * math.sqrt(max(0.0, 1 - a * a))])
-        trow, urow = [], []
         for d in range(depth + 1):
             t = d / depth
             q = root * (1 - t) + edge * t
@@ -225,10 +240,25 @@ def shell(grid, centre, peak=None):
                 q[1] -= math.tan(pk["tilt"]) * out + pk["curl"] * a * a * min(1.0, plan) ** 0.8
             else:
                 q[1] -= math.tan(pk["tilt"]) * out + pk["curl"] * a * a * t ** 1.2
-            n_top = np.array([0.0, 1.0, 0.0]) + np.array([-side_sign * a * 0.5 * t, 0.0, -math.tan(pk["tilt"])])
+            grid_q[s, d] = q
+            grid_n[s, d] = np.array([0.0, 1.0, 0.0]) + np.array([-side_sign * a * 0.5 * t, 0.0, -math.tan(pk["tilt"])])
+    # The underside lies PEAK_THICK under the top along the top's own
+    # normal. (Dropped straight down, it closed up where the sides curl
+    # down steeply, and the two surfaces flickered through each other in
+    # jagged dark and pale triangles under the sides of the peak.)
+    gs = np.gradient(grid_q, axis=0)
+    gd = np.gradient(grid_q, axis=1)
+    face_n = np.cross(gs, gd)
+    face_n *= np.sign((face_n * grid_n).sum(-1, keepdims=True))
+    face_n /= np.maximum(np.linalg.norm(face_n, axis=-1, keepdims=True), 1e-9)
+    for s in range(steps + 1):
+        trow, urow = [], []
+        for d in range(depth + 1):
+            t = d / depth
+            q, n_top = grid_q[s, d], grid_n[s, d]
             tu = PEAK_TOP[0] + (PEAK_TOP[1] - PEAK_TOP[0]) * (s / steps)
             trow.append(add(q, n_top, (tu, PEAK_TOP[2] + (PEAK_TOP[3] - PEAK_TOP[2]) * t)))
-            qu = q - np.array([0.0, PEAK_THICK, 0.0])
+            qu = q - face_n[s, d] * PEAK_THICK
             urow.append(add(qu, -n_top, (tu, PEAK_UNDER[2] + (PEAK_UNDER[3] - PEAK_UNDER[2]) * t)))
         top_rows.append(trow)
         under_rows.append(urow)
@@ -252,6 +282,18 @@ def shell(grid, centre, peak=None):
         eu.append(add(pos[b], out, edge_uv))
     for s in range(steps):
         tris += [(et[s], eu[s], et[s + 1]), (et[s + 1], eu[s], eu[s + 1])]
+    # The two ends, where the sides curl down past the crown's edge: closed
+    # the same way, or the gap between top and underside showed the inside
+    # of the peak as dark slivers under its sides.
+    for s, sign in ((0, -1.0), (steps, 1.0)):
+        side_n = np.array([side_sign * sign * -1.0, 0.0, 0.0])
+        st, su = [], []
+        for d in range(depth + 1):
+            a, b = top_rows[s][d], under_rows[s][d]
+            st.append(add(pos[a], side_n, edge_uv))
+            su.append(add(pos[b], side_n, edge_uv))
+        for d in range(depth):
+            tris += [(st[d], su[d], st[d + 1]), (st[d + 1], su[d], su[d + 1])]
 
     peak_end = len(pos)
     # The button: a flat dome 1.3 cm across on top.
