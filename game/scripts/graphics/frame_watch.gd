@@ -1,16 +1,19 @@
 class_name FrameWatch
 extends Node
-## Watches the frame rate in play and, when the machine can't keep up with
-## the look it was started on, steps the look down once, as a console game
+## Watches the frame rate in play and, when the machine can't keep 50 to 60
+## frames a second on the look it was started on, steps the look down, as a console game
 ## would: Natural to Performance, then Performance to its lean form
 ## (GraphicsSettings.lean). Only a look the game picked itself is changed
 ## (GraphicsSettings.auto_look); a look the player chose is left alone.
 ## Dynamic resolution gets the first go: the look only steps down once the
 ## 3D resolution is already as low as it goes and frames are still slow.
 
-## A frame this slow or slower, as the median of a window, is too slow:
-## under 24 frames a second.
-const SLOW_MS := 42.0
+## A frame this slow or slower, as the median of a window, is too slow for
+## the richer looks: under 50 frames a second, as play should be smooth at
+## 60 (a 60 Hz screen's frames come in at 16.7 ms). Performance only steps
+## to its lean form under 30 (LEAN_MS), as that costs the trees and grass.
+const SLOW_MS := 20.0
+const LEAN_MS := 33.0
 ## Seconds of frames per decision, and slow windows in a row before a step.
 const WINDOW := 5.0
 const SLOW_WINDOWS := 2
@@ -61,7 +64,7 @@ func _process(delta: float) -> void:
 		_window += delta
 	if _window < WINDOW:
 		return
-	var slow := is_slow(_times)
+	var slow := is_slow(_times, LEAN_MS if _settings.look == GraphicsSettings.Look.PERFORMANCE else SLOW_MS)
 	_times.clear()
 	_window = 0.0
 	# Dynamic resolution first: only once it is at its floor.
@@ -77,13 +80,13 @@ func _process(delta: float) -> void:
 	stepped.emit(to)
 
 
-## True when the median frame of `times` (ms) is slower than SLOW_MS.
-static func is_slow(times: PackedFloat32Array) -> bool:
+## True when the median frame of `times` (ms) is `limit` or slower.
+static func is_slow(times: PackedFloat32Array, limit := SLOW_MS) -> bool:
 	if times.size() < 10:
 		return false
 	var sorted := times.duplicate()
 	sorted.sort()
-	return sorted[sorted.size() / 2] >= SLOW_MS
+	return sorted[sorted.size() / 2] >= limit
 
 
 ## The look `s` would step down to, or -1 when it stays (a look the player

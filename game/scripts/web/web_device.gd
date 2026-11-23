@@ -52,10 +52,16 @@ const LEAN_GPUS := [
 ]
 ## Chips that run the browser build's middle tier well but not its top
 ## one: Intel's UHD Graphics (2017 to 2021 laptops), Iris Plus, AMD's
-## Vega 8 and 10 laptop graphics, and the GeForce MX laptop parts.
+## Vega 8 and 10 laptop graphics, and the GeForce MX laptop parts. Built-in
+## graphics of every age are here too (Intel's Iris Xe and Arc laptop
+## graphics, AMD's Radeon Graphics in Ryzen chips): they share the
+## laptop's memory and power with the processor, and on a 1440p or
+## high-DPI laptop screen the top tier could not hold 60 frames a second.
 const STANDARD_GPUS := [
 	"uhd graphics", "iris(r) plus", "iris plus", "vega 8", "vega 10", "vega 11", "radeon(tm) vega",
 	"geforce mx", "gtx 6", "gtx 7", "gtx 9",
+	"iris(r) xe", "iris xe", "intel(r) graphics", "intel(r) arc(tm) graphics", "arc(tm) graphics",
+	"amd radeon(tm) graphics", "radeon(tm) graphics", "radeon graphics",
 ]
 ## Phone and tablet chips the browser's higher tier is known to run well on.
 const GOOD_MOBILE := ["apple", "adreno (tm) 6", "adreno (tm) 7", "adreno (tm) 8", "mali-g7", "mali-g6", "immortalis", "xclipse"]

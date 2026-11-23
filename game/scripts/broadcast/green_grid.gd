@@ -108,19 +108,48 @@ static func flow_speed(percent: float) -> float:
 	return clampf(FLOW_BASE_SPEED + FLOW_SPEED_PER_PERCENT * percent, FLOW_BASE_SPEED, FLOW_MAX_SPEED)
 
 
+## The grid is built in tiles TILE metres square on the course's own metre
+## grid, kept while the hole and its pin stay the same, so a read is put
+## together from tiles already built instead of read off the terrain again.
+## The tiles round the hole are built ahead (prewarm), a little a frame
+## from the moment the hole starts, so the grid is up the instant the
+## player reaches the green; a second putt reuses them all.
+const TILE := 2
+## How far round the hole the tiles are built ahead (metres).
+const WARM_RADIUS := 22.0
+## Milliseconds a frame spent building tiles ahead, and building the tiles a
+## read still lacks once the player is on the green.
+const WARM_SLICE_MS := 1.5
+const SLICE_MS := 4.0
+## Milliseconds a read may spend finishing its last few tiles at once,
+## rather than over the frames after (0 in tests to see the spread build).
+var now_ms := 8.0
+
+## What the tiles were built for: [terrain, style, pin]; the tiles; tiles
+## still to build ahead, nearest the hole first.
+var _cache_key := []
+var _tiles := {}
+var _warm: Array[Vector2i] = []
 ## What the grid on show was built for, so asking again for the same grid
 ## (a club change, the aim settling) costs nothing.
 var _built_key := []
-## A build spread over frames (build_async): its state, or empty.
+## A read waiting on tiles: its key and tile range, or empty.
 var _job := {}
-## Milliseconds of building a frame (build_async).
-const SLICE_MS := 3.0
 
 
-## Builds the grid a few milliseconds a frame, so the 40 to 150 ms it takes
-## on a big green never stalls one; the old grid stays up until it's done.
-## (Not on a worker thread: the caddie's planning crashed there, as Godot
-## 4.4's script arrays aren't safe to share across threads.)
+## Builds the tiles round `pin` ahead of the player reaching the green, a
+## little a frame. Asking again for the same hole does nothing.
+func prewarm(terrain: CourseTerrain, pin: Vector3) -> void:
+	if _use_cache(terrain, pin) and not _warm.is_empty():
+		set_process(true)
+
+
+## Shows the grid over the square that holds `ball` and `pin`: at once from
+## the tiles built ahead, else as soon as the missing tiles are built (a few
+## milliseconds a frame, so a big green never stalls one). The old grid
+## stays up meanwhile. (Not on a worker thread: the caddie's planning
+## crashed there, as Godot 4.4's script arrays aren't safe to share across
+## threads.)
 func build_async(terrain: CourseTerrain, ball: Vector3, pin: Vector3) -> void:
 	var key := [terrain, ball, pin, style]
 	if not _job.is_empty():
@@ -128,19 +157,29 @@ func build_async(terrain: CourseTerrain, ball: Vector3, pin: Vector3) -> void:
 			return
 	elif key == _built_key:
 		return
-	_job = _begin(terrain, ball, pin)
+	_use_cache(terrain, pin)
+	_job = _range(terrain, ball, pin)
 	_job.key = key
-	set_process(true)
+	if _build_missing(_job, Time.get_ticks_usec() + int(now_ms * 1000.0)):
+		_show(_job)
+	else:
+		set_process(true)
 
 
 func _process(_delta: float) -> void:
-	if _job.is_empty():
+	if not _job.is_empty():
+		if _build_missing(_job, Time.get_ticks_usec() + int(SLICE_MS * 1000.0)):
+			_show(_job)
+		return
+	if _warm.is_empty():
 		set_process(false)
 		return
-	if _advance(_job, Time.get_ticks_usec() + int(SLICE_MS * 1000.0)):
-		_built_key = _job.key
-		_apply(_finish())
-		_job = {}
+	var deadline := Time.get_ticks_usec() + int(WARM_SLICE_MS * 1000.0)
+	var terrain: CourseTerrain = _cache_key[0]
+	while not _warm.is_empty() and Time.get_ticks_usec() < deadline:
+		var t: Vector2i = _warm.pop_back()
+		if not _tiles.has(t):
+			_tiles[t] = _build_tile(terrain, t)
 
 
 ## Rebuilds the grid over the square that holds `ball` and `pin`, now.
@@ -157,82 +196,154 @@ func _apply(arrays: Array) -> void:
 
 ## The grid's mesh arrays over the square that holds `ball` and `pin`.
 func _build_arrays(terrain: CourseTerrain, ball: Vector3, pin: Vector3) -> Array:
-	_job = {}  # a build now replaces one spread over frames
-	var job := _begin(terrain, ball, pin)
-	_advance(job, -1)
-	return _finish()
+	_job = {}  # a build now replaces one waiting on tiles
+	_use_cache(terrain, pin)
+	var job := _range(terrain, ball, pin)
+	_build_missing(job, -1)
+	return _join(job)
 
 
-## Starts a build: the square, and the height range for the height colours.
-func _begin(terrain: CourseTerrain, ball: Vector3, pin: Vector3) -> Dictionary:
-	var centre := (ball + pin) * 0.5
-	var half := clampf(Vector2(ball.x - pin.x, ball.z - pin.z).length() * 0.5 + MARGIN, 6.0, MAX_HALF)
-	var x0 := snappedf(centre.x - half, SPACING)
-	var z0 := snappedf(centre.z - half, SPACING)
-	var cells := int(ceil(half * 2.0 / SPACING))
+## Keeps the tiles when they were built for this terrain, look and pin, else
+## starts again: the height colours run from the lowest to the highest point
+## round the hole, so a read keeps its colours from putt to putt. Returns
+## true when it started again.
+func _use_cache(terrain: CourseTerrain, pin: Vector3) -> bool:
+	var key := [terrain, style, pin]
+	if key == _cache_key:
+		return false
+	_cache_key = key
+	_tiles.clear()
+	_built_key = []
 	if style == Style.HEIGHT:
 		_low = INF
 		_high = -INF
-		for a in cells + 1:
-			for b in cells + 1:
-				var y := terrain.height_at(x0 + a * SPACING, z0 + b * SPACING)
+		var r := int(ceil(WARM_RADIUS / SPACING))
+		for a in range(-r, r + 1):
+			for b in range(-r, r + 1):
+				var y := terrain.height_at(pin.x + a * SPACING, pin.z + b * SPACING)
 				_low = minf(_low, y)
 				_high = maxf(_high, y)
-	_x0 = x0
-	_z0 = z0
-	_points.clear()
-	_verts = PackedVector3Array()
-	_colors = PackedColorArray()
-	_normals = PackedVector3Array()
-	_uvs = PackedVector2Array()
-	_uv2s = PackedVector2Array()
-	return {"terrain": terrain, "cells": cells, "line": 0, "flow": 0}
-
-
-## Builds lines (then streamlines) until `deadline_us` (-1: to the end).
-## True once everything is built.
-@warning_ignore("integer_division")
-func _advance(job: Dictionary, deadline_us: int) -> bool:
-	var terrain: CourseTerrain = job.terrain
-	var cells: int = job.cells
-	while job.line < cells + 1:
-		var a: int = job.line
-		for b in cells:
-			# Line a runs along z at x = x0 + a, and along x at z = z0 + a.
-			_segment(terrain, Vector2i(a * PIECES, b * PIECES), Vector2i(0, 1))
-			_segment(terrain, Vector2i(b * PIECES, a * PIECES), Vector2i(1, 0))
-		job.line = a + 1
-		if deadline_us >= 0 and Time.get_ticks_usec() > deadline_us:
-			return false
-	if style == Style.SLOPE:
-		while job.flow < cells * cells:
-			var i: int = job.flow
-			var a := i / cells
-			var b := i % cells
-			_flow(terrain, Vector2(_x0 + (a + 0.5) * SPACING, _z0 + (b + 0.5) * SPACING), i + 1)
-			job.flow = i + 1
-			if deadline_us >= 0 and Time.get_ticks_usec() > deadline_us:
-				return false
+	# Tiles round the hole, nearest last (popped first).
+	_warm.clear()
+	var side := float(TILE) * SPACING
+	var reach := int(ceil(WARM_RADIUS / side))
+	var at := Vector2i(floori(pin.x / side), floori(pin.z / side))
+	var centre := Vector2(pin.x, pin.z)
+	for i in range(-reach, reach + 1):
+		for j in range(-reach, reach + 1):
+			var t := at + Vector2i(i, j)
+			if (Vector2(t) * side + Vector2.ONE * side * 0.5).distance_to(centre) <= WARM_RADIUS + side:
+				_warm.append(t)
+	_warm.sort_custom(func(p: Vector2i, q: Vector2i) -> bool:
+		return (Vector2(p) * side).distance_squared_to(centre) > (Vector2(q) * side).distance_squared_to(centre))
 	return true
 
 
-## The finished build's arrays; the build's own arrays now belong to them.
-func _finish() -> Array:
+## The tiles over the square that holds `ball` and `pin`.
+func _range(_terrain: CourseTerrain, ball: Vector3, pin: Vector3) -> Dictionary:
+	var centre := (ball + pin) * 0.5
+	var half := clampf(Vector2(ball.x - pin.x, ball.z - pin.z).length() * 0.5 + MARGIN, 6.0, MAX_HALF)
+	var a0 := floori((centre.x - half) / SPACING)
+	var b0 := floori((centre.z - half) / SPACING)
+	var cells := int(ceil(half * 2.0 / SPACING))
+	return {"from": Vector2i(floori(float(a0) / TILE), floori(float(b0) / TILE)),
+		"to": Vector2i(floori(float(a0 + cells - 1) / TILE), floori(float(b0 + cells - 1) / TILE))}
+
+
+## Builds the tiles `job` still lacks until `deadline_us` (-1: all). True
+## once it has them all.
+func _build_missing(job: Dictionary, deadline_us: int) -> bool:
+	var terrain: CourseTerrain = _cache_key[0]
+	var from: Vector2i = job.from
+	var to: Vector2i = job.to
+	for i in range(from.x, to.x + 1):
+		for j in range(from.y, to.y + 1):
+			var t := Vector2i(i, j)
+			if _tiles.has(t):
+				continue
+			if deadline_us >= 0 and Time.get_ticks_usec() > deadline_us:
+				return false
+			_tiles[t] = _build_tile(terrain, t)
+	return true
+
+
+func _show(job: Dictionary) -> void:
+	_built_key = job.key
+	_apply(_join(job))
+	_job = {}
+
+
+## The mesh arrays of `job`'s tiles, with the closing lines along its far
+## edges.
+func _join(job: Dictionary) -> Array:
+	var from: Vector2i = job.from
+	var to: Vector2i = job.to
 	var arrays := []
 	arrays.resize(Mesh.ARRAY_MAX)
-	arrays[Mesh.ARRAY_VERTEX] = _verts
-	arrays[Mesh.ARRAY_NORMAL] = _normals
-	arrays[Mesh.ARRAY_COLOR] = _colors
-	arrays[Mesh.ARRAY_TEX_UV] = _uvs
-	arrays[Mesh.ARRAY_TEX_UV2] = _uv2s
+	var parts := [PackedVector3Array(), PackedVector3Array(), PackedColorArray(), PackedVector2Array(), PackedVector2Array()]
+	for i in range(from.x, to.x + 1):
+		for j in range(from.y, to.y + 1):
+			var tile: Dictionary = _tiles[Vector2i(i, j)]
+			_join_part(parts, tile.body)
+			if i == to.x:
+				_join_part(parts, tile.edge_x)
+			if j == to.y:
+				_join_part(parts, tile.edge_z)
+	arrays[Mesh.ARRAY_VERTEX] = parts[0]
+	arrays[Mesh.ARRAY_NORMAL] = parts[1]
+	arrays[Mesh.ARRAY_COLOR] = parts[2]
+	arrays[Mesh.ARRAY_TEX_UV] = parts[3]
+	arrays[Mesh.ARRAY_TEX_UV2] = parts[4]
+	return arrays
+
+
+static func _join_part(parts: Array, part: Array) -> void:
+	for k in 5:
+		parts[k].append_array(part[k])
+
+
+## One tile: its lines (those along its near edges and through it), its
+## streamlines, and the lines that close it along its far x and z edges,
+## kept apart as only the tiles at the far edge of a read draw them.
+func _build_tile(terrain: CourseTerrain, t: Vector2i) -> Dictionary:
+	_x0 = 0.0
+	_z0 = 0.0
 	_points.clear()
+	var a0 := t.x * TILE
+	var b0 := t.y * TILE
+	for i in TILE:
+		for j in TILE:
+			var a := a0 + i
+			var b := b0 + j
+			_segment(terrain, Vector2i(a * PIECES, b * PIECES), Vector2i(0, 1))
+			_segment(terrain, Vector2i(a * PIECES, b * PIECES), Vector2i(1, 0))
+	if style == Style.SLOPE:
+		for i in TILE:
+			for j in TILE:
+				var a := a0 + i
+				var b := b0 + j
+				_flow(terrain, Vector2((a + 0.5) * SPACING, (b + 0.5) * SPACING), hash(Vector2i(a, b)))
+	var body := _take()
+	for j in TILE:
+		_segment(terrain, Vector2i((a0 + TILE) * PIECES, (b0 + j) * PIECES), Vector2i(0, 1))
+	var edge_x := _take()
+	for i in TILE:
+		_segment(terrain, Vector2i((a0 + i) * PIECES, (b0 + TILE) * PIECES), Vector2i(1, 0))
+	var edge_z := _take()
+	_points.clear()
+	return {"body": body, "edge_x": edge_x, "edge_z": edge_z}
+
+
+## The pieces built so far, as [verts, normals, colours, uvs, uv2s]; the
+## build starts afresh.
+func _take() -> Array:
+	var part := [_verts, _normals, _colors, _uvs, _uv2s]
 	_verts = PackedVector3Array()
 	_colors = PackedColorArray()
 	_normals = PackedVector3Array()
 	_uvs = PackedVector2Array()
 	_uv2s = PackedVector2Array()
-	return arrays
-
+	return part
 
 ## A streamline from `c` downhill, with its running dot (see the shader).
 ## It bends with the green, following the fall from step to step.

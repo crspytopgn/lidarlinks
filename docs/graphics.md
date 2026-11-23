@@ -51,8 +51,9 @@ Ultra and use a notch lighter soft-shadow filter.
     resolution, no cloud shade or swaying leaves).
   - Standard (Natural at Medium, grass 1, 3D trees near): middle chips
     (`WebDevice.STANDARD_GPUS`: Intel UHD, Iris Plus, Vega 8 to 11,
-    GeForce MX), 4 GB machines, other phones, and a hidden chip on four
-    cores or fewer.
+    GeForce MX) and every other built-in laptop graphics (Iris Xe, Intel
+    Arc and Radeon Graphics in Ryzen chips), 4 GB machines, other phones,
+    and a hidden chip on four cores or fewer.
   - High (Natural at High, grass 2, 3 on iPads, 3D trees): Apple's chips,
     good phone chips (Adreno 6xx and up, Mali-G6x/G7x, Immortalis,
     Xclipse) and other desktop graphics.
@@ -65,9 +66,22 @@ Ultra and use a notch lighter soft-shadow filter.
   one (`web_render_scale()`).
 - `FrameWatch` steps a look the game picked (`GraphicsSettings.auto_look`)
   down once dynamic resolution is at its floor and the median frame of two
-  5-second windows is still under 24 fps: Natural (or Photoreal) to
-  Performance, then Performance to its lean form, with a message. A look
-  the player picks in Settings (or the launcher) is never changed.
+  5-second windows is still under 50 fps: Natural (or Photoreal) to
+  Performance, then (under 30 fps) Performance to its lean form, with a
+  message. A look the player picks in Settings (or the launcher) is never
+  changed.
+- Before the round's loading card lifts, a hidden camera looks all round
+  the tee and at the green a frame each (`GolfRound._warm_shaders`), so
+  the driver builds every shader the hole shows behind the card rather
+  than as a hitch in play (Windows browsers translate each for Direct3D).
+- Spectators' animations are stepped by the gallery, a third of the crowd
+  a frame (`Gallery.ANIM_GROUPS`), so each moves 20 times a second at
+  60 fps for a third of the cost.
+- The green-reading grid is built in 2 m tiles kept per hole and pin, and
+  the tiles within 22 m of the hole are built ahead from the tee shot on,
+  1.5 ms a frame (`GreenGrid.prewarm`), so a read is up the moment the
+  ball is on the green (3 to 20 ms to join the tiles) and a second putt
+  reuses them.
 - The terrain shader used by the default and designed courses reads the
   grass and rough scans' height maps. Within about 35 m the texture shifts
   with the view (one parallax step), and within about 110 m low parts

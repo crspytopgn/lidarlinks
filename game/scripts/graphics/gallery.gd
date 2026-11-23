@@ -399,6 +399,8 @@ func _build_crowd(hole: HoleData, lines: Array[PackedVector3Array], count: int, 
 		var player := person.find_child("AnimationPlayer", true, false) as AnimationPlayer
 		if player == null:
 			continue
+		player.callback_mode_process = AnimationMixer.ANIMATION_CALLBACK_MODE_PROCESS_MANUAL
+		_players.append(player)
 		player.set_meta(&"stand", STAND_FRAMES[rng.randi() % STAND_FRAMES.size()])
 		var arm := arm_pose(rng.randf())
 		if player.has_meta(&"arms"):
@@ -653,6 +655,30 @@ const CLEAR_MARGIN := 0.8
 var _terrain: CourseTerrain
 var _people: Array[FreeGolfer] = []
 var _people_home := PackedVector3Array()
+## The crowd's animation players, stepped by the gallery itself: a third of
+## them a frame, each by the time since its last step, so every spectator
+## moves twenty times a second at 60 fps. Idling, clapping and turning read
+## the same at that rate from where the camera stands, and the crowd costs
+## a third of the time, which on the browser's one thread is frame rate.
+const ANIM_GROUPS := 3
+var _players: Array[AnimationPlayer] = []
+var _anim_wait := PackedFloat32Array([0.0, 0.0, 0.0])
+var _anim_turn := 0
+
+
+func _process(delta: float) -> void:
+	if _players.is_empty():
+		return
+	for g in ANIM_GROUPS:
+		_anim_wait[g] += delta
+	var turn := _anim_turn
+	_anim_turn = (_anim_turn + 1) % ANIM_GROUPS
+	var dt := _anim_wait[turn]
+	_anim_wait[turn] = 0.0
+	for i in range(turn, _players.size(), ANIM_GROUPS):
+		var player := _players[i]
+		if is_instance_valid(player) and player.is_inside_tree():
+			player.advance(dt)
 ## Spectators kept from the last hole's gallery for the next one.
 static var _spare_people: Array[FreeGolfer] = []
 const SPARE_PEOPLE_MAX := 40
@@ -674,6 +700,7 @@ func release_people() -> void:
 			person.queue_free()
 	_people.clear()
 	_people_home = PackedVector3Array()
+	_players.clear()
 
 
 ## A spectator dressed in `look`, clubs hidden and casting no sun shadow;

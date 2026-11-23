@@ -514,11 +514,43 @@ func _warm_up() -> void:
 func _reveal_when_drawn() -> void:
 	var tree := get_tree()
 	SceneFade.status(tree, "Preparing the graphics for this device...")
-	for i in 8:
+	for i in 4:
 		await tree.process_frame
+	await _warm_shaders(tree)
 	SceneFade.release(tree)
 	if hole != null and camera.flying():
 		camera.start_flyover(hole)
+
+
+## Behind the loading card, a hidden camera looks all round the tee and at
+## the green, a frame each, so the graphics driver builds the shaders of
+## everything the hole shows now rather than the first time each comes
+## into view in play, where every new one is a hitch (seconds on some
+## Windows browsers, which translate every shader for Direct3D).
+func _warm_shaders(tree: SceneTree) -> void:
+	var live := get_viewport().get_camera_3d()
+	if live == null or hole == null:
+		return
+	var eye := Camera3D.new()
+	eye.fov = live.fov
+	eye.near = live.near
+	eye.far = live.far
+	add_child(eye)
+	var views: Array = []
+	var from := live.global_position
+	for k in 8:
+		var yaw := TAU * k / 8.0
+		views.append([from, from + Vector3(sin(yaw), -0.2, cos(yaw))])
+	views.append([hole.pin + Vector3(0.0, 30.0, -25.0), hole.pin])
+	views.append([hole.pin + Vector3(12.0, 4.0, 12.0), hole.pin])
+	eye.make_current()
+	for i in views.size():
+		SceneFade.status(tree, "Preparing the graphics for this device...", float(i + 1) / views.size())
+		eye.look_at_from_position(views[i][0], views[i][1])
+		await tree.process_frame
+	if is_instance_valid(live):
+		live.make_current()
+	eye.queue_free()
 
 
 func start_round() -> void:
@@ -4963,9 +4995,14 @@ func _update_green_grid() -> void:
 	var on := _grid_allowed() and grid_on and graphics.putting_grid > 0 and state == State.AIM \
 		and clubs[club_index].is_putter and (lie == Surface.Type.GREEN or lie == Surface.Type.FRINGE)
 	green_grid.visible = on
-	if on:
+	if graphics.putting_grid > 0 and _grid_allowed():
 		green_grid.style = (graphics.putting_grid - 1) as GreenGrid.Style
+	if on:
 		green_grid.build_async(hole.terrain, ball_at, hole.pin)
+	elif graphics.putting_grid > 0 and _grid_allowed() and hole != null:
+		# Built ahead from the tee, so it's up the moment the ball is on the
+		# green.
+		green_grid.prewarm(hole.terrain, hole.pin)
 
 
 # --- Golfer voice -------------------------------------------------------------
