@@ -96,6 +96,13 @@ const TARGET := Color(0.95, 0.12, 0.1)
 ## and the hole's distance in feet (below 0 for none).
 var putt_feet := PackedFloat32Array()
 var hole_feet := -1.0
+## Which of Quick pace's fixed putting meters this is ("15 FT"), empty for
+## the bare meter (PuttMeterScale.label).
+var putt_label := "":
+	set(v):
+		if v != putt_label:
+			putt_label = v
+			queue_redraw()
 ## Quick pace for chips and putts (LinksPowerStroke.Run.quick); false is
 ## Classic, the original's timing.
 var quick := true
@@ -493,7 +500,10 @@ func _draw_modern() -> void:
 		var colour := good() if accuracy == 0.0 else GOLD
 		draw_string(font, Vector2(0, top), label, HORIZONTAL_ALIGNMENT_RIGHT, size.x - MODERN_INSET, 19, colour)
 	elif phase == Phase.IDLE and putting() and hole_feet >= 0.0:
-		draw_string(font, Vector2(0, top), "HOLE " + Units.short_caps(hole_feet / Units.FEET_PER_METRE), HORIZONTAL_ALIGNMENT_RIGHT, size.x - MODERN_INSET, 14, Color(1, 1, 1, 0.6))
+		var hole_text := "HOLE " + Units.short_caps(hole_feet / Units.FEET_PER_METRE)
+		if putt_label != "":
+			hole_text += "   %s METER" % putt_label
+		draw_string(font, Vector2(0, top), hole_text, HORIZONTAL_ALIGNMENT_RIGHT, size.x - MODERN_INSET, 14, Color(1, 1, 1, 0.6))
 	elif phase == Phase.IDLE and _reads_yards():
 		draw_string(font, Vector2(0, top), "FULL %s CARRY" % Units.from_yards(yards_for_value(1.0)).to_upper(), HORIZONTAL_ALIGNMENT_RIGHT, size.x - MODERN_INSET, 14, Color(1, 1, 1, 0.6))
 	elif phase == Phase.IDLE:
@@ -525,13 +535,27 @@ func _draw_feet_scale(mid: float, h: float) -> void:
 	var small := GlassTheme.display_font(600)
 	var per := Units.FEET_PER_METRE if Units.metric else 1.0  # feet in one shown unit
 	var top := putt_feet[putt_feet.size() - 1] / per
-	var short := top <= (18.0 if Units.metric else 60.0)
-	var step := (1.0 if short else 2.0) if Units.metric else (5.0 if short else 10.0)
-	var label_every := (5.0 if short else 10.0) if Units.metric else (10.0 if short else 20.0)
+	var step := 10.0
+	var label_every := 20.0
+	if Units.metric:
+		step = 2.0
+		label_every = 10.0
+		if top <= 6.0:
+			step = 0.5
+			label_every = 2.0
+		elif top <= 18.0:
+			step = 1.0
+			label_every = 5.0
+	elif top <= 20.0:
+		step = 1.0
+		label_every = 5.0
+	elif top <= 60.0:
+		step = 5.0
+		label_every = 10.0
 	var tick := "%dm" if Units.metric else "%d'"
 	var last_label := -100.0
 	var d := step
-	while d <= top:
+	while d <= top + 0.01:
 		var ft := d * per
 		var v := value_for_feet(ft)
 		if v >= 0.0:

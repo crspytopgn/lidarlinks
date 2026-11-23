@@ -75,7 +75,7 @@ const WORD_NEAR := 20000.0
 ## Metres round the course the land cover is read for the sea under cliffs.
 const SHORE_REACH := 2500.0
 ## Land samples shaped per step (RealLandscape).
-const LAND_SAMPLES_PER_STEP := 20000
+const LAND_SAMPLES_PER_STEP := 8000
 ## Goes up whenever a build gives a better course (new detection, trees,
 ## walls...): courses built before it offer "Update" on the Courses page.
 ## Saved in each course's source as "builder" (RealCourseUpdate).

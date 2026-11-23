@@ -41,7 +41,7 @@ var _wind := Vector3.ZERO
 var _model: ShotModel
 var _ready := false
 var _chip := false
-var _putt_range := 1.0
+var _putt_meter := PuttMeterScale.bare()
 
 
 ## Skill levels 0 and 1 hear everything, 2 the side to favour and the size
@@ -52,10 +52,9 @@ static func detail_for_skill(skill: int) -> int:
 
 
 ## Starts reading a shot from `from` on `lie`, with `wind` the wind's
-## velocity for this shot. `putt_range` is the share of the full putt
-## meter's power that the putting meter's top stands for (Quick pace sizes
-## the meter to the putt).
-func start(model: ShotModel, clubs: Array[Club], hole: HoleData, from: Vector3, lie: int, wind: Vector3, skill: int, putt_range := 1.0) -> void:
+## velocity for this shot. `putt_meter` is the putting meter in use
+## (Quick pace's fixed meters read in feet), null for the bare meter.
+func start(model: ShotModel, clubs: Array[Club], hole: HoleData, from: Vector3, lie: int, wind: Vector3, skill: int, putt_meter: PuttMeterScale = null) -> void:
 	detail = detail_for_skill(skill)
 	_model = model
 	_clubs = clubs
@@ -65,7 +64,7 @@ func start(model: ShotModel, clubs: Array[Club], hole: HoleData, from: Vector3, 
 	_wind = wind
 	_ready = false
 	_chip = ComputerGolfer.is_chip(from, hole.pin, lie)
-	_putt_range = clampf(putt_range, 0.01, 1.0)
+	_putt_meter = putt_meter if putt_meter != null else PuttMeterScale.bare()
 	text = ""
 	if _flat(from, hole.pin) < TAP_IN_M and _is_putting_lie(lie, _flat(from, hole.pin)):
 		club_index = clubs.size() - 1
@@ -90,7 +89,7 @@ func step(budget_ms := 4.0) -> bool:
 	_cpu = null
 	_ready = true
 	text = _compose()
-	meter = meter_value(power, _clubs[club_index].is_putter, _chip, _putt_range)
+	meter = meter_value(power, _clubs[club_index].is_putter, _chip, _putt_meter)
 	return true
 
 
@@ -131,7 +130,7 @@ func _compose() -> String:
 	var heading := rad_to_deg(atan2(_hole.pin.x - _from.x, _hole.pin.z - _from.z))
 	var aim_off := dist * tan(deg_to_rad(clampf(wrapf(aim_deg - heading, -180.0, 180.0), -60.0, 60.0)))
 	if club.is_putter:
-		return putt_text(detail, dist, _hole.pin.y - _from.y, aim_off, meter_value(power, true, false, _putt_range))
+		return putt_text(detail, dist, _hole.pin.y - _from.y, aim_off, meter_value(power, true, false, _putt_meter))
 	var dir := Vector3(sin(deg_to_rad(heading)), 0.0, cos(deg_to_rad(heading)))
 	var left := Vector3.UP.cross(dir)
 	var reach := _reach(club)
@@ -151,7 +150,7 @@ func _compose() -> String:
 	return shot_text(detail, {
 		"to_pin_m": dist, "rise_m": _hole.pin.y - _from.y,
 		"wind_along_mps": _wind.dot(dir), "wind_cross_mps": _wind.dot(left),
-		"club": club.full_name, "power": meter_value(power, false, _chip, _putt_range), "aim_off_m": aim_off,
+		"club": club.full_name, "power": meter_value(power, false, _chip, _putt_meter), "aim_off_m": aim_off,
 		"in_range": dist <= reach * 1.08, "lie": _lie, "par": _hole.par,
 		"lie_power": _model.lie_power(_lie, club) if _model != null else Surface.lie_power(_lie), "reach_m": reach,
 		"tee": _lie == Surface.Type.TEE,
@@ -167,12 +166,12 @@ static func chip_top() -> float:
 ## What the player's meter reads for `p`, the shot model's power: the
 ## same for a full swing; a chip's power comes from the chip meter's own
 ## table (LinksPowerStroke.chip_power, 0.07 at the snap line to about 0.35
-## at the top), so 0.2 is about half the chip meter; a putt's meter top is
-## `putt_range` of the full putt meter. A caddie that said the model's
-## number sent chips and Quick pace putts well short.
-static func meter_value(p: float, putter: bool, chip: bool, putt_range := 1.0) -> float:
+## at the top), so 0.2 is about half the chip meter; a putt reads on
+## `putt_meter` (Quick pace's fixed meters are in feet). A caddie that said
+## the model's number sent chips and Quick pace putts well short.
+static func meter_value(p: float, putter: bool, chip: bool, putt_meter: PuttMeterScale = null) -> float:
 	if putter:
-		return clampf(p / maxf(putt_range, 0.01), 0.0, 1.0)
+		return putt_meter.value_for_power(p) if putt_meter != null else clampf(p, 0.0, 1.0)
 	if not chip:
 		return p
 	var span := LinksPowerStroke.LAST - LinksPowerStroke.SNAP

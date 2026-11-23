@@ -58,6 +58,7 @@ func fresh() -> ShotModel:
 	var m := LinksShotModel.new(aero, clubs)
 	m.skill = skill
 	m.distances = distances
+	m.power_profile = power_profile
 	return m
 
 
@@ -84,8 +85,10 @@ func launch(club: Club, power: float, accuracy: float, aim_deg: float, lie: int,
 	# A full swing's power is a share of the club's own rating (112 for the
 	# driver down to 80 for the wedges), and an overswing (power past 1, from
 	# LinksPowerStroke.full_power) adds the same points for every club. A
-	# chip's power is already in the game's units.
-	var rating := 100.0 if chip else club_rating(club)
+	# chip's power is already in the game's units. A person's hitting
+	# distance (power_profile) sets the rating the way the game's own club
+	# distance setting did; a computer golfer keeps the default.
+	var rating := 100.0 if chip else (club_rating(club) if computer else player_rating(club))
 	var share := clampf(power, 0.0, OVERSWING_MAX)
 	s.power = rating * minf(share, 1.0) + 100.0 * maxf(share - 1.0, 0.0)
 	s.setup.ball_position = setup.ball_position
@@ -119,7 +122,10 @@ func launch(club: Club, power: float, accuracy: float, aim_deg: float, lie: int,
 		w.method = LinksLaunch.Method.MOUSE
 		w.mouse_face_deg = mouse_swing.face_deg
 		w.mouse_path_deg = mouse_swing.path_deg
-		s.power = mouse_swing.power
+		# The mouse swing's power is in the game's units, capped by the
+		# default rating (LinksMouse): the hitting distance scales it the
+		# same way as the meter's.
+		s.power = mouse_swing.power * (1.0 if chip else rating / club_rating(club))
 	else:
 		w.contact = LinksLaunch.meter_contact(-METER_UNITS_AT_FULL_MISS * clampf(accuracy, -1.0, 1.0), skill)
 	w.full_power = rating
@@ -174,18 +180,28 @@ static func club_rating(club: Club) -> float:
 	return LinksMouse.MAX_POWER[LinksLaunch.CLUB_INDEX[club.short_name]]
 
 
+## The club's full-swing power rating for the people playing: the default
+## (club_rating) at Classic, else the rating that sends it the hitting
+## distance profile's total (PlayerPower.links_rating).
+func player_rating(club: Club) -> float:
+	var classic := club_rating(club)
+	if power_profile == PlayerPower.Profile.CLASSIC:
+		return classic
+	return PlayerPower.links_rating(power_profile, club, classic, distances)
+
+
 ## Club distances (Club.total_m) are at power 100; a full swing here gives
-## the club's rating instead. With the game's own table (distances) the
+## the club's rating instead (player_rating: the hitting distance's). With the game's own table (distances) the
 ## reach is its total at that rating, which this model's flight and roll
 ## match within about 1%; without it the reach scales by the rating, which
 ## put the long clubs up to 15% long and the wedges up to 19% short, as
 ## distance isn't in proportion to power.
 func reach_scale(club: Club) -> float:
 	if clubs == null:
-		return 1.0
+		return super.reach_scale(club)
 	if distances != null and not club.is_putter and club.total_m > 0.0 and LinksLaunch.CLUB_INDEX.has(club.short_name):
-		return distances.total_m(LinksLaunch.CLUB_INDEX[club.short_name], club_rating(club)) / club.total_m
-	return club_rating(club) / 100.0
+		return distances.total_m(LinksLaunch.CLUB_INDEX[club.short_name], player_rating(club)) / club.total_m
+	return player_rating(club) / 100.0
 
 
 ## Links 2003's LiePower for the lie (rough 0.93, deep grass 0.84), the

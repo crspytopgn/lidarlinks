@@ -30,7 +30,11 @@ the browser and on desktop today.
 Right-click on the course while aiming to aim at that spot (`ClickAim`: a
 ray from the camera to the ground). Away from the green the round also takes
 the shortest club whose full swing reaches it, as in modern sims; chips and
-putts only turn the aim. A click on the sky does nothing. Left-click stays
+putts only turn the aim. A click on the sky does nothing. Holding the right
+button and dragging turns the aim instead, smoothly and finely
+(`ClickAim.drag_turn_deg`: 0.04 degrees a pixel, 0.015 for putts, a quarter
+of that with Shift), and keeps the club; a press that moves less than 5
+pixels is still a click. Left-click stays
 the swing, except on the Tour presentation's hole map, where either button
 aims at the spot under it (`HoleMap.from_px`).
 
@@ -82,12 +86,19 @@ is followed by a 1 s pause instead of 2.5 s (Space or a click still goes
 on at once). The ball's physics are the same either way.
 
 In Broadcast and Tour the bar reads in distances. A putt's scale is feet on
-a level green; with Quick the putting meter is also sized to the putt
-(`GolfRound.PUTT_RANGES`: 30, 45 or 65% of the full putt meter's power, or
-all of it), the smallest whose top rolls twice the hole's distance, so the
-hole sits two thirds or so along (the roll grows as the square of the
-stroke) and a 10-footer is no longer a sliver in the first quarter of a 110
-ft meter (the original also had a long and a short putt meter). A full swing
+a level green. With Quick and the 3-click meter there are three FIXED
+putting meters (`PuttMeterScale`): 15 ft, 40 ft and the putter's full
+stroke (about 110 ft on normal greens), each a ruler in level feet with
+evenly spaced ticks, so halfway up the 15 ft meter always rolls 7.5 ft on
+the level, on any course or green speed. The 15 ft meter is used for holes
+up to 9 ft, the 40 ft one to 25 ft (room for an uphill putt), and the bar
+says which ("HOLE 8 FT 15 FT METER"). (Until 2026-11-23 the meter was
+resized for every putt in four power steps with the roll growing as the
+square of the stroke, so the same stroke to the same point of the bar
+rolled a different distance from putt to putt.) The bar's reading of power
+is our own choice (the original's meter-to-power scale is not known); the
+stroke, slope, green speed and putt miss are the round's own physics. The
+mouse swing and Classic pace keep the bare meter. A full swing
 or chip labels its quarter marks with the carry in yards for this club and
 lie, on the flat with no wind, and reads the swing as "142 YD 80%" while it
 climbs (`GolfRound.carry_yards`, worked out a sample a frame). Classic Links
@@ -207,6 +218,31 @@ fairway firmness, so neither do we. The greens hold for the whole round
 record (`RoundRecord.green_firmness`, `green_speed`) and replayed on when a
 round is checked, travel with an online round's setup, and a friend's round
 from a result code plays theirs.
+
+### Hitting distance
+
+Settings > Hitting distance sets how far the people playing hit each club
+(`PlayerPower`): Classic Links (the game's own distances, about 276 yd with
+the driver in Links 2003's physics), Amateur (about 225 yd), Scratch (about
+260) or Tour pro (about 300 yd, a 7 iron 178). Each profile is a table of
+full-swing totals per club (flat fairway, no wind), ballpark figures from
+published shot-tracking averages.
+
+With Links 2003's physics a profile works the way the original's own club
+distance setting did: the wanted total is looked up in the game's club
+distance table (`ClubDistances`, CLUBDIST) and the first step that reaches
+it becomes the club's power rating (`LinksShotModel.player_rating`), so the
+launch, flight, bounce, roll and the PowerStroke overswing are the game's
+own; a mouse swing's power is scaled by the same rating. With the stand-in
+physics a full swing's ball speed is scaled by `PlayerPower.STANDARD_SPEED`,
+measured by `tests/calibrate_player_power.gd` so each club goes its total.
+The reach shown, the auto club and the caddie follow the profile.
+
+Chips, putts and launch monitor shots are unchanged, and computer golfers
+keep their own calibrated power (they plan on a Classic copy of the model).
+Each shot's record keeps the profile it was played with
+(`ShotRecord.power_profile`, Classic for older records), so replays and
+online rounds play it back the same; it can change mid-round.
 
 ### Practice range
 
@@ -741,6 +777,7 @@ game/scripts/
   saved_round.gd                SavedRound: the round in progress, for Resume round
   physics/
     shot_model.gd               ShotModel: the physics interface the round uses
+    player_power.gd             PlayerPower: Settings > Hitting distance (Amateur, Scratch, Tour pro)
     standard_shot_model.gd      StandardShotModel: the stand-in model below
     links_shot_model.gd         LinksShotModel: the stand-in with the game's own flight, bounce and roll
     links_aero.gd               LinksAero: that flight model (port of olcore/links_flight)

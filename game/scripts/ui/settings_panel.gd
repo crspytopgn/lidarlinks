@@ -37,6 +37,7 @@ var _sky: OptionButton
 var _sky_values := PackedStringArray()  ## CourseBackdrop sky settings, per _sky item
 var _disc_sounds: OptionButton  ## web only
 var _skill: OptionButton
+var _power: OptionButton
 var _swing: OptionButton
 var _pace: OptionButton
 var _units: OptionButton
@@ -140,6 +141,8 @@ func _ready() -> void:
 	_swing_help = _row(grid, "Swing help", ["Off", "On"])
 	_ball_size = _row(grid, "Ball size", ["Bigger far away (Links)", "True size (42.67 mm)"])
 	_skill = _row(grid, "Swing skill", SKILL_NAMES)
+	_power = _row(grid, "Hitting distance", PlayerPower.NAMES)
+	_power.tooltip_text = PlayerPower.tooltip()
 	_firmness = _row(grid, "Green firmness", ["Soft", "Medium", "Firm"])
 	_speed = _row(grid, "Green speed", ["Slow", "Normal", "Fast"])
 	_putting_grid = _row(grid, "Putting grid", GraphicsSettings.PUTTING_GRID_NAMES)
@@ -207,6 +210,7 @@ func open(s: GraphicsSettings) -> void:
 	if _disc_sounds != null:
 		_disc_sounds.select(1 if s.web_disc_sounds else 0)
 	_skill.select(s.skill)
+	_power.select(s.power_profile)
 	_swing.select(s.swing_method)
 	_pace.select(0 if s.quick_pace else 1)
 	_units.select(1 if s.metric_units else 0)
@@ -326,6 +330,9 @@ func _on_look_selected(index: int) -> void:
 			settings.look = GraphicsSettings.Look.CUSTOM
 			settings.save()
 		return
+	# The player's own choice: FrameWatch leaves it alone from now on.
+	settings.auto_look = false
+	settings.lean = false
 	settings.apply_look(index)
 	settings.save()
 	open(settings)
@@ -455,6 +462,7 @@ func _on_selected() -> void:
 	if _disc_sounds != null:
 		settings.web_disc_sounds = _disc_sounds.selected == 1
 	settings.skill = _skill.selected
+	settings.power_profile = _power.selected
 	settings.swing_method = _swing.selected
 	settings.quick_pace = _pace.selected == 0
 	settings.metric_units = _units.selected == 1

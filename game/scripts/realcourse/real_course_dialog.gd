@@ -89,10 +89,19 @@ func _ready() -> void:
 	pbox.custom_minimum_size = Vector2(420, 0)
 	pbox.add_theme_constant_override("separation", 8)
 	progress.add_child(pbox)
+	# A turning ring beside the step: it keeps moving while the build is
+	# working, so a slow step never looks like a frozen game.
+	var prow := HBoxContainer.new()
+	prow.add_theme_constant_override("separation", 10)
+	pbox.add_child(prow)
+	var spinner := SceneFade.Spinner.new()
+	spinner.custom_minimum_size = Vector2(20, 20)
+	spinner.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
+	prow.add_child(spinner)
 	progress_text = Label.new()
 	progress_text.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	progress_text.custom_minimum_size = Vector2(420, 0)
-	pbox.add_child(progress_text)
+	prow.add_child(progress_text)
 	progress_time = Label.new()
 	progress_time.add_theme_font_size_override("font_size", 12)
 	progress_time.modulate = Color(1, 1, 1, 0.7)

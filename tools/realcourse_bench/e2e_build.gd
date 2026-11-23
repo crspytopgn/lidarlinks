@@ -8,6 +8,7 @@ extends SceneTree
 var f: RealCourseFetcher
 var max_gap := 0
 var gap_step := ""
+var gaps: Array = []  ## [ms, step] of frames of 100 ms or more
 var last := 0
 var step := ""
 var t0 := 0
@@ -76,8 +77,17 @@ func _tick() -> void:
 	if now - last > max_gap and t0 > 0:
 		max_gap = now - last
 		gap_step = step
+	if now - last >= 100 and t0 > 0:
+		gaps.append([now - last, step])
 	last = now
 
 func _end(code: int) -> void:
 	print("MAXGAP %d ms during '%s'" % [max_gap, gap_step])
+	gaps.sort_custom(func(a: Array, b: Array) -> bool: return a[0] > b[0])
+	var total := 0
+	for g: Array in gaps:
+		total += g[0]
+	print("GAPS %d frames of 100 ms or more, %d ms in all" % [gaps.size(), total])
+	for g: Array in gaps.slice(0, 25):
+		print("GAP %d ms during '%s'" % g)
 	quit(code)
