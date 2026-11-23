@@ -4126,6 +4126,44 @@ func _test_feet_on_slopes() -> void:
 func _test_free_golfer() -> void:
 	var golfer := FreeGolfer.create()
 	_check(golfer != null, "free_golfer.glb loads with an AnimationPlayer")
+	# Every body (the realistic people, and the sculpted Custom one, short
+	# and tall) meets the ball with the middle of each club's face, the head
+	# on the ground, not in it: the putter at address with the face just
+	# behind the ball, the driver and irons through impact.
+	var people: Array = [""]
+	for p: Array in PlayerLook.PEOPLE:
+		people.append(p[0])
+	for person: String in people:
+		for height: float in [155.0, 195.0]:
+			var look := PlayerLook.default_look()
+			look.person = person
+			look.height_cm = height
+			var fitted := FreeGolfer.create(look)
+			for club: String in FreeGolfer.CLUB_FIT:
+				var at: Array = fitted.club_at_ball(club)
+				var box: AABB = at[0]
+				var face := box.position.x - FreeGolfer.BALL.x - FreeGolfer.BALL_RADIUS
+				var off: float = (at[1] as Vector3).z - FreeGolfer.BALL.z
+				var sole: float = FreeGolfer.CLUB_FIT[club][3]
+				_check((club != "putter" or absf(face - FreeGolfer.PUTT_GAP) < 0.003) and absf(off) < 0.005
+					and box.position.y > minf(sole, 0.0) - 0.002,
+					"%s (%d cm) meets the ball with the middle of the %s (face %.3f m, %.3f m off the middle, sole %.3f m)"
+					% [person if person != "" else "Custom", height, club, face, off, box.position.y])
+			# The driver and irons sit at address and meet the ball as on
+			# the Mixamo person the swings were baked on.
+			for club: String in FreeGolfer.SWING_FIT:
+				var ref: Dictionary = FreeGolfer._swing_ref[club]
+				var fit: Array = fitted._fits[club]
+				var m := fitted.swing_metrics(club, fit[0])
+				var dz: float = ((m.basis as Basis) * (fit[1] as Vector3)).z
+				var addr: float = (m.address as Vector3).z + dz - (ref.address as Vector3).z
+				var imp: float = (m.impact as Vector3).z + dz - (ref.impact as Vector3).z
+				# (A sole still low has the grip choked as far as it goes.)
+				var choked := (fit[0] as Vector3).length() * float(m.unit) > FreeGolfer.CLUB_CHOKE.y - 1e-4
+				_check(absf(addr) < 0.03 and absf(imp) < 0.03 and (absf(float(m.low) - float(ref.low)) < 0.01 or choked),
+					"%s (%d cm) holds the %s as the swings were baked (address %.3f m, impact %.3f m out, sole %.3f m)"
+					% [person if person != "" else "Custom", height, club, addr, imp, float(m.low) - float(ref.low)])
+			fitted.free()
 	_check(is_equal_approx(FreeGolfer.backswing_top(&"backswing", 0.9), FreeGolfer.BACKSWING_TOP)
 		and is_equal_approx(FreeGolfer.backswing_top(&"backswing_iron", 0.9), FreeGolfer.BACKSWING_TOP_IRON)
 		and is_equal_approx(FreeGolfer.backswing_top(&"backswing", 0.5), 0.5),
