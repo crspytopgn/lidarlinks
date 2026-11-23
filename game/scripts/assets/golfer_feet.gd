@@ -27,6 +27,12 @@ const HEAD_AT := 1.0  ## metres from the grip to the head, near enough for any c
 ## The shaft, grip to head, in the club bone's frame (tools/golfer/clubs.py).
 const SHAFT := Vector3(0.0, -0.11, -1.0)
 const AT_BALL_BLEND := 0.4  ## seconds to move between the two stances
+## At address the club head is let down to this far over the ground (its
+## lowest point), the wrist turning no more than MAX_SOLE_TURN; the clip's
+## hold comes back over SOLE_BLEND seconds once the takeaway starts.
+const SOLE_GAP := 0.003
+const MAX_SOLE_TURN := deg_to_rad(15.0)
+const SOLE_BLEND := 0.25
 ## Clips (and their _iron, _2 variants) that hold a club over the ball.
 const AT_BALL: Array[String] = ["address", "backswing", "swing", "putt"]
 
@@ -47,6 +53,7 @@ var choke := Vector3.ZERO
 var stance := Vector3.ZERO
 var _club := -1
 var _ball_w := 0.0
+var _sole_w := 0.0
 var _lean_per_m := 0.75  ## radians a metre: about a driver's, until address is read
 var _choke_per_lean := 1.2
 var _last_us := 0
@@ -68,6 +75,8 @@ func _process_modification() -> void:
 	var step := clampf(float(now - _last_us) / 1e6 / AT_BALL_BLEND, 0.0, 1.0) if _last_us > 0 else 1.0
 	_last_us = now
 	_ball_w = move_toward(_ball_w, 1.0 if at_ball() else 0.0, step)
+	var addressing := player != null and player.is_playing() and String(player.current_animation).begins_with("address")
+	_sole_w = move_toward(_sole_w, 1.0 if addressing else 0.0, step * AT_BALL_BLEND / SOLE_BLEND)
 	_fit_club(sk)
 	if not ground.is_valid():
 		return
@@ -141,13 +150,15 @@ func _plant(sk: Skeleton3D, up: Vector3, drop: Dictionary[String, float], tilt: 
 ## would push it in, the left wrist (the club hangs from that hand) bends
 ## just enough to sit the head on the turf; GolferHands then brings the
 ## right hand along. Mostly a soled club at address and a club held head down
-## in the reactions after a shot.
+## in the reactions after a shot. At address (blended by `_sole_w`) a head
+## held up off the ground is let down onto it the same way, as a real
+## golfer soles the club behind the ball.
 func _keep_club_up(sk: Skeleton3D, to_world: Transform3D, up: Vector3) -> void:
 	if _club < 0 or club_points.is_empty():
 		return
 	for _pass in 2:
 		var g := sk.get_bone_global_pose(_club)
-		var lowest := 0.0
+		var lowest := -INF
 		var at := Vector3.ZERO
 		for p in club_points:
 			var q := g * p
@@ -156,8 +167,12 @@ func _keep_club_up(sk: Skeleton3D, to_world: Transform3D, up: Vector3) -> void:
 			if under > lowest:
 				lowest = under
 				at = q
+		var turn_by := lowest
 		if lowest < 1e-3:
-			return
+			# Up off the ground: down onto it at address.
+			if _sole_w <= 0.0 or lowest > -SOLE_GAP - 1e-3:
+				return
+			turn_by = (lowest + SOLE_GAP) * _sole_w
 		var wrist := sk.get_bone_parent(_club)
 		var wg := sk.get_bone_global_pose(wrist)
 		var v := at - wg.origin
@@ -165,7 +180,7 @@ func _keep_club_up(sk: Skeleton3D, to_world: Transform3D, up: Vector3) -> void:
 		var axis := v.cross(up)
 		if axis.length_squared() < 1e-6:
 			return
-		var turn := minf(lowest / maxf(flat.length(), CLUB_MIN_REACH), MAX_CLUB_TURN)
+		var turn := clampf(turn_by / maxf(flat.length(), CLUB_MIN_REACH), -MAX_SOLE_TURN, MAX_CLUB_TURN)
 		GolferLook.turn_bone(sk, wrist, Quaternion(axis.normalized(), turn))
 
 
