@@ -175,6 +175,13 @@ const GIMME_FEET := [0.0, 2.0, 3.0, 4.0]
 const GIMME_NAMES := ["Off", "Inside 2 ft", "Inside 3 ft", "Inside the leather (4 ft)"]
 
 var look: int = Look.CLASSIC
+## The look was picked by the game for this device (detect_look()), not by
+## the player, so FrameWatch may step it down when frames are slow.
+var auto_look := true
+## Performance's lean form, for the slowest machines (software rendering,
+## or FrameWatch's last step): no 3D grass, the course's own trees, a lower
+## 3D resolution and no moving cloud shade or swaying leaves.
+var lean := false
 var lighting: int = Lighting.CLASSIC
 var upscaler: int = Upscaler.OFF
 var dynamic_res := 0  ## index into DYNAMIC_FPS
@@ -209,11 +216,11 @@ func _init() -> void:
 
 ## The look to start with on this device: Photoreal on a dedicated graphics
 ## card, Natural on built-in graphics, browsers and capable phones and
-## tablets (web_capable()), Performance on other phones and software
-## renderers.
+## tablets, Performance on other phones and software renderers, and in a
+## browser on old or small graphics chips (WebDevice.Tier.LEAN).
 static func detect_look() -> int:
 	if OS.has_feature("web"):
-		return Look.NATURAL if web_capable() else Look.PERFORMANCE
+		return Look.PERFORMANCE if web_tier() == WebDevice.Tier.LEAN else Look.NATURAL
 	if OS.has_feature("mobile"):
 		return Look.PERFORMANCE
 	match RenderingServer.get_video_adapter_type():
@@ -224,31 +231,23 @@ static func detect_look() -> int:
 	return Look.NATURAL
 
 
-## Graphics chips (as the browser names them) that run the web build's
-## higher tier well: Apple's (every iPad and iPhone that runs WebGL 2),
-## recent Adreno, Mali, Immortalis and Xclipse phone GPUs, and any real
-## desktop GPU. Software renderers never.
-const WEB_SLOW_GPUS := ["swiftshader", "llvmpipe", "softpipe", "software", "mali-4", "mali-t", "mali-g5", "adreno (tm) 3", "adreno (tm) 4", "adreno (tm) 5", "powervr"]
+## Whether to start on Performance's lean form: software rendering, or a
+## browser that says WebGL is slow on this machine.
+static func detect_lean() -> bool:
+	if OS.has_feature("web"):
+		return WebDevice.is_software() or bool(WebDevice.info().get("caveat", false))
+	return RenderingServer.get_video_adapter_type() == RenderingDevice.DEVICE_TYPE_CPU
 
 
 ## Whether this browser's device gets the web build's higher tier: High
-## quality, denser grass and 3D trees further out.
+## quality, denser grass and 3D trees further out (WebDevice.tier()).
 static func web_capable() -> bool:
-	if not OS.has_feature("web"):
-		return false
-	var gpu := RenderingServer.get_video_adapter_name().to_lower()
-	for slow: String in WEB_SLOW_GPUS:
-		if gpu.contains(slow):
-			return false
-	if OS.has_feature("web_ios"):
-		return true
-	if OS.has_feature("web_android"):
-		# Known-good mobile GPUs only: older and unknown ones stay light.
-		for good: String in ["apple", "adreno (tm) 6", "adreno (tm) 7", "adreno (tm) 8", "mali-g7", "mali-g6", "immortalis", "xclipse"]:
-			if gpu.contains(good):
-				return true
-		return false
-	return true
+	return OS.has_feature("web") and web_tier() == WebDevice.Tier.HIGH
+
+
+## The browser build's tier for this device (WebDevice.Tier).
+static func web_tier() -> int:
+	return WebDevice.tier(OS.has_feature("web_android") or OS.has_feature("web_ios"), OS.has_feature("web_ios"))
 
 
 ## An iPad (or another big-screened Apple device) in the browser: Apple's
@@ -291,6 +290,13 @@ func apply_look(which: int) -> void:
 	cloud_shadows = which != Look.PERFORMANCE
 	dynamic_res = 2
 	trees = 1 if which == Look.PERFORMANCE else (3 if quality >= Quality.ULTRA else 2)
+	if which == Look.PERFORMANCE and lean:
+		grass = 0
+		trees = 0
+		render_scale = 0.6
+		sharpen = 1
+		foliage_wind = false
+		cloud_shadows = false
 	if OS.has_feature("web"):
 		# One thread for game and renderer: a notch lower, and two notches
 		# on devices outside web_capable().
@@ -335,6 +341,8 @@ func apply_launcher_requests(path := PATH) -> void:
 		return
 	var which := int(cfg.get_value(LAUNCHER_SECTION, "look", -1))
 	if which >= Look.PHOTOREAL and which < Look.CUSTOM:
+		auto_look = false
+		lean = false
 		apply_look(which)
 	var q := int(cfg.get_value(LAUNCHER_SECTION, "quality", -1))
 	if q >= Quality.LOW and q <= Quality.ULTRA and q != quality:
@@ -391,8 +399,12 @@ static func _load_saved(path: String) -> GraphicsSettings:
 	if force_look >= 0:
 		s.apply_look(force_look)
 		return s
+	s.auto_look = bool(cfg.get_value(SECTION, "auto_look", s.auto_look))
+	s.lean = bool(cfg.get_value(SECTION, "lean", s.lean))
 	if not cfg.has_section_key(SECTION, "look"):
 		# First run, or settings from before the looks: pick for the device.
+		s.auto_look = true
+		s.lean = detect_lean()
 		s.apply_look(detect_look())
 		return s
 	s.look = clampi(int(cfg.get_value(SECTION, "look", s.look)), Look.PHOTOREAL, Look.CUSTOM)
@@ -464,7 +476,7 @@ func save(path := PATH) -> void:
 	cfg.set_value(GAME_SECTION, "captions", captions)
 	cfg.set_value(GAME_SECTION, "launch_monitor", launch_monitor)
 	cfg.set_value(SECTION, "look_version", LOOK_VERSION)
-	for key in ["look", "lighting", "upscaler", "dynamic_res", "sharpen", "bloom", "vignette", "grain", "grade", "ssao", "dof", "grass", "foliage_wind", "cloud_shadows", "trees"]:
+	for key in ["look", "auto_look", "lean", "lighting", "upscaler", "dynamic_res", "sharpen", "bloom", "vignette", "grain", "grade", "ssao", "dof", "grass", "foliage_wind", "cloud_shadows", "trees"]:
 		cfg.set_value(SECTION, key, get(key))
 	var err := cfg.save(path)
 	if err != OK:
@@ -534,14 +546,38 @@ static func budget_scale(pixels: float, budget: float) -> float:
 	return sqrt(budget / pixels)
 
 
+## The browser's 3D pixel budget per quality (Low to Ultra): WebGL shares
+## its one thread with the game, and a Retina or 4K screen asks for four
+## times the pixels of a 1080p one (the page draws at the device's pixel
+## ratio). High keeps a 1080p window whole.
+const WEB_PIXEL_BUDGET := [0.8e6, 1.2e6, 2.1e6, 2.1e6]
+## The lowest the browser's pixel budget takes the 3D resolution: its plain
+## stretch shows stair steps below about 0.7 on a 1x screen, while on a 2x
+## screen half is still a pixel per CSS pixel.
+const WEB_BUDGET_FLOOR := 0.7
+const WEB_BUDGET_FLOOR_HIDPI := 0.5
+
+
 ## The 3D resolution to draw `viewport` at: the chosen render scale, kept
-## inside the built-in graphics' pixel budget. A scale above 1 (chosen
-## supersampling) is taken as asked.
+## inside the built-in graphics' (or the browser's) pixel budget. A scale
+## above 1 (chosen supersampling) is taken as asked.
 func effective_render_scale(viewport: Viewport) -> float:
-	if render_scale > 1.0 or ignore_pixel_budget or not integrated_gpu() or not viewport is Window:
+	if render_scale > 1.0 or ignore_pixel_budget or not viewport is Window:
 		return render_scale
 	var size := Vector2((viewport as Window).size)
+	if OS.has_feature("web"):
+		return web_render_scale(render_scale, size.x * size.y, quality, WebDevice.pixel_ratio())
+	if not integrated_gpu():
+		return render_scale
 	return minf(render_scale, budget_scale(size.x * size.y, IGPU_PIXEL_BUDGET[quality]))
+
+
+## The browser's 3D scale for a chosen `scale`, a window of `pixels` device
+## pixels, `q` quality and a device pixel ratio `dpr`.
+static func web_render_scale(scale: float, pixels: float, q: int, dpr: float) -> float:
+	var lowest := WEB_BUDGET_FLOOR_HIDPI if dpr >= 1.75 else WEB_BUDGET_FLOOR
+	var s := minf(scale, budget_scale(pixels, WEB_PIXEL_BUDGET[q]))
+	return maxf(s, minf(scale, lowest))
 
 
 func shadow_atlas_size() -> int:

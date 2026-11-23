@@ -2309,6 +2309,56 @@ func _test_graphics_settings() -> void:
 	cfg.load(path)
 	_check(int(cfg.get_value("graphics", "look_version", 0)) == GraphicsSettings.LOOK_VERSION, "look version saved")
 	_check(not GraphicsSettings.web_capable(), "the higher web tier is for the browser only")
+	# The browser's tier from the page's own report of the device
+	# (WebDevice): Godot only sees "WebKit WebGL" in Chrome.
+	var tier_of := func(info: Dictionary, mobile := false, ios := false) -> int:
+		WebDevice.override_info = info
+		var t := WebDevice.tier(mobile, ios)
+		WebDevice.override_info = {}
+		return t
+	_check(tier_of.call({"renderer": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero)), SwiftShader driver)", "cores": 8}) == WebDevice.Tier.LEAN, "web tier: software rendering is lean")
+	_check(tier_of.call({"renderer": "ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 Direct3D11 vs_5_0 ps_5_0, D3D11)", "caveat": true, "cores": 8}) == WebDevice.Tier.LEAN, "web tier: the browser calling WebGL slow is lean")
+	_check(tier_of.call({"renderer": "ANGLE (Intel, Intel(R) HD Graphics 620 Direct3D11 vs_5_0 ps_5_0, D3D11)", "cores": 4}) == WebDevice.Tier.LEAN, "web tier: Intel HD Graphics is lean")
+	_check(tier_of.call({"renderer": "ANGLE (Intel, Intel(R) UHD Graphics 620 Direct3D11 vs_5_0 ps_5_0, D3D11)", "cores": 8}) == WebDevice.Tier.STANDARD, "web tier: Intel UHD Graphics is standard")
+	_check(tier_of.call({"renderer": "ANGLE (Intel, Intel(R) Iris(R) Xe Graphics Direct3D11 vs_5_0 ps_5_0, D3D11)", "cores": 8, "memory": 8}) == WebDevice.Tier.HIGH, "web tier: Iris Xe is high")
+	_check(tier_of.call({"renderer": "ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 Direct3D11 vs_5_0 ps_5_0, D3D11)", "cores": 2}) == WebDevice.Tier.LEAN, "web tier: two cores are lean")
+	_check(tier_of.call({"renderer": "ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 Direct3D11 vs_5_0 ps_5_0, D3D11)", "cores": 12, "memory": 4}) == WebDevice.Tier.STANDARD, "web tier: 4 GB is standard")
+	_check(tier_of.call({"renderer": "Apple GPU", "cores": 6}, true, true) == WebDevice.Tier.HIGH, "web tier: an iPad is high")
+	_check(tier_of.call({"renderer": "Mali-G52 MC2", "cores": 8}, true) == WebDevice.Tier.LEAN, "web tier: an old phone chip is lean")
+	_check(tier_of.call({"renderer": "Adreno (TM) 740", "cores": 8}, true) == WebDevice.Tier.HIGH, "web tier: a good phone chip is high")
+	_check(tier_of.call({"renderer": "WebKit WebGL", "cores": 4}) == WebDevice.Tier.STANDARD, "web tier: a hidden chip on four cores is standard")
+	# The browser's pixel budget: a 1080p window keeps High whole, a Retina
+	# laptop draws about 2M pixels but never under half, and a 1x screen
+	# never under 0.7.
+	_check(GraphicsSettings.web_render_scale(1.0, 1920.0 * 1080.0, GraphicsSettings.Quality.HIGH, 1.0) == 1.0, "web pixel budget: 1080p keeps High whole")
+	var web_retina := GraphicsSettings.web_render_scale(1.0, 2880.0 * 1800.0, GraphicsSettings.Quality.HIGH, 2.0)
+	_check(web_retina > 0.6 and web_retina < 0.65, "web pixel budget: Retina laptop at High (%.3f)" % web_retina)
+	_check(GraphicsSettings.web_render_scale(1.0, 5120.0 * 2880.0, GraphicsSettings.Quality.LOW, 2.0) == 0.5, "web pixel budget: floor on a 2x screen")
+	_check(GraphicsSettings.web_render_scale(0.75, 1920.0 * 1080.0, GraphicsSettings.Quality.LOW, 1.0) == 0.7, "web pixel budget: floor on a 1x screen")
+	_check(GraphicsSettings.web_render_scale(0.6, 1920.0 * 1080.0, GraphicsSettings.Quality.LOW, 1.0) == 0.6, "web pixel budget: a lower chosen scale stays")
+	# FrameWatch: slow when the median frame is under 24 fps; it steps a
+	# look the game picked down to Performance, then its lean form, and
+	# leaves a look the player chose alone.
+	var fast := PackedFloat32Array()
+	var slow := PackedFloat32Array()
+	for i in 60:
+		fast.append(16.7 if i % 10 else 200.0)
+		slow.append(50.0 if i % 10 else 16.0)
+	_check(not FrameWatch.is_slow(fast) and FrameWatch.is_slow(slow), "frame watch: median frame, hitches aside")
+	var auto := GraphicsSettings.new()
+	auto.apply_look(GraphicsSettings.Look.NATURAL)
+	FrameWatch.step_down(auto)
+	_check(auto.look == GraphicsSettings.Look.PERFORMANCE and not auto.lean, "frame watch: Natural steps to Performance")
+	FrameWatch.step_down(auto)
+	_check(auto.look == GraphicsSettings.Look.PERFORMANCE and auto.lean and auto.grass == 0 and auto.trees == 0, "frame watch: then Performance's lean form")
+	_check(FrameWatch.next_look(auto) < 0, "frame watch: nothing below lean")
+	var chosen := GraphicsSettings.new()
+	chosen.apply_look(GraphicsSettings.Look.NATURAL)
+	chosen.auto_look = false
+	_check(FrameWatch.next_look(chosen) < 0, "frame watch: a look the player chose stays")
+	auto.save(path)
+	var auto_loaded := GraphicsSettings.load_saved(path)
+	_check(auto_loaded.lean and auto_loaded.auto_look and auto_loaded.grass == 0, "lean look saved")
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
 	loaded = GraphicsSettings.load_saved(path)
 	_check(loaded.look == GraphicsSettings.detect_look(), "first run gets a look for the device")

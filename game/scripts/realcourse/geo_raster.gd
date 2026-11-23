@@ -204,6 +204,10 @@ static func from_tiff(b: PackedByteArray) -> GeoRaster:
 	if bw <= 0 or bh <= 0 or offsets.is_empty() or offsets.size() != counts.size():
 		return null
 	var across := ceili(float(w) / bw)
+	# Every block there, in rows: built a band at a time (below).
+	var whole := offsets.size() == across * ceili(float(h) / bh)
+	var band: Array[PackedFloat32Array] = []
+	var assembled := PackedFloat32Array()
 	for k in offsets.size():
 		var o: int = offsets[k]
 		var c: int = counts[k]
@@ -232,6 +236,21 @@ static func from_tiff(b: PackedByteArray) -> GeoRaster:
 			vals.resize(block.size() >> 1)
 			for q in vals.size():
 				vals[q] = block.decode_s16(q * 2) if kind == "s16" else block.decode_u16(q * 2)
+		if whole:
+			# A band of blocks at a time, row by row, a slice per block:
+			# copying sample by sample was most of reading a lidar tile.
+			band.append(vals)
+			if band.size() < across:
+				continue
+			for y in rows:
+				for tx in across:
+					var cols := mini(bw, w - tx * bw)
+					var src := y * bw
+					if src + cols > band[tx].size():
+						return null
+					assembled.append_array(band[tx].slice(src, src + cols))
+			band.clear()
+			continue
 		for y in rows:
 			var cols := mini(bw, w - x0)
 			var src := y * bw
@@ -240,6 +259,10 @@ static func from_tiff(b: PackedByteArray) -> GeoRaster:
 			var dst := (y0 + y) * w + x0
 			for x in cols:
 				r.data[dst + x] = vals[src + x]
+	if whole:
+		if assembled.size() != w * h:
+			return null
+		r.data = assembled
 	if tags.has(42113):
 		var s := str(tags[42113][0]).strip_edges()
 		if s.is_valid_float():
@@ -272,7 +295,6 @@ static func from_tiff(b: PackedByteArray) -> GeoRaster:
 static func _undo_float_predictor(block: PackedByteArray, w: int, bpp: int) -> PackedByteArray:
 	var row_bytes := w * bpp
 	var out := PackedByteArray()
-	out.resize(block.size())
 	var rows := floori(float(block.size()) / row_bytes)
 	for y in rows:
 		var o := y * row_bytes
@@ -280,19 +302,28 @@ static func _undo_float_predictor(block: PackedByteArray, w: int, bpp: int) -> P
 		for k in row_bytes:
 			acc = (acc + block[o + k]) & 0xFF
 			block[o + k] = acc
-		for x in w:
-			for b in bpp:
-				out[o + x * bpp + b] = block[o + (bpp - b - 1) * w + x]
+		# The row is its samples' bytes in planes, most significant first:
+		# as a w x bpp picture turned clockwise, the planes become each
+		# sample's bytes, least significant first (a byte-by-byte loop here
+		# was two thirds of reading a lidar tile, seconds in a browser).
+		var img := Image.create_from_data(w, bpp, false, Image.FORMAT_L8, block.slice(o, o + row_bytes))
+		img.rotate_90(CLOCKWISE)
+		out.append_array(img.get_data())
+	out.resize(block.size())
 	return out
 
 
 ## Byte-swaps every `size`-byte value (big-endian samples to little).
 static func _swap(block: PackedByteArray, size: int) -> PackedByteArray:
-	var out := PackedByteArray()
+	var n := block.size() / size
+	if size < 2 or n == 0:
+		return block
+	# As a picture `size` bytes wide, one sample a row, mirrored: natively,
+	# where a byte-by-byte loop took most of reading a big-endian lidar tile.
+	var img := Image.create_from_data(size, n, false, Image.FORMAT_L8, block.slice(0, n * size))
+	img.flip_x()
+	var out := img.get_data()
 	out.resize(block.size())
-	for k in range(0, block.size() - size + 1, size):
-		for q in size:
-			out[k + q] = block[k + size - 1 - q]
 	return out
 
 

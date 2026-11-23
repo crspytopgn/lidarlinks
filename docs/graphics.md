@@ -20,9 +20,9 @@ single option makes the look **Custom**.
 
 On the first run (or with settings saved before looks existed),
 `GraphicsSettings.detect_look()` picks one: Photoreal on a dedicated GPU,
-Natural on integrated graphics and desktop browsers, and Performance on
-phones, tablets and software renderers. The browser build also caps quality
-at Medium and grass at Low.
+Natural on integrated graphics and capable browsers, and Performance on
+phones, tablets, software renderers and weak browser devices (see Device
+tiers below).
 
 On built-in graphics (Apple M chips, Intel and AMD laptop graphics) the 3D
 view keeps to a pixel budget per quality
@@ -36,13 +36,38 @@ Ultra and use a notch lighter soft-shadow filter.
 
 ## Device tiers
 
-- The browser build picks Natural on capable devices
-  (`GraphicsSettings.web_capable()`): every iPad and iPhone, recent Adreno,
-  Mali, Immortalis and Xclipse phone GPUs, and desktop browsers on a real
-  GPU. There it runs at High quality, with grass level 2 (3 on iPads and
-  other large-screen iOS devices) and 3D trees. Shadows reach at most
-  200 m in the browser, so the shadow map stays sharp near the golfer.
-  Other phones get Performance, and software renderers never get the higher tier.
+- The browser build sorts the device into a tier (`WebDevice.tier()`).
+  Chrome and Edge only tell Godot "WebKit WebGL", so the page itself is
+  asked (`WebDevice.PROBE`): the real chip through
+  `WEBGL_debug_renderer_info`, whether the browser calls WebGL slow there
+  (`failIfMajorPerformanceCaveat`), the cores, the memory and the pixel
+  ratio. Before this every desktop browser, software renderers and old
+  laptops included, got the top tier.
+  - Lean (Performance): software rendering, a browser that calls WebGL
+    slow, old or small chips (`WebDevice.LEAN_GPUS`: Intel HD Graphics,
+    small AMD APUs, old GeForces, old phone chips), two cores or 2 GB.
+    Software rendering starts on Performance's lean form
+    (`GraphicsSettings.lean`: no 3D grass, the course's own trees, 60%
+    resolution, no cloud shade or swaying leaves).
+  - Standard (Natural at Medium, grass 1, 3D trees near): middle chips
+    (`WebDevice.STANDARD_GPUS`: Intel UHD, Iris Plus, Vega 8 to 11,
+    GeForce MX), 4 GB machines, other phones, and a hidden chip on four
+    cores or fewer.
+  - High (Natural at High, grass 2, 3 on iPads, 3D trees): Apple's chips,
+    good phone chips (Adreno 6xx and up, Mali-G6x/G7x, Immortalis,
+    Xclipse) and other desktop graphics.
+  Shadows reach at most 200 m in the browser, so the shadow map stays
+  sharp near the golfer.
+- The browser keeps the 3D view to a pixel budget too
+  (`GraphicsSettings.WEB_PIXEL_BUDGET`, High is 1080p's worth): the page
+  draws at the screen's pixel ratio, so a Retina laptop asked for four
+  times the pixels. It never goes under 70% on a 1x screen or 50% on a 2x
+  one (`web_render_scale()`).
+- `FrameWatch` steps a look the game picked (`GraphicsSettings.auto_look`)
+  down once dynamic resolution is at its floor and the median frame of two
+  5-second windows is still under 24 fps: Natural (or Photoreal) to
+  Performance, then Performance to its lean form, with a message. A look
+  the player picks in Settings (or the launcher) is never changed.
 - The terrain shader used by the default and designed courses reads the
   grass and rough scans' height maps. Within about 35 m the texture shifts
   with the view (one parallax step), and within about 110 m low parts

@@ -1135,6 +1135,18 @@ func _test_far_woods() -> void:
 		west = minf(west, o.position.x)
 	check(c.objects.size() <= 3000, "within the tree limit")
 	check(west < c.area.position.x + 10.0, "the woods reach the edge of the area (%.0f of %.0f)" % [west, c.area.position.x])
+	# Built a few thousand crowns a step, the trees are the same as in one go.
+	var b2 := RealCourseBuilder.new({"elements": els}, 52.2, 5.2)
+	b2.max_trees = 3000
+	b2.lidar_trees = crowns
+	var per_step := RealCourseBuilder.trees_per_step
+	RealCourseBuilder.trees_per_step = 1 << 30
+	var c2 := b2.build(func(_la: float, _lo: float) -> float: return 1.0)
+	RealCourseBuilder.trees_per_step = per_step
+	var same := c2.objects.size() == c.objects.size()
+	for i in mini(c.objects.size(), c2.objects.size()):
+		same = same and c.objects[i].position == c2.objects[i].position and c.objects[i].id == c2.objects[i].id and c.objects[i].scale == c2.objects[i].scale
+	check(same, "trees built in steps match one go (%d, %d)" % [c.objects.size(), c2.objects.size()])
 
 
 ## West Essex (Nov 2026): a culverted drain was dug across a field as an open

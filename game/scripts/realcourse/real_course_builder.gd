@@ -39,8 +39,10 @@ const BRIDGE := 3.0  ## metres: the causeway out to a green inside a pond
 ## (crowns the lidar or photo put on the line: Hirono's 12th had 93).
 const LINE_CLEAR := 8.0
 ## Work per build step (build_steps): height samples, and buildings.
-const HEIGHT_SAMPLES_PER_STEP := 40000
+const HEIGHT_SAMPLES_PER_STEP := 12000
 const BUILDINGS_PER_STEP := 120
+## Lidar tree crowns per build step (_tree_steps); tests change it.
+static var trees_per_step := 2000
 const MAX_GREEN_STEPS := 24  ## the greens are graded over this many steps
 const CREDITS := "Course layout from OpenStreetMap, (c) OpenStreetMap contributors, ODbL 1.0 (openstreetmap.org/copyright). Ground heights from the Terrain Tiles on AWS Open Data (Mapzen), which merge national lidar and open elevation data; see docs/real-courses.md for each source."
 
@@ -587,9 +589,10 @@ func build_steps(c: DesignedCourse, height: Callable, fallback := Callable()) ->
 			_ground_cache = c.heights.duplicate()
 			_ground_base = c.source["base_height"]
 		if lidar_ground:
-			_streams = _streams.filter(func(d: Dictionary) -> bool: return not d["small"] or is_open_ditch(d["line"], d["width"], height, frame))
-		_add_shapes(c)
-		_add_holes(c)
+			_streams = _streams.filter(func(d: Dictionary) -> bool: return not d["small"] or is_open_ditch(d["line"], d["width"], height, frame)))
+	steps.append(func() -> void: _add_shapes(c))
+	steps.append(func() -> void: _add_holes(c))
+	steps.append(func() -> void:
 		# Paths first: sandy tracks found in the photo aren't bunkers.
 		_add_paths(c)
 		_add_walls(c)
@@ -682,7 +685,7 @@ func build_steps(c: DesignedCourse, height: Callable, fallback := Callable()) ->
 	steps.append(func() -> void:
 		playability.erase("todo")
 		playability["pins"] = CoursePlayability.place_pins(c))
-	steps.append(func() -> void:
+	steps.append_array(_tree_steps(c, func() -> void:
 		var lines: Array[PackedVector2Array] = []
 		for h in c.holes:
 			for t in h.tees:
@@ -690,8 +693,8 @@ func build_steps(c: DesignedCourse, height: Callable, fallback := Callable()) ->
 				line.append_array(h.route)
 				line.append(h.pin)
 				lines.append(line)
-		_lines = line_cells(lines)
-		_add_trees(c)
+		_lines = line_cells(lines)))
+	steps.append(func() -> void:
 		var detected: int = counts["detected"]
 		summary = {"missing_holes": missing_holes(), "greens_graded": playability["greens"], "holes": c.holes.size(), "areas": c.shapes.size(), "trees": c.objects.size(), "paths": c.paths.size(), "buildings": c.buildings.size(), "guessed": _guessed.size() - detected, "detected": detected, "native": native["count"], "holes_made": holes_made})
 	return steps
@@ -1619,7 +1622,26 @@ static func _is_bridge(t: Dictionary) -> bool:
 	return str(t.get("bridge", "no")) not in ["no", ""]
 
 
-func _add_trees(c: DesignedCourse) -> void:
+## The trees, as build steps of trees_per_step lidar crowns at a time (a
+## wooded club has tens of thousands: half a second in one go natively,
+## seconds in a browser), giving the same trees as one go.
+func _tree_steps(c: DesignedCourse, before: Callable) -> Array[Callable]:
+	var steps: Array[Callable] = []
+	var t := {}
+	steps.append(func() -> void:
+		before.call()
+		t.merge(_trees_begin(c)))
+	for k in range(0, lidar_trees.size(), trees_per_step):
+		steps.append(func() -> void: _tree_distances(c, t, k, mini(k + trees_per_step, lidar_trees.size())))
+	steps.append(func() -> void: _trees_sort(t))
+	for k in lidar_trees.size() / trees_per_step + 2:
+		steps.append(func() -> void: _plant_found(c, t))
+	steps.append(func() -> void: _trees_end(c, t))
+	return steps
+
+
+## Mapped trees, rows and hedges; returns the state the later steps share.
+func _trees_begin(c: DesignedCourse) -> Dictionary:
 	var clear := _play_rings()
 	_clear_cells = box_cells(clear + _buildings)
 	_near.clear()
@@ -1634,35 +1656,77 @@ func _add_trees(c: DesignedCourse) -> void:
 	for line in _hedges:
 		for p in _resample(line, HEDGE_SPACING):
 			_plant(c, p, "hedge", 0.0, clear, 0.0, false)
-	# Lidar crowns are real trees, typed by the wood they stand in (if any).
-	# A wooded course has tens of thousands, more than MAX_TREES, so the ones
-	# nearest the holes go in first and deep woods are left thinner.
 	var found: Array[Dictionary] = []
-	for t in lidar_trees:
-		var p := frame.to_local(t["lat"], t["lon"])
-		found.append({"p": p, "h": t["height"], "leaf": str(t.get("leaf", "")), "d": _hole_distance(p, c.holes)})
+	found.resize(lidar_trees.size())
+	return {"clear": clear, "found": found, "near": 0, "at": 0, "next": 0.0, "k": 1.0, "grow": 1.0, "far_set": false, "done": false}
+
+
+## Lidar crowns `from` to `to`: where they are and how far from the holes.
+func _tree_distances(c: DesignedCourse, t: Dictionary, from: int, to: int) -> void:
+	var found: Array[Dictionary] = t["found"]
+	for i in range(from, to):
+		var l: Dictionary = lidar_trees[i]
+		var p := frame.to_local(l["lat"], l["lon"])
+		found[i] = {"p": p, "h": l["height"], "leaf": str(l.get("leaf", "")), "d": _hole_distance(p, c.holes)}
+
+
+func _trees_sort(t: Dictionary) -> void:
+	var found: Array[Dictionary] = t["found"]
 	found.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return a["d"] < b["d"])
-	# Every crown near the holes. Farther off, when there are more crowns
-	# than room for them, a share of them evenly (grown a little to fill
-	# the gaps), so the woods reach the edge of the area rather than
-	# stopping in a ring round the holes (Hilversum has 40,000).
 	var near := 0
 	while near < found.size() and found[near]["d"] <= FULL_WOOD_REACH:
 		near += 1
-	for i in near:
-		var t: Dictionary = found[i]
-		_plant(c, t["p"], t["leaf"] if not str(t["leaf"]).is_empty() else _leaf_at(t["p"]), t["h"], clear, 3.0)
-	var room := max_trees - c.objects.size()
-	var far := found.size() - near
-	# Every k-th crown by distance, so the ones kept spread evenly out to
-	# the edge of the area.
-	var k := 1.0 if far <= room or room <= 0 else float(far) / room * 1.05
-	var grow := clampf(sqrt(k), 1.0, 1.35)
-	var next := float(near)
-	while int(next) < found.size():
-		var t: Dictionary = found[int(next)]
-		_plant(c, t["p"], t["leaf"] if not str(t["leaf"]).is_empty() else _leaf_at(t["p"]), t["h"] * grow, clear, 3.0)
-		next += k
+	t["near"] = near
+
+
+## Plants up to trees_per_step lidar crowns; true once they are all in.
+## Lidar crowns are real trees, typed by the wood they stand in (if any).
+## A wooded course has tens of thousands, more than MAX_TREES, so the ones
+## nearest the holes go in first and deep woods are left thinner: every
+## crown near the holes, and farther off, when there are more crowns than
+## room for them, a share of them evenly (grown a little to fill the
+## gaps), so the woods reach the edge of the area rather than stopping in
+## a ring round the holes (Hilversum has 40,000).
+func _plant_found(c: DesignedCourse, t: Dictionary) -> bool:
+	if t["done"]:
+		return true
+	var found: Array[Dictionary] = t["found"]
+	var near: int = t["near"]
+	var clear: Array[Dictionary] = t["clear"]
+	var left := trees_per_step
+	var at: int = t["at"]
+	while left > 0 and at < near:
+		var d: Dictionary = found[at]
+		_plant(c, d["p"], d["leaf"] if not str(d["leaf"]).is_empty() else _leaf_at(d["p"]), d["h"], clear, 3.0)
+		at += 1
+		left -= 1
+	t["at"] = at
+	if at < near:
+		return false
+	if not t["far_set"]:
+		t["far_set"] = true
+		var room := max_trees - c.objects.size()
+		var far := found.size() - near
+		# Every k-th crown by distance, so the ones kept spread evenly out
+		# to the edge of the area.
+		var k := 1.0 if far <= room or room <= 0 else float(far) / room * 1.05
+		t["k"] = k
+		t["grow"] = clampf(sqrt(k), 1.0, 1.35)
+		t["next"] = float(near)
+	var next: float = t["next"]
+	while left > 0 and int(next) < found.size():
+		var d: Dictionary = found[int(next)]
+		_plant(c, d["p"], d["leaf"] if not str(d["leaf"]).is_empty() else _leaf_at(d["p"]), d["h"] * float(t["grow"]), clear, 3.0)
+		next += float(t["k"])
+		left -= 1
+	t["next"] = next
+	t["done"] = int(next) >= found.size()
+	return t["done"]
+
+
+## The trees without lidar: photo, land-cover and mapped woods.
+func _trees_end(c: DesignedCourse, t: Dictionary) -> void:
+	var clear: Array[Dictionary] = t["clear"]
 	if not lidar_trees.is_empty():
 		return
 	for p in photo_trees:

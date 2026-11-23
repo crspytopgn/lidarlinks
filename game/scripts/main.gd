@@ -300,6 +300,7 @@ var stand_bag: StandBag  ## the player's bag, standing behind the golfer
 var _bag_for := Vector3.INF  ## the ball the bag was set down for
 var _drive_to := -1  ## the ball the buggy is driving to
 var dynamic_resolution: DynamicResolution
+var frame_watch: FrameWatch
 var grass: GrassField
 var fescue: FescueField  ## tall fescue on the deep rough, further out
 var debris: DebrisField  ## litter, logs and stumps under tree lines (private pack)
@@ -694,6 +695,8 @@ func _round_name() -> String:
 
 func start_hole(index: int) -> void:
 	hole_index = index
+	if frame_watch != null:
+		frame_watch.restart()  # the new hole's loading isn't the frame rate
 	_fold_hints()
 	shot_log.clear()
 	_undo = {}
@@ -3731,6 +3734,11 @@ func _build_world() -> void:
 	add_child(post)
 	dynamic_resolution = DynamicResolution.new()
 	add_child(dynamic_resolution)
+	# A look the game picked steps down if this machine can't keep up.
+	if DisplayServer.get_name() != "headless" and not FrameBenchmark.wanted():
+		frame_watch = FrameWatch.new()
+		add_child(frame_watch)
+		frame_watch.stepped.connect(_on_look_stepped)
 
 	var canvas := CanvasLayer.new()
 	add_child(canvas)
@@ -3853,6 +3861,8 @@ func _apply_graphics() -> void:
 	scenery.apply(graphics)
 	post.apply(graphics)
 	dynamic_resolution.setup(get_viewport(), graphics)
+	if frame_watch != null:
+		frame_watch.setup(graphics, get_viewport(), dynamic_resolution)
 	camera.fov = graphics.fov
 	camera.base_fov = graphics.fov
 	ScannedTree.hd = graphics.quality == GraphicsSettings.Quality.ULTRA and GraphicsSettings.is_forward_plus() \
@@ -3912,6 +3922,12 @@ func _apply_graphics() -> void:
 		_update_wind_shaders()
 		if hole != null:
 			_update_hud()
+
+
+## FrameWatch stepped the look down: apply it and say so.
+func _on_look_stepped(_look: int) -> void:
+	_apply_graphics()
+	hud.show_message("Graphics lowered to keep play smooth (Settings > Look to change)", 5.0)
 
 
 ## Depth of field (Forward+ only): the far distance goes softly out of
