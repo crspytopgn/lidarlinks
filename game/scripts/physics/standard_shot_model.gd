@@ -41,8 +41,16 @@ func launch(club: Club, power: float, accuracy: float, aim_deg: float, lie: int,
 		side -= (face - path) * SIDESPIN_RPM_PER_DEG * BallPhysics.RPM_TO_RAD_S
 		s.spin = right * back_spin + Vector3.UP * side
 	ShotShape.add_backspin(s, backspin)
+	# The player's hitting distance (PlayerPower): a faster ball, same spin.
+	s.velocity *= PlayerPower.standard_speed(power_profile, club)
 	s.position = from
 	return s
+
+
+## The player's hitting distance sends a full swing the profile's total.
+func reach_scale(club: Club) -> float:
+	var want := PlayerPower.total_m(power_profile, club)
+	return want / club.total_m if want > 0.0 and club.total_m > 0.0 else 1.0
 
 
 func simulate(start: BallState, terrain: CourseTerrain, cup: Vector3, wind := Vector3.ZERO) -> ShotResult:

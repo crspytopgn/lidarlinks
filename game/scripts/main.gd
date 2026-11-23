@@ -1002,6 +1002,7 @@ func play_shot(power: float, accuracy: float, monitor: OpenConnect.Launch = null
 	rec.from = ball_at
 	rec.skill = graphics.skill
 	rec.computer = round_setup != null and round_setup.is_computer(shooter)
+	rec.power_profile = PlayerPower.Profile.CLASSIC if rec.computer else graphics.power_profile
 	# A Classic computer's swing or putt makes Links 2003's own computer misses.
 	if rec.computer and _classic_computer(shooter):
 		var sk := opponents[shooter].skill
@@ -1025,6 +1026,7 @@ func play_shot(power: float, accuracy: float, monitor: OpenConnect.Launch = null
 	rec.wind = wind.velocity()
 	if _incoming != null:
 		rec.skill = _incoming.skill
+		rec.power_profile = _incoming.power_profile
 	_mouse_stroke = null
 	_mouse_help = null
 	# The flight and roll are worked out on a worker thread where the game
@@ -3902,6 +3904,9 @@ func _apply_graphics() -> void:
 	if record == null:
 		LinksGround.set_greens(graphics.green_firmness, graphics.green_speed)
 		_putt_scales.clear()
+	# Each shot records its own hitting distance, so this applies at once.
+	if shot_model != null:
+		shot_model.power_profile = graphics.power_profile
 	scenery.apply(graphics)
 	post.apply(graphics)
 	dynamic_resolution.setup(get_viewport(), graphics)

@@ -112,6 +112,10 @@ var web_disc_sounds := false
 ## Swing skill level for the people playing, 0 (easiest) to 3: how hard the
 ## Links 2003 swing punishes a missed snap (LinksLaunch.apply_swing).
 var skill := 3
+## How far the people playing hit each club (PlayerPower.Profile): Links
+## 2003's own distances by default, or an amateur's, a scratch golfer's or a
+## tour pro's.
+var power_profile: int = PlayerPower.Profile.CLASSIC
 ## The game's green options (LinksGround.set_greens): firmness 0 soft, 1
 ## medium, 2 firm; speed 0 slow, 1 normal, 2 fast.
 var green_firmness := 1
@@ -368,6 +372,7 @@ static func _load_saved(path: String) -> GraphicsSettings:
 	s.follow_ball = bool(cfg.get_value(GAME_SECTION, "follow_ball", s.follow_ball))
 	s.web_disc_sounds = bool(cfg.get_value(GAME_SECTION, "web_disc_sounds", s.web_disc_sounds))
 	s.skill = clampi(int(cfg.get_value(GAME_SECTION, "skill", s.skill)), 0, LinksLaunch.SKILL_COUNT - 1)
+	s.power_profile = PlayerPower.clamp_profile(int(cfg.get_value(GAME_SECTION, "power_profile", s.power_profile)))
 	s.green_firmness = clampi(int(cfg.get_value(GAME_SECTION, "green_firmness", s.green_firmness)), 0, 2)
 	s.green_speed = clampi(int(cfg.get_value(GAME_SECTION, "green_speed", s.green_speed)), 0, 2)
 	s.swing_method = clampi(int(cfg.get_value(GAME_SECTION, "swing_method", s.swing_method)), 0, 1)
@@ -443,6 +448,7 @@ func save(path := PATH) -> void:
 	cfg.set_value(GAME_SECTION, "follow_ball", follow_ball)
 	cfg.set_value(GAME_SECTION, "web_disc_sounds", web_disc_sounds)
 	cfg.set_value(GAME_SECTION, "skill", skill)
+	cfg.set_value(GAME_SECTION, "power_profile", power_profile)
 	cfg.set_value(GAME_SECTION, "green_firmness", green_firmness)
 	cfg.set_value(GAME_SECTION, "green_speed", green_speed)
 	cfg.set_value(GAME_SECTION, "swing_method", swing_method)
