@@ -4566,6 +4566,16 @@ func _test_people(parts: GolferParts) -> void:
 	_check(capped > 140 and capped < 220, "about half the gallery wears a cap (%d of 400)" % capped)
 	_check(white * 5 < capped, "few of the gallery's caps are white (%d of %d)" % [white, capped])
 	_check(Scenery.people_light(true, false).x < 1.0 and Scenery.people_light(true, true) == Vector3(1, 1, 0), "people take back the web build's turf lift only")
+	_check(Scenery.people_sky(false, false, 4.0, 0.5) == Vector4(0, 0, 0, 1), "Classic lighting leaves people's shade as it is")
+	for fwd: bool in [false, true]:
+		var ps := Scenery.people_sky(true, fwd, 4.0, 0.5)
+		var amb := 0.5 * Scenery.people_light(true, fwd).y
+		var sky := Vector3(ps.x, ps.y, ps.z).dot(Vector3(0.2126, 0.7152, 0.0722))
+		var shade := amb + sky
+		var lit := 4.0 * ps.w + shade
+		var ratio := Scenery.PEOPLE_SHADE_RATIO_FORWARD if fwd else Scenery.PEOPLE_SHADE_RATIO
+		_check(sky > 0.0 and absf(shade / lit - ratio) < 0.02, "people's shade gets the sky's light, as the turf's does (%s)" % ("Forward+" if fwd else "web"))
+	_check(Scenery.people_sky(true, false, 4.0, 0.5).w < 1.0 / Scenery.COMPAT_SUN_LIFT, "the web's extra sun is taken back on people")
 	_check(PlayerLook.from_dict({"sex": 0.0}).person == "", "a look saved before the people stays Custom")
 	var saved := PlayerLook.default_look()
 	saved.person = "Female_Adult_17"
