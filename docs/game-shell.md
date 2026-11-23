@@ -30,7 +30,11 @@ the browser and on desktop today.
 Right-click on the course while aiming to aim at that spot (`ClickAim`: a
 ray from the camera to the ground). Away from the green the round also takes
 the shortest club whose full swing reaches it, as in modern sims; chips and
-putts only turn the aim. A click on the sky does nothing. Left-click stays
+putts only turn the aim. A click on the sky does nothing. Holding the right
+button and dragging turns the aim instead, smoothly and finely
+(`ClickAim.drag_turn_deg`: 0.04 degrees a pixel, 0.015 for putts, a quarter
+of that with Shift), and keeps the club; a press that moves less than 5
+pixels is still a click. Left-click stays
 the swing, except on the Tour presentation's hole map, where either button
 aims at the spot under it (`HoleMap.from_px`).
 
