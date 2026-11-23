@@ -40,6 +40,11 @@ var _bones := {}
 ## The club head's outermost points in the club bone's frame (FreeGolfer
 ## sets them for the club in his hands; none when empty-handed).
 var club_points := PackedVector3Array()
+## The club fitted to this body (FreeGolfer._fit_putter): `choke` slides
+## the club bone in its own frame, down the grip, always; `stance` slides
+## the body (skeleton frame) while he stands over the ball.
+var choke := Vector3.ZERO
+var stance := Vector3.ZERO
 var _club := -1
 var _ball_w := 0.0
 var _lean_per_m := 0.75  ## radians a metre: about a driver's, until address is read
@@ -49,7 +54,7 @@ var _last_us := 0
 
 func _process_modification() -> void:
 	var sk := get_skeleton()
-	if sk == null or not ground.is_valid():
+	if sk == null:
 		return
 	if _bones.is_empty():
 		for b: String in ["Root", "spine_01", "thigh_l", "calf_l", "foot_l", "thigh_r", "calf_r", "foot_r"]:
@@ -58,6 +63,13 @@ func _process_modification() -> void:
 			return
 		_club = sk.find_bone("club")
 	elif _bones.values().has(-1):
+		return
+	var now := Time.get_ticks_usec()
+	var step := clampf(float(now - _last_us) / 1e6 / AT_BALL_BLEND, 0.0, 1.0) if _last_us > 0 else 1.0
+	_last_us = now
+	_ball_w = move_toward(_ball_w, 1.0 if at_ball() else 0.0, step)
+	_fit_club(sk)
+	if not ground.is_valid():
 		return
 	var to_world := sk.global_transform
 	var to_sk := to_world.affine_inverse()
@@ -73,13 +85,20 @@ func _process_modification() -> void:
 		var dx: float = ground.call(ankle.x - e, ankle.z) - ground.call(ankle.x + e, ankle.z)
 		var dz: float = ground.call(ankle.x, ankle.z - e) - ground.call(ankle.x, ankle.z + e)
 		tilt[s] = (to_sk.basis * Vector3(dx, 2.0 * e, dz)).normalized()
-	var now := Time.get_ticks_usec()
-	var step := clampf(float(now - _last_us) / 1e6 / AT_BALL_BLEND, 0.0, 1.0) if _last_us > 0 else 1.0
-	_last_us = now
-	_ball_w = move_toward(_ball_w, 1.0 if at_ball() else 0.0, step)
 	if absf(drop["l"]) >= 1e-3 or absf(drop["r"]) >= 1e-3 or sink >= 1e-3:
 		_plant(sk, up, drop, tilt)
 	_keep_club_up(sk, to_world, up)
+
+
+## The club and stance fitted to this body (`choke`, `stance`).
+func _fit_club(sk: Skeleton3D) -> void:
+	if _club >= 0 and choke != Vector3.ZERO:
+		sk.set_bone_pose_position(_club, sk.get_bone_pose_position(_club) + sk.get_bone_pose_rotation(_club) * choke)
+	if stance != Vector3.ZERO and _ball_w > 0.0:
+		var root: int = _bones["Root"]
+		var parent := sk.get_bone_parent(root)
+		var to_parent := sk.get_bone_global_pose(parent).basis.inverse() if parent >= 0 else Basis.IDENTITY
+		sk.set_bone_pose_position(root, sk.get_bone_pose_position(root) + to_parent * (stance * _ball_w))
 
 
 ## The legs and hips on the slope (see the top).

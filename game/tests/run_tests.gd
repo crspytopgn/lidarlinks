@@ -3988,6 +3988,25 @@ func _test_photo_golfer() -> void:
 func _test_free_golfer() -> void:
 	var golfer := FreeGolfer.create()
 	_check(golfer != null, "free_golfer.glb loads with an AnimationPlayer")
+	# Every body (the realistic people, and the sculpted Custom one, short
+	# and tall) addresses a putt with the face just behind the ball, the
+	# ball in the middle of the face and the head on the green, not in it.
+	var people: Array = [""]
+	for p: Array in PlayerLook.PEOPLE:
+		people.append(p[0])
+	for person: String in people:
+		for height: float in [155.0, 195.0]:
+			var look := PlayerLook.default_look()
+			look.person = person
+			look.height_cm = height
+			var putter := FreeGolfer.create(look)
+			var box := putter.putter_at_address()
+			var face := box.position.x - FreeGolfer.BALL.x - FreeGolfer.BALL_RADIUS
+			var off := box.get_center().z - FreeGolfer.BALL.z
+			_check(absf(face - FreeGolfer.PUTT_GAP) < 0.003 and absf(off) < 0.005 and box.position.y > -0.002,
+				"%s (%d cm) sets the putter just behind the ball (face %.3f m, %.3f m off the middle, sole %.3f m)"
+				% [person if person != "" else "Custom", height, face, off, box.position.y])
+			putter.free()
 	_check(is_equal_approx(FreeGolfer.backswing_top(&"backswing", 0.9), FreeGolfer.BACKSWING_TOP)
 		and is_equal_approx(FreeGolfer.backswing_top(&"backswing_iron", 0.9), FreeGolfer.BACKSWING_TOP_IRON)
 		and is_equal_approx(FreeGolfer.backswing_top(&"backswing", 0.5), 0.5),
