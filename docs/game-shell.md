@@ -208,6 +208,31 @@ record (`RoundRecord.green_firmness`, `green_speed`) and replayed on when a
 round is checked, travel with an online round's setup, and a friend's round
 from a result code plays theirs.
 
+### Hitting distance
+
+Settings > Hitting distance sets how far the people playing hit each club
+(`PlayerPower`): Classic Links (the game's own distances, about 276 yd with
+the driver in Links 2003's physics), Amateur (about 225 yd), Scratch (about
+260) or Tour pro (about 300 yd, a 7 iron 178). Each profile is a table of
+full-swing totals per club (flat fairway, no wind), ballpark figures from
+published shot-tracking averages.
+
+With Links 2003's physics a profile works the way the original's own club
+distance setting did: the wanted total is looked up in the game's club
+distance table (`ClubDistances`, CLUBDIST) and the first step that reaches
+it becomes the club's power rating (`LinksShotModel.player_rating`), so the
+launch, flight, bounce, roll and the PowerStroke overswing are the game's
+own; a mouse swing's power is scaled by the same rating. With the stand-in
+physics a full swing's ball speed is scaled by `PlayerPower.STANDARD_SPEED`,
+measured by `tests/calibrate_player_power.gd` so each club goes its total.
+The reach shown, the auto club and the caddie follow the profile.
+
+Chips, putts and launch monitor shots are unchanged, and computer golfers
+keep their own calibrated power (they plan on a Classic copy of the model).
+Each shot's record keeps the profile it was played with
+(`ShotRecord.power_profile`, Classic for older records), so replays and
+online rounds play it back the same; it can change mid-round.
+
 ### Practice range
 
 Round setup > Play > Driving range plays the built-in practice ground's
@@ -741,6 +766,7 @@ game/scripts/
   saved_round.gd                SavedRound: the round in progress, for Resume round
   physics/
     shot_model.gd               ShotModel: the physics interface the round uses
+    player_power.gd             PlayerPower: Settings > Hitting distance (Amateur, Scratch, Tour pro)
     standard_shot_model.gd      StandardShotModel: the stand-in model below
     links_shot_model.gd         LinksShotModel: the stand-in with the game's own flight, bounce and roll
     links_aero.gd               LinksAero: that flight model (port of olcore/links_flight)

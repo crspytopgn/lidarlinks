@@ -34,11 +34,15 @@ static func run_shot(model: ShotModel, r: ShotRecord, club: Club, terrain: Cours
 		links.rng = LinksLaunch.Rand.new(RoundRecord.shot_seed(round_seed, r.index, RoundRecord.SALT_MODEL))
 	model.setup = r.setup()
 	model.backspin = 0 if r.computer else r.backspin
+	# The shot's own hitting distance (a computer golfer's is its own).
+	var profile := model.power_profile
+	model.power_profile = PlayerPower.Profile.CLASSIC if r.computer else r.power_profile
 	var start := monitor_launch(r, club, model) if not r.monitor.is_empty() \
 			else model.launch(club, r.power, r.accuracy, r.aim_deg, r.lie, r.from)
 	# Back to square, so planners (computer golfers, the caddie) see plain shots.
 	model.setup = LinksLaunch.Setup.new()
 	model.backspin = 0
+	model.power_profile = profile
 	var result := model.simulate(start, terrain, pin, wind)
 	result.launch = start
 	return result

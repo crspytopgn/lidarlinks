@@ -38,6 +38,7 @@ func _initialize() -> void:
 	_run("links_models_match_olcore", _test_links_models_match_olcore)
 	_run("links_launch_matches_olcore", _test_links_launch_matches_olcore)
 	_run("club_distance_table", _test_club_distance_table)
+	_run("player_power", _test_player_power)
 	_run("links_lie_matches_olcore", _test_links_lie_matches_olcore)
 	_run("links_swing_matches_olcore", _test_links_swing_matches_olcore)
 	_run("obstacles_match_olcore", _test_obstacles_match_olcore)
@@ -5401,12 +5402,86 @@ func _test_club_distance_table() -> void:
 	var falling := bytes.duplicate()
 	falling.encode_u16(ClubDistances.HEADER_BYTES + 2 * 5, 0)
 	_check(ClubDistances.parse(falling) == null and ClubDistances.parse(PackedByteArray([1, 2])) == null, "a short or falling table is refused")
+	var dip := bytes.duplicate()
+	# The disc's own lob wedge row dips a little (275 then 272 ft): kept.
+	dip.encode_u16(ClubDistances.HEADER_BYTES + 2 * (18 * ClubDistances.STEPS + 45), 44 * 2 - 1)
+	_check(ClubDistances.parse(dip) != null, "a small dip is the game's own and kept")
 	var model := LinksShotModel.new(null, LinksLaunch.new())
 	var driver: Club = Club.standard_set()[0]
 	_check_near(model.reach_scale(driver), 1.12, 1e-6, "without the table the reach scales by the rating")
 	model.distances = t
 	_check_near(driver.total_m * model.reach_scale(driver), t.total_m(0, 112.0), 1e-4, "with it the driver reaches the table's total")
 	_check((model.fresh() as LinksShotModel).distances == t, "a fresh model keeps the table")
+
+
+## Settings > Hitting distance (PlayerPower): with the stand-in physics
+## each profile's full swings go its totals and the reach shown matches;
+## with Links 2003's it sets the club's rating the way the game's own club
+## distance setting does; Classic changes nothing; computer golfers and
+## records keep their own.
+func _test_player_power() -> void:
+	var fairway := FlatTerrain.new(Surface.Type.FAIRWAY)
+	var model := StandardShotModel.new()
+	for profile: int in PlayerPower.TOTAL_YD:
+		model.power_profile = profile
+		for c in Club.standard_set():
+			if c.is_putter:
+				continue
+			var want := PlayerPower.total_m(profile, c)
+			var r := model.simulate(model.launch(c, 1.0, 0.0, 0.0, Surface.Type.FAIRWAY, Vector3.ZERO), fairway, Vector3(0, 0, -100))
+			_check_near(r.total_m, want, want * 0.01, "%s %s total" % [PlayerPower.NAMES[profile], c.short_name])
+			_check_near(c.total_m * model.reach_scale(c), want, 1e-3, "%s %s reach" % [PlayerPower.NAMES[profile], c.short_name])
+	var driver: Club = Club.standard_set()[0]
+	var putter: Club = Club.standard_set()[-1]
+	model.power_profile = PlayerPower.Profile.TOUR
+	print("  tour pro driver: %d yd total" % roundi(driver.total_m * model.reach_scale(driver) / PlayerPower.METRES_PER_YARD))
+	_check(model.reach_scale(putter) == 1.0 and PlayerPower.standard_speed(PlayerPower.Profile.TOUR, putter) == 1.0, "the putter is never changed")
+	_check(model.fresh().power_profile == PlayerPower.Profile.TOUR, "a fresh model keeps the profile")
+	var classic := StandardShotModel.new()
+	var a := classic.launch(driver, 1.0, 0.0, 0.0, Surface.Type.TEE, Vector3.ZERO)
+	model.power_profile = PlayerPower.Profile.CLASSIC
+	var b := model.launch(driver, 1.0, 0.0, 0.0, Surface.Type.TEE, Vector3.ZERO)
+	_check(a.velocity == b.velocity and classic.reach_scale(driver) == 1.0, "Classic is the shot as before")
+
+	# Links 2003: the rating is the first step of the game's table that
+	# reaches the profile's total (a made-up table, as in club_distance_table).
+	var bytes := PackedByteArray()
+	bytes.resize(ClubDistances.HEADER_BYTES + ClubDistances.CLUBS * ClubDistances.STEPS * 2)
+	for c in ClubDistances.CLUBS:
+		for k in ClubDistances.STEPS:
+			bytes.encode_u16(ClubDistances.HEADER_BYTES + 2 * (c * ClubDistances.STEPS + k), (k + 1) * (20 - c))
+	var t := ClubDistances.parse(bytes)
+	var links := LinksShotModel.new(null, LinksLaunch.new())
+	links.distances = t
+	_check(links.player_rating(driver) == 112.0, "Classic keeps the default rating")
+	links.power_profile = PlayerPower.Profile.TOUR
+	var want := PlayerPower.total_m(PlayerPower.Profile.TOUR, driver)
+	_check(links.player_rating(driver) == float(t.rating_for(0, want)), "the tour rating is the game's own pick for 300 yd")
+	_check(driver.total_m * links.reach_scale(driver) >= want, "and reaches it")
+	links.computer = true
+	_check(links.player_rating(driver) == float(t.rating_for(0, want)), "the reach shown doesn't depend on who last swung")
+	links.distances = null
+	_check_near(driver.total_m * links.reach_scale(driver), want, 1e-3, "without the table the rating scales with the distance")
+	_check((links.fresh() as LinksShotModel).power_profile == PlayerPower.Profile.TOUR, "a fresh Links model keeps the profile")
+
+	# Records: the shot's own profile, Classic when missing.
+	var rec := ShotRecord.new()
+	rec.power_profile = PlayerPower.Profile.TOUR
+	_check(ShotRecord.from_dict(rec.to_dict()).power_profile == PlayerPower.Profile.TOUR, "a record keeps its profile")
+	_check(ShotRecord.from_dict(ShotRecord.new().to_dict()).power_profile == PlayerPower.Profile.CLASSIC, "old records are Classic")
+	# A replayed shot uses the record's profile and leaves the model's alone;
+	# a computer golfer's shot is Classic whatever the people play.
+	var shared := StandardShotModel.new()
+	shared.power_profile = PlayerPower.Profile.AMATEUR
+	rec.club = 0
+	rec.power = 1.0
+	rec.lie = Surface.Type.FAIRWAY
+	var tour := RoundReplay.run_shot(shared, rec, driver, fairway, Vector3(0, 0, -100), Vector3.ZERO, 1)
+	_check(shared.power_profile == PlayerPower.Profile.AMATEUR, "the replay puts the model's profile back")
+	_check_near(tour.total_m, PlayerPower.total_m(PlayerPower.Profile.TOUR, driver), 3.0, "the replay plays the record's profile")
+	rec.computer = true
+	var cpu := RoundReplay.run_shot(shared, rec, driver, fairway, Vector3(0, 0, -100), Vector3.ZERO, 1)
+	_check_near(cpu.total_m, driver.total_m, 3.0, "a computer golfer's shot is Classic")
 
 
 ## The same shots on worker threads (each with its own model) and on the

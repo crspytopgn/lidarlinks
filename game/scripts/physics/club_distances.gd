@@ -18,12 +18,17 @@ const CLUBS := 19
 const STEPS := 64
 const POWER_PER_STEP := 2.0
 const METRES_PER_FOOT := 0.3048
+## The most a row may fall from one step to the next, as a share of its top.
+const MAX_DIP := 0.03
 
 var _feet := PackedInt32Array()  ## CLUBS rows of STEPS values
 
 
 ## Null unless `bytes` is the table (a header, then 19 rows of 64
-## little-endian 16-bit values, each row rising).
+## little-endian 16-bit values, each row rising). The game made the table
+## with its own physics, which isn't always rising: the disc's lob wedge row
+## dips 3 ft (275 then 272) at 92 points, so a row may fall back by up to
+## MAX_DIP of its top value.
 static func parse(bytes: PackedByteArray) -> ClubDistances:
 	if bytes.size() < HEADER_BYTES + CLUBS * STEPS * 2:
 		return null
@@ -32,11 +37,12 @@ static func parse(bytes: PackedByteArray) -> ClubDistances:
 	for i in CLUBS * STEPS:
 		t._feet[i] = bytes.decode_u16(HEADER_BYTES + 2 * i)
 	for c in CLUBS:
-		for k in range(1, STEPS):
-			if t._feet[c * STEPS + k] < t._feet[c * STEPS + k - 1]:
-				return null
-		if t._feet[c * STEPS + STEPS - 1] <= 0:
+		var top := t._feet[c * STEPS + STEPS - 1]
+		if top <= 0:
 			return null
+		for k in range(1, STEPS):
+			if t._feet[c * STEPS + k - 1] - t._feet[c * STEPS + k] > MAX_DIP * top:
+				return null
 	return t
 
 

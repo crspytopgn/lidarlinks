@@ -13,13 +13,20 @@ var setup := LinksLaunch.Setup.new()
 ## Extra backspin steps for the next full swing or chip (ShotShape.backspin):
 ## not a Links 2003 setting, so 0 in Classic Links and for computer golfers.
 var backspin := 0
+## How far the people playing hit their full swings (PlayerPower.Profile,
+## Settings > Hitting distance). Computer golfers plan and swing on a copy
+## at Classic: their power is their own (OpponentSkill).
+var power_profile: int = PlayerPower.Profile.CLASSIC
 
 
 ## A new model of the same kind on the same tables, square and with nothing
 ## of this one's last shot: physics run on a worker thread (BackgroundWork)
 ## gets its own, since launch() and the round's replay set fields per shot.
+## It keeps the power profile.
 func fresh() -> ShotModel:
-	return (get_script() as GDScript).new() as ShotModel
+	var m := (get_script() as GDScript).new() as ShotModel
+	m.power_profile = power_profile
+	return m
 
 
 ## Launch state for a swing, with the ball sitting at `from` on a `lie`.

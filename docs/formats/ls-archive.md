@@ -137,5 +137,13 @@ wedges, as `LinksLaunch.CLUB_INDEX`). Confirmed on 2026-11-20 from how the
   `LinksShotModel.reach_scale` then gives every club the table's total at
   its rating. The auto club, the caddie, the computer golfers' planning
   and the reach the HUD shows all use that number.
+- The rows are not quite always rising: the lob wedge's dips 3 ft (275
+  then 272) at 92 points. `ClubDistances.parse` first refused any fall, so
+  with the disc's own table it fell back to the reach below (the driver
+  showed 324 yd for a 276 yd shot); it now allows a fall of up to 3% of the
+  row's top (checked on CD1's table on 2026-11-23).
+- Settings > Hitting distance (`PlayerPower`) uses the same lookup as the
+  game's club distance setting: with the disc's table a tour pro's driver
+  (300 yd) is 126 points and the wedges 94 to 102.
 - Before this, the reach was the rating times our club's distance at power
   100. That put the woods up to 15% long and the wedges up to 19% short.

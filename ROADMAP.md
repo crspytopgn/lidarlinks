@@ -84,6 +84,10 @@ product lead builds it.
 15. [x] **Captions**: on-screen text for the commentary and caddie lines
    (part of accessibility). Done: Settings > Captions for the golfer's voice
    and the crowd; commentary and caddie lines were already text.
+16. [x] **Hitting distance**: longer or shorter hitters than Links 2003's
+   default club distances. Done: Settings > Hitting distance (Classic Links,
+   Amateur, Scratch, Tour pro at about 300 yd), through the game's own club
+   distance ratings ([game-shell.md](docs/game-shell.md#hitting-distance)).
 
 ## Phase 1: formats (see `docs/formats/`)
 
