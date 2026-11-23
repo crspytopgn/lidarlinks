@@ -2816,6 +2816,22 @@ func _test_grass() -> void:
 				outside += 1
 		var again := GrassField.build_chunk(t, key, 4.0)
 		_check(again.instance_count == mm.instance_count, "chunk grows the same grass each time")
+		# A far chunk is the near one's tufts with keys under the share, in
+		# the same places, so the shader's thinning meets it with no seam.
+		var far := GrassField.build_chunk(t, key, 4.0, GrassField.FAR_SHARE)
+		var want := 0
+		for k in mm.instance_count:
+			if buffer[16 * k + 15] < GrassField.FAR_SHARE:
+				want += 1
+		var same := far != null and far.instance_count == want
+		if same:
+			var fb: PackedFloat32Array = far.get_meta("buffer")
+			var j := 0
+			for k in mm.instance_count:
+				if buffer[16 * k + 15] < GrassField.FAR_SHARE:
+					same = same and is_equal_approx(fb[16 * j + 3], buffer[16 * k + 3]) and is_equal_approx(fb[16 * j + 11], buffer[16 * k + 11])
+					j += 1
+		_check(want == 0 or same, "far grass is the near grass thinned by key, tuft for tuft")
 	_check(tufts > 100, "grass grows in the rough (%d tufts)" % tufts)
 	_check(outside == 0, "no grass on fairways, greens or sand")
 	_check(GrassField.tuft_mesh().get_surface_count() == 1, "tuft mesh")

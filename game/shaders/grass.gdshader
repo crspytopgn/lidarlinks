@@ -14,6 +14,13 @@ global uniform vec2 wind_vector; // air velocity over the course, m/s (x, z)
 uniform vec3 camera_pos;
 uniform float fade_start = 20.0;
 uniform float fade_end = 30.0;
+// Thinning by distance (GrassField.THIN_FROM): tufts whose key (the
+// phase) is above the share kept at this distance sink away, from all of
+// them at thin_start to thin_share at thin_end, where the far chunks
+// (which hold only those tufts) take over with no seam.
+uniform float thin_start = 1.0e5;
+uniform float thin_end = 2.0e5;
+uniform float thin_share = 1.0;
 uniform float brightness = 1.0; // GrassField lifts it for Compatibility
 // Below 1 greys the blades towards their own luminance: the Compatibility
 // lift above also lifts the colour, which read as acid yellow-green.
@@ -46,6 +53,8 @@ void vertex() {
 	root_xz = root.xz;
 	float dist = distance(root.xz, camera_pos.xz);
 	float fade = 1.0 - smoothstep(fade_start, fade_end, dist);
+	float keep = mix(1.0, thin_share, smoothstep(thin_start, thin_end, dist));
+	fade *= keep >= 1.0 ? 1.0 : 1.0 - smoothstep(keep - 0.06, keep, INSTANCE_CUSTOM.a);
 	// From a few metres out, blades take the turf's own tone, so the rough
 	// reads as one soft band rather than dark speckle on the ground.
 	blend = smoothstep(4.0, fade_start, dist) * blend_amount;

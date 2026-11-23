@@ -355,6 +355,24 @@ Ultra and use a notch lighter soft-shadow filter.
   (`DesignedTerrain._stripe_uv`), and the stripe width is the nearest
   texel's, never a blend: each of these drew fields of moire or
   fingerprint rings beside greens.
+- **Fairway, bunker and rough edges** (2026-11-23, West Essex on Edge /
+  Iris Xe): fairways and fringes (with the cart paths, painted as
+  fairway) get their own baked distance block, placed wherever the
+  splat texture has room at 1 m or 2 m texels
+  (`DesignedTerrain._place_fairway_block`, else left out), and the
+  shader deals the blend's mown and unmown shares out again by that
+  line, so a fairway edge is one smooth, slowly wandering curve instead
+  of the 0.5 m codes' stair steps. The course photo's tint is put on per
+  pixel by the raster's own surfaces (`surface_tint`, COLOR holds the
+  photo's colour): tinted per vertex, each surface by its own share, it
+  drew the 2 m triangles along every edge. Edge lines are never
+  narrower than about a pixel's footprint (no MSAA in the browser), a
+  bunker's shaded turf lip comes from its distance alone, and its
+  heights are the profile averaged over each 2 m sample's footprint
+  (`bunker_profile`), so the lip no longer shows as saw teeth against
+  the sand. Rough grass thins smoothly with distance by each tuft's key
+  (`GrassField.THIN_FROM`) instead of switching density at the 12 m
+  chunk lines, which drew it as squares.
 - **Water's edge**: a disc course's water triangles carry how far each
   vertex is from the bank (`CrzTerrain._shore_levels`: 0 on a vertex dry
   ground also uses, 0.5 one triangle out, 1 beyond, in the vertex colour).

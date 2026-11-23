@@ -16,6 +16,13 @@ const BUILDS_PER_FRAME := 2
 ## the ground and only a few pixels tall) grow FAR_SHARE as many, so the
 ## near rough can be a dense fur, as in real rough and in 2K25, for about
 ## the triangles the old even scatter cost.
+## Both densities sow the same places from the same random draws: a far
+## chunk keeps only the tufts whose key (their phase, 0..1) is under
+## FAR_SHARE, and the shader thins a near chunk's tufts by the same key,
+## smoothly, from THIN_FROM of the reach to NEAR. Two whole densities cut
+## at the 12 m chunk lines drew the rough as a patchwork of squares with
+## lines between them (West Essex, 2026-11-23).
+const THIN_FROM := 0.2
 const DENSITY := [0.0, 4.0, 8.0, 13.0]
 const RADIUS := [0.0, 22.0, 36.0, 55.0]
 const NEAR := 0.45
@@ -87,6 +94,9 @@ func setup(t: CourseTerrain, grass_level: int) -> void:
 	# across, they read as dark clumps (clover) rather than rough.
 	material().set_shader_parameter("fade_start", r * 0.35)
 	material().set_shader_parameter("fade_end", r)
+	material().set_shader_parameter("thin_start", r * THIN_FROM)
+	material().set_shader_parameter("thin_end", r * NEAR)
+	material().set_shader_parameter("thin_share", FAR_SHARE)
 
 
 ## Adds the nearest missing chunks around `eye` and drops far ones.
@@ -122,7 +132,7 @@ func update_around(eye: Vector3) -> void:
 	for i in mini(BUILDS_PER_FRAME, wanted.size()):
 		var key := wanted[i]
 		var far := _is_far(_chunk_centre(key).distance_to(here), r)
-		var mm := build_chunk(terrain, key, DENSITY[level] * (FAR_SHARE if far else 1.0))
+		var mm := build_chunk(terrain, key, DENSITY[level], FAR_SHARE if far else 1.0)
 		var node: MultiMeshInstance3D = null
 		if mm != null:
 			node = MultiMeshInstance3D.new()
@@ -308,8 +318,10 @@ static func _chunk_centre(key: Vector2i) -> Vector2:
 
 
 ## The tufts of one chunk, or null when it has no rough. Deterministic: the
-## same chunk always grows the same grass.
-static func build_chunk(t: CourseTerrain, key: Vector2i, density: float) -> MultiMesh:
+## same chunk always grows the same grass. With `share` under 1, only the
+## tufts whose key (phase) is below it: the same tufts, in the same places,
+## as the full chunk's that the shader keeps that far out.
+static func build_chunk(t: CourseTerrain, key: Vector2i, density: float, share := 1.0) -> MultiMesh:
 	# Desert hardpan and snow grow no grass (Biome).
 	var biome := Biome.of(t)
 	var rng := RandomNumberGenerator.new()
@@ -329,6 +341,8 @@ static func build_chunk(t: CourseTerrain, key: Vector2i, density: float) -> Mult
 		var yaw := rng.randf() * TAU
 		var size := rng.randf()
 		var phase := rng.randf()
+		if phase >= share:
+			continue
 		var surface := t.surface_at(x, z)
 		if not HEIGHTS.has(surface) or Biome.is_bare(biome, surface) or (surface != Surface.Type.FAIRWAY and t.finish_at(x, z) != 0):
 			continue
