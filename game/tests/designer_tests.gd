@@ -190,7 +190,10 @@ func _test_splat_and_stakes() -> void:
 		var codes: Vector2i = mat.get_shader_parameter("splat_codes")
 		check(codes.x == ceili(c.area.size.x / DesignedTerrain.RES) and splat.get_width() >= codes.x, "splat map at the raster's 0.5 m")
 		var block: Vector2i = mat.get_shader_parameter("green_edge_size")
-		check(splat.get_width() >= block.x * DesignedTerrain.EDGE_BLOCKS.size(), "edge distances for greens, bunkers and tees")
+		check(splat.get_width() >= block.x * DesignedTerrain.SHARED_BLOCKS, "edge distances for greens, bunkers and tees")
+		check(mat.get_shader_parameter("fairway_edge") == true, "and for fairways")
+		var ft: Vector2 = mat.get_shader_parameter("fairway_edge_texel")
+		check(ft.x <= 1.01 and ft.y <= 1.01, "at 1 m (%s m)" % ft)
 	# A long course (Ember Coast's 1,244 x 1,918 m): the codes fill most of
 	# the texture's rows, and the edge blocks still keep 1 m texels (beside
 	# the codes), not 7.4 m ones that drew every green edge in steps.

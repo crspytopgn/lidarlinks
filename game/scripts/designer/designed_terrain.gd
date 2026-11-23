@@ -44,7 +44,14 @@ const GREEN_EDGE_RANGE := 2.0
 ## the line), so the splat stays as small as it was with greens alone: two
 ## blocks of 1 m texels fit under the 0.5 m codes. Bunkers, which hug
 ## greens and tees, get their own.
-static var EDGE_BLOCKS := [[Surface.Type.GREEN, Surface.Type.TEE], [Surface.Type.SAND]]
+## Fairways and fringes (the mown ground) get the third, so their line
+## against the rough is one smooth curve too: from the 0.5 m codes it came
+## out in half-metre stair steps wherever it ran at a shallow angle to the
+## raster (West Essex, 2026-11-23).
+static var EDGE_BLOCKS := [[Surface.Type.GREEN, Surface.Type.TEE], [Surface.Type.SAND], [Surface.Type.FAIRWAY, Surface.Type.FRINGE]]
+## The first two share a size and texel in the splat texture; the
+## fairways' goes wherever there is room (_place_fairway_block).
+const SHARED_BLOCKS := 2
 ## Bunkers are built as real ones are, not as even dishes: a flat floor,
 ## a low, gently ramped side where the player walks in and the ball runs
 ## in, and on the side facing the hole's target a steep face of flashed sand
@@ -612,6 +619,7 @@ func material() -> ShaderMaterial:
 		var mown := PackedFloat32Array()
 		var widths := PackedFloat32Array()
 		var cut := PackedFloat32Array()
+		var tint := PackedFloat32Array()
 		for i in DesignedTerrain.COLORS.size():
 			# Under the water line, the bank: darker rough rather than the
 			# map's blue, which would ring each pond.
@@ -621,6 +629,7 @@ func material() -> ShaderMaterial:
 			mown.append(float(DesignedTerrain.MOWN.get(i, 0.0)))
 			widths.append(float(DesignedTerrain.STRIPE_METRES.get(i, 0.0)))
 			cut.append(Materials.terrain_cut(i))
+			tint.append(DesignedTerrain.PHOTO_TINT[i])
 		# The splat's tenth entry: the first cut; the eleventh the collar.
 		cols.append(Vector3(FIRST_CUT_COLOR.r, FIRST_CUT_COLOR.g, FIRST_CUT_COLOR.b))
 		wts.append(Materials.terrain_weights(Surface.Type.ROUGH))
@@ -632,6 +641,9 @@ func material() -> ShaderMaterial:
 		mown.append(0.0)
 		widths.append(0.0)
 		cut.append(Materials.COLLAR_CUT)
+		tint.append(DesignedTerrain.PHOTO_TINT[Surface.Type.ROUGH])
+		tint.append(DesignedTerrain.PHOTO_TINT[Surface.Type.FRINGE])
+		_material.set_shader_parameter("surface_tint", tint)
 		_material.set_shader_parameter("surface_stripe_metres", widths)
 		_material.set_shader_parameter("surface_colors", cols)
 		_material.set_shader_parameter("surface_cut", cut)
@@ -665,8 +677,8 @@ func _update_splat() -> void:
 		var k := float(SPLAT_MAX) / maxi(_sw, _sh)
 		codes = codes.duplicate() as Image if codes == _img else codes
 		codes.resize(maxi(1, floori(_sw * k)), maxi(1, floori(_sh * k)), Image.INTERPOLATE_NEAREST)
-	var edges := _edge_img
-	var blocks := DesignedTerrain.EDGE_BLOCKS.size()
+	var edges := _edge_img.get_region(Rect2i(0, 0, _edge_w * SHARED_BLOCKS, _edge_img.get_height()))
+	var blocks := SHARED_BLOCKS
 	# The edge blocks go where the texture has most room for them: below
 	# the codes side by side, or to their right, stacked or side by side.
 	# Ember Coast's codes fill 3,836 of the 4,096 rows: below them the
@@ -692,25 +704,40 @@ func _update_splat() -> void:
 	var img := codes
 	if e * minf(ew, eh) < 64.0:
 		_material.set_shader_parameter("splat_codes", Vector2i.ZERO)
+		_material.set_shader_parameter("fairway_edge", false)
 	else:
 		var block := Vector2i(_edge_w, edges.get_height())
 		if e < 1.0:
 			block = Vector2i(maxi(1, floori(_edge_w * e)), maxi(1, floori(edges.get_height() * e)))
-			edges = _edge_img.duplicate() as Image
 			edges.resize(block.x * blocks, block.y, Image.INTERPOLATE_BILINEAR)
 		var origin := Vector2i(cs.x, 0) if beside else Vector2i(0, cs.y)
 		var step := Vector2i(0, block.y) if stacked else Vector2i(block.x, 0)
 		var end := origin + step * (blocks - 1) + block
-		img = Image.create_empty(maxi(cs.x, end.x), maxi(cs.y, end.y), false, Image.FORMAT_R8)
+		var fw := _place_fairway_block(cs, Rect2i(origin, end - origin))
+		var fw_at: Vector2i = fw[0]
+		var fw_size: Vector2i = fw[1]
+		var used := Vector2i(maxi(cs.x, end.x), maxi(cs.y, end.y))
+		if fw_size.x > 0:
+			used = Vector2i(maxi(used.x, fw_at.x + fw_size.x), maxi(used.y, fw_at.y + fw_size.y))
+		img = Image.create_empty(used.x, used.y, false, Image.FORMAT_R8)
 		img.blit_rect(codes, Rect2i(Vector2i.ZERO, cs), Vector2i.ZERO)
 		for k in blocks:
 			img.blit_rect(edges, Rect2i(Vector2i(block.x * k, 0), block), origin + step * k)
+		if fw_size.x > 0:
+			var fwi := _edge_img.get_region(Rect2i(_edge_w * SHARED_BLOCKS, 0, _edge_w, _edge_img.get_height()))
+			if fw_size != fwi.get_size():
+				fwi.resize(fw_size.x, fw_size.y, Image.INTERPOLATE_BILINEAR)
+			img.blit_rect(fwi, Rect2i(Vector2i.ZERO, fw_size), fw_at)
+			_material.set_shader_parameter("fairway_edge_origin", fw_at)
+			_material.set_shader_parameter("fairway_edge_size", fw_size)
+			_material.set_shader_parameter("fairway_edge_texel", GREEN_EDGE_RES * Vector2(_edge_w, _edge_img.get_height()) / Vector2(fw_size))
 		_material.set_shader_parameter("splat_codes", cs)
 		_material.set_shader_parameter("green_edge_size", block)
 		_material.set_shader_parameter("green_edge_origin", origin)
 		_material.set_shader_parameter("green_edge_step", step)
 		_material.set_shader_parameter("green_edge_texel", GREEN_EDGE_RES * Vector2(_edge_w, _edge_img.get_height()) / Vector2(block))
 		_material.set_shader_parameter("green_edge_range", GREEN_EDGE_RANGE)
+		_material.set_shader_parameter("fairway_edge", fw_size.x > 0)
 	if _splat == null or _splat.get_size() != Vector2(img.get_size()):
 		_splat = ImageTexture.create_from_image(img)
 		_material.set_shader_parameter("splat_tex", _splat)
@@ -718,6 +745,30 @@ func _update_splat() -> void:
 		_splat.update(img)
 	_material.set_shader_parameter("splat_origin", course.area.position)
 	_material.set_shader_parameter("splat_size", Vector2(_sw, _sh) * RES)
+
+
+## Where the fairways' edge block (EDGE_BLOCKS' third) goes in the splat
+## texture, beside or below what the codes (`codes` texels) and the shared
+## blocks (`shared`) already take: [corner, size], at 1 m texels or, where
+## the texture has no room for those, 2 m (fairway curves are wide; past
+## 2 m the line wanders off the codes' and is left out). Size 0 when it
+## doesn't fit: the fairways keep the codes' line.
+func _place_fairway_block(codes: Vector2i, shared: Rect2i) -> Array:
+	var full := Vector2i(_edge_w, _edge_img.get_height())
+	var taken: Array[Rect2i] = [Rect2i(Vector2i.ZERO, codes), shared]
+	for k: int in [1, 2]:
+		var size := Vector2i(maxi(1, ceili(full.x / float(k))), maxi(1, ceili(full.y / float(k))))
+		for at: Vector2i in [Vector2i(shared.end.x, shared.position.y), Vector2i(shared.position.x, shared.end.y),
+				Vector2i(codes.x, 0), Vector2i(0, codes.y), Vector2i(maxi(codes.x, shared.end.x), 0), Vector2i(0, maxi(codes.y, shared.end.y))]:
+			var r := Rect2i(at, size)
+			if r.end.x > SPLAT_MAX or r.end.y > SPLAT_MAX:
+				continue
+			var clear := true
+			for t in taken:
+				clear = clear and not t.intersects(r)
+			if clear:
+				return [at, size]
+	return [Vector2i.ZERO, Vector2i.ZERO]
 
 
 ## The surfaces a cart path is not drawn over (it stops at their edge).
@@ -1397,7 +1448,9 @@ func _collar(px: Rect2i) -> void:
 
 ## Bakes the signed distance to the outline of each shape of the
 ## `surfaces` (positive inside) into the block of `_edge_img` that starts
-## `x0` texels across, over the world rect `world`.
+## `x0` texels across, over the world rect `world`. With FRINGE among them,
+## the fringe ring every green gets (FRINGE_WIDTH) counts too, and with
+## FAIRWAY the cart paths, as they are painted (_raster).
 func _bake_edges(world: Rect2, surfaces: Array, x0: int) -> void:
 	if _edge_img == null:
 		return
@@ -1409,13 +1462,28 @@ func _bake_edges(world: Rect2, surfaces: Array, x0: int) -> void:
 	if region.size.x <= 0 or region.size.y <= 0:
 		return
 	_edge_img.fill_rect(Rect2i(region.position + Vector2i(x0, 0), region.size), Color(0.0, 0.0, 0.0))
-	var scale := 127.5 / GREEN_EDGE_RANGE
+	var polys: Array[PackedVector2Array] = []
 	for s in course.shapes:
-		if not s.surface in surfaces or not s.is_valid():
+		if not s.is_valid():
 			continue
-		var grown := s.bounds().grow(GREEN_EDGE_RANGE + GREEN_EDGE_RES)
-		if not grown.intersects(world):
-			continue
+		if s.surface in surfaces and s.bounds().grow(GREEN_EDGE_RANGE + GREEN_EDGE_RES).intersects(world):
+			polys.append(s.outline())
+		elif s.surface == Surface.Type.GREEN and Surface.Type.FRINGE in surfaces and s.bounds().grow(FRINGE_WIDTH + GREEN_EDGE_RANGE + GREEN_EDGE_RES).intersects(world):
+			polys.append_array(Geometry2D.offset_polygon(s.outline(), FRINGE_WIDTH))
+	if Surface.Type.FAIRWAY in surfaces:
+		# Cart paths are painted as fairway (_raster), so the line goes
+		# round them too.
+		for cp in course.paths:
+			if not cp.bridge and cp.is_valid() and cp.bounds().grow(GREEN_EDGE_RANGE + GREEN_EDGE_RES).intersects(world):
+				polys.append(cp.outline())
+	var scale := 127.5 / GREEN_EDGE_RANGE
+	for poly in polys:
+		var b_lo := Vector2(INF, INF)
+		var b_hi := Vector2(-INF, -INF)
+		for q in poly:
+			b_lo = Vector2(minf(b_lo.x, q.x), minf(b_lo.y, q.y))
+			b_hi = Vector2(maxf(b_hi.x, q.x), maxf(b_hi.y, q.y))
+		var grown := Rect2(b_lo, b_hi - b_lo).grow(GREEN_EDGE_RANGE + GREEN_EDGE_RES)
 		var box := Rect2i(Vector2i(floori((grown.position.x - o.x) / GREEN_EDGE_RES), floori((grown.position.y - o.y) / GREEN_EDGE_RES)),
 			Vector2i(ceili(grown.size.x / GREEN_EDGE_RES) + 1, ceili(grown.size.y / GREEN_EDGE_RES) + 1)).intersection(region)
 		if box.size.x <= 0 or box.size.y <= 0:
@@ -1424,10 +1492,10 @@ func _bake_edges(world: Rect2, surfaces: Array, x0: int) -> void:
 		var dist := PackedFloat32Array()
 		dist.resize(box.size.x * box.size.y)
 		dist.fill(GREEN_EDGE_RANGE)
-		var poly := s.outline()
-		for k in poly.size():
+		var n := poly.size()
+		for k in n:
 			var a := poly[k]
-			var b := poly[(k + 1) % poly.size()]
+			var b := poly[(k + 1) % n]
 			var i0 := maxi(floori((minf(a.x, b.x) - GREEN_EDGE_RANGE - o.x) / GREEN_EDGE_RES), box.position.x)
 			var i1 := mini(ceili((maxf(a.x, b.x) + GREEN_EDGE_RANGE - o.x) / GREEN_EDGE_RES), box.end.x - 1)
 			var j0 := maxi(floori((minf(a.y, b.y) - GREEN_EDGE_RANGE - o.y) / GREEN_EDGE_RES), box.position.y)
@@ -1439,11 +1507,29 @@ func _bake_edges(world: Rect2, surfaces: Array, x0: int) -> void:
 					var at := (j - box.position.y) * box.size.x + (i - box.position.x)
 					if d < dist[at]:
 						dist[at] = d
+		# Inside or out by the crossings of each texel row (as the raster is
+		# filled, _spans): a point-in-polygon test per texel made long
+		# fairways slow to bake.
+		var xs := PackedFloat32Array()
 		for j in range(box.position.y, box.end.y):
+			var y := o.y + (j + 0.5) * GREEN_EDGE_RES
+			xs.clear()
+			for k in n:
+				var a := poly[k]
+				var b := poly[(k + 1) % n]
+				if (a.y <= y) != (b.y <= y):
+					xs.append(a.x + (y - a.y) * (b.x - a.x) / (b.y - a.y))
+			xs.sort()
+			var next := 0
+			var inside := false
 			for i in range(box.position.x, box.end.x):
+				var x := o.x + (i + 0.5) * GREEN_EDGE_RES
+				while next < xs.size() and xs[next] <= x:
+					inside = not inside
+					next += 1
 				var d := dist[(j - box.position.y) * box.size.x + (i - box.position.x)]
-				var p := o + (Vector2(i, j) + Vector2(0.5, 0.5)) * GREEN_EDGE_RES
-				var inside := Geometry2D.is_point_in_polygon(p, poly) if d < GREEN_EDGE_RANGE else s.contains(p)
+				if not inside and d >= GREEN_EDGE_RANGE:
+					continue  # 0, as filled
 				var v := clampf(127.5 + (d if inside else -d) * scale, 0.0, 255.0)
 				# Shapes can touch: keep the largest (the most inside).
 				if v / 255.0 > _edge_img.get_pixel(x0 + i, j).r:
@@ -1554,27 +1640,66 @@ func _bunker_heights(s: CourseShape, cells: Rect2i) -> void:
 	var radius := maxf(2.0, 0.5 * minf(b.size.x, b.size.y))
 	var face := bunker_face_dir(centre)
 	var r := _cells_of(b.grow(BUNKER_FACE_OUT + DesignedCourse.CELL)).intersection(cells)
+	if r.size.x <= 0 or r.size.y <= 0:
+		return
 	var cols := course.cols
+	# The signed distance at every sample first (one cell more round the
+	# edge, for its slope).
+	var rr := r.grow(1).intersection(Rect2i(0, 0, cols, course.rows))
+	var ds := PackedFloat32Array()
+	ds.resize(rr.size.x * rr.size.y)
+	for j in range(rr.position.y, rr.end.y):
+		for i in range(rr.position.x, rr.end.x):
+			ds[(j - rr.position.y) * rr.size.x + (i - rr.position.x)] = s.signed_distance(course.sample_pos(i, j))
+	var cell := DesignedCourse.CELL
 	for j in range(r.position.y, r.end.y):
 		for i in range(r.position.x, r.end.x):
-			var p := course.sample_pos(i, j)
-			var d := s.signed_distance(p)
-			if d > BUNKER_FACE_OUT:
+			var at := (j - rr.position.y) * rr.size.x + (i - rr.position.x)
+			var d := ds[at]
+			if d > BUNKER_FACE_OUT + cell:
 				continue
+			var p := course.sample_pos(i, j)
 			# How much this spot is on the face side: 1 toward the target,
 			# 0 across and behind, eased so the face wraps round its ends.
 			var f := 0.0
 			if face != Vector2.ZERO:
 				f = smoothstep(-0.15, 0.75, (p - centre).dot(face) / radius)
-			var h := _h[j * cols + i]
-			var low := BUNKER_DEPTH * smoothstep(-BUNKER_LIP_OUT, BUNKER_LIP, -d) if d <= BUNKER_LIP_OUT else 0.0
-			# The face: the lip is built up just outside the line and falls
-			# back to the ground over BUNKER_FACE_OUT; inside, the sand
-			# drops steeply from the lip to the floor.
-			var lift := BUNKER_FACE_LIFT * (1.0 - smoothstep(0.3, BUNKER_FACE_OUT, d))
-			var steep := (BUNKER_DEPTH + BUNKER_FACE_LIFT) * smoothstep(0.0, BUNKER_FACE, -d)
-			var hi := lift - steep if d < 0.0 else lift
-			_h[j * cols + i] = h + lerpf(-low, hi, f)
+			# The profile averaged over the ground this sample stands for
+			# (its cell, across the outline): sampled at one point, the
+			# steep face and its turf lip fell between the 2 m samples
+			# differently all round the bunker, and the lip drew as a row of
+			# saw teeth against the sand.
+			var il := maxi(i - 1, rr.position.x) - rr.position.x
+			var ir := mini(i + 1, rr.end.x - 1) - rr.position.x
+			var jd := maxi(j - 1, rr.position.y) - rr.position.y
+			var ju := mini(j + 1, rr.end.y - 1) - rr.position.y
+			var row := (j - rr.position.y) * rr.size.x
+			var gx := (ds[row + ir] - ds[row + il]) / (maxf(1.0, ir - il) * cell)
+			var gz := (ds[ju * rr.size.x + i - rr.position.x] - ds[jd * rr.size.x + i - rr.position.x]) / (maxf(1.0, ju - jd) * cell)
+			var g := Vector2(gx, gz)
+			var half := 0.5 * cell * (absf(g.x) + absf(g.y)) / maxf(g.length(), 0.1)
+			var lift := 0.0
+			for k in 5:
+				lift += bunker_profile(d + (k - 2) * 0.5 * half, f) * BOX5[k]
+			_h[j * cols + i] += lift
+
+
+const BOX5 := [0.125, 0.25, 0.25, 0.25, 0.125]
+
+
+## A bunker's height change at signed distance `d` from its outline
+## (negative inside), `f` of the way to its face side (see _bunker_heights).
+static func bunker_profile(d: float, f: float) -> float:
+	if d > BUNKER_FACE_OUT:
+		return 0.0
+	var low := BUNKER_DEPTH * smoothstep(-BUNKER_LIP_OUT, BUNKER_LIP, -d) if d <= BUNKER_LIP_OUT else 0.0
+	# The face: the lip is built up just outside the line and falls back
+	# to the ground over BUNKER_FACE_OUT; inside, the sand drops steeply
+	# from the lip to the floor.
+	var lift := BUNKER_FACE_LIFT * (1.0 - smoothstep(0.3, BUNKER_FACE_OUT, d))
+	var steep := (BUNKER_DEPTH + BUNKER_FACE_LIFT) * smoothstep(0.0, BUNKER_FACE, -d)
+	var hi := lift - steep if d < 0.0 else lift
+	return lerpf(-low, hi, f)
 
 
 ## The way a bunker at `at` faces: toward the green of the hole it guards,
@@ -1702,6 +1827,18 @@ func _make_tint() -> void:
 	_tint = img.get_data()
 
 
+## The ground mesh's colour at grid vertex `k`: the photo's colour there,
+## alpha 1, where the course has a photo to tint by (the shader tints each
+## pixel by its own surface, terrain.gdshader surface_tint), else the
+## surface colour with alpha 0.
+func mesh_color(k: int) -> Color:
+	if _tint.is_empty():
+		return Color(_vp[k * 3], _vp[k * 3 + 1], _vp[k * 3 + 2], 0.0)
+	var t := Color8(_tint[k * 3], _tint[k * 3 + 1], _tint[k * 3 + 2])
+	t.a = 0.0 if t.get_luminance() < 0.1 else 1.0
+	return t
+
+
 ## A surface colour moved toward the photo's colour at grid vertex `k`,
 ## keeping roughly the game's brightness. Deep shade, crowns and water in
 ## the photo are left out.
@@ -1748,7 +1885,7 @@ func _build_chunk(c: Vector2i) -> ArrayMesh:
 			var hd := _h[maxi(gj - 1, 0) * cols + gi]
 			var hu := _h[mini(gj + 1, course.rows - 1) * cols + gi]
 			normals[j * nx + i] = Vector3(hl - hr, 2.0 * cell, hd - hu).normalized()
-			colors[j * nx + i] = _vc[k]
+			colors[j * nx + i] = mesh_color(k)
 			weights[j * nx + i] = _vw[k]
 			for ch in 3:
 				palette[(j * nx + i) * 4 + ch] = _vp[k * 3 + ch]
@@ -2295,7 +2432,7 @@ func _blended(p: Vector2) -> Array:
 	for q in 4:
 		var kq := ks[q]
 		var w := ws[q]
-		col += _vc[kq] * w
+		col += mesh_color(kq) * w
 		wt += _vw[kq] * w
 		pal += Vector3(_vp[kq * 3], _vp[kq * 3 + 1], _vp[kq * 3 + 2]) * w
 	return [col, wt, PackedFloat32Array([pal.x, pal.y, pal.z, 0.0])]
