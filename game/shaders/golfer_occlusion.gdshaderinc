@@ -82,6 +82,22 @@ vec3 people_ground_bounce(vec3 base, vec3 world_normal, float occ) {
 	return base * people_bounce * down * occ;
 }
 
+// Sky light in the shade for people, and the sun's share of the light
+// (Scenery.people_sky). Neither renderer lights a person's shade the way
+// the open sky does: the flat fill is weak against the sun, so a navy
+// shirt went from pale blue on its sunlit side to near black on its
+// shaded side, and a golfer stepping into a tree's shadow went near black
+// while the turf round his feet (lifted by shade_fill) stayed a mid green.
+// rgb is added as emission (a share of the albedo, as the turf's
+// shade_fill is), a scales the sun in light(), so the sunlit side keeps its
+// brightness and only the shade and the shaded side lift.
+// (0, 0, 0, 1) leaves people as they were (Classic lighting).
+global uniform vec4 people_sky;
+
+vec3 people_sky_fill(vec3 base, float occ) {
+	return base * people_sky.rgb * occ;
+}
+
 // The sun's shadow map on a person, in light(): `att` is ATTENUATION,
 // `ndl` the surface's own (not normal mapped) facing to the sun,
 // dot(people_geo, LIGHT). The map can't resolve a body's own shadow where

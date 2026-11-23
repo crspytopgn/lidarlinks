@@ -63,6 +63,10 @@ people_bounce={
 "type": "vec3",
 "value": Vector3(0, 0, 0)
 }
+people_sky={
+"type": "vec4",
+"value": Vector4(0, 0, 0, 1)
+}
 wind_vector={
 "type": "vec2",
 "value": Vector2(0, 0)
