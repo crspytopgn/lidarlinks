@@ -32,7 +32,7 @@ void fragment() {
 		NORMAL_MAP = texture(texture_normal, uv).rgb;
 		NORMAL_MAP_DEPTH = normal_scale;
 	}
-	EMISSION = people_ground_bounce(ALBEDO, occ_normal, occ);
+	EMISSION = people_ground_bounce(ALBEDO, occ_normal, occ) + people_sky_fill(ALBEDO, occ);
 	ROUGHNESS = roughness;
 	SPECULAR = specular;
 	rim_amount = rim;
@@ -40,7 +40,7 @@ void fragment() {
 
 void light() {
 	float ndl = dot(NORMAL, LIGHT);
-	float shade = people_shadow(ATTENUATION, dot(normalize(people_geo), LIGHT));
+	float shade = people_shadow(ATTENUATION, dot(normalize(people_geo), LIGHT)) * people_sky.a;
 	float d = clamp((ndl + wrap) / (1.0 + wrap), 0.0, 1.0);
 	DIFFUSE_LIGHT += d * shade * LIGHT_COLOR / PI;
 	float nl = max(ndl, 0.0);

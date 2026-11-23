@@ -34,7 +34,7 @@ const METER_LINGER_S := 1.5
 ## A putt missed from inside this many metres (8 ft) gets a slump.
 const SLUMP_PUTT := 2.5
 const COMPUTER_HOLE_PAUSE := 4.0  ## between holes when nobody is at the keyboard
-const HINT_AIM := "Left/Right or right-click: aim (Shift: fine)    Up/Down: club    Q/E/W/S or click the ball: spin    %s    Y: view target    D: drop    Tab: scorecard    I: details%s    Esc: menu"
+const HINT_AIM := "Left/Right or right-drag: aim (Shift: fine), right-click: aim there    Up/Down: club    Q/E/W/S or click the ball: spin    %s    Y: view target    D: drop    Tab: scorecard    I: details%s    Esc: menu"
 ## The object viewer needs the game folder, which browsers can't read.
 const HINT_OBJECTS := "    O: objects"
 const HINT_AIM_METER := "3-click swing: Space or click    K: use the mouse swing"
@@ -300,6 +300,7 @@ var stand_bag: StandBag  ## the player's bag, standing behind the golfer
 var _bag_for := Vector3.INF  ## the ball the bag was set down for
 var _drive_to := -1  ## the ball the buggy is driving to
 var dynamic_resolution: DynamicResolution
+var frame_watch: FrameWatch
 var grass: GrassField
 var fescue: FescueField  ## tall fescue on the deep rough, further out
 var debris: DebrisField  ## litter, logs and stumps under tree lines (private pack)
@@ -328,13 +329,10 @@ var breakline: BreaklineIndicator
 var assistant: PuttRead  ## Links 2003's Putting Assistant
 var _assist := {}
 var _assist_from := Vector3.INF
-## The putting meter's distance scale (SwingMeter.putt_feet), and where it
-## was worked out from.
-var _putt_scale_from := Vector3.INF
-## Quick pace's putting meter is sized to the putt (PUTT_RANGES): the share
-## of the full putt meter's power the whole meter gives now, 1 for the
-## full meter (Classic, and wherever the meter shows no distances).
-var _putt_range := 1.0
+## The putting meter in use (PuttMeterScale): one of Quick pace's fixed
+## meters in feet, or the bare meter (Classic, the mouse swing, and
+## wherever the meter shows no distances).
+var _putt_meter := PuttMeterScale.bare()
 ## The full-swing and chip meter's carry scale (SwingMeter.yards), worked
 ## out a sample a frame: what it is for, and the samples still to do.
 var _yard_key := []
@@ -355,6 +353,11 @@ var _orbit_fingers := {}
 var _orbit_pinch := 0.0
 ## Degrees of turn per pixel dragged.
 const ORBIT_DEG_PER_PX := 0.25
+## Right-drag aiming (_click_aim_input): held, how far it has moved before
+## it turns the aim, and where it was pressed.
+var _aim_drag := false
+var _aim_drag_px := 0.0
+var _aim_drag_from := Vector2.ZERO
 var practice: PuttingPractice  ## the putting green (RoundSetup.putting); null otherwise
 var practice_cups: PracticeCups
 var _chip_count := 0  ## balls chipped so far (RoundSetup.chipping), for the next spot
@@ -434,10 +437,122 @@ func _ready() -> void:
 	if online == null:
 		online = next_online
 	next_online = null
+	# Behind a loading card (SceneFade), the slowest parts are done a piece a
+	# frame first, so the card can say what is happening and the browser
+	# never sees a page stuck for many seconds.
+	var carded := SceneFade.holding(get_tree())
+	if carded:
+		await _warm_up()
 	start_round()
+	if carded:
+		_reveal_when_drawn()
 	# Once the round has drawn for a few seconds, later loads skip the
 	# first-start note about preparing the graphics.
 	get_tree().create_timer(4.0).timeout.connect(SceneFade.mark_warm)
+
+
+## The course read ahead by _warm_up(), and its path.
+var _warm_course: CourseData
+var _warm_path := ""
+
+
+## The course at `path`: the one _warm_up() read, the first time.
+func _load_course(path: String) -> CourseData:
+	if _warm_course != null and _warm_path == path:
+		var c := _warm_course
+		_warm_course = null
+		return c
+	return AssetProviders.load_course(path)
+
+
+## Frame time the warm-up spends before letting the loading card draw.
+const WARM_STEP_MS := 50
+
+
+## Reads the course and builds what the first hole needs most (the ground's
+## meshes, the gallery's people) a piece at a time behind the loading card,
+## saying what it is doing, before start_round() uses them. The round's own
+## nodes are paused meanwhile, as there is no hole yet.
+func _warm_up() -> void:
+	var tree := get_tree()
+	process_mode = Node.PROCESS_MODE_DISABLED
+	SceneFade.status(tree, "Reading the course...")
+	await tree.process_frame
+	await tree.process_frame
+	var s := setup if setup != null else RoundSetup.single(course_path if not course_path.is_empty() else chosen_course)
+	if not s.facility:
+		_warm_path = course_path if not course_path.is_empty() else s.course_path
+		_warm_course = AssetProviders.load_course(_warm_path)
+	if _warm_course != null and not _warm_course.holes.is_empty():
+		var order := s.hole_indices(_warm_course.holes.size())
+		var first := _warm_course.holes[clampi(order[0] if not order.is_empty() else 0, 0, _warm_course.holes.size() - 1)]
+		if first.terrain is DesignedTerrain:
+			var ground := first.terrain as DesignedTerrain
+			var n := ground.chunk_count()
+			var t0 := Time.get_ticks_msec()
+			for cj in n.y:
+				for ci in n.x:
+					ground.chunk_mesh(Vector2i(ci, cj))
+					if Time.get_ticks_msec() - t0 >= WARM_STEP_MS:
+						SceneFade.status(tree, "Shaping the ground...", float(cj * n.x + ci + 1) / (n.x * n.y))
+						await tree.process_frame
+						t0 = Time.get_ticks_msec()
+		if broadcast and _warm_course.tournament and graphics.quality > GraphicsSettings.Quality.LOW:
+			var want: int = Gallery.CROWD_BY_QUALITY[graphics.quality]
+			var k := 0
+			while Gallery.add_spare_person(want, 7919 * (k + 1)):
+				k += 1
+				SceneFade.status(tree, "Bringing out the gallery...", float(Gallery.spare_count()) / want)
+				await tree.process_frame
+	SceneFade.status(tree, "Setting up the first hole...")
+	await tree.process_frame
+	process_mode = Node.PROCESS_MODE_INHERIT
+
+
+## Keeps the loading card up while the first frames draw (the graphics
+## driver builds each shader the first time it is drawn, which in a
+## browser on Windows can take a while), then lets it go and starts the
+## hole's flyover from the beginning, as it played unseen behind the card.
+func _reveal_when_drawn() -> void:
+	var tree := get_tree()
+	SceneFade.status(tree, "Preparing the graphics for this device...")
+	for i in 4:
+		await tree.process_frame
+	await _warm_shaders(tree)
+	SceneFade.release(tree)
+	if hole != null and camera.flying():
+		camera.start_flyover(hole)
+
+
+## Behind the loading card, a hidden camera looks all round the tee and at
+## the green, a frame each, so the graphics driver builds the shaders of
+## everything the hole shows now rather than the first time each comes
+## into view in play, where every new one is a hitch (seconds on some
+## Windows browsers, which translate every shader for Direct3D).
+func _warm_shaders(tree: SceneTree) -> void:
+	var live := get_viewport().get_camera_3d()
+	if live == null or hole == null:
+		return
+	var eye := Camera3D.new()
+	eye.fov = live.fov
+	eye.near = live.near
+	eye.far = live.far
+	add_child(eye)
+	var views: Array = []
+	var from := live.global_position
+	for k in 8:
+		var yaw := TAU * k / 8.0
+		views.append([from, from + Vector3(sin(yaw), -0.2, cos(yaw))])
+	views.append([hole.pin + Vector3(0.0, 30.0, -25.0), hole.pin])
+	views.append([hole.pin + Vector3(12.0, 4.0, 12.0), hole.pin])
+	eye.make_current()
+	for i in views.size():
+		SceneFade.status(tree, "Preparing the graphics for this device...", float(i + 1) / views.size())
+		eye.look_at_from_position(views[i][0], views[i][1])
+		await tree.process_frame
+	if is_instance_valid(live):
+		live.make_current()
+	eye.queue_free()
 
 
 func start_round() -> void:
@@ -450,7 +565,7 @@ func start_round() -> void:
 		course_path = round_setup.course_path
 	# The practice ground is built in, whatever course was picked.
 	course = PracticeGround.new().load_course(PracticeGround.PATH) if round_setup.facility \
-			else AssetProviders.load_course(course_path)
+			else _load_course(course_path)
 	round_setup.course_name = course.course_name
 	ScannedSurfaces.use_course(course)  # local cart paths and wood (private pack)
 	if round_setup.putting:
@@ -694,6 +809,8 @@ func _round_name() -> String:
 
 func start_hole(index: int) -> void:
 	hole_index = index
+	if frame_watch != null:
+		frame_watch.restart()  # the new hole's loading isn't the frame rate
 	_fold_hints()
 	shot_log.clear()
 	_undo = {}
@@ -1000,6 +1117,7 @@ func play_shot(power: float, accuracy: float, monitor: OpenConnect.Launch = null
 	rec.from = ball_at
 	rec.skill = graphics.skill
 	rec.computer = round_setup != null and round_setup.is_computer(shooter)
+	rec.power_profile = PlayerPower.Profile.CLASSIC if rec.computer else graphics.power_profile
 	# A Classic computer's swing or putt makes Links 2003's own computer misses.
 	if rec.computer and _classic_computer(shooter):
 		var sk := opponents[shooter].skill
@@ -1023,6 +1141,7 @@ func play_shot(power: float, accuracy: float, monitor: OpenConnect.Launch = null
 	rec.wind = wind.velocity()
 	if _incoming != null:
 		rec.skill = _incoming.skill
+		rec.power_profile = _incoming.power_profile
 	_mouse_stroke = null
 	_mouse_help = null
 	# The flight and roll are worked out on a worker thread where the game
@@ -1496,16 +1615,32 @@ func _mouse_swing_input(event: InputEvent) -> bool:
 
 ## Right-click on the course, or a click on the Tour hole map: aim at that
 ## spot and take the club that reaches it (ClickAim). Putts only turn the
-## aim.
+## aim. Holding the right button and dragging instead turns the aim finely
+## and smoothly, a little for each pixel (ClickAim.drag_turn_deg; Shift for
+## finer still), with no jump to the spot under the mouse.
 func _click_aim_input(event: InputEvent) -> bool:
+	if event is InputEventMouseMotion:
+		return _aim_drag_motion(event as InputEventMouseMotion)
 	if not event is InputEventMouseButton:
 		return false
 	var mb := event as InputEventMouseButton
-	if not mb.pressed or mb.device == InputEvent.DEVICE_ID_EMULATION:
+	if mb.device == InputEvent.DEVICE_ID_EMULATION:
+		return false
+	if mb.button_index == MOUSE_BUTTON_RIGHT and not mb.pressed:
+		if not _aim_drag:
+			return false
+		_aim_drag = false
+		# A click with no drag: aim at the spot clicked, as before.
+		if _aim_drag_px < ClickAim.DRAG_DEAD_PX and _can_click_aim():
+			_aim_at_screen(_aim_drag_from)
+		else:
+			_clear_gallery_line()
+		return true
+	if not mb.pressed:
 		return false
 	if mb.button_index != MOUSE_BUTTON_RIGHT and mb.button_index != MOUSE_BUTTON_LEFT:
 		return false
-	if state != State.AIM or _replaying or camera.flying() or opponents[shooter] != null:
+	if not _can_click_aim():
 		return false
 	if tour:
 		var local := hud.tour.make_input_local(mb) as InputEventMouseButton
@@ -1516,14 +1651,44 @@ func _click_aim_input(event: InputEvent) -> bool:
 			return true
 	if mb.button_index != MOUSE_BUTTON_RIGHT:
 		return false
+	_aim_drag = true
+	_aim_drag_px = 0.0
+	_aim_drag_from = mb.position
+	return true
+
+
+## Whether a right-click or right-drag may aim now: the player's own shot,
+## lining it up.
+func _can_click_aim() -> bool:
+	return state == State.AIM and not _replaying and not camera.flying() and opponents[shooter] == null
+
+
+## The mouse moving with the right button held: once past a few pixels
+## (so a click with a shaky hand still aims at its spot), each pixel turns
+## the aim a little.
+func _aim_drag_motion(mm: InputEventMouseMotion) -> bool:
+	if not _aim_drag:
+		return false
+	if not _can_click_aim() or not (mm.button_mask & MOUSE_BUTTON_MASK_RIGHT):
+		_aim_drag = false
+		return false
+	var dx := mm.screen_relative.x
+	if _aim_drag_px < ClickAim.DRAG_DEAD_PX:
+		_aim_drag_px += mm.screen_relative.length()
+		return true
+	_turn_aim(ClickAim.drag_turn_deg(dx, clubs[club_index].is_putter, Input.is_key_pressed(KEY_SHIFT)))
+	return true
+
+
+## Aims at the course spot under screen point `at`; a click on the sky does
+## nothing.
+func _aim_at_screen(at: Vector2) -> void:
 	var cam := get_viewport().get_camera_3d()
 	if cam == null:
-		return false
-	var hit: Variant = ClickAim.ray_ground(hole.terrain, cam.project_ray_origin(mb.position), cam.project_ray_normal(mb.position))
-	if hit == null:
-		return true
-	aim_at(hit as Vector3)
-	return true
+		return
+	var hit: Variant = ClickAim.ray_ground(hole.terrain, cam.project_ray_origin(at), cam.project_ray_normal(at))
+	if hit != null:
+		aim_at(hit as Vector3)
 
 
 ## Aims at `spot`, and away from the green takes the club whose full swing
@@ -1705,12 +1870,7 @@ func _touch_aim(at: Vector2) -> void:
 			var xz := on_map as Vector2
 			aim_at(Vector3(xz.x, hole.terrain.height_at(xz.x, xz.y), xz.y))
 			return
-	var cam := get_viewport().get_camera_3d()
-	if cam == null:
-		return
-	var hit: Variant = ClickAim.ray_ground(hole.terrain, cam.project_ray_origin(at), cam.project_ray_normal(at))
-	if hit != null:
-		aim_at(hit as Vector3)
+	_aim_at_screen(at)
 
 
 ## A finger on a touch screen. The swing starts only from the Swing button
@@ -1917,9 +2077,9 @@ func _on_swing_finished(power: float, accuracy: float) -> void:
 			# A chip's meter position reads its own power table.
 			power = LinksPowerStroke.chip_power(hud.meter.power_position) / 100.0
 		elif clubs[club_index].is_putter:
-			# Quick pace's meter sized to the putt: its top is this share of
+			# Quick pace's fixed meters read in feet: the bar's value to
 			# the full putt meter's power.
-			power *= _putt_range
+			power = _putt_meter.power_for_value(power)
 		play_shot(power, accuracy)
 
 
@@ -2318,12 +2478,12 @@ func _caddie_read() -> void:
 		_quiet_advice()
 		if (broadcast or tour) and opponents[shooter] == null and state == State.AIM and practice == null:
 			_advice = CaddieAdvice.new()
-			_advice.start(shot_model, clubs, hole, ball_at, lie, wind.velocity(), graphics.skill, _putt_range)
+			_advice.start(shot_model, clubs, hole, ball_at, lie, wind.velocity(), graphics.skill, _caddie_putt_meter())
 		return
 	if opponents[shooter] != null or state != State.AIM:
 		caddie.step_aside()
 		return
-	caddie.advise(shot_model, clubs, hole, ball_at, lie, wind.velocity(), graphics.skill, _aim_dir(), _putt_range)
+	caddie.advise(shot_model, clubs, hole, ball_at, lie, wind.velocity(), graphics.skill, _aim_dir(), _caddie_putt_meter())
 
 
 ## The swing has started, or the shot isn't the player's: the read goes.
@@ -2367,6 +2527,8 @@ func _toggle_swing_method() -> void:
 	graphics.swing_method = 1 - graphics.swing_method
 	graphics.save()
 	hud.hint.text = _aim_hint()
+	if hole != null and state == State.AIM:
+		_update_green_aids()  # the fixed putt meters are the 3-click meter's
 	hud.show_message("Mouse swing: hold the left button, pull back and push up" if graphics.swing_method == 1 \
 			else "3-click swing: click (or Space) to start, set the power, then on the white line", 3.0)
 
@@ -2398,12 +2560,19 @@ func _process_aim(delta: float) -> void:
 	if KeyRemap.held(KEY_RIGHT, "ui_right"):
 		turn -= 1.0
 	if turn == 0.0:
-		_clear_gallery_line()
+		if not _aim_drag:
+			_clear_gallery_line()
 		return
 	var rate := PUTT_AIM_RATE_DEG if clubs[club_index].is_putter else AIM_RATE_DEG
 	if Input.is_key_pressed(KEY_SHIFT) or _pad_held(JOY_BUTTON_LEFT_SHOULDER):
 		rate *= 0.2
-	aim_deg = wrapf(aim_deg + turn * rate * delta, -180.0, 180.0)
+	_turn_aim(turn * rate * delta)
+
+
+## Turns the aim `deg` degrees (positive to the golfer's left) and moves the
+## golfer, the aim marker, the HUD and the camera with it.
+func _turn_aim(deg: float) -> void:
+	aim_deg = wrapf(aim_deg + deg, -180.0, 180.0)
 	_place_golfer()
 	_update_aim_marker()
 	_update_hud()
@@ -3731,6 +3900,11 @@ func _build_world() -> void:
 	add_child(post)
 	dynamic_resolution = DynamicResolution.new()
 	add_child(dynamic_resolution)
+	# A look the game picked steps down if this machine can't keep up.
+	if DisplayServer.get_name() != "headless" and not FrameBenchmark.wanted():
+		frame_watch = FrameWatch.new()
+		add_child(frame_watch)
+		frame_watch.stepped.connect(_on_look_stepped)
 
 	var canvas := CanvasLayer.new()
 	add_child(canvas)
@@ -3850,9 +4024,14 @@ func _apply_graphics() -> void:
 	if record == null:
 		LinksGround.set_greens(graphics.green_firmness, graphics.green_speed)
 		_putt_scales.clear()
+	# Each shot records its own hitting distance, so this applies at once.
+	if shot_model != null:
+		shot_model.power_profile = graphics.power_profile
 	scenery.apply(graphics)
 	post.apply(graphics)
 	dynamic_resolution.setup(get_viewport(), graphics)
+	if frame_watch != null:
+		frame_watch.setup(graphics, get_viewport(), dynamic_resolution)
 	camera.fov = graphics.fov
 	camera.base_fov = graphics.fov
 	ScannedTree.hd = graphics.quality == GraphicsSettings.Quality.ULTRA and GraphicsSettings.is_forward_plus() \
@@ -3893,7 +4072,6 @@ func _apply_graphics() -> void:
 		camera.end_flyover()
 	hud.meter.quick = graphics.quick_pace
 	camera.quick = graphics.quick_pace
-	_putt_scale_from = Vector3.INF  # the putt meter's size goes with the pace
 	_yard_key = []
 	if hole != null and state == State.AIM:
 		_update_green_grid()
@@ -3912,6 +4090,12 @@ func _apply_graphics() -> void:
 		_update_wind_shaders()
 		if hole != null:
 			_update_hud()
+
+
+## FrameWatch stepped the look down: apply it and say so.
+func _on_look_stepped(_look: int) -> void:
+	_apply_graphics()
+	hud.show_message("Graphics lowered to keep play smooth (Settings > Look to change)", 5.0)
 
 
 ## Depth of field (Forward+ only): the far distance goes softly out of
@@ -4867,9 +5051,14 @@ func _update_green_grid() -> void:
 	var on := _grid_allowed() and grid_on and graphics.putting_grid > 0 and state == State.AIM \
 		and clubs[club_index].is_putter and (lie == Surface.Type.GREEN or lie == Surface.Type.FRINGE)
 	green_grid.visible = on
-	if on:
+	if graphics.putting_grid > 0 and _grid_allowed():
 		green_grid.style = (graphics.putting_grid - 1) as GreenGrid.Style
+	if on:
 		green_grid.build_async(hole.terrain, ball_at, hole.pin)
+	elif graphics.putting_grid > 0 and _grid_allowed() and hole != null:
+		# Built ahead from the tee, so it's up the moment the ball is on the
+		# green.
+		green_grid.prewarm(hole.terrain, hole.pin)
 
 
 # --- Golfer voice -------------------------------------------------------------
@@ -5038,20 +5227,17 @@ func _update_green_aids() -> void:
 
 ## The Broadcast and Tour putting meter's distance scale: how far a putt at
 ## each point of the meter rolls on a level green of this course's speed,
-## by the round's own physics, plus the hole's distance as a mark. The
-## player still reads the slope and makes the stroke; Classic Links keeps
-## the original's bare meter.
+## by the round's own physics, plus the hole's distance as a mark. In Quick
+## pace with the meter it is one of PuttMeterScale's fixed meters, a ruler
+## in feet. The player still reads the slope and makes the stroke; Classic
+## Links keeps the original's bare meter.
 func _update_putt_scale() -> void:
 	if not hud.meter.modern or not _putting_on_green() or shot_model == null:
 		hud.meter.set_putt_scale(PackedFloat32Array(), -1.0)
-		_putt_scale_from = Vector3.INF
-		_putt_range = 1.0
+		hud.meter.putt_label = ""
+		_putt_meter = PuttMeterScale.bare()
 		return
 	var hole_ft := Vector2(hole.pin.x - ball_at.x, hole.pin.z - ball_at.z).length() * LinksLaunch.FEET_PER_METRE
-	if _putt_scale_from.is_equal_approx(ball_at):
-		hud.meter.set_putt_scale(hud.meter.putt_feet, hole_ft)
-		return
-	_putt_scale_from = ball_at
 	# 21 putts on a level green: the same wherever the ball is, so worked
 	# out once per putter, lie and green speed (it stalled every arrival on
 	# the green).
@@ -5059,48 +5245,19 @@ func _update_putt_scale() -> void:
 	if not _putt_scales.has(key):
 		_putt_scales[key] = putt_roll_feet(shot_model, clubs[club_index], lie)
 	var full: PackedFloat32Array = _putt_scales[key]
-	_putt_range = putt_range_for(full, hole_ft) if graphics.quick_pace else 1.0
-	hud.meter.set_putt_scale(rescale_roll(full, _putt_range), hole_ft)
+	if graphics.quick_pace and graphics.swing_method != 1:
+		_putt_meter = PuttMeterScale.for_hole(full, hole_ft)
+	else:
+		_putt_meter = PuttMeterScale.bare()
+		_putt_meter.full = full
+	hud.meter.set_putt_scale(_putt_meter.feet_scale(), hole_ft)
+	hud.meter.putt_label = _putt_meter.label()
 
 
-## Quick pace's putting meters, as shares of the full meter's power: the
-## original has a long and a short putt meter, and one meter for every
-## putt from a tap-in to 100 feet left a 10-footer in its first quarter,
-## a sliver to judge. The smallest that rolls PUTT_RANGE_ROOM times the
-## hole's distance on the level is used, so the hole sits two thirds or so
-## along the meter with room for an uphill putt. The same stroke on any of
-## them rolls the ball by the same physics; only the meter's size changes.
-const PUTT_RANGES: Array[float] = [0.3, 0.45, 0.65, 1.0]
-const PUTT_RANGE_ROOM := 2.0
-
-
-## The putting meter for a hole `hole_ft` away, from the full meter's
-## scale (putt_roll_feet with range 1).
-static func putt_range_for(full_feet: PackedFloat32Array, hole_ft: float) -> float:
-	if full_feet.size() < 2:
-		return 1.0
-	for r in PUTT_RANGES:
-		var x := r * (full_feet.size() - 1)
-		var i := mini(int(x), full_feet.size() - 2)
-		if lerpf(full_feet[i], full_feet[i + 1], x - i) >= hole_ft * PUTT_RANGE_ROOM:
-			return r
-	return 1.0
-
-
-## The full meter's scale (`full_feet`, at 0, 1/20 ... 1) for a meter
-## whose top is `share` of the full meter's power, read off it: the roll is
-## smooth enough in the stroke that this is within an inch of simulating
-## each point again (and costs nothing).
-static func rescale_roll(full_feet: PackedFloat32Array, share: float) -> PackedFloat32Array:
-	if share >= 1.0 or full_feet.size() < 2:
-		return full_feet
-	var out := PackedFloat32Array()
-	var n := full_feet.size() - 1
-	for i in n + 1:
-		var x := float(i) / n * share * n
-		var j := mini(int(x), n - 1)
-		out.append(lerpf(full_feet[j], full_feet[j + 1], x - j))
-	return out
+## The putting meter the caddie talks in: the mouse swing's putt is not on
+## the fixed meters.
+func _caddie_putt_meter() -> PuttMeterScale:
+	return PuttMeterScale.bare() if graphics.swing_method == 1 else _putt_meter
 
 
 var _putt_scales := {}  ## see _update_putt_scale()
@@ -5236,8 +5393,8 @@ func _update_assistant() -> void:
 	if level == 2:
 		assistant.show_read(_assist, ball_at)
 		# The dot is on this putt's meter (Quick pace sizes it to the putt).
-		hud.meter.target = clampf(float(_assist.power) / _putt_range, 0.0, 1.0) if not _assist.is_empty() else -1.0
-		# The mouse swing's backswing mark: its putt isn't sized to the putt.
+		hud.meter.target = _putt_meter.value_for_power(float(_assist.power)) if not _assist.is_empty() else -1.0
+		# The mouse swing's backswing mark: its putt is on the bare meter.
 		hud.mouse_swing.target = clampf(float(_assist.power), 0.0, 1.0) if not _assist.is_empty() else -1.0
 	else:
 		assistant.show_band(_assist)
@@ -5273,7 +5430,9 @@ func _update_putting_panel() -> void:
 	if can_read:
 		var to_hole := Vector2(hole.pin.x - ball_at.x, hole.pin.z - ball_at.z)
 		lines.append("Greens: %s\nSlope at the ball: %s" % [
-			GreenRead.speed_text(graphics.green_firmness, graphics.green_speed, _links_greens()),
+			# The round's greens (its setup can override the settings).
+			GreenRead.speed_text(record.green_firmness if record != null else graphics.green_firmness,
+					record.green_speed if record != null else graphics.green_speed, _links_greens()),
 			GreenRead.lie_text(hole.terrain, ball_at, to_hole)])
 		var read := GreenRead.line(hole.terrain, ball_at, hole.pin)
 		lines.append("Putt: " + GreenRead.putt_text(read, _grid_allowed()))

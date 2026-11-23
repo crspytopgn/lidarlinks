@@ -187,7 +187,12 @@ func plan(model: ShotModel, clubs: Array[Club], hole: HoleData, from: Vector3, l
 		_resume.emit()
 	if hole != _hole:
 		_tried.clear()
+	# The people's hitting distance (PlayerPower) isn't the computer's: it
+	# plans on a copy at Classic, its power its own.
 	_model = model
+	if model.power_profile != PlayerPower.Profile.CLASSIC:
+		_model = model.fresh()
+		_model.power_profile = PlayerPower.Profile.CLASSIC
 	_clubs = clubs
 	_hole = hole
 	_from = from

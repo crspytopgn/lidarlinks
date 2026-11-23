@@ -121,7 +121,7 @@ void fragment() {
 	if (use_normal || use_fabric) {
 		NORMAL_MAP = nm;
 	}
-	EMISSION = people_ground_bounce(ALBEDO, occ_normal, occ);
+	EMISSION = people_ground_bounce(ALBEDO, occ_normal, occ) + people_sky_fill(ALBEDO, occ);
 	ROUGHNESS = roughness;
 	SPECULAR = 0.3;
 	// The fibres' rim light shows on dark cloth, but on light cloth only
@@ -131,7 +131,7 @@ void fragment() {
 
 void light() {
 	float ndl = dot(NORMAL, LIGHT);
-	float shade = people_shadow(ATTENUATION, dot(normalize(people_geo), LIGHT));
+	float shade = people_shadow(ATTENUATION, dot(normalize(people_geo), LIGHT)) * people_sky.a;
 	float d = clamp((ndl + wrap) / (1.0 + wrap), 0.0, 1.0);
 	DIFFUSE_LIGHT += d * shade * LIGHT_COLOR / PI;
 	// A faint cloth sheen (GGX, Schlick Fresnel at SPECULAR 0.3).

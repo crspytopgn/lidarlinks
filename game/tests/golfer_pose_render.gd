@@ -25,6 +25,10 @@ const VIEWS := {
 	"footage": [Vector3(3.43, 0.2, -1.1), "pelvis", 30.0],
 	"legs_front": [Vector3(0.0, 0.3, -2.0), "@calf_r", 30.0],
 	"legs_trail": [Vector3(2.0, 0.3, 0.0), "@calf_r", 30.0],
+	## Both feet on the ground, close up (GROUND_SLOPE lies: are they on it?).
+	"feet_front": [Vector3(0.0, 0.35, -1.5), "feet", 30.0],
+	"feet_trail": [Vector3(1.5, 0.3, 0.2), "feet", 30.0],
+	"feet_lead": [Vector3(-1.5, 0.3, 0.2), "feet", 30.0],
 	"hands_front": [Vector3(0.1, 0.1, -1.1), "hands", 30.0],
 	"hands_side": [Vector3(-1.1, 0.15, -0.2), "hands", 30.0],
 	"hands_top": [Vector3(0.15, 1.0, -0.35), "hands", 32.0],
@@ -49,6 +53,7 @@ var _frames := 0
 var _jobs: Array = []
 var _job := -1
 var _wait := 0
+var _slope := Vector2.ZERO  ## GROUND_SLOPE (gx, gz)
 
 
 func _initialize() -> void:
@@ -93,6 +98,7 @@ func _initialize() -> void:
 	var slope := OS.get_environment("GROUND_SLOPE").split(",", false)
 	var gx := float(slope[0]) if slope.size() == 2 else 0.0
 	var gz := float(slope[1]) if slope.size() == 2 else 0.0
+	_slope = Vector2(gx, gz)
 	ground.position = FreeGolfer.BALL
 	ground.basis = Basis(Quaternion(Vector3.UP, Vector3(-gx, 1.0, -gz).normalized()))
 	var look := PlayerLook.default_look()
@@ -160,6 +166,11 @@ func _view(view_name: String) -> Array:
 	return VIEWS.get(view_name, VIEWS["front"])
 
 
+func _ground_at(p: Vector3) -> float:
+	var at := _golfer.global_transform * FreeGolfer.BALL
+	return at.y + _slope.x * (p.x - at.x) + _slope.y * (p.z - at.z)
+
+
 func _bone(name: String) -> Vector3:
 	var sk: Skeleton3D = _golfer._skeleton
 	return sk.global_transform * sk.get_bone_global_pose(sk.find_bone(name)).origin
@@ -187,6 +198,11 @@ func _run(job: Array) -> void:
 		target = _golfer.global_transform * FreeGolfer.BALL + Vector3.UP * BALL_RADIUS
 	elif view[1] == "hands":
 		target = (_bone("hand_l") + _bone("hand_r")) * 0.5
+	elif view[1] == "feet":
+		# Between the feet, on the ground there (the bones read here are
+		# the clip's, before GolferFeet sets them on a slope).
+		target = (_bone("foot_l") + _bone("foot_r")) * 0.5
+		target.y = _ground_at(target)
 	else:
 		target = _bone(view[1]) + Vector3(0.0, -0.1, 0.0)
 	_cam.fov = view[2]

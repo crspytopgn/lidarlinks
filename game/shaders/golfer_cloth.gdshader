@@ -166,6 +166,10 @@ void fragment() {
 	float occ = body_occlusion(occ_pos, occ_normal);
 	AO = occ * people_fill(occ_normal);
 	ALBEDO = base * mix(1.0, occ, contact_share) * people_light.x;
+	// No light() here: the sun's share (people_sky.a) scales the albedo,
+	// the flat fill with it, close enough for the sky's fill added below.
+	EMISSION = people_sky_fill(ALBEDO, occ);
+	ALBEDO *= people_sky.a;
 	if (use_normal) {
 		NORMAL_MAP = texture(texture_normal, UV).rgb;
 	}

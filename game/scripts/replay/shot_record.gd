@@ -24,6 +24,9 @@ var lie: int = Surface.Type.TEE
 var from := Vector3.ZERO
 ## Swing skill (LinksShotModel) and the computer golfer's settings.
 var skill := 3
+## The person's hitting distance (PlayerPower.Profile); Classic for computer
+## golfers and for records made before it.
+var power_profile := 0
 var computer := false
 var cpu_rating := -1
 ## A Classic computer golfer's ratings for Links 2003's miss generators
@@ -71,6 +74,8 @@ func to_dict() -> Dictionary:
 		d["setup"] = [ball_position, face, stance]
 	if backspin != 0:
 		d["backspin"] = backspin
+	if power_profile != 0:
+		d["power_profile"] = power_profile
 	if not monitor.is_empty():
 		d["monitor"] = monitor
 	if not cpu_ratings.is_empty():
@@ -120,6 +125,7 @@ static func from_dict(d: Dictionary) -> ShotRecord:
 		r.face = int(setup[1])
 		r.stance = int(setup[2])
 	r.backspin = int(d.get("backspin", 0))
+	r.power_profile = PlayerPower.clamp_profile(int(d.get("power_profile", 0)))
 	r.mulligan = bool(d.get("mulligan", false))
 	r.stands = bool(d.get("stands", false))
 	var mon: Variant = d.get("monitor")

@@ -38,6 +38,7 @@ func _initialize() -> void:
 	_run("links_models_match_olcore", _test_links_models_match_olcore)
 	_run("links_launch_matches_olcore", _test_links_launch_matches_olcore)
 	_run("club_distance_table", _test_club_distance_table)
+	_run("player_power", _test_player_power)
 	_run("links_lie_matches_olcore", _test_links_lie_matches_olcore)
 	_run("links_swing_matches_olcore", _test_links_swing_matches_olcore)
 	_run("obstacles_match_olcore", _test_obstacles_match_olcore)
@@ -160,6 +161,7 @@ func _process(_delta: float) -> bool:
 	_run("designed_round", _test_designed_round)
 	_run("caddie_and_buggy_in_round", _test_caddie_and_buggy_in_round)
 	_run("target_view", _test_target_view)
+	_run("feet_on_slopes", _test_feet_on_slopes)
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(PlayerProfiles.path))
 	if _failures > 0:
 		print("%d check(s) failed" % _failures)
@@ -858,13 +860,27 @@ func _test_quick_pace(meter: SwingMeter, roll: PackedFloat32Array) -> void:
 				r.click_power()
 		return r._need
 	_check(through.call(true) >= through.call(false) - 1, "the snap is as easy to hit in Quick (%d vs %d frames)" % [through.call(true), through.call(false)])
-	# The putting meter sized to the putt: about twice the hole on the level.
+	# Quick pace's fixed putting meters: 15 ft, 40 ft and the full stroke,
+	# each a ruler in feet on the level.
 	var full := PackedFloat32Array()
 	for i in 21:
-		full.append(100.0 * pow(float(i) / 20.0, 1.5))  # 100 ft at the top
-	_check_near(GolfRound.putt_range_for(full, 5.0), 0.3, 1e-6, "a 5-footer gets the shortest putting meter")
-	_check_near(GolfRound.putt_range_for(full, 14.0), 0.45, 1e-6, "a 14-footer the next")
-	_check_near(GolfRound.putt_range_for(full, 80.0), 1.0, 1e-6, "a long putt the full meter")
+		full.append(110.0 * pow(maxf(float(i) / 20.0, 0.02), 2.0))  # 110 ft at the top
+	_check_near(PuttMeterScale.top_for(full, 5.0), 15.0, 1e-6, "a 5-footer gets the 15 ft putting meter")
+	_check_near(PuttMeterScale.top_for(full, 9.0), 15.0, 1e-6, "a 9-footer still the 15 ft meter")
+	_check_near(PuttMeterScale.top_for(full, 14.0), 40.0, 1e-6, "a 14-footer the 40 ft meter")
+	_check_near(PuttMeterScale.top_for(full, 80.0), 110.0, 1e-6, "a long putt the full stroke")
+	var m15 := PuttMeterScale.for_hole(full, 6.0)
+	var m15b := PuttMeterScale.for_hole(full, 3.0)
+	_check_near(m15.power_for_value(0.5), m15b.power_for_value(0.5), 1e-9, "the same stroke on the same meter is the same power, whatever the putt")
+	_check_near(m15.feet_for_power(m15.power_for_value(0.5)), 7.5, 0.05, "halfway up the 15 ft meter rolls 7.5 ft on the level")
+	_check_near(m15.value_for_power(m15.power_for_value(0.3)), 0.3, 1e-4, "the meter's value and power convert both ways")
+	_check_near(m15.power_for_value(0.0), 0.0, 1e-9, "the bottom of the meter is no stroke")
+	var spacing := m15.feet_scale()
+	_check(spacing.size() == 21 and is_equal_approx(spacing[10], 7.5) and is_equal_approx(spacing[20], 15.0), "the fixed meter's ticks are evenly spaced feet")
+	var mlong := PuttMeterScale.for_hole(full, 60.0)
+	_check_near(mlong.power_for_value(1.0), 1.0, 1e-6, "the long meter's top is the full stroke")
+	_check_near(PuttMeterScale.bare().power_for_value(0.42), 0.42, 1e-9, "the bare meter is the full meter's power")
+	_check_near(CaddieAdvice.meter_value(m15.power_for_value(0.6), true, false, m15), 0.6, 1e-4, "the caddie reads a putt on the fixed meter")
 	var putter: Club = null
 	var seven: Club = null
 	for c in Club.standard_set():
@@ -874,11 +890,15 @@ func _test_quick_pace(meter: SwingMeter, roll: PackedFloat32Array) -> void:
 			seven = c
 	var short_roll := GolfRound.putt_roll_feet(StandardShotModel.new(), putter, Surface.Type.GREEN, 0.3)
 	_check(short_roll[20] < roll[20] * 0.6 and short_roll[20] > 0.0, "the short putting meter's top rolls less (%.1f of %.1f ft)" % [short_roll[20], roll[20]])
-	var read_off := GolfRound.rescale_roll(roll, 0.3)
+	# The fixed meter's reading of feet, read off the full scale, against
+	# simulating the stroke it gives.
+	var real15 := PuttMeterScale.for_hole(roll, 5.0)
 	var worst := 0.0
-	for i in range(1, 21):
-		worst = maxf(worst, absf(read_off[i] - short_roll[i]))
-	_check(worst < 0.15, "the short meter's scale read off the full one is within %.2f ft of simulating it" % worst)
+	for v in [0.2, 0.4, 0.6, 0.8, 1.0]:
+		var p := real15.power_for_value(v)
+		var sim := GolfRound.putt_roll_feet(StandardShotModel.new(), putter, Surface.Type.GREEN, p)
+		worst = maxf(worst, absf(sim[20] - v * real15.top_ft))
+	_check(worst < 0.25, "the 15 ft meter's marks are within %.2f ft of the real roll" % worst)
 	# The full swing reads in carry yards.
 	meter.mode = LinksPowerStroke.Mode.FULL
 	meter.set_yard_scale(PackedFloat32Array([0.25, 0.5, 0.75, 1.0]), PackedFloat32Array([40.0, 80.0, 120.0, 160.0]))
@@ -1368,7 +1388,8 @@ func _test_green_reading() -> void:
 	var now_verts := (grid.mesh.surface_get_arrays(0)[Mesh.ARRAY_VERTEX] as PackedVector3Array).size()
 	grid.build_async(side_hill, Vector3.ZERO, Vector3(0, 0, 6))
 	_check(grid._job.is_empty(), "the grid on show is not built again")
-	grid.build_async(side_hill, Vector3(1, 0, 0), Vector3(0, 0, 6))
+	grid.now_ms = 0.0
+	grid.build_async(side_hill, Vector3(16, 0, -10), Vector3(0, 0, 6))
 	_check(not grid._job.is_empty(), "a new spot builds over frames")
 	var frames := 0
 	while not grid._job.is_empty() and frames < 1000:
@@ -1377,6 +1398,21 @@ func _test_green_reading() -> void:
 	_check(grid._job.is_empty() and grid.mesh.get_surface_count() == 1
 			and (grid.mesh.surface_get_arrays(0)[Mesh.ARRAY_VERTEX] as PackedVector3Array).size() > now_verts / 2,
 			"the grid built over frames goes up")
+	# Built ahead round the hole, a read on the green is up at once, the
+	# same grid as one built in one go.
+	var ahead := GreenGrid.new()
+	ahead.now_ms = 0.0
+	ahead.prewarm(side_hill, Vector3(0, 0, 6))
+	frames = 0
+	while not ahead._warm.is_empty() and frames < 5000:
+		ahead._process(0.0)
+		frames += 1
+	ahead.build_async(side_hill, Vector3(3, 0, -2), Vector3(0, 0, 6))
+	grid.build(side_hill, Vector3(3, 0, -2), Vector3(0, 0, 6))
+	_check(ahead._job.is_empty() and ahead.mesh.get_surface_count() == 1
+			and ahead.mesh.surface_get_array_len(0) == grid.mesh.surface_get_array_len(0),
+			"a grid built ahead is up the moment the player is on the green")
+	ahead.free()
 	grid.free()
 
 
@@ -1842,11 +1878,15 @@ func _test_caddie() -> void:
 	advice.finish()
 	print("  green: " + advice.text)
 	_check(advice.text.begins_with("20 feet"), "putt read gives the length (%s)" % advice.text)
-	# Quick pace's putting meter, sized to the putt: the caddie's number is
-	# the meter's, not the full putt meter's (it sent putts well short).
-	advice.start(model, clubs, hole, Vector3.ZERO, Surface.Type.GREEN, Vector3.ZERO, 0, 0.25)
+	# Quick pace's fixed putting meters: the caddie's number is the meter's,
+	# not the full putt meter's (it sent putts well short).
+	var feet := PackedFloat32Array()
+	for i in 21:
+		feet.append(110.0 * pow(maxf(float(i) / 20.0, 0.02), 2.0))
+	var fixed := PuttMeterScale.for_hole(feet, 20.0)
+	advice.start(model, clubs, hole, Vector3.ZERO, Surface.Type.GREEN, Vector3.ZERO, 0, fixed)
 	advice.finish()
-	_check_near(advice.meter, clampf(advice.power / 0.25, 0.0, 1.0), 1e-6, "putt read on the putting meter's scale")
+	_check_near(advice.meter, fixed.value_for_power(advice.power), 1e-6, "putt read on the putting meter's scale")
 	_check(advice.text.contains("about %d%% power" % roundi(advice.meter * 100.0)), "putt read says the meter's power (%s)" % advice.text)
 	# A chip: the caddie's number is the chip meter's, whose power comes from
 	# its own table (to about 35% of a full swing at the top), and swinging it
@@ -2309,6 +2349,63 @@ func _test_graphics_settings() -> void:
 	cfg.load(path)
 	_check(int(cfg.get_value("graphics", "look_version", 0)) == GraphicsSettings.LOOK_VERSION, "look version saved")
 	_check(not GraphicsSettings.web_capable(), "the higher web tier is for the browser only")
+	# The browser's tier from the page's own report of the device
+	# (WebDevice): Godot only sees "WebKit WebGL" in Chrome.
+	var tier_of := func(info: Dictionary, mobile := false, ios := false) -> int:
+		WebDevice.override_info = info
+		var t := WebDevice.tier(mobile, ios)
+		WebDevice.override_info = {}
+		return t
+	_check(tier_of.call({"renderer": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero)), SwiftShader driver)", "cores": 8}) == WebDevice.Tier.LEAN, "web tier: software rendering is lean")
+	_check(tier_of.call({"renderer": "ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 Direct3D11 vs_5_0 ps_5_0, D3D11)", "caveat": true, "cores": 8}) == WebDevice.Tier.LEAN, "web tier: the browser calling WebGL slow is lean")
+	_check(tier_of.call({"renderer": "ANGLE (Intel, Intel(R) HD Graphics 620 Direct3D11 vs_5_0 ps_5_0, D3D11)", "cores": 4}) == WebDevice.Tier.LEAN, "web tier: Intel HD Graphics is lean")
+	_check(tier_of.call({"renderer": "ANGLE (Intel, Intel(R) UHD Graphics 620 Direct3D11 vs_5_0 ps_5_0, D3D11)", "cores": 8}) == WebDevice.Tier.STANDARD, "web tier: Intel UHD Graphics is standard")
+	_check(tier_of.call({"renderer": "ANGLE (Intel, Intel(R) Iris(R) Xe Graphics Direct3D11 vs_5_0 ps_5_0, D3D11)", "cores": 8, "memory": 8}) == WebDevice.Tier.STANDARD, "web tier: Iris Xe laptop graphics is standard")
+	_check(tier_of.call({"renderer": "ANGLE (AMD, AMD Radeon(TM) Graphics Direct3D11 vs_5_0 ps_5_0, D3D11)", "cores": 12, "memory": 16}) == WebDevice.Tier.STANDARD, "web tier: Ryzen built-in graphics is standard")
+	_check(tier_of.call({"renderer": "ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 Direct3D11 vs_5_0 ps_5_0, D3D11)", "cores": 12, "memory": 16}) == WebDevice.Tier.HIGH, "web tier: a gaming card is high")
+	_check(tier_of.call({"renderer": "ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 Direct3D11 vs_5_0 ps_5_0, D3D11)", "cores": 2}) == WebDevice.Tier.LEAN, "web tier: two cores are lean")
+	_check(tier_of.call({"renderer": "ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 Direct3D11 vs_5_0 ps_5_0, D3D11)", "cores": 12, "memory": 4}) == WebDevice.Tier.STANDARD, "web tier: 4 GB is standard")
+	_check(tier_of.call({"renderer": "Apple GPU", "cores": 6}, true, true) == WebDevice.Tier.HIGH, "web tier: an iPad is high")
+	_check(tier_of.call({"renderer": "Mali-G52 MC2", "cores": 8}, true) == WebDevice.Tier.LEAN, "web tier: an old phone chip is lean")
+	_check(tier_of.call({"renderer": "Adreno (TM) 740", "cores": 8}, true) == WebDevice.Tier.HIGH, "web tier: a good phone chip is high")
+	_check(tier_of.call({"renderer": "WebKit WebGL", "cores": 4}) == WebDevice.Tier.STANDARD, "web tier: a hidden chip on four cores is standard")
+	# The browser's pixel budget: a 1080p window keeps High whole, a Retina
+	# laptop draws about 2M pixels but never under half, and a 1x screen
+	# never under 0.7.
+	_check(GraphicsSettings.web_render_scale(1.0, 1920.0 * 1080.0, GraphicsSettings.Quality.HIGH, 1.0) == 1.0, "web pixel budget: 1080p keeps High whole")
+	var web_retina := GraphicsSettings.web_render_scale(1.0, 2880.0 * 1800.0, GraphicsSettings.Quality.HIGH, 2.0)
+	_check(web_retina > 0.6 and web_retina < 0.65, "web pixel budget: Retina laptop at High (%.3f)" % web_retina)
+	_check(GraphicsSettings.web_render_scale(1.0, 5120.0 * 2880.0, GraphicsSettings.Quality.LOW, 2.0) == 0.5, "web pixel budget: floor on a 2x screen")
+	_check(GraphicsSettings.web_render_scale(0.75, 1920.0 * 1080.0, GraphicsSettings.Quality.LOW, 1.0) == 0.7, "web pixel budget: floor on a 1x screen")
+	_check(GraphicsSettings.web_render_scale(0.6, 1920.0 * 1080.0, GraphicsSettings.Quality.LOW, 1.0) == 0.6, "web pixel budget: a lower chosen scale stays")
+	# FrameWatch: slow when the median frame is under 50 fps (30 for the
+	# lean step); it steps a
+	# look the game picked down to Performance, then its lean form, and
+	# leaves a look the player chose alone.
+	var fast := PackedFloat32Array()
+	var slow := PackedFloat32Array()
+	for i in 60:
+		fast.append(16.7 if i % 10 else 200.0)
+		slow.append(50.0 if i % 10 else 16.0)
+	_check(not FrameWatch.is_slow(fast) and FrameWatch.is_slow(slow), "frame watch: median frame, hitches aside")
+	var mid := PackedFloat32Array()
+	for i in 60:
+		mid.append(25.0)
+	_check(FrameWatch.is_slow(mid) and not FrameWatch.is_slow(mid, FrameWatch.LEAN_MS), "frame watch: 40 fps leaves Natural but not Performance")
+	var auto := GraphicsSettings.new()
+	auto.apply_look(GraphicsSettings.Look.NATURAL)
+	FrameWatch.step_down(auto)
+	_check(auto.look == GraphicsSettings.Look.PERFORMANCE and not auto.lean, "frame watch: Natural steps to Performance")
+	FrameWatch.step_down(auto)
+	_check(auto.look == GraphicsSettings.Look.PERFORMANCE and auto.lean and auto.grass == 0 and auto.trees == 0, "frame watch: then Performance's lean form")
+	_check(FrameWatch.next_look(auto) < 0, "frame watch: nothing below lean")
+	var chosen := GraphicsSettings.new()
+	chosen.apply_look(GraphicsSettings.Look.NATURAL)
+	chosen.auto_look = false
+	_check(FrameWatch.next_look(chosen) < 0, "frame watch: a look the player chose stays")
+	auto.save(path)
+	var auto_loaded := GraphicsSettings.load_saved(path)
+	_check(auto_loaded.lean and auto_loaded.auto_look and auto_loaded.grass == 0, "lean look saved")
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
 	loaded = GraphicsSettings.load_saved(path)
 	_check(loaded.look == GraphicsSettings.detect_look(), "first run gets a look for the device")
@@ -4001,9 +4098,88 @@ func _test_photo_golfer() -> void:
 	photo.free()
 
 
+## On a slope GolferFeet keeps each ankle as high above the ground under it
+## as the clip has it on flat ground: standing about or over the ball, on
+## uphill, downhill and both sidehill lies, the realistic person and the
+## Custom body alike. (A slip once moved only the hips, leaving the uphill
+## foot 10 cm in the turf.) Run in the tree: the modifiers need the skeleton.
+func _test_feet_on_slopes() -> void:
+	var custom := PlayerLook.default_look()
+	custom.person = ""
+	for look: PlayerLook in [PlayerLook.default_look(), custom]:
+		var golfer := FreeGolfer.create(look)
+		if golfer == null:
+			_check(false, "the golfer loads for the slope test")
+			return
+		golfer.walk_in = false
+		root.add_child(golfer)
+		var sk: Skeleton3D = golfer._skeleton
+		var feet := {}
+		var read := func() -> void:
+			for bone: String in ["foot_l", "foot_r"]:
+				feet[bone] = sk.global_transform * sk.get_bone_global_pose(sk.find_bone(bone)).origin
+		sk.skeleton_updated.connect(read)
+		for clip: StringName in [&"idle", &"address", &"address_putt"]:
+			var flat := {}
+			for slope: Vector2 in [Vector2.ZERO, Vector2(0.25, 0), Vector2(-0.25, 0), Vector2(0, 0.25), Vector2(0, -0.25), Vector2(0.2, 0.2)]:
+				var at := FreeGolfer.BALL
+				var ground := func(x: float, z: float) -> float: return slope.x * (x - at.x) + slope.y * (z - at.z)
+				golfer.set_ground(ground)
+				golfer.play(clip)
+				golfer._player.seek(0.5, true)
+				sk.notification(Skeleton3D.NOTIFICATION_UPDATE_SKELETON)
+				for bone: String in ["foot_l", "foot_r"]:
+					var w: Vector3 = feet[bone]
+					var h: float = w.y - ground.call(w.x, w.z)
+					if slope == Vector2.ZERO:
+						flat[bone] = h
+					else:
+						_check(absf(h - flat[bone]) < 0.01, "%s %s on a %s slope: ankle %.3f m off the ground's height for it (person %s)"
+								% [clip, bone, slope, h - flat[bone], look.person])
+		golfer.free()
+
+
 func _test_free_golfer() -> void:
 	var golfer := FreeGolfer.create()
 	_check(golfer != null, "free_golfer.glb loads with an AnimationPlayer")
+	# Every body (the realistic people, and the sculpted Custom one, short
+	# and tall) meets the ball with the middle of each club's face, the head
+	# on the ground, not in it: the putter at address with the face just
+	# behind the ball, the driver and irons through impact.
+	var people: Array = [""]
+	for p: Array in PlayerLook.PEOPLE:
+		people.append(p[0])
+	for person: String in people:
+		for height: float in [155.0, 195.0]:
+			var look := PlayerLook.default_look()
+			look.person = person
+			look.height_cm = height
+			var fitted := FreeGolfer.create(look)
+			for club: String in FreeGolfer.CLUB_FIT:
+				var at: Array = fitted.club_at_ball(club)
+				var box: AABB = at[0]
+				var face := box.position.x - FreeGolfer.BALL.x - FreeGolfer.BALL_RADIUS
+				var off: float = (at[1] as Vector3).z - FreeGolfer.BALL.z
+				var sole: float = FreeGolfer.CLUB_FIT[club][3]
+				_check((club != "putter" or absf(face - FreeGolfer.PUTT_GAP) < 0.003) and absf(off) < 0.005
+					and box.position.y > minf(sole, 0.0) - 0.002,
+					"%s (%d cm) meets the ball with the middle of the %s (face %.3f m, %.3f m off the middle, sole %.3f m)"
+					% [person if person != "" else "Custom", height, club, face, off, box.position.y])
+			# The driver and irons sit at address and meet the ball as on
+			# the Mixamo person the swings were baked on.
+			for club: String in FreeGolfer.SWING_FIT:
+				var ref: Dictionary = FreeGolfer._swing_ref[club]
+				var fit: Array = fitted._fits[club]
+				var m := fitted.swing_metrics(club, fit[0])
+				var dz: float = ((m.basis as Basis) * (fit[1] as Vector3)).z
+				var addr: float = (m.address as Vector3).z + dz - (ref.address as Vector3).z
+				var imp: float = (m.impact as Vector3).z + dz - (ref.impact as Vector3).z
+				# (A sole still low has the grip choked as far as it goes.)
+				var choked := (fit[0] as Vector3).length() * float(m.unit) > FreeGolfer.CLUB_CHOKE.y - 1e-4
+				_check(absf(addr) < 0.03 and absf(imp) < 0.03 and (absf(float(m.low) - float(ref.low)) < 0.01 or choked),
+					"%s (%d cm) holds the %s as the swings were baked (address %.3f m, impact %.3f m out, sole %.3f m)"
+					% [person if person != "" else "Custom", height, club, addr, imp, float(m.low) - float(ref.low)])
+			fitted.free()
 	_check(is_equal_approx(FreeGolfer.backswing_top(&"backswing", 0.9), FreeGolfer.BACKSWING_TOP)
 		and is_equal_approx(FreeGolfer.backswing_top(&"backswing_iron", 0.9), FreeGolfer.BACKSWING_TOP_IRON)
 		and is_equal_approx(FreeGolfer.backswing_top(&"backswing", 0.5), 0.5),
@@ -4582,6 +4758,16 @@ func _test_people(parts: GolferParts) -> void:
 	_check(capped > 140 and capped < 220, "about half the gallery wears a cap (%d of 400)" % capped)
 	_check(white * 5 < capped, "few of the gallery's caps are white (%d of %d)" % [white, capped])
 	_check(Scenery.people_light(true, false).x < 1.0 and Scenery.people_light(true, true) == Vector3(1, 1, 0), "people take back the web build's turf lift only")
+	_check(Scenery.people_sky(false, false, 4.0, 0.5) == Vector4(0, 0, 0, 1), "Classic lighting leaves people's shade as it is")
+	for fwd: bool in [false, true]:
+		var ps := Scenery.people_sky(true, fwd, 4.0, 0.5)
+		var amb := 0.5 * Scenery.people_light(true, fwd).y
+		var sky := Vector3(ps.x, ps.y, ps.z).dot(Vector3(0.2126, 0.7152, 0.0722))
+		var shade := amb + sky
+		var lit := 4.0 * ps.w + shade
+		var ratio := Scenery.PEOPLE_SHADE_RATIO_FORWARD if fwd else Scenery.PEOPLE_SHADE_RATIO
+		_check(sky > 0.0 and absf(shade / lit - ratio) < 0.02, "people's shade gets the sky's light, as the turf's does (%s)" % ("Forward+" if fwd else "web"))
+	_check(Scenery.people_sky(true, false, 4.0, 0.5).w < 1.0 / Scenery.COMPAT_SUN_LIFT, "the web's extra sun is taken back on people")
 	_check(PlayerLook.from_dict({"sex": 0.0}).person == "", "a look saved before the people stays Custom")
 	var saved := PlayerLook.default_look()
 	saved.person = "Female_Adult_17"
@@ -5026,6 +5212,10 @@ func _test_click_aim() -> void:
 	var reaches: Array[float] = [230.0, 200.0, 150.0, 100.0, -1.0]
 	_check(ClickAim.club_for(reaches, 140.0) == 2 and ClickAim.club_for(reaches, 300.0) == 0
 			and ClickAim.club_for(reaches, 10.0) == 3, "the shortest club that gets there, never the putter")
+	_check(ClickAim.drag_turn_deg(100.0, false, false) < 0.0 and absf(ClickAim.drag_turn_deg(100.0, false, false) + 4.0) < 0.001,
+			"dragging right 100 px turns the aim 4 degrees right")
+	_check(absf(ClickAim.drag_turn_deg(-100.0, true, false) - 1.5) < 0.001
+			and absf(ClickAim.drag_turn_deg(-100.0, true, true) - 0.375) < 0.001, "putts turn finer, and Shift finer still")
 	var game := _game
 	if not game.is_node_ready():
 		return
@@ -5417,12 +5607,86 @@ func _test_club_distance_table() -> void:
 	var falling := bytes.duplicate()
 	falling.encode_u16(ClubDistances.HEADER_BYTES + 2 * 5, 0)
 	_check(ClubDistances.parse(falling) == null and ClubDistances.parse(PackedByteArray([1, 2])) == null, "a short or falling table is refused")
+	var dip := bytes.duplicate()
+	# The disc's own lob wedge row dips a little (275 then 272 ft): kept.
+	dip.encode_u16(ClubDistances.HEADER_BYTES + 2 * (18 * ClubDistances.STEPS + 45), 44 * 2 - 1)
+	_check(ClubDistances.parse(dip) != null, "a small dip is the game's own and kept")
 	var model := LinksShotModel.new(null, LinksLaunch.new())
 	var driver: Club = Club.standard_set()[0]
 	_check_near(model.reach_scale(driver), 1.12, 1e-6, "without the table the reach scales by the rating")
 	model.distances = t
 	_check_near(driver.total_m * model.reach_scale(driver), t.total_m(0, 112.0), 1e-4, "with it the driver reaches the table's total")
 	_check((model.fresh() as LinksShotModel).distances == t, "a fresh model keeps the table")
+
+
+## Settings > Hitting distance (PlayerPower): with the stand-in physics
+## each profile's full swings go its totals and the reach shown matches;
+## with Links 2003's it sets the club's rating the way the game's own club
+## distance setting does; Classic changes nothing; computer golfers and
+## records keep their own.
+func _test_player_power() -> void:
+	var fairway := FlatTerrain.new(Surface.Type.FAIRWAY)
+	var model := StandardShotModel.new()
+	for profile: int in PlayerPower.TOTAL_YD:
+		model.power_profile = profile
+		for c in Club.standard_set():
+			if c.is_putter:
+				continue
+			var want := PlayerPower.total_m(profile, c)
+			var r := model.simulate(model.launch(c, 1.0, 0.0, 0.0, Surface.Type.FAIRWAY, Vector3.ZERO), fairway, Vector3(0, 0, -100))
+			_check_near(r.total_m, want, want * 0.01, "%s %s total" % [PlayerPower.NAMES[profile], c.short_name])
+			_check_near(c.total_m * model.reach_scale(c), want, 1e-3, "%s %s reach" % [PlayerPower.NAMES[profile], c.short_name])
+	var driver: Club = Club.standard_set()[0]
+	var putter: Club = Club.standard_set()[-1]
+	model.power_profile = PlayerPower.Profile.TOUR
+	print("  tour pro driver: %d yd total" % roundi(driver.total_m * model.reach_scale(driver) / PlayerPower.METRES_PER_YARD))
+	_check(model.reach_scale(putter) == 1.0 and PlayerPower.standard_speed(PlayerPower.Profile.TOUR, putter) == 1.0, "the putter is never changed")
+	_check(model.fresh().power_profile == PlayerPower.Profile.TOUR, "a fresh model keeps the profile")
+	var classic := StandardShotModel.new()
+	var a := classic.launch(driver, 1.0, 0.0, 0.0, Surface.Type.TEE, Vector3.ZERO)
+	model.power_profile = PlayerPower.Profile.CLASSIC
+	var b := model.launch(driver, 1.0, 0.0, 0.0, Surface.Type.TEE, Vector3.ZERO)
+	_check(a.velocity == b.velocity and classic.reach_scale(driver) == 1.0, "Classic is the shot as before")
+
+	# Links 2003: the rating is the first step of the game's table that
+	# reaches the profile's total (a made-up table, as in club_distance_table).
+	var bytes := PackedByteArray()
+	bytes.resize(ClubDistances.HEADER_BYTES + ClubDistances.CLUBS * ClubDistances.STEPS * 2)
+	for c in ClubDistances.CLUBS:
+		for k in ClubDistances.STEPS:
+			bytes.encode_u16(ClubDistances.HEADER_BYTES + 2 * (c * ClubDistances.STEPS + k), (k + 1) * (20 - c))
+	var t := ClubDistances.parse(bytes)
+	var links := LinksShotModel.new(null, LinksLaunch.new())
+	links.distances = t
+	_check(links.player_rating(driver) == 112.0, "Classic keeps the default rating")
+	links.power_profile = PlayerPower.Profile.TOUR
+	var want := PlayerPower.total_m(PlayerPower.Profile.TOUR, driver)
+	_check(links.player_rating(driver) == float(t.rating_for(0, want)), "the tour rating is the game's own pick for 300 yd")
+	_check(driver.total_m * links.reach_scale(driver) >= want, "and reaches it")
+	links.computer = true
+	_check(links.player_rating(driver) == float(t.rating_for(0, want)), "the reach shown doesn't depend on who last swung")
+	links.distances = null
+	_check_near(driver.total_m * links.reach_scale(driver), want, 1e-3, "without the table the rating scales with the distance")
+	_check((links.fresh() as LinksShotModel).power_profile == PlayerPower.Profile.TOUR, "a fresh Links model keeps the profile")
+
+	# Records: the shot's own profile, Classic when missing.
+	var rec := ShotRecord.new()
+	rec.power_profile = PlayerPower.Profile.TOUR
+	_check(ShotRecord.from_dict(rec.to_dict()).power_profile == PlayerPower.Profile.TOUR, "a record keeps its profile")
+	_check(ShotRecord.from_dict(ShotRecord.new().to_dict()).power_profile == PlayerPower.Profile.CLASSIC, "old records are Classic")
+	# A replayed shot uses the record's profile and leaves the model's alone;
+	# a computer golfer's shot is Classic whatever the people play.
+	var shared := StandardShotModel.new()
+	shared.power_profile = PlayerPower.Profile.AMATEUR
+	rec.club = 0
+	rec.power = 1.0
+	rec.lie = Surface.Type.FAIRWAY
+	var tour := RoundReplay.run_shot(shared, rec, driver, fairway, Vector3(0, 0, -100), Vector3.ZERO, 1)
+	_check(shared.power_profile == PlayerPower.Profile.AMATEUR, "the replay puts the model's profile back")
+	_check_near(tour.total_m, PlayerPower.total_m(PlayerPower.Profile.TOUR, driver), 3.0, "the replay plays the record's profile")
+	rec.computer = true
+	var cpu := RoundReplay.run_shot(shared, rec, driver, fairway, Vector3(0, 0, -100), Vector3.ZERO, 1)
+	_check_near(cpu.total_m, driver.total_m, 3.0, "a computer golfer's shot is Classic")
 
 
 ## The same shots on worker threads (each with its own model) and on the
