@@ -96,6 +96,13 @@ const TARGET := Color(0.95, 0.12, 0.1)
 ## and the hole's distance in feet (below 0 for none).
 var putt_feet := PackedFloat32Array()
 var hole_feet := -1.0
+## Which of Quick pace's fixed putting meters this is ("15 FT"), empty for
+## the bare meter (PuttMeterScale.label).
+var putt_label := "":
+	set(v):
+		if v != putt_label:
+			putt_label = v
+			queue_redraw()
 ## Quick pace for chips and putts (LinksPowerStroke.Run.quick); false is
 ## Classic, the original's timing.
 var quick := true
@@ -493,7 +500,10 @@ func _draw_modern() -> void:
 		var colour := good() if accuracy == 0.0 else GOLD
 		draw_string(font, Vector2(0, top), label, HORIZONTAL_ALIGNMENT_RIGHT, size.x - MODERN_INSET, 19, colour)
 	elif phase == Phase.IDLE and putting() and hole_feet >= 0.0:
-		draw_string(font, Vector2(0, top), "HOLE %d FT" % roundi(hole_feet), HORIZONTAL_ALIGNMENT_RIGHT, size.x - MODERN_INSET, 14, Color(1, 1, 1, 0.6))
+		var hole_text := "HOLE %d FT" % roundi(hole_feet)
+		if putt_label != "":
+			hole_text += "   %s METER" % putt_label
+		draw_string(font, Vector2(0, top), hole_text, HORIZONTAL_ALIGNMENT_RIGHT, size.x - MODERN_INSET, 14, Color(1, 1, 1, 0.6))
 	elif phase == Phase.IDLE and _reads_yards():
 		draw_string(font, Vector2(0, top), "FULL %d YD CARRY" % roundi(yards_for_value(1.0)), HORIZONTAL_ALIGNMENT_RIGHT, size.x - MODERN_INSET, 14, Color(1, 1, 1, 0.6))
 	elif phase == Phase.IDLE:
@@ -523,11 +533,17 @@ func _reading(v: float) -> String:
 func _draw_feet_scale(mid: float, h: float) -> void:
 	var small := GlassTheme.display_font(600)
 	var top_ft := putt_feet[putt_feet.size() - 1]
-	var step := 5.0 if top_ft <= 60.0 else 10.0
-	var label_every := 10.0 if top_ft <= 60.0 else 20.0
+	var step := 10.0
+	var label_every := 20.0
+	if top_ft <= 20.0:
+		step = 1.0
+		label_every = 5.0
+	elif top_ft <= 60.0:
+		step = 5.0
+		label_every = 10.0
 	var last_label := -100.0
 	var ft := step
-	while ft <= top_ft:
+	while ft <= top_ft + 0.01:
 		var v := value_for_feet(ft)
 		if v >= 0.0:
 			var x := _modern_x(v)
