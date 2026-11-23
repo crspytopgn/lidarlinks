@@ -24,6 +24,11 @@ const SPECTATOR_TEXTURE := 512
 const BLEND_TIME := 0.15
 const REACT_BLEND := 0.4  ## out of the finish into a reaction
 const LOOPING: Array[StringName] = [&"address", &"address_iron", &"address_putt", &"walk"]
+## Address clips whose arms (and club) are held as the swing clip starts
+## (hold_arms): Michael's takes address with a 20 (iron) to 28 (driver)
+## degree forward press, the head soled 20 to 30 cm behind the ball, and
+## the backswing then starts from the head at the ball.
+const ADDRESS_ARMS := {&"address": &"backswing", &"address_iron": &"backswing_iron"}
 ## Clips with an iron version (`_iron`): a shorter, more upright club, so he
 ## stands closer to the ball and bends over more.
 const IRON_CLIPS: Array[StringName] = [&"address", &"backswing", &"swing"]
@@ -241,6 +246,8 @@ static func create(p_look: PlayerLook = null, p_texture_cap := 0) -> FreeGolfer:
 	for anim_name in LOOPING:
 		if player.has_animation(anim_name):
 			player.get_animation(anim_name).loop_mode = Animation.LOOP_LINEAR
+	for anim_name: StringName in ADDRESS_ARMS:
+		hold_arms(golfer._skeleton, player, anim_name, ADDRESS_ARMS[anim_name])
 	for node in model.find_children("*", "MeshInstance3D", true, false):
 		if node.name.begins_with("Driver"):
 			golfer._driver.append(node)
@@ -1425,6 +1432,47 @@ static func clip_tracks(anim: Animation) -> Dictionary:
 	for i in anim.get_track_count():
 		tracks["%s %d" % [anim.track_get_path(i).get_concatenated_subnames(), anim.track_get_type(i)]] = i
 	return tracks
+
+
+## Holds the arms, hands and club in `address` as `swing` has them at its
+## start, so the club head rests just behind the ball, as a real golfer's
+## does, and the takeaway starts from there with no jump; the body keeps
+## the address clip's movement. The clips are shared by every golfer, so
+## this runs once per clip.
+static func hold_arms(sk: Skeleton3D, player: AnimationPlayer, address: StringName, swing: StringName) -> void:
+	if not player.has_animation(address) or not player.has_animation(swing):
+		return
+	var anim := player.get_animation(address)
+	if anim.has_meta(&"arms_held"):
+		return
+	anim.set_meta(&"arms_held", true)
+	var from := player.get_animation(swing)
+	var tracks := clip_tracks(from)
+	var arms := {}
+	for root_name in ["clavicle_l", "clavicle_r"]:
+		var root := sk.find_bone(root_name)
+		if root < 0:
+			continue
+		for bone in sk.get_bone_count():
+			var b := bone
+			while b >= 0 and b != root:
+				b = sk.get_bone_parent(b)
+			if b == root:
+				arms[sk.get_bone_name(bone)] = true
+	for i in anim.get_track_count():
+		var bone_name := anim.track_get_path(i).get_concatenated_subnames()
+		if not arms.has(bone_name):
+			continue
+		var type := anim.track_get_type(i)
+		var at: int = tracks.get("%s %d" % [bone_name, type], -1)
+		if at < 0:
+			continue
+		for k in anim.track_get_key_count(i):
+			match type:
+				Animation.TYPE_ROTATION_3D:
+					anim.track_set_key_value(i, k, from.rotation_track_interpolate(at, 0.0))
+				Animation.TYPE_POSITION_3D:
+					anim.track_set_key_value(i, k, from.position_track_interpolate(at, 0.0))
 
 
 ## `node`'s transform relative to its ancestor `top`.
