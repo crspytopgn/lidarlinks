@@ -34,7 +34,7 @@ const METER_LINGER_S := 1.5
 ## A putt missed from inside this many metres (8 ft) gets a slump.
 const SLUMP_PUTT := 2.5
 const COMPUTER_HOLE_PAUSE := 4.0  ## between holes when nobody is at the keyboard
-const HINT_AIM := "Left/Right or right-click: aim (Shift: fine)    Up/Down: club    Q/E/W/S or click the ball: spin    %s    Y: view target    D: drop    Tab: scorecard    I: details%s    Esc: menu"
+const HINT_AIM := "Left/Right or right-drag: aim (Shift: fine), right-click: aim there    Up/Down: club    Q/E/W/S or click the ball: spin    %s    Y: view target    D: drop    Tab: scorecard    I: details%s    Esc: menu"
 ## The object viewer needs the game folder, which browsers can't read.
 const HINT_OBJECTS := "    O: objects"
 const HINT_AIM_METER := "3-click swing: Space or click    K: use the mouse swing"
@@ -355,6 +355,11 @@ var _orbit_fingers := {}
 var _orbit_pinch := 0.0
 ## Degrees of turn per pixel dragged.
 const ORBIT_DEG_PER_PX := 0.25
+## Right-drag aiming (_click_aim_input): held, how far it has moved before
+## it turns the aim, and where it was pressed.
+var _aim_drag := false
+var _aim_drag_px := 0.0
+var _aim_drag_from := Vector2.ZERO
 var practice: PuttingPractice  ## the putting green (RoundSetup.putting); null otherwise
 var practice_cups: PracticeCups
 var _chip_count := 0  ## balls chipped so far (RoundSetup.chipping), for the next spot
@@ -1496,16 +1501,32 @@ func _mouse_swing_input(event: InputEvent) -> bool:
 
 ## Right-click on the course, or a click on the Tour hole map: aim at that
 ## spot and take the club that reaches it (ClickAim). Putts only turn the
-## aim.
+## aim. Holding the right button and dragging instead turns the aim finely
+## and smoothly, a little for each pixel (ClickAim.drag_turn_deg; Shift for
+## finer still), with no jump to the spot under the mouse.
 func _click_aim_input(event: InputEvent) -> bool:
+	if event is InputEventMouseMotion:
+		return _aim_drag_motion(event as InputEventMouseMotion)
 	if not event is InputEventMouseButton:
 		return false
 	var mb := event as InputEventMouseButton
-	if not mb.pressed or mb.device == InputEvent.DEVICE_ID_EMULATION:
+	if mb.device == InputEvent.DEVICE_ID_EMULATION:
+		return false
+	if mb.button_index == MOUSE_BUTTON_RIGHT and not mb.pressed:
+		if not _aim_drag:
+			return false
+		_aim_drag = false
+		# A click with no drag: aim at the spot clicked, as before.
+		if _aim_drag_px < ClickAim.DRAG_DEAD_PX and _can_click_aim():
+			_aim_at_screen(_aim_drag_from)
+		else:
+			_clear_gallery_line()
+		return true
+	if not mb.pressed:
 		return false
 	if mb.button_index != MOUSE_BUTTON_RIGHT and mb.button_index != MOUSE_BUTTON_LEFT:
 		return false
-	if state != State.AIM or _replaying or camera.flying() or opponents[shooter] != null:
+	if not _can_click_aim():
 		return false
 	if tour:
 		var local := hud.tour.make_input_local(mb) as InputEventMouseButton
@@ -1516,14 +1537,44 @@ func _click_aim_input(event: InputEvent) -> bool:
 			return true
 	if mb.button_index != MOUSE_BUTTON_RIGHT:
 		return false
+	_aim_drag = true
+	_aim_drag_px = 0.0
+	_aim_drag_from = mb.position
+	return true
+
+
+## Whether a right-click or right-drag may aim now: the player's own shot,
+## lining it up.
+func _can_click_aim() -> bool:
+	return state == State.AIM and not _replaying and not camera.flying() and opponents[shooter] == null
+
+
+## The mouse moving with the right button held: once past a few pixels
+## (so a click with a shaky hand still aims at its spot), each pixel turns
+## the aim a little.
+func _aim_drag_motion(mm: InputEventMouseMotion) -> bool:
+	if not _aim_drag:
+		return false
+	if not _can_click_aim() or not (mm.button_mask & MOUSE_BUTTON_MASK_RIGHT):
+		_aim_drag = false
+		return false
+	var dx := mm.screen_relative.x
+	if _aim_drag_px < ClickAim.DRAG_DEAD_PX:
+		_aim_drag_px += mm.screen_relative.length()
+		return true
+	_turn_aim(ClickAim.drag_turn_deg(dx, clubs[club_index].is_putter, Input.is_key_pressed(KEY_SHIFT)))
+	return true
+
+
+## Aims at the course spot under screen point `at`; a click on the sky does
+## nothing.
+func _aim_at_screen(at: Vector2) -> void:
 	var cam := get_viewport().get_camera_3d()
 	if cam == null:
-		return false
-	var hit: Variant = ClickAim.ray_ground(hole.terrain, cam.project_ray_origin(mb.position), cam.project_ray_normal(mb.position))
-	if hit == null:
-		return true
-	aim_at(hit as Vector3)
-	return true
+		return
+	var hit: Variant = ClickAim.ray_ground(hole.terrain, cam.project_ray_origin(at), cam.project_ray_normal(at))
+	if hit != null:
+		aim_at(hit as Vector3)
 
 
 ## Aims at `spot`, and away from the green takes the club whose full swing
@@ -1705,12 +1756,7 @@ func _touch_aim(at: Vector2) -> void:
 			var xz := on_map as Vector2
 			aim_at(Vector3(xz.x, hole.terrain.height_at(xz.x, xz.y), xz.y))
 			return
-	var cam := get_viewport().get_camera_3d()
-	if cam == null:
-		return
-	var hit: Variant = ClickAim.ray_ground(hole.terrain, cam.project_ray_origin(at), cam.project_ray_normal(at))
-	if hit != null:
-		aim_at(hit as Vector3)
+	_aim_at_screen(at)
 
 
 ## A finger on a touch screen. The swing starts only from the Swing button
@@ -2398,12 +2444,19 @@ func _process_aim(delta: float) -> void:
 	if KeyRemap.held(KEY_RIGHT, "ui_right"):
 		turn -= 1.0
 	if turn == 0.0:
-		_clear_gallery_line()
+		if not _aim_drag:
+			_clear_gallery_line()
 		return
 	var rate := PUTT_AIM_RATE_DEG if clubs[club_index].is_putter else AIM_RATE_DEG
 	if Input.is_key_pressed(KEY_SHIFT) or _pad_held(JOY_BUTTON_LEFT_SHOULDER):
 		rate *= 0.2
-	aim_deg = wrapf(aim_deg + turn * rate * delta, -180.0, 180.0)
+	_turn_aim(turn * rate * delta)
+
+
+## Turns the aim `deg` degrees (positive to the golfer's left) and moves the
+## golfer, the aim marker, the HUD and the camera with it.
+func _turn_aim(deg: float) -> void:
+	aim_deg = wrapf(aim_deg + deg, -180.0, 180.0)
 	_place_golfer()
 	_update_aim_marker()
 	_update_hud()

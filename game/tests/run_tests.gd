@@ -5010,6 +5010,10 @@ func _test_click_aim() -> void:
 	var reaches: Array[float] = [230.0, 200.0, 150.0, 100.0, -1.0]
 	_check(ClickAim.club_for(reaches, 140.0) == 2 and ClickAim.club_for(reaches, 300.0) == 0
 			and ClickAim.club_for(reaches, 10.0) == 3, "the shortest club that gets there, never the putter")
+	_check(ClickAim.drag_turn_deg(100.0, false, false) < 0.0 and absf(ClickAim.drag_turn_deg(100.0, false, false) + 4.0) < 0.001,
+			"dragging right 100 px turns the aim 4 degrees right")
+	_check(absf(ClickAim.drag_turn_deg(-100.0, true, false) - 1.5) < 0.001
+			and absf(ClickAim.drag_turn_deg(-100.0, true, true) - 0.375) < 0.001, "putts turn finer, and Shift finer still")
 	var game := _game
 	if not game.is_node_ready():
 		return
