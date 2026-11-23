@@ -17,6 +17,15 @@ var hint: Label
 var _hint_relabelled := ""
 var meter: SwingMeter
 var mouse_swing: MouseSwingControl
+## The first time with the mouse (finger, stick) swing: how it goes.
+var swing_guide: SwingGuide
+## The mouse swing's tall meter is up (aiming with it, or swinging): the
+## three-click meter steps aside and "View target" takes its place.
+var mouse_meter := false:
+	set(v):
+		if v != mouse_meter:
+			mouse_meter = v
+			_place_target_button()
 ## Aim, club and menu buttons on a touch screen (hidden elsewhere).
 var touch_pad: TouchPad
 var swing_button: TouchPad.SwingButton
@@ -94,6 +103,8 @@ func _ready() -> void:
 
 	mouse_swing = MouseSwingControl.new()
 	add_child(mouse_swing)
+	swing_guide = SwingGuide.new()
+	add_child(swing_guide)
 
 	touch_pad = TouchPad.new()
 	var pad := Vector2(TouchPad.SIZE * 2 + TouchPad.GAP, TouchPad.SIZE * 3 + TouchPad.GAP * 2)
@@ -255,7 +266,10 @@ func _place_target_button() -> void:
 	if target_button == null:
 		return
 	var s := TargetButton.SIZE
-	if meter.anchor_left == 1.0:
+	if mouse_meter and meter.anchor_left == 1.0:
+		# The three-click meter is away: down to where it sat.
+		_place(target_button, Control.PRESET_BOTTOM_RIGHT, Rect2(meter.offset_right - s.x, meter.offset_bottom - s.y, s.x, s.y))
+	elif meter.anchor_left == 1.0:
 		_place(target_button, Control.PRESET_BOTTOM_RIGHT, Rect2(meter.offset_right - s.x, meter.offset_top - s.y - 12.0, s.x, s.y))
 	else:
 		_place(target_button, Control.PRESET_BOTTOM_RIGHT, Rect2(-s.x - 24.0, -s.y - 44.0, s.x, s.y))
@@ -349,6 +363,78 @@ func show_sound_caption(text: String, seconds := 2.5) -> void:
 
 
 ## Anchors `c` to a corner or edge, then offsets it by `r` from that anchor.
+## Where the mouse swing's meter can go: a column down the right of the
+## screen clear of the wind, the spin ball, Tour's hole map and
+## leaderboard, the caddie, "View target" and the rest; down the left edge
+## when the right has too little room, and only then further in.
+func mouse_meter_room() -> Rect2:
+	var vs := get_viewport_rect().size
+	var top := 50.0 if broadcast else 12.0
+	var bottom := vs.y - (200.0 if tour.visible else (100.0 if broadcast else 20.0))
+	var blocks: Array[Rect2] = []
+	for c: Control in [wind, spin, target_button, swing_button, windows, shot_panel, meter, touch_pad]:
+		if c != null and c.is_visible_in_tree():
+			blocks.append(c.get_global_rect())
+	for c in get_children():
+		if c is CaddieNote and (c as Control).is_visible_in_tree():
+			blocks.append((c as Control).get_global_rect())
+	if tour.visible:
+		for r: Rect2 in [tour.map_rect(), tour.rail_rect()]:
+			if r.has_area():
+				blocks.append(Rect2(tour.get_global_transform() * r.position, r.size))
+	return room_for(vs, top, bottom, blocks)
+
+
+## The column (see mouse_meter_room) on a `screen` this size between `top`
+## and `bottom`, clear of `blocks`.
+static func room_for(screen: Vector2, top: float, bottom: float, blocks: Array[Rect2]) -> Rect2:
+	var want := screen.y * MouseSwingControl.METER_SHARE
+	var w := MouseSwingControl.column_width(want)
+	var need := minf(want, (bottom - top) * 0.8) * 0.65 + MouseSwingControl.LABEL_H
+	var right_gap := _gap_down(Rect2(screen.x - 16.0 - w, top, w, bottom - top), blocks)
+	if right_gap.size.y >= need:
+		return right_gap
+	var left_gap := _gap_down(Rect2(16.0, top, w, bottom - top), blocks)
+	if left_gap.size.y >= need:
+		return left_gap
+	var best := right_gap if right_gap.size.y >= left_gap.size.y else left_gap
+	var right := screen.x - 16.0
+	for attempt in 4:
+		var left := right
+		for b in blocks:
+			if b.position.x < right and b.end.x > right - w and b.end.y > top and b.position.y < bottom:
+				left = minf(left, b.position.x)
+		if left >= right:
+			break
+		right = left - 12.0
+		if right - w < screen.x * 0.4:
+			break
+		var gap := _gap_down(Rect2(right - w, top, w, bottom - top), blocks)
+		if gap.size.y >= need:
+			return gap
+		if gap.size.y > best.size.y:
+			best = gap
+	return best
+
+
+## The tallest stretch of `col` that none of `blocks` covers.
+static func _gap_down(col: Rect2, blocks: Array[Rect2]) -> Rect2:
+	var in_way: Array[Rect2] = []
+	for b in blocks:
+		if b.position.x < col.end.x and b.end.x > col.position.x and b.end.y > col.position.y and b.position.y < col.end.y:
+			in_way.append(b)
+	in_way.sort_custom(func(a: Rect2, b: Rect2) -> bool: return a.position.y < b.position.y)
+	var y := col.position.y
+	var gap := Rect2()
+	for b in in_way:
+		if b.position.y - y > gap.size.y:
+			gap = Rect2(col.position.x, y, col.size.x, b.position.y - y)
+		y = maxf(y, b.end.y)
+	if col.end.y - y > gap.size.y:
+		gap = Rect2(col.position.x, y, col.size.x, col.end.y - y)
+	return gap.grow_individual(0, -8.0, 0, -8.0)
+
+
 func _place(c: Control, preset: Control.LayoutPreset, r: Rect2) -> void:
 	c.set_anchors_preset(preset)
 	c.offset_left = r.position.x

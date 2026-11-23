@@ -30,6 +30,26 @@ var target := -1.0:
 		target = v
 		queue_redraw()
 var club: LinksMouse.MouseClub = null
+## Where on screen the meter may go (the HUD keeps it clear of its other
+## pieces); empty: the right of the screen, half way down.
+var area := Rect2():
+	set(v):
+		if v != area:
+			area = v
+			queue_redraw()
+## While aiming with the mouse swing: the empty meter, so the player sees
+## which swing is in hand before pressing the button.
+var idle := false:
+	set(v):
+		if v != idle:
+			idle = v
+			queue_redraw()
+## SwingGuide's demonstration club, 0 to 1 up the backswing; below 0 none.
+var ghost := -1.0:
+	set(v):
+		if v != ghost:
+			ghost = v
+			queue_redraw()
 var _rng := LinksLaunch.Rand.new(randi())
 var _pending := Vector2.ZERO  ## mouse movement not yet given to a frame
 var _clock := 0.0
@@ -152,17 +172,44 @@ func target_height() -> float:
 	return club.meter.ball_line + b * (club._top - club.meter.ball_line)
 
 
+## Room above the meter for its percentage, and either side of it for the
+## club's sideways drift.
+const LABEL_H := 30.0
+const SIDE := 2.6
+
+
 ## The meter's rectangle on screen and its pixels per game meter pixel.
 func meter_rect() -> Rect2:
 	var vh := get_viewport_rect().size.y if is_inside_tree() else 600.0
 	var vw := get_viewport_rect().size.x if is_inside_tree() else 800.0
-	var h := vh * METER_SHARE
+	return rect_in(Vector2(vw, vh), area)
+
+
+## The meter's rectangle on a `screen` this size, inside `room` (or, with
+## no room given, at the right of the screen half way down).
+static func rect_in(screen: Vector2, room: Rect2) -> Rect2:
+	var h := screen.y * METER_SHARE
+	if room.size.y <= 0.0:
+		var w0 := h * 0.12
+		return Rect2(screen.x - w0 - screen.x * 0.06, (screen.y - h) * 0.5, w0, h)
+	h = minf(h, room.size.y - LABEL_H - 8.0)
+	h = maxf(h, 60.0)
 	var w := h * 0.12
-	return Rect2(vw - w - vw * 0.06, (vh - h) * 0.5, w, h)
+	var x := room.end.x - w * SIDE
+	var y := room.position.y + LABEL_H + (room.size.y - LABEL_H - h) * 0.5
+	return Rect2(x, y, w, h)
+
+
+## How wide a column the meter takes, drift and labels included, for a
+## meter `h` pixels tall.
+static func column_width(h: float) -> float:
+	return h * 0.12 * (SIDE * 2.0 - 1.0) + 24.0
 
 
 func _draw() -> void:
 	if club == null:
+		if idle:
+			_draw_idle()
 		return
 	var r := meter_rect()
 	var px := r.size.y / club.meter.height
@@ -193,3 +240,32 @@ func _draw() -> void:
 	var at := Vector2(r.position.x - 4, r.position.y - 12)
 	draw_string_outline(font, at, text, HORIZONTAL_ALIGNMENT_LEFT, -1, 18, 4, Color(0, 0, 0, 0.8))
 	draw_string(font, at, text, HORIZONTAL_ALIGNMENT_LEFT, -1, 18)
+
+
+## The meter before the button goes down: the track, the ball line and the
+## top, fainter, and "Mouse swing" over it; SwingGuide's ghost club moving
+## on it the first time.
+func _draw_idle() -> void:
+	var r := meter_rect()
+	var width := 1920
+	if is_inside_tree() and DisplayServer.window_get_size().x > 0:
+		width = DisplayServer.window_get_size().x
+	var m := LinksMouse.meter_for(width)
+	var px := r.size.y / m.height
+	var ball_y := r.end.y - m.ball_line * px
+	var top_y := r.end.y - (m.height - 10) * px
+	draw_rect(r.grow(3), Color(0, 0, 0, 0.3))
+	draw_rect(r, Color(1, 1, 1, 0.08))
+	draw_rect(r, Color(1, 1, 1, 0.45), false, 1.5)
+	draw_line(Vector2(r.position.x - 6, top_y), Vector2(r.end.x + 6, top_y), Color(1, 1, 1, 0.35), 1.5)
+	draw_line(Vector2(r.position.x - 10, ball_y), Vector2(r.end.x + 10, ball_y), Color(1, 1, 1, 0.8), 2.0)
+	if ghost >= 0.0:
+		var gy := lerpf(ball_y, top_y, ghost)
+		draw_rect(Rect2(r.position.x, gy, r.size.x, ball_y - gy), Color(1.0, 0.82, 0.25, 0.28))
+		draw_rect(Rect2(r.position.x - 4, gy - 3, r.size.x + 8, 6), Color(1, 1, 1, 0.75))
+	var font := GlassTheme.font(600)
+	var text := "MOUSE SWING"
+	var tw := font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, 11).x
+	var at := Vector2(r.get_center().x - tw * 0.5, r.position.y - 12)
+	draw_string_outline(font, at, text, HORIZONTAL_ALIGNMENT_LEFT, -1, 11, 3, Color(0, 0, 0, 0.6))
+	draw_string(font, at, text, HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color(1, 1, 1, 0.8))
