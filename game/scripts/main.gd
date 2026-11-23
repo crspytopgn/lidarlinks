@@ -2388,9 +2388,24 @@ func _update_mouse_meter(paused: bool) -> void:
 	var kind := _guide_kind()
 	if ms.is_swinging() or (kind != SwingGuide.Kind.TOUCH and graphics.swing_method == 1 and hud.meter.phase == SwingMeter.Phase.IDLE):
 		hud.meter.visible = false
+	ms.putt = club_index < clubs.size() and clubs[club_index].is_putter
 	ms.idle = aiming and not ms.is_swinging() and kind != SwingGuide.Kind.TOUCH \
 		and (graphics.swing_method == 1 or kind == SwingGuide.Kind.STICK)
 	hud.mouse_meter = ms.idle or ms.is_swinging()
+	# The green read panel (only up for putts) steps left for the meter's
+	# column, as "View target" drops into the three-click meter's place, so
+	# long as it stays clear of the middle of the picture, the ball and the
+	# line to the hole; otherwise the meter fits above or below it.
+	var aside := 0.0
+	var vs := get_viewport().get_visible_rect().size
+	if hud.mouse_meter:
+		aside = MouseSwingControl.column_width(vs.y * MouseSwingControl.METER_SHARE)
+		if vs.x - 16.0 - aside - PuttingPanel.WIDTH < vs.x * 0.56:
+			aside = 0.0
+	putting_panel.offset_right = -16.0 - aside
+	putting_panel.offset_left = putting_panel.offset_right - PuttingPanel.WIDTH
+	if putting_panel.visible:
+		_lift_putting_panel()
 	if ms.idle:
 		# Kept still through the swing, as the spin ball and the rest hide.
 		ms.area = hud.mouse_meter_room()
@@ -2403,7 +2418,7 @@ func _update_mouse_meter(paused: bool) -> void:
 		var at := ms.meter_rect()
 		if kind == SwingGuide.Kind.TOUCH:
 			at = hud.swing_button.get_global_rect()
-		guide.show_for(kind, at)
+		guide.show_for(kind, at, hud.pieces_showing())
 	else:
 		guide.hide_guide()
 	ms.ghost = guide.ghost() if ms.idle else -1.0
@@ -5128,12 +5143,14 @@ func _update_green_aids() -> void:
 func _update_putt_scale() -> void:
 	if not hud.meter.modern or not _putting_on_green() or shot_model == null:
 		hud.meter.set_putt_scale(PackedFloat32Array(), -1.0)
+		hud.mouse_swing.set_putt_scale(PackedFloat32Array(), -1.0)
 		_putt_scale_from = Vector3.INF
 		_putt_range = 1.0
 		return
 	var hole_ft := Vector2(hole.pin.x - ball_at.x, hole.pin.z - ball_at.z).length() * LinksLaunch.FEET_PER_METRE
 	if _putt_scale_from.is_equal_approx(ball_at):
 		hud.meter.set_putt_scale(hud.meter.putt_feet, hole_ft)
+		hud.mouse_swing.set_putt_scale(hud.mouse_swing.putt_feet, hole_ft)
 		return
 	_putt_scale_from = ball_at
 	# 21 putts on a level green: the same wherever the ball is, so worked
@@ -5145,6 +5162,8 @@ func _update_putt_scale() -> void:
 	var full: PackedFloat32Array = _putt_scales[key]
 	_putt_range = putt_range_for(full, hole_ft) if graphics.quick_pace else 1.0
 	hud.meter.set_putt_scale(rescale_roll(full, _putt_range), hole_ft)
+	# The mouse putt isn't sized to the putt: the full meter's scale.
+	hud.mouse_swing.set_putt_scale(full, hole_ft)
 
 
 ## Quick pace's putting meters, as shares of the full meter's power: the
@@ -5369,13 +5388,19 @@ func _update_putting_panel() -> void:
 
 ## The panel grows a row in the read views; it steps up rather than run
 ## over the putt meter below it (it did, hiding the meter's labels).
+## With the mouse swing's meter up, "View target" sits in the three-click
+## meter's place and the panel keeps clear of it the same way.
 func _lift_putting_panel() -> void:
 	var m := hud.meter
-	if m == null or not m.visible or not m.modern:
+	var meter_top := INF
+	if m != null and m.visible and m.modern:
+		meter_top = m.position.y
+	if hud.mouse_meter and hud.target_button.visible:
+		meter_top = minf(meter_top, hud.target_button.position.y)
+	if meter_top == INF:
 		return
 	var top := putting_panel.offset_top
 	var tall := putting_panel.get_combined_minimum_size().y
-	var meter_top := m.position.y
 	if meter_top > top and top + tall > meter_top - 10.0:
 		putting_panel.offset_top = maxf(PUTTING_PANEL_TOP, meter_top - 10.0 - tall)
 

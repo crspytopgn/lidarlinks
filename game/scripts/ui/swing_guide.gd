@@ -102,8 +102,9 @@ func showing() -> bool:
 	return visible
 
 
-## Shows the guide for `which` beside the meter at `meter` (screen pixels).
-func show_for(which: Kind, meter: Rect2) -> void:
+## Shows the guide for `which` beside the meter at `meter` (screen pixels),
+## off the HUD pieces in `avoid` where it can be.
+func show_for(which: Kind, meter: Rect2, avoid: Array[Rect2] = []) -> void:
 	if not visible or which != kind:
 		_t = 0.0
 	kind = which
@@ -113,15 +114,40 @@ func show_for(which: Kind, meter: Rect2) -> void:
 	var x := meter.position.x - w - 40.0
 	if meter.get_center().x < screen.x * 0.5:  # the meter is down the left: the card to its right
 		x = meter.end.x + 48.0
-	var y := clampf(meter.get_center().y - h * 0.5, 8.0, maxf(8.0, screen.y - h - 8.0))
+	var y := meter.get_center().y - h * 0.5
 	if x < 8.0 or x + w > screen.x - 8.0:  # a narrow screen: above the meter instead
 		x = maxf(8.0, meter.end.x - w)
-		y = maxf(8.0, meter.position.y - h - 36.0)
-	position = Vector2(x, y)
+		y = meter.position.y - h - 36.0
+	position = Vector2(x, place_y(Rect2(x, y, w, h), screen.y, avoid))
 	size = Vector2(w, h)
 	visible = true
 	_button.position = Vector2(w - _button.get_combined_minimum_size().x - 14.0, h - 40.0)
 	_button.size = _button.get_combined_minimum_size()
+
+
+## The card's top: where `card` asks, or the nearest height on a screen
+## `screen_h` tall where it misses everything in `avoid` (just above or
+## below one of them); where it asks if nowhere is clear.
+static func place_y(card: Rect2, screen_h: float, avoid: Array[Rect2]) -> float:
+	var lo := 8.0
+	var hi := maxf(lo, screen_h - card.size.y - 8.0)
+	var tries: Array[float] = [clampf(card.position.y, lo, hi)]
+	for b in avoid:
+		tries.append(b.position.y - card.size.y - 8.0)
+		tries.append(b.end.y + 8.0)
+	tries.sort_custom(func(a: float, b: float) -> bool: return absf(a - card.position.y) < absf(b - card.position.y))
+	for y in tries:
+		if y < lo or y > hi:
+			continue
+		var r := Rect2(card.position.x, y, card.size.x, card.size.y)
+		var clear := true
+		for b in avoid:
+			if r.intersects(b):
+				clear = false
+				break
+		if clear:
+			return y
+	return tries[0] if tries[0] >= lo and tries[0] <= hi else clampf(card.position.y, lo, hi)
 
 
 func hide_guide() -> void:

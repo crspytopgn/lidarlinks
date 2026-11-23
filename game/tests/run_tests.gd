@@ -7223,4 +7223,24 @@ func _test_swing_guide() -> void:
 	_check(tour_room.end.x < screen.x * 0.5 and tr.size.y > 150.0, "down the left in Tour (%s)" % tour_room)
 	for b: Rect2 in tour_blocks:
 		_check(not tour_room.intersects(b), "clear of %s in Tour" % b)
+	# The card moves up off the green read panel rather than over it.
+	var panel := Rect2(605, 372, 470, 172)
+	var y := SwingGuide.place_y(Rect2(731, 314, 390, 214), 720.0, [panel] as Array[Rect2])
+	_check(not Rect2(731, y, 390, 214).intersects(panel) and y >= 8.0, "the guide card misses the green read (y %.0f)" % y)
+	# The mouse putt's distance scale: further putts sit higher up the
+	# backswing, and the assistant's mark agrees with it.
+	var feet := PackedFloat32Array()
+	for i in 21:
+		feet.append(i * 4.0)  # 80 ft for the full putt
+	var m := LinksMouse.meter_for(1920)
+	var h10 := MouseSwingControl.putt_height(MouseSwingControl.share_for_feet(feet, 10.0), m)
+	var h30 := MouseSwingControl.putt_height(MouseSwingControl.share_for_feet(feet, 30.0), m)
+	_check(h10 > m.ball_line and h30 > h10 and h30 <= m.height - 10, "a 30 ft putt needs a longer backswing than 10 ft (%.0f, %.0f)" % [h10, h30])
+	_check_near(MouseSwingControl.share_for_feet(feet, 30.0), 0.375, 0.001, "30 ft of 80")
+	_check(MouseSwingControl.share_for_feet(feet, 90.0) < 0.0, "past the scale: no share")
+	var ms := MouseSwingControl.new()
+	ms.putt = true
+	ms.target = 0.375
+	_check_near(ms.target_height(), h30, 0.01, "the assistant's mark on the empty putting meter")
+	ms.free()
 	_check(is_equal_approx(MouseSwingControl.rect_in(screen, Rect2()).size.y, screen.y * MouseSwingControl.METER_SHARE), "with no room given it sits as before")

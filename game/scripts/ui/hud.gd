@@ -363,25 +363,42 @@ func show_sound_caption(text: String, seconds := 2.5) -> void:
 
 
 ## Anchors `c` to a corner or edge, then offsets it by `r` from that anchor.
+## Screen rectangles of the HUD pieces showing: every panel, button and
+## line of text (the putting panel and caddie notes too), the broadcast
+## glass panels and Tour's map and leaderboard, but not the whole-screen
+## layers or what is drawn round the mouse meter.
+func pieces_showing() -> Array[Rect2]:
+	var vs := get_viewport_rect().size
+	var blocks: Array[Rect2] = []
+	var skip: Array[Node] = [mouse_swing, swing_guide, overlay, tour, aim_reticle, badge, scorecard, hand_over]
+	for n in get_children():
+		var c := n as Control
+		if c == null or c in skip or not c.is_visible_in_tree():
+			continue
+		if c is Label and (c as Label).text.is_empty():
+			continue
+		var r := c.get_global_rect()
+		if r.has_area() and r.get_area() < vs.x * vs.y * 0.5:
+			blocks.append(r)
+	if overlay.visible:
+		for r in overlay.panels:
+			blocks.append(Rect2(overlay.get_global_transform() * r.position, r.size))
+	if tour.visible:
+		for r: Rect2 in [tour.map_rect(), tour.rail_rect()]:
+			if r.has_area():
+				blocks.append(Rect2(tour.get_global_transform() * r.position, r.size))
+	return blocks
+
+
 ## Where the mouse swing's meter can go: a column down the right of the
 ## screen clear of the wind, the spin ball, Tour's hole map and
-## leaderboard, the caddie, "View target" and the rest; down the left edge
+## leaderboard, the caddie, the green read, "View target" and the rest; down the left edge
 ## when the right has too little room, and only then further in.
 func mouse_meter_room() -> Rect2:
 	var vs := get_viewport_rect().size
 	var top := 50.0 if broadcast else 12.0
 	var bottom := vs.y - (200.0 if tour.visible else (100.0 if broadcast else 20.0))
-	var blocks: Array[Rect2] = []
-	for c: Control in [wind, spin, target_button, swing_button, windows, shot_panel, meter, touch_pad]:
-		if c != null and c.is_visible_in_tree():
-			blocks.append(c.get_global_rect())
-	for c in get_children():
-		if c is CaddieNote and (c as Control).is_visible_in_tree():
-			blocks.append((c as Control).get_global_rect())
-	if tour.visible:
-		for r: Rect2 in [tour.map_rect(), tour.rail_rect()]:
-			if r.has_area():
-				blocks.append(Rect2(tour.get_global_transform() * r.position, r.size))
+	var blocks := pieces_showing()
 	return room_for(vs, top, bottom, blocks)
 
 
@@ -390,7 +407,7 @@ func mouse_meter_room() -> Rect2:
 static func room_for(screen: Vector2, top: float, bottom: float, blocks: Array[Rect2]) -> Rect2:
 	var want := screen.y * MouseSwingControl.METER_SHARE
 	var w := MouseSwingControl.column_width(want)
-	var need := minf(want, (bottom - top) * 0.8) * 0.65 + MouseSwingControl.LABEL_H
+	var need := minf(want, (bottom - top) * 0.8) * 0.45 + MouseSwingControl.LABEL_H
 	var right_gap := _gap_down(Rect2(screen.x - 16.0 - w, top, w, bottom - top), blocks)
 	if right_gap.size.y >= need:
 		return right_gap

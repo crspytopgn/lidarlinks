@@ -44,6 +44,14 @@ var idle := false:
 		if v != idle:
 			idle = v
 			queue_redraw()
+## The putter is in hand (for the empty meter; a swing knows its own).
+var putt := false:
+	set(v):
+		if v != putt:
+			putt = v
+			queue_redraw()
+var putt_feet := PackedFloat32Array()
+var hole_feet := -1.0
 ## SwingGuide's demonstration club, 0 to 1 up the backswing; below 0 none.
 var ghost := -1.0:
 	set(v):
@@ -162,14 +170,99 @@ func _describe(m: LinksMouse.Stroke) -> String:
 
 
 ## The meter height (game pixels) of the Putting Assistant's mark: where the
-## backswing reads the putt's power. A full backswing gives
-## PUTT_FULL_SHARE of the meter's full putt, and the putt's reading is (2 + b) b / 3 of
-## the backswing b, so b = sqrt(1 + 3 p) - 1. Below 0: no mark (no putt).
+## backswing reads the putt's power. Below 0: no mark (no putt).
 func target_height() -> float:
-	if club == null or target < 0.0 or club._shot != LinksMouse.Shot.PUTT:
+	if target < 0.0 or not _putting():
 		return -1.0
-	var b := sqrt(1.0 + 3.0 * clampf(target / PUTT_FULL_SHARE, 0.0, 1.0)) - 1.0
-	return club.meter.ball_line + b * (club._top - club.meter.ball_line)
+	return putt_height(target, _meter())
+
+
+## The meter height (game pixels) the backswing must reach for a putt of
+## `share` of the meter's full putt (ShotModel power). A full backswing
+## gives PUTT_FULL_SHARE of it, and the putt's reading is (2 + b) b / 3 of
+## the backswing b, so b = sqrt(1 + 3 p) - 1.
+static func putt_height(share: float, m: LinksMouse.Meter) -> float:
+	var b := sqrt(1.0 + 3.0 * clampf(share / PUTT_FULL_SHARE, 0.0, 1.0)) - 1.0
+	var top := m.height - 10.0
+	return m.ball_line + b * (top - m.ball_line)
+
+
+## The share of the full putt that rolls `feet` on the level, by a scale
+## of feet at shares 0, 1/20 ... 1 (SwingMeter.putt_feet with the full
+## meter); below 0 past its end.
+static func share_for_feet(scale: PackedFloat32Array, feet: float) -> float:
+	for i in range(1, scale.size()):
+		if scale[i] >= feet:
+			var a := scale[i - 1]
+			var t := 0.0 if scale[i] <= a else (feet - a) / (scale[i] - a)
+			return (i - 1 + clampf(t, 0.0, 1.0)) / float(scale.size() - 1)
+	return -1.0
+
+
+## The putting distance scale beside the meter (Broadcast and Tour, as the
+## three-click putting meter has): feet a putt rolls on a level green, by
+## the round's physics, at shares of the full putt; empty for none. And
+## the hole's distance in feet, below 0 for none.
+func set_putt_scale(feet: PackedFloat32Array, hole_ft: float) -> void:
+	if feet == putt_feet and is_equal_approx(hole_ft, hole_feet):
+		return
+	putt_feet = feet
+	hole_feet = hole_ft
+	queue_redraw()
+
+
+func _putting() -> bool:
+	if club != null:
+		return club._shot == LinksMouse.Shot.PUTT
+	return putt
+
+
+## The game's meter for this screen: the swing's own, or the one it will get.
+func _meter() -> LinksMouse.Meter:
+	if club != null:
+		return club.meter
+	var width := 1920
+	if is_inside_tree() and DisplayServer.window_get_size().x > 0:
+		width = DisplayServer.window_get_size().x
+	return LinksMouse.meter_for(width)
+
+
+## The feet marks and the hole's flag beside the meter for a putt.
+func _draw_feet(r: Rect2, m: LinksMouse.Meter) -> void:
+	if not _putting() or putt_feet.size() < 2:
+		return
+	var px := r.size.y / m.height
+	var y_of := func(meter_px: float) -> float: return r.end.y - meter_px * px
+	var reach := minf(PUTT_FULL_SHARE, 1.0)
+	var x := reach * (putt_feet.size() - 1)
+	var i0 := mini(int(x), putt_feet.size() - 2)
+	var top_ft := lerpf(putt_feet[i0], putt_feet[i0 + 1], x - i0)
+	var step := 5.0 if top_ft <= 60.0 else 10.0
+	var label_every := 10.0 if top_ft <= 60.0 else 20.0
+	var small := GlassTheme.font(600)
+	var last_label := INF
+	var ft := step
+	while ft <= top_ft:
+		var share := share_for_feet(putt_feet, ft)
+		if share >= 0.0:
+			var y: float = y_of.call(putt_height(share, m))
+			var big := is_zero_approx(fmod(ft, label_every))
+			draw_line(Vector2(r.position.x - (9.0 if big else 6.0), y), Vector2(r.position.x - 2.0, y), Color(1, 1, 1, 0.6 if big else 0.32), 1.0, true)
+			if big and last_label - y > 14.0:
+				var text := "%d'" % roundi(ft)
+				var tw := small.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, 11).x
+				draw_string_outline(small, Vector2(r.position.x - 12.0 - tw, y + 4.0), text, HORIZONTAL_ALIGNMENT_LEFT, -1, 11, 3, Color(0, 0, 0, 0.5))
+				draw_string(small, Vector2(r.position.x - 12.0 - tw, y + 4.0), text, HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color(1, 1, 1, 0.7))
+				last_label = y
+		ft += step
+	if hole_feet >= 0.0:
+		var hs := share_for_feet(putt_feet, hole_feet)
+		var hy: float = y_of.call(putt_height(hs if hs >= 0.0 else 1.0, m))
+		# A thin pin with a small flag, to the right of the track.
+		var hx := r.end.x + 4.0
+		draw_line(Vector2(r.end.x, hy), Vector2(hx + 12.0, hy), Color(1, 1, 1, 0.85), 1.5, true)
+		draw_line(Vector2(hx + 12.0, hy), Vector2(hx + 12.0, hy - 14.0), Color(1, 1, 1, 0.85), 1.5, true)
+		draw_colored_polygon(PackedVector2Array([Vector2(hx + 12.0, hy - 14.0), Vector2(hx + 21.0, hy - 11.0), Vector2(hx + 12.0, hy - 8.0)]), SwingMeter.GOLD)
 
 
 ## Room above the meter for its percentage, and either side of it for the
@@ -230,6 +323,7 @@ func _draw() -> void:
 	var off := clampf(x / 18.0, -1.0, 1.0) * r.size.x * 1.5
 	var colour := Color(1, 0.3, 0.25) if absf(x) > 10.0 else Color.WHITE
 	draw_rect(Rect2(r.position.x - 4 + off, club_y - 3, r.size.x + 8, 6), colour)
+	_draw_feet(r, club.meter)
 	var mark := target_height()
 	if mark >= 0.0:
 		var my: float = y_of.call(mark)
@@ -247,10 +341,7 @@ func _draw() -> void:
 ## on it the first time.
 func _draw_idle() -> void:
 	var r := meter_rect()
-	var width := 1920
-	if is_inside_tree() and DisplayServer.window_get_size().x > 0:
-		width = DisplayServer.window_get_size().x
-	var m := LinksMouse.meter_for(width)
+	var m := _meter()
 	var px := r.size.y / m.height
 	var ball_y := r.end.y - m.ball_line * px
 	var top_y := r.end.y - (m.height - 10) * px
@@ -263,8 +354,14 @@ func _draw_idle() -> void:
 		var gy := lerpf(ball_y, top_y, ghost)
 		draw_rect(Rect2(r.position.x, gy, r.size.x, ball_y - gy), Color(1.0, 0.82, 0.25, 0.28))
 		draw_rect(Rect2(r.position.x - 4, gy - 3, r.size.x + 8, 6), Color(1, 1, 1, 0.75))
+	_draw_feet(r, m)
+	var mark := target_height()
+	if mark >= 0.0:
+		var my := r.end.y - mark * px
+		draw_circle(Vector2(r.position.x - 12, my), 5.0, Color(0.95, 0.15, 0.12))
+		draw_line(Vector2(r.position.x - 6, my), Vector2(r.end.x, my), Color(0.95, 0.15, 0.12, 0.8), 2.0)
 	var font := GlassTheme.font(600)
-	var text := "MOUSE SWING"
+	var text := "MOUSE PUTT" if putt else "MOUSE SWING"
 	var tw := font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, 11).x
 	var at := Vector2(r.get_center().x - tw * 0.5, r.position.y - 12)
 	draw_string_outline(font, at, text, HORIZONTAL_ALIGNMENT_LEFT, -1, 11, 3, Color(0, 0, 0, 0.6))
