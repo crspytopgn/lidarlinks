@@ -187,7 +187,7 @@ static func records_text(r: Dictionary) -> String:
 		var course := best_key.substr(0, best_key.rfind("|"))
 		parts.append("Best %d (%s) at %s" % [int(e.gross), Scorecard.format_to_par(int(e.to_par)), course])
 	if int(r.longest_drive_yd) > 0:
-		parts.append("Longest drive %d yd" % int(r.longest_drive_yd))
+		parts.append("Longest drive %s" % Units.from_yards(int(r.longest_drive_yd)))
 	var counts: Array[String] = []
 	for pair: Array in [["birdie", r.birdies], ["eagle", r.eagles], ["hole in one", r.aces]]:
 		var n := int(pair[1])
@@ -270,7 +270,7 @@ static func new_records(was: Dictionary, now: Dictionary, course_name: String, h
 	if not after.is_empty() and not before.is_empty() and int(after.get("gross", 0)) < int(before.get("gross", 0)):
 		out.append("New best at %s: %d (%s)" % [course_name, int(after.gross), Scorecard.format_to_par(int(after.to_par))])
 	if int(now.get("longest_drive_yd", 0)) > int(was.get("longest_drive_yd", 0)) and int(was.get("longest_drive_yd", 0)) > 0:
-		out.append("New longest drive: %d yd" % int(now.longest_drive_yd))
+		out.append("New longest drive: %s" % Units.from_yards(int(now.longest_drive_yd)))
 	if int(now.get("aces", 0)) > 0 and int(was.get("aces", 0)) == 0:
 		out.append("First hole in one!")
 	elif int(now.get("eagles", 0)) > 0 and int(was.get("eagles", 0)) == 0:

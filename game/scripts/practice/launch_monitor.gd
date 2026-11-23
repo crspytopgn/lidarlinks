@@ -77,14 +77,14 @@ static func side_text(v: float, unit := "") -> String:
 ## The shot's numbers as label and value pairs, in display order.
 static func rows(r: Reading) -> Array:
 	return [
-		["Ball speed", "%d mph" % roundi(r.ball_mph)],
+		["Ball speed", Units.speed(r.ball_mph)],
 		["Launch", "%.1f°" % r.launch_deg],
 		["Back spin", "%d rpm" % roundi(r.back_rpm)],
 		["Side spin", side_text(r.side_rpm, " rpm")],
-		["Carry", "%d yd" % roundi(r.carry_yd)],
-		["Total", "%d yd" % roundi(r.total_yd)],
-		["Offline", side_text(r.offline_yd, " yd")],
-		["Apex", "%d ft" % roundi(r.apex_ft)],
+		["Carry", Units.from_yards(r.carry_yd)],
+		["Total", Units.from_yards(r.total_yd)],
+		["Offline", side_text(Units.long_value(r.offline_yd / Units.YARDS_PER_METRE), " " + Units.long_unit())],
+		["Apex", Units.height(r.apex_ft / Units.FEET_PER_METRE)],
 		["Descent", "%d°" % roundi(r.descent_deg)],
 	]
 
@@ -122,5 +122,5 @@ class Session:
 		for r in shots:
 			spread += (r.offline_yd - mean_off) * (r.offline_yd - mean_off)
 		spread = sqrt(spread / n)
-		return "%d shot%s: carry %d yd, total %d yd, spread %d yd" % [
-			shots.size(), "" if shots.size() == 1 else "s", roundi(carry / n), roundi(total / n), roundi(spread)]
+		return "%d shot%s: carry %s, total %s, spread %s" % [
+			shots.size(), "" if shots.size() == 1 else "s", Units.from_yards(carry / n), Units.from_yards(total / n), Units.from_yards(spread)]

@@ -227,10 +227,10 @@ static func plays_like_m(distance_m: float, rise_m: float, wind_along_mps: float
 ## the club's reach), lie (Surface.Type), par, tee.
 static func shot_text(level: int, info: Dictionary) -> String:
 	var parts := PackedStringArray()
-	var yards := roundi(float(info.to_pin_m) * YARDS_PER_METRE)
+	var yards := Units.long_value(float(info.to_pin_m))
 	var first := "%d to the pin" % yards
 	if bool(info.in_range):
-		var plays := roundi(plays_like_m(info.to_pin_m, info.rise_m, info.wind_along_mps) * YARDS_PER_METRE)
+		var plays := Units.long_value(plays_like_m(info.to_pin_m, info.rise_m, info.wind_along_mps))
 		if absi(plays - yards) >= 3:
 			first += ", playing %d %s" % [plays, _why(info)]
 	elif bool(info.get("tee", false)) and int(info.get("par", 0)) >= 4:
@@ -248,7 +248,7 @@ static func shot_text(level: int, info: Dictionary) -> String:
 	if absf(off_yd) >= 2.0:
 		var side := "left" if off_yd > 0.0 else "right"
 		if level == Detail.FULL:
-			parts.append("Start it %d yards %s%s." % [roundi(absf(off_yd)), side, for_wind])
+			parts.append("Start it %s %s%s." % [Units.long_words(absf(float(info.aim_off_m))), side, for_wind])
 		else:
 			parts.append("Favour the %s side%s." % [side, for_wind])
 	elif bool(info.in_range) and level == Detail.FULL:
@@ -262,7 +262,6 @@ static func putt_text(level: int, distance_m: float, rise_m: float, aim_off_m: f
 	if distance_m < TAP_IN_M:
 		return "That's a tap-in. Knock it in."
 	var parts := PackedStringArray()
-	var feet := roundi(distance_m * FEET_PER_METRE)
 	var pct := rise_m / maxf(distance_m, 0.1) * 100.0
 	var slope := "fairly flat"
 	if pct >= 2.0:
@@ -273,7 +272,8 @@ static func putt_text(level: int, distance_m: float, rise_m: float, aim_off_m: f
 		slope = "downhill"
 	elif pct <= -0.5:
 		slope = "slightly downhill"
-	parts.append("%d feet, %s." % [feet, slope])
+	var how_far := ("%d feet" % roundi(distance_m * FEET_PER_METRE)) if not Units.metric else (("%.1f metres" % distance_m) if distance_m < 10.0 else ("%d metres" % roundi(distance_m)))
+	parts.append("%s, %s." % [how_far, slope])
 	var inches := absf(aim_off_m) * 39.3701
 	# Starting it left of the hole means it breaks back to the right.
 	var way := "left to right" if aim_off_m > 0.0 else "right to left"
@@ -325,7 +325,7 @@ static func lie_text(info: Dictionary) -> String:
 		where = "From the rough"
 	var words := "%s you lose about %d%%" % [where, lost]
 	if info.has("reach_m"):
-		words += ", so a full %s goes %d" % [str(info.club).to_lower(), roundi(float(info.reach_m) * YARDS_PER_METRE)]
+		words += ", so a full %s goes %d" % [str(info.club).to_lower(), Units.long_value(float(info.reach_m))]
 	return words + "."
 
 

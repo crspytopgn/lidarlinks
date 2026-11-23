@@ -58,7 +58,7 @@ func _draw() -> void:
 	var wind := _window(Rect2(0, 0, WIDTH, WIND_HEIGHT), "Wind", small, sfs)
 	var text := "Calm"
 	if not _wind_calm:
-		text = "%d mph" % roundi(_wind_mph)
+		text = Units.speed(_wind_mph)
 		var c := Vector2(wind.position.x + wind.size.y * 0.5, wind.get_center().y)
 		if art.wind_arrow != null:
 			# The arrow points up the screen (downrange); turn it to the wind.
@@ -76,8 +76,7 @@ func _draw() -> void:
 		var s := minf(elev.size.x / src.size.x, pic_h / src.size.y)
 		var pic := Rect2(elev.position.x + (elev.size.x - src.size.x * s) * 0.5, elev.position.y, src.size.x * s, src.size.y * s)
 		draw_texture_rect_region(art.elevations[HudArt.elevation_index(_rise_m)], pic, src)
-	var feet := roundi(_rise_m * 3.28084)
-	_value(elev, "Level" if feet == 0 else "%+d ft" % feet, font, fs)
+	_value(elev, Units.rise(_rise_m), font, fs)
 
 	y += ELEVATION_HEIGHT + GAP
 	var lie := _window(Rect2(0, y, WIDTH, LIE_HEIGHT), "Lie", small, sfs)

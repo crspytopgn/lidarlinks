@@ -99,6 +99,9 @@ static func putt_text(read: Dictionary, with_break: bool) -> String:
 
 ## A length in feet and inches: 2' 4", 8".
 static func length_text(m: float) -> String:
+	if Units.metric:
+		var cm := roundi(absf(m) * 100.0)
+		return ("%d cm" % cm) if cm < 100 else ("%.1f m" % (absf(m)))
 	var inches := roundi(absf(m) * 39.3701)
 	if inches < 12:
 		return "%d\"" % inches

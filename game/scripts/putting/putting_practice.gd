@@ -20,6 +20,11 @@ const DRILL_HELP := [
 	"Six balls in a ring 3 ft round the cup. Hole them all in a row; a miss starts again.",
 	"Lag putts of 20, 30, 40 and 50 ft. Each one that stops within 3 ft scores.",
 ]
+const DRILL_HELP_METRIC := [
+	"Same spot until you move it: N for a new spot, [ and ] for the distance, L for the slope.",
+	"Six balls in a ring 1 m round the cup. Hole them all in a row; a miss starts again.",
+	"Lag putts of 6, 9, 12 and 15 m. Each one that stops within 1 m scores.",
+]
 const SLOPE_NAMES := ["Any slope", "Uphill", "Downhill", "Left to right", "Right to left"]
 const DRILLS_HELP := "Drills: free putting, around the clock and a lag ladder. Nothing is scored or saved."
 const SETUP_HELP := "Putting practice: the first player on a practice green with several cups on each chosen hole's green. " + DRILLS_HELP
@@ -304,9 +309,9 @@ func record(rest: Vector3, was_holed: bool) -> String:
 			if _step >= LADDER_FT.size():
 				ladder_best = maxi(ladder_best, score)
 				_restart_drill()
-				return "%s\nLadder: %d of %d within %d ft (best %d)." % [how, score, LADDER_FT.size(), roundi(LADDER_ZONE_FT), ladder_best]
+				return "%s\nLadder: %d of %d within %s (best %d)." % [how, score, LADDER_FT.size(), Units.from_feet(LADDER_ZONE_FT), ladder_best]
 			spot = _ladder_spot()
-			return "%s\nRung %d of %d: %d inside %d ft so far." % [how, rung, LADDER_FT.size(), score, roundi(LADDER_ZONE_FT)]
+			return "%s\nRung %d of %d: %d inside %s so far." % [how, rung, LADDER_FT.size(), score, Units.from_feet(LADDER_ZONE_FT)]
 	# Free putting: the ball comes back to the same spot (the original's
 	# Auto-Mulligan) until the player moves it.
 	return "%s\n%s" % [how, tally()]
@@ -340,16 +345,21 @@ static func miss_text(from: Vector3, c: Vector3, rest: Vector3) -> String:
 	return ", ".join(parts)
 
 
+## A drill's help line, in the player's units.
+static func drill_help(which: int) -> String:
+	return (DRILL_HELP_METRIC if Units.metric else DRILL_HELP)[which]
+
+
 ## The practice line for the HUD.
 func status_text() -> String:
 	var what := DRILL_NAMES[drill] as String
 	match drill:
 		Drill.FREE:
-			what += "    %d ft    %s" % [DISTANCES_FT[distance_index], SLOPE_NAMES[slope]]
+			what += "    %s    %s" % [Units.from_feet(DISTANCES_FT[distance_index]), SLOPE_NAMES[slope]]
 			if not slope_found:
 				what += " (none here)"
 		Drill.CLOCK:
 			what += "    Ball %d of %d    Best %d" % [_step + 1, CLOCK_BALLS, clock_best]
 		Drill.LADDER:
-			what += "    %d ft (rung %d of %d)" % [roundi(LADDER_FT[mini(_step, LADDER_FT.size() - 1)]), _step + 1, LADDER_FT.size()]
+			what += "    %s (rung %d of %d)" % [Units.from_feet(LADDER_FT[mini(_step, LADDER_FT.size() - 1)]), _step + 1, LADDER_FT.size()]
 	return "%s    Cup %d of %d\n%s" % [what, cup + 1, cups.size(), tally()]

@@ -73,7 +73,7 @@ func add_shot(first_landing: Vector3, rest: Vector3) -> int:
 		last_text = "Missed the targets"
 	else:
 		var yards: int = PracticeGround.TARGETS[int(hit[1])][0]
-		last_text = "%d yd target%s: %d points%s" % [yards, ", bullseye" if hit[2] else "",
+		last_text = "%s target%s: %d points%s" % [Units.from_yards(yards), ", bullseye" if hit[2] else "",
 			last_points, " (final ball, double)" if final else ""]
 	return last_points
 

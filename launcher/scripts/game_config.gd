@@ -50,6 +50,7 @@ var presentation := 1
 var swing_method := 1
 var swing_help := false
 var quick_pace := true  ## the game's Pace: Quick, or Classic meter timing
+var metric_units := false  ## the game's Units: yards and feet, or metres
 var skill := 3
 var launch_monitor := false
 var folder := ""
@@ -75,6 +76,7 @@ static func load_from(path := Paths.game_settings()) -> RefCounted:
 	c.swing_method = clampi(int(cfg.get_value("game", "swing_method", 1)), 0, 1)
 	c.swing_help = bool(cfg.get_value("game", "swing_help", false))
 	c.quick_pace = bool(cfg.get_value("game", "quick_pace", true))
+	c.metric_units = bool(cfg.get_value("game", "metric_units", false))
 	c.skill = clampi(int(cfg.get_value("game", "skill", 3)), 0, 3)
 	c.launch_monitor = bool(cfg.get_value("game", "launch_monitor", false))
 	c.folder = str(cfg.get_value("game", "folder", ""))
@@ -103,6 +105,7 @@ func save_to(path := Paths.game_settings()) -> Error:
 	cfg.set_value("game", "swing_method", swing_method)
 	cfg.set_value("game", "swing_help", swing_help)
 	cfg.set_value("game", "quick_pace", quick_pace)
+	cfg.set_value("game", "metric_units", metric_units)
 	cfg.set_value("game", "skill", skill)
 	cfg.set_value("game", "launch_monitor", launch_monitor)
 	if not folder.is_empty():

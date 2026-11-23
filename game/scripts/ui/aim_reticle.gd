@@ -41,9 +41,10 @@ func hide_reticle() -> void:
 	visible = false
 
 
-## The label for a carry of `yards`, BLIND when the aim point is out of sight.
-static func label_for(yards: int, blind: bool) -> String:
-	return ("BLIND  %d YD" if blind else "%d YD") % yards
+## The label for a carry of `metres` (in Units), BLIND when the aim point is
+## out of sight.
+static func label_for(metres: float, blind: bool) -> String:
+	return ("BLIND  " if blind else "") + Units.long_caps(metres)
 
 
 func _draw() -> void:

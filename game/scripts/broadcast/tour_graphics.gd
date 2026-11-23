@@ -155,7 +155,7 @@ func _draw_rail() -> void:
 func _draw_hole_strip(y: float, w: float) -> void:
 	draw_rect(Rect2(0, y, w, ROW_H), INK)
 	_text(Vector2(14, y + 22), "HOLE %s" % state.get("hole", ""), 17, TEXT, _bold)
-	_text(Vector2(98, y + 21), "%s YDS" % state.get("yards", ""), 12, DIM, _font)
+	_text(Vector2(98, y + 21), Units.from_yards(float(state.get("yards", 0))).to_upper(), 12, DIM, _font)
 	var par := int(state.get("par", 4))
 	var stroke := int(state.get("stroke", 1))
 	var boxes := maxi(par, stroke)
@@ -198,8 +198,8 @@ func _draw_shot_bar() -> void:
 		draw_line(c - d * 34, c - d * 25, ACCENT, 3.0)
 		var tip := c + d * 34
 		draw_colored_polygon(PackedVector2Array([tip, tip - d * 12 + side * 7, tip - d * 12 - side * 7]), ACCENT)
-	_text(c + Vector2(0, 2), "%d" % roundi(mph), 22, TEXT, _bold, true)
-	_text(c + Vector2(0, 18), "MPH", 10, DIM, _font, true)
+	_text(c + Vector2(0, 2), "%d" % Units.speed_value(mph), 22, TEXT, _bold, true)
+	_text(c + Vector2(0, 18), Units.speed_unit().to_upper(), 10, DIM, _font, true)
 	x += 100.0
 	# Club.
 	draw_rect(Rect2(x, y, 112, BAR_H), ACCENT)
@@ -207,7 +207,7 @@ func _draw_shot_bar() -> void:
 	var words := club.split(" ", false, 1)
 	_text(Vector2(x + 10, y + 36), words[0] if words.size() > 0 else "", 22, INK, _bold)
 	_text(Vector2(x + 10, y + 60), words[1] if words.size() > 1 else "", 16, INK, _bold)
-	_text(Vector2(x + 10, y + 82), "%s YD" % state.get("total_yd", ""), 12, INK, _font)
+	_text(Vector2(x + 10, y + 82), Units.from_yards(float(state.get("total_yd", 0))).to_upper(), 12, INK, _font)
 	x += 112.0
 	# Expected score, on the right.
 	var exp_w := 128.0
@@ -261,14 +261,14 @@ func _draw_range(r: Rect2) -> void:
 	draw_circle(Vector2(lx, line_y), 7.0, TEXT)
 	draw_arc(Vector2(gx, line_y), 9.0, 0, TAU, 24, ACCENT, 3.0)
 	draw_circle(Vector2(gx, line_y), 3.5, ACCENT)
-	_pill(Vector2((lx + gx) * 0.5, line_y), "%d YD" % roundi(reach))
+	_pill(Vector2((lx + gx) * 0.5, line_y), Units.from_yards(reach).to_upper())
 	var px: float = at.call(to_pin)
 	if to_pin - reach > 1.0:
 		var dx := gx + 12.0
 		while dx < px - 4.0:
 			draw_line(Vector2(dx, line_y), Vector2(minf(dx + 6.0, px - 4.0), line_y), Color(1, 1, 1, 0.7), 2.0)
 			dx += 11.0
-		_pill(Vector2((gx + px) * 0.5, line_y), "%d YD" % roundi(to_pin - reach))
+		_pill(Vector2((gx + px) * 0.5, line_y), Units.from_yards(to_pin - reach).to_upper())
 	# The flag.
 	draw_line(Vector2(px, line_y + 16), Vector2(px, line_y - 26), TEXT, 2.0)
 	draw_colored_polygon(PackedVector2Array([Vector2(px, line_y - 26), Vector2(px + 26, line_y - 20), Vector2(px, line_y - 12)]), ACCENT)
@@ -319,7 +319,7 @@ func _draw_putt_panel() -> void:
 	draw_rect(Rect2(r.position + Vector2(0, h - 4), Vector2(w, 4)), ACCENT)
 	var feet := float(putt.get("distance_m", 0.0)) * 3.28084
 	var rows := [
-		["DISTANCE", "%d'" % roundi(feet) if feet >= 3.0 else "%d\"" % roundi(feet * 12.0)],
+		["DISTANCE", Units.short_caps(float(putt.get("distance_m", 0.0))) if Units.metric else ("%d'" % roundi(feet) if feet >= 3.0 else "%d\"" % roundi(feet * 12.0))],
 		["SLOPE", PuttRead.slope_text(float(putt.get("rise_m", 0.0)), float(putt.get("distance_m", 0.0)))],
 		["AIM", PuttRead.aim_text(float(putt.get("aim_off_m", 0.0)))],
 	]

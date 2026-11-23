@@ -9,7 +9,7 @@ signal action(id: StringName)
 
 ## Button id, label, key shown in the tooltip.
 const PRACTICE_BUTTONS := [
-	[&"new_spot", "New spot", "N"], [&"closer", "- ft", "["], [&"further", "+ ft", "]"],
+	[&"new_spot", "New spot", "N"], [&"closer", "Closer", "["], [&"further", "Further", "]"],
 	[&"slope", "Slope", "L"], [&"drill", "Drill", "P"], [&"next_cup", "Next cup", "T"],
 	[&"next_green", "Next green", "H"],
 ]

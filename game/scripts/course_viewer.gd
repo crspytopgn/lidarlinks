@@ -292,9 +292,9 @@ func _show_hole(i: int) -> void:
 		target = _vec(aim[1])
 	camera.position = tee + Vector3(0, 2.0, 0) - (target - tee).normalized() * 6.0
 	_look_at(target + Vector3(0, 1.0, 0))
-	_set_text("%s\nHole %d  %s   Par %d   %d yards   (hcp %d)" % [
+	_set_text("%s\nHole %d  %s   Par %d   %s   (hcp %d)" % [
 		course_name, int(hole.get("number", hole_index + 1)), str(hole.get("name", "")),
-		int(hole.get("par", 0)), int(tees[0].get("yards", 0)), int(hole.get("handicap", 0))])
+		int(hole.get("par", 0)), Units.long_words(int(tees[0].get("yards", 0)) / Units.YARDS_PER_METRE), int(hole.get("handicap", 0))])
 
 
 func _look_at(target: Vector3) -> void:

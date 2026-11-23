@@ -648,7 +648,7 @@ func _finish_path() -> void:
 	course.paths.append(p)
 	_draft.clear()
 	_paths_changed(p.bounds())
-	_set_status("%s added (%d m)." % ["Bridge" if p.bridge else "Cart path", roundi(p.length())])
+	_set_status("%s added (%s)." % ["Bridge" if p.bridge else "Cart path", Units.long(p.length())])
 
 
 func _remove_path(p2: Vector2) -> void:

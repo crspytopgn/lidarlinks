@@ -65,7 +65,7 @@ func _draw() -> void:
 		var col := Color(1.0, 0.95, 0.6)
 		draw_line(tail, tip - dir * r * 0.3, col, 3.0, true)
 		draw_colored_polygon(PackedVector2Array([tip, tip - dir * r * 0.4 + side * r * 0.25, tip - dir * r * 0.4 - side * r * 0.25]), col)
-		text = "%d mph" % roundi(_mph)
+		text = Units.speed(_mph)
 	var fs := 16
 	var w := font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x
 	var base := Vector2(c.x - w * 0.5, c.y + r + 18.0)
@@ -119,12 +119,12 @@ func _draw_modern() -> void:
 		draw_line(tail, head, GOLD, 3.0, true)
 		draw_colored_polygon(PackedVector2Array([tip, head + side * r * 0.2, head - side * r * 0.2]), GOLD)
 		draw_circle(tail, 2.5, GOLD)
-		text = str(roundi(_mph))
+		text = str(Units.speed_value(_mph))
 	# The speed as a broadcast number: big figures, small units.
 	font = GlassTheme.display_font(700)
 	var units := GlassTheme.display_font(600)
 	var fs := 19
-	var unit_text := "" if _calm else " MPH"
+	var unit_text := "" if _calm else " " + Units.speed_unit().to_upper()
 	var w := font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x
 	var uw := units.get_string_size(unit_text, HORIZONTAL_ALIGNMENT_LEFT, -1, 12).x
 	var base := Vector2(pill.get_center().x - (w + uw) * 0.5, pill.get_center().y + fs * 0.34)

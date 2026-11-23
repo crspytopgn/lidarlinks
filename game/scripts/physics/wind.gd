@@ -90,7 +90,7 @@ func describe(aim_deg: float) -> String:
 	var rel := deg_to_rad(relative_deg(aim_deg))
 	var along := cos(rel)
 	var side := sin(rel)
-	var parts := PackedStringArray(["%d mph" % roundi(mph)])
+	var parts := PackedStringArray([Units.speed(mph)])
 	if along > 0.38:
 		parts.append("helping")
 	elif along < -0.38:

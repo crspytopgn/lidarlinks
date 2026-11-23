@@ -54,8 +54,8 @@ const HINT_TOUCH_SWING := "Keep your finger down: drag it back, then flick it up
 const HINT_AIM_PAD := "    Pad: right stick swing, A meter, D-pad club, LB fine aim, Y view target"
 const HINT_STICK_SWING := "Right stick: pull it back, then push it forward briskly and straight    B: call it off"
 const HINT_COMPUTER := "%s is playing    Space or click: hurry up    Tab: scorecard"
-const HINT_DRIVE := "Up/Down or W/S: drive    Left/Right or A/D: steer    Space or click: skip to the ball    %d yd to go"
-const HINT_DRIVE_TOUCH := "Hold and drag up to drive, down to reverse, sideways to steer    Tap: skip to the ball    %d yd to go"
+const HINT_DRIVE := "Up/Down or W/S: drive    Left/Right or A/D: steer    Space or click: skip to the ball    %s to go"
+const HINT_DRIVE_TOUCH := "Hold and drag up to drive, down to reverse, sideways to steer    Tap: skip to the ball    %s to go"
 const DRIVE_STICK_PX := 90.0  ## a drag this far is full pedal or full lock
 const DRIVE_TAP_PX := 14.0  ## a touch that moves less than this is a tap
 const DRIVE_MIN_M := 40.0  ## closer than this, the player walks
@@ -827,13 +827,13 @@ func start_hole(index: int) -> void:
 		buggy.set_bags(players.size())
 		_park_buggy(hole.tee)
 	_begin_turn(_next_player(), true)
-	var text := "Hole %d    Par %d    %d yards" % [hole.number, hole.par, roundi(hole.length_m() * YARDS_PER_METRE)]
+	var text := "Hole %d    Par %d    %s" % [hole.number, hole.par, Units.long_words(hole.length_m())]
 	if practice != null:
-		text = "Practice green: hole %d\n%s" % [hole.number, PuttingPractice.DRILL_HELP[practice.drill]]
+		text = "Practice green: hole %d\n%s" % [hole.number, PuttingPractice.drill_help(practice.drill)]
 		if round_setup.facility:
-			text = "Practice putting green\n%s" % PuttingPractice.DRILL_HELP[practice.drill]
+			text = "Practice putting green\n%s" % PuttingPractice.drill_help(practice.drill)
 	if on_range:
-		text = "Driving range: targets at 50 to 250 yards" if range_game == null else range_game.status()
+		text = "Driving range: targets at %s to %s" % [Units.from_yards(50), Units.from_yards(250)] if range_game == null else range_game.status()
 	if broadcast and dressed:
 		text = ""
 		hud.overlay.wipe()
@@ -1542,7 +1542,7 @@ func aim_at(spot: Vector3) -> void:
 			sounds.play(&"club")
 			_tell_monitor()
 			_place_golfer()
-	hud.show_message("%d yd to the target" % roundi(_flat_distance(ball_at, spot) * YARDS_PER_METRE), 1.5)
+	hud.show_message("%s to the target" % Units.long(_flat_distance(ball_at, spot)), 1.5)
 	_update_aim_marker()
 	_update_hud()
 	_aim_camera(false)
@@ -1991,7 +1991,7 @@ func _note_drive(strokes_before: int) -> void:
 		var best := int(PlayerProfiles.load_saved().records(scoring.names[shooter]).get("longest_drive_yd", 0))
 		if best > 0 and yd > best and yd > int(_drive_noted.get(shooter, 0)):
 			_drive_noted[shooter] = yd
-			hud.badge.pop("Longest drive", "%d yd · was %d yd" % [yd, best], ScoreBadge.PURE, false)
+			hud.badge.pop("Longest drive", "%s · was %s" % [Units.from_yards(yd), Units.from_yards(best)], ScoreBadge.PURE, false)
 
 
 # --- Launch monitor ------------------------------------------------------------
@@ -2147,7 +2147,7 @@ func _concede_putt() -> void:
 	strokes += 1
 	players[current].putts += 1
 	record.drops.append({"ball": current, "hole": hole_index, "reason": -1, "penalty": 1, "gimme": true})
-	shot_log.append("%s: gimme from %.1f ft" % [scoring.names[shooter], _flat_distance(shot.rest, hole.pin) * FEET_PER_METRE])
+	shot_log.append("%s: gimme from %s" % [scoring.names[shooter], Units.short(_flat_distance(shot.rest, hole.pin), true)])
 	hud.show_message("%sThat's a gimme." % ["" if players.size() == 1 else scoring.names[shooter] + ": "], 2.0)
 	_hole_out(false)
 
@@ -2193,11 +2193,11 @@ func _practice_shot_done() -> void:
 	practice_session.add(reading)
 	if monitor_panel != null:
 		monitor_panel.show_reading(reading, practice_session.summary(club.full_name))
-	var msg := "Carry %d yd    Total %d yd    %s" % [roundi(reading.carry_yd), roundi(reading.total_yd),
+	var msg := "Carry %s    Total %s    %s" % [Units.from_yards(reading.carry_yd), Units.from_yards(reading.total_yd),
 		Surface.name_of(hole.terrain.surface_at(shot.rest.x, shot.rest.z))]
 	if round_setup.chipping:
 		var left := _flat_distance(shot.rest, hole.pin)
-		msg = "%.1f ft from the hole" % (left / 0.3048) if left < 6.0 else "%d ft from the hole" % roundi(left / 0.3048)
+		msg = "%s from the hole" % Units.short(left, left < 6.0)
 	match shot.outcome:
 		ShotResult.Outcome.HOLED:
 			sounds.play(&"cup")
@@ -2497,9 +2497,9 @@ func _badge_hole_out() -> void:
 	var sub := ""
 	if shot.outcome == ShotResult.Outcome.HOLED and strokes > 1:
 		if not putting:
-			sub = "Chip-in" if _shot_from_pin < 30.0 else "Holed from %d yd" % roundi(_shot_from_pin * YARDS_PER_METRE)
+			sub = "Chip-in" if _shot_from_pin < 30.0 else "Holed from %s" % Units.long(_shot_from_pin)
 		elif _shot_from_pin * FEET_PER_METRE >= 20.0:
-			sub = "%d ft putt" % roundi(_shot_from_pin * FEET_PER_METRE)
+			sub = "%s putt" % Units.short(_shot_from_pin)
 	if b.is_empty():
 		if sub.is_empty() or strokes > hole.par:
 			return
@@ -2599,9 +2599,9 @@ func _complete_flight() -> void:
 			if broadcast:
 				msg = ""
 			elif clubs[club_index].is_putter:
-				msg = "%d ft to go" % roundi(_flat_distance(ball_at, hole.pin) * FEET_PER_METRE)
+				msg = "%s to go" % Units.short(_flat_distance(ball_at, hole.pin))
 			else:
-				msg = "%s    Carry %d yd    Total %d yd" % [Surface.name_of(s), roundi(shot.carry_m * YARDS_PER_METRE), roundi(shot.total_m * YARDS_PER_METRE)]
+				msg = "%s    Carry %s    Total %s" % [Surface.name_of(s), Units.long(shot.carry_m), Units.long(shot.total_m)]
 			if golfer and clubs[club_index].is_putter and _shot_from_pin < SLUMP_PUTT:
 				golfer.play(&"slump")
 			if relief != Vector3.INF:
@@ -2813,7 +2813,7 @@ func _process_drive(delta: float) -> void:
 	camera.look_at(view[1])
 	var to := players[_drive_to].at
 	var left := _flat_distance(buggy.drive.position, to)
-	hud.hint.text = (HINT_DRIVE_TOUCH if hud.touch_pad.visible else HINT_DRIVE) % roundi(left * YARDS_PER_METRE)
+	hud.hint.text = (HINT_DRIVE_TOUCH if hud.touch_pad.visible else HINT_DRIVE) % Units.long(left)
 	var s := hole.terrain.surface_at(to.x, to.z)
 	var arrive := DRIVE_ARRIVE_GREEN_M if s == Surface.Type.GREEN or s == Surface.Type.FRINGE else DRIVE_ARRIVE_M
 	if left < arrive and absf(buggy.drive.speed) < 0.5 and throttle <= 0.0:
@@ -3337,7 +3337,7 @@ static func drop_and_roll(model: ShotModel, z: DropRules.Zone, spot: Vector3, pi
 			if attempt > 0:
 				note = " It rolled out, so it was dropped again."
 			elif moved >= 0.3:
-				note = " It rolled %.1f m." % moved
+				note = " It rolled %s." % Units.short(moved, true)
 			return {"spot": r.rest, "note": note}
 	return {"spot": ground, "note": " It rolled out twice, so it was placed."}
 
@@ -4476,7 +4476,7 @@ func _update_reticle(paused: bool) -> void:
 		r.hide_reticle()
 		return
 	var blind := not RoundCamera.sight_clear(hole.terrain, camera.global_position, at + Vector3.UP * 0.3)
-	r.show_at(p, AimReticle.label_for(roundi(_flat_distance(ball_at, at) * YARDS_PER_METRE), blind), blind)
+	r.show_at(p, AimReticle.label_for(_flat_distance(ball_at, at), blind), blind)
 
 
 ## The wind, and with Weather on the day's weather: "8 mph, against  ·  Drizzle, 11°C".
@@ -4494,19 +4494,17 @@ func _weather_shown() -> bool:
 func _update_hud() -> void:
 	var club := clubs[club_index]
 	var to_pin := _flat_distance(ball_at, hole.pin)
-	var pin_text := "%d yd" % roundi(to_pin * YARDS_PER_METRE)
-	if lie == Surface.Type.GREEN or to_pin < 20.0:
-		pin_text = "%d ft" % roundi(to_pin * FEET_PER_METRE)
+	var pin_text := _pin_text()
 	var club_text := club.full_name
 	if _chip and not club.is_putter:
 		club_text += " chip"
 	elif not club.is_putter:
-		club_text += " (%d yd)" % roundi(_club_reach() * YARDS_PER_METRE)
+		club_text += " (%s)" % Units.long(_club_reach())
 	if not club.is_putter and not shape.is_square():
 		club_text += "  " + shape.describe()
 	var thru := card.holes_played()
 	var total := "E" if thru == 0 else Scorecard.format_to_par(card.to_par())
-	var text := "%s    Hole %d    Par %d    %d yd\n" % [course.course_name, hole.number, hole.par, roundi(hole.length_m() * YARDS_PER_METRE)]
+	var text := "%s    Hole %d    Par %d    %s\n" % [course.course_name, hole.number, hole.par, Units.long(hole.length_m())]
 	if players.size() > 1 or opponents[shooter] != null:
 		text += "%s    " % _player_label(shooter)
 	text += "Stroke %d    To pin %s    Lie: %s\nClub: %s    Wind: %s\nRound: %s thru %d" % [
@@ -4520,7 +4518,7 @@ func _update_hud() -> void:
 	# The aim marker sits on the ground where the shot is aimed.
 	var aim_at := aim_marker.position
 	var rise := hole.terrain.height_at(aim_at.x, aim_at.z) - 0.05 - ball_at.y if aim_marker.visible else 0.0
-	var reach_text := "%d yd" % roundi(_club_reach() * YARDS_PER_METRE)
+	var reach_text := Units.long(_club_reach())
 	if club.is_putter:
 		reach_text = pin_text
 	hud.show_shot(club, reach_text, rise, Surface.name_of(lie), 1.0 if club.is_putter else shot_model.lie_power(lie, club))
@@ -4664,8 +4662,8 @@ func _step_target_view(delta: float) -> void:
 func _pin_text() -> String:
 	var to_pin := _flat_distance(ball_at, hole.pin)
 	if lie == Surface.Type.GREEN or to_pin < 20.0:
-		return "%d ft" % roundi(to_pin * FEET_PER_METRE)
-	return "%d yd" % roundi(to_pin * YARDS_PER_METRE)
+		return Units.short(to_pin)
+	return Units.long(to_pin)
 
 
 ## What the broadcast graphics show for the current player and shot.
@@ -4674,11 +4672,10 @@ func _status(aiming: bool) -> Dictionary:
 	var thru := card.holes_played()
 	var club_text := club.full_name
 	if not club.is_putter:
-		club_text += "  (%d yd)" % roundi(_club_reach() * YARDS_PER_METRE)
+		club_text += "  (%s)" % Units.long(_club_reach())
 		if not shape.is_square():
 			club_text += "  " + shape.describe()
-	var rise := (hole.pin.y - ball_at.y) * FEET_PER_METRE
-	var elev := "Level" if absf(rise) < 1.0 else "%s%d ft" % ["+" if rise > 0.0 else "", roundi(rise)]
+	var elev := Units.rise(hole.pin.y - ball_at.y)
 	return {
 		"hole": hole.number, "par": hole.par, "yards": roundi(hole.length_m() * YARDS_PER_METRE),
 		"player": scoring.names[shooter], "to_par": "E" if thru == 0 else Scorecard.format_to_par(card.to_par()),
@@ -4765,15 +4762,14 @@ func _report_shot() -> void:
 		where = "Water"
 	elif shot.outcome == ShotResult.Outcome.OUT_OF_BOUNDS:
 		where = "Out of bounds"
-	var left := "-" if to_pin == 0.0 else ("%d ft" % roundi(to_pin * FEET_PER_METRE) if to_pin < 20.0 else "%d yd" % roundi(to_pin * YARDS_PER_METRE))
-	var unit := FEET_PER_METRE if putting else YARDS_PER_METRE
-	var u := " ft" if putting else " yd"
+	var left := "-" if to_pin == 0.0 else (Units.short(to_pin) if to_pin < 20.0 else Units.long(to_pin))
+	var dist := func(m: float) -> String: return Units.short(m) if putting else Units.long(m)
 	hud.overlay.shot_card({
 		"title": "%s  shot %d" % [clubs[club_index].full_name, strokes],
-		"carry": "-" if putting else "%d%s" % [roundi(shot.carry_m * unit), u],
-		"roll": "%d%s" % [roundi(maxf(0.0, shot.total_m - shot.carry_m) * unit), u],
-		"total": "%d%s" % [roundi(shot.total_m * unit), u],
-		"height": "-" if putting else "%d ft" % roundi(shot.apex_m * FEET_PER_METRE),
+		"carry": "-" if putting else dist.call(shot.carry_m),
+		"roll": dist.call(maxf(0.0, shot.total_m - shot.carry_m)),
+		"total": dist.call(shot.total_m),
+		"height": "-" if putting else Units.height(shot.apex_m),
 		"lie": where, "to_pin": left,
 	})
 	var great := shot.outcome == ShotResult.Outcome.HOLED and (not putting or _shot_from_pin > 9.0)
@@ -5445,7 +5441,7 @@ func _on_putting_action(id: StringName) -> void:
 			practice.next_slope()
 		&"drill":
 			practice.next_drill()
-			hud.show_message("%s: %s" % [PuttingPractice.DRILL_NAMES[practice.drill], PuttingPractice.DRILL_HELP[practice.drill]], 4.0)
+			hud.show_message("%s: %s" % [PuttingPractice.DRILL_NAMES[practice.drill], PuttingPractice.drill_help(practice.drill)], 4.0)
 		&"next_cup":
 			practice.next_cup()
 			hole.pin = practice.cup_position()
