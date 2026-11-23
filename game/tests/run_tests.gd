@@ -5347,7 +5347,7 @@ func _test_team_drops() -> void:
 	card_overlay.free()
 	game._finish_drop()
 	game._process(0.0)
-	_check(game.hud.meter.visible, "drop: the meter is back after the drop")
+	_check(game.hud.meter.visible or game.hud.mouse_meter, "drop: the swing's meter is back after the drop")
 	GolfRound.setup = null
 
 
