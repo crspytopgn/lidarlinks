@@ -160,6 +160,7 @@ func _process(_delta: float) -> bool:
 	_run("designed_round", _test_designed_round)
 	_run("caddie_and_buggy_in_round", _test_caddie_and_buggy_in_round)
 	_run("target_view", _test_target_view)
+	_run("feet_on_slopes", _test_feet_on_slopes)
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(PlayerProfiles.path))
 	if _failures > 0:
 		print("%d check(s) failed" % _failures)
@@ -3983,6 +3984,47 @@ func _test_photo_golfer() -> void:
 	photo.play(&"putt")
 	_check(not photo._photo_on and fallback.visible, "a putt is played by the 3D golfer")
 	photo.free()
+
+
+## On a slope GolferFeet keeps each ankle as high above the ground under it
+## as the clip has it on flat ground: standing about or over the ball, on
+## uphill, downhill and both sidehill lies, the realistic person and the
+## Custom body alike. (A slip once moved only the hips, leaving the uphill
+## foot 10 cm in the turf.) Run in the tree: the modifiers need the skeleton.
+func _test_feet_on_slopes() -> void:
+	var custom := PlayerLook.default_look()
+	custom.person = ""
+	for look: PlayerLook in [PlayerLook.default_look(), custom]:
+		var golfer := FreeGolfer.create(look)
+		if golfer == null:
+			_check(false, "the golfer loads for the slope test")
+			return
+		golfer.walk_in = false
+		root.add_child(golfer)
+		var sk: Skeleton3D = golfer._skeleton
+		var feet := {}
+		var read := func() -> void:
+			for bone: String in ["foot_l", "foot_r"]:
+				feet[bone] = sk.global_transform * sk.get_bone_global_pose(sk.find_bone(bone)).origin
+		sk.skeleton_updated.connect(read)
+		for clip: StringName in [&"idle", &"address", &"address_putt"]:
+			var flat := {}
+			for slope: Vector2 in [Vector2.ZERO, Vector2(0.25, 0), Vector2(-0.25, 0), Vector2(0, 0.25), Vector2(0, -0.25), Vector2(0.2, 0.2)]:
+				var at := FreeGolfer.BALL
+				var ground := func(x: float, z: float) -> float: return slope.x * (x - at.x) + slope.y * (z - at.z)
+				golfer.set_ground(ground)
+				golfer.play(clip)
+				golfer._player.seek(0.5, true)
+				sk.notification(Skeleton3D.NOTIFICATION_UPDATE_SKELETON)
+				for bone: String in ["foot_l", "foot_r"]:
+					var w: Vector3 = feet[bone]
+					var h: float = w.y - ground.call(w.x, w.z)
+					if slope == Vector2.ZERO:
+						flat[bone] = h
+					else:
+						_check(absf(h - flat[bone]) < 0.01, "%s %s on a %s slope: ankle %.3f m off the ground's height for it (person %s)"
+								% [clip, bone, slope, h - flat[bone], look.person])
+		golfer.free()
 
 
 func _test_free_golfer() -> void:

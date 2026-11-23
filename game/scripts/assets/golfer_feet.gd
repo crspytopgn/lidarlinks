@@ -103,6 +103,17 @@ func _plant(sk: Skeleton3D, up: Vector3, drop: Dictionary[String, float], tilt: 
 	shift = minf(maxf(shift, lo), hi)
 	var root: int = _bones["Root"]
 	sk.set_bone_pose_position(root, sk.get_bone_pose_position(root) + sk.get_bone_global_pose(root).basis.inverse() * (up * shift))
+	for s: String in ["l", "r"]:
+		var foot: int = _bones["foot_" + s]
+		var pose := sk.get_bone_global_pose(foot)
+		# The hips moved by shift; the ankle should end up drop above where
+		# the clip put it (the bounds above keep that within the leg's reach).
+		var lift: float = drop[s] - shift - sink
+		_reach(sk, _bones["thigh_" + s], _bones["calf_" + s], foot, pose.origin + up * lift)
+		var slope := Quaternion(up, tilt[s])
+		if slope.get_angle() > MAX_TILT:
+			slope = Quaternion(slope.get_axis().normalized(), MAX_TILT)
+		GolferLook.set_bone_basis(sk, foot, Basis(slope) * pose.basis)
 	if _ball_w > 0.0 and shift < -1e-3 and _club >= 0:
 		_stand_tall(sk, up, -shift * _ball_w)
 
