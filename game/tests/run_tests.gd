@@ -161,6 +161,7 @@ func _process(_delta: float) -> bool:
 	_run("designed_round", _test_designed_round)
 	_run("caddie_and_buggy_in_round", _test_caddie_and_buggy_in_round)
 	_run("target_view", _test_target_view)
+	_run("swing_guide", _test_swing_guide)
 	_run("feet_on_slopes", _test_feet_on_slopes)
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(PlayerProfiles.path))
 	if _failures > 0:
@@ -5536,7 +5537,7 @@ func _test_team_drops() -> void:
 	card_overlay.free()
 	game._finish_drop()
 	game._process(0.0)
-	_check(game.hud.meter.visible, "drop: the meter is back after the drop")
+	_check(game.hud.meter.visible or game.hud.mouse_meter, "drop: the swing's meter is back after the drop")
 	GolfRound.setup = null
 
 
@@ -7443,3 +7444,67 @@ class _RidgeTerrain extends CourseTerrain:
 	func height_at(_x: float, z: float) -> float:
 		# A 12 m ridge 15 m short of a 230 m target.
 		return 12.0 * maxf(0.0, 1.0 - absf(z - 215.0) / 6.0)
+
+
+func _test_swing_guide() -> void:
+	var path := "user://test_swing_guide.cfg"
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
+	var keep := ConfigFile.new()
+	keep.set_value("game", "skill", 2)
+	keep.save(path)
+	_check(not SwingGuide.seen(SwingGuide.Kind.MOUSE, path), "a new player hasn't seen the mouse swing guide")
+	SwingGuide.mark_seen(SwingGuide.Kind.MOUSE, path)
+	_check(SwingGuide.seen(SwingGuide.Kind.MOUSE, path) and not SwingGuide.seen(SwingGuide.Kind.TOUCH, path),
+			"once done with it is never shown again, and the touch guide is its own")
+	var back := ConfigFile.new()
+	back.load(path)
+	_check(int(back.get_value("game", "skill", 0)) == 2, "the rest of the settings file is kept")
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
+	# The demonstration pulls back slowly, then pushes through quicker.
+	_check(SwingGuide.demo_at(0.0).y == 0.0 and SwingGuide.demo_at(SwingGuide.BACK_S + 0.1).y == 1.0,
+			"the drawing starts at the ball and reaches the top")
+	var push := SwingGuide.demo_at(SwingGuide.BACK_S + SwingGuide.TOP_S + SwingGuide.DOWN_S * 0.5).y
+	_check(push > 0.0 and push < 1.0, "then comes back through (%.2f)" % push)
+	_check(SwingGuide.demo_at(SwingGuide.BACK_S + SwingGuide.TOP_S + SwingGuide.DOWN_S + 0.2).y == 0.0, "and rests at the ball")
+	# The mouse meter's column stays clear of the rest of the HUD.
+	var screen := Vector2(1280, 720)
+	var wind := Rect2(1174, 50, 90, 112)
+	var spin := Rect2(1134, 186, 140, 112)
+	var target := Rect2(1080, 578, 176, 42)
+	var room := Hud.room_for(screen, 50.0, 620.0, [wind, spin, target] as Array[Rect2])
+	var r := MouseSwingControl.rect_in(screen, room)
+	var label := Rect2(r.position - Vector2(r.size.x * 1.6, MouseSwingControl.LABEL_H), r.size * Vector2(4.2, 1.0) + Vector2(0, MouseSwingControl.LABEL_H))
+	for b: Rect2 in [wind, spin, target]:
+		_check(not label.intersects(b), "the mouse meter %s misses %s" % [label, b])
+	_check(r.size.y > 200.0 and r.end.x < screen.x, "and is still tall (%.0f px)" % r.size.y)
+	# Tour's hole map down the right: the meter goes down the left, under
+	# the leaderboard.
+	var map := Rect2(1119, 58, 137, 304)
+	var rail := Rect2(0, 0, 308, 194)
+	var tour_blocks: Array[Rect2] = [wind, map, rail, Rect2(1080, 478, 176, 42)]
+	var tour_room := Hud.room_for(screen, 50.0, 520.0, tour_blocks)
+	var tr := MouseSwingControl.rect_in(screen, tour_room)
+	_check(tour_room.end.x < screen.x * 0.5 and tr.size.y > 150.0, "down the left in Tour (%s)" % tour_room)
+	for b: Rect2 in tour_blocks:
+		_check(not tour_room.intersects(b), "clear of %s in Tour" % b)
+	# The card moves up off the green read panel rather than over it.
+	var panel := Rect2(605, 372, 470, 172)
+	var y := SwingGuide.place_y(Rect2(731, 314, 390, 214), 720.0, [panel] as Array[Rect2])
+	_check(not Rect2(731, y, 390, 214).intersects(panel) and y >= 8.0, "the guide card misses the green read (y %.0f)" % y)
+	# The mouse putt's distance scale: further putts sit higher up the
+	# backswing, and the assistant's mark agrees with it.
+	var feet := PackedFloat32Array()
+	for i in 21:
+		feet.append(i * 4.0)  # 80 ft for the full putt
+	var m := LinksMouse.meter_for(1920)
+	var h10 := MouseSwingControl.putt_height(MouseSwingControl.share_for_feet(feet, 10.0), m)
+	var h30 := MouseSwingControl.putt_height(MouseSwingControl.share_for_feet(feet, 30.0), m)
+	_check(h10 > m.ball_line and h30 > h10 and h30 <= m.height - 10, "a 30 ft putt needs a longer backswing than 10 ft (%.0f, %.0f)" % [h10, h30])
+	_check_near(MouseSwingControl.share_for_feet(feet, 30.0), 0.375, 0.001, "30 ft of 80")
+	_check(MouseSwingControl.share_for_feet(feet, 90.0) < 0.0, "past the scale: no share")
+	var ms := MouseSwingControl.new()
+	ms.putt = true
+	ms.target = 0.375
+	_check_near(ms.target_height(), h30, 0.01, "the assistant's mark on the empty putting meter")
+	ms.free()
+	_check(is_equal_approx(MouseSwingControl.rect_in(screen, Rect2()).size.y, screen.y * MouseSwingControl.METER_SHARE), "with no room given it sits as before")

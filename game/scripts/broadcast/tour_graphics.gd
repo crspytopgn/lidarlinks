@@ -341,6 +341,15 @@ func _draw_putt_panel() -> void:
 			draw_circle(top, 4.0, ACCENT)
 
 
+## The leaderboard rail down the left, in this control's coordinates
+## (the current player's row sticks out further); empty when not showing.
+func rail_rect() -> Rect2:
+	if state.is_empty() or not visible:
+		return Rect2()
+	var rows: Array = state.get("rows", [])
+	return Rect2(0, 0, RAIL_W + 80.0, 92.0 + (rows.size() + 1) * ROW_H + 6.0)
+
+
 ## Where the hole map is drawn, in this control's coordinates; empty when
 ## it isn't showing.
 func map_rect() -> Rect2:
