@@ -98,16 +98,24 @@ const CLUB_HEAD_POINTS := {
 	"iron": [Vector3(-0.027, -0.141, -0.906), Vector3(0.017, -0.08, -0.917), Vector3(-0.027, -0.148, -0.921), Vector3(0.004, -0.062, -0.934), Vector3(-0.007, -0.084, -0.967)],
 	"putter": [Vector3(-0.024, -0.128, -0.818), Vector3(0.016, -0.13, -0.884), Vector3(0.012, -0.152, -0.891), Vector3(-0.009, -0.055, -0.92), Vector3(0.011, -0.065, -0.939)],
 }
-## The putter at address (fit_putter): the face this far behind the ball,
-## and the sole this far over the green (tools/golfer/club_length.py).
+## How the putter is fitted to the body (_fit_clubs): its head mesh, the
+## clip and the moment of it, and the sole's height over the green there
+## (tools/golfer/club_length.py).
+const CLUB_FIT := {
+	"putter": ["Putter_head", &"address_putt", Vector2(0.5, 0.0), 0.003],
+}
+## The driver and irons (_fit_swings): head mesh, address clip, swing clip
+## and the seconds to look for impact in.
+const SWING_FIT := {
+	"iron": ["Iron_head", &"address_iron", &"swing_iron", Vector2(0.15, 0.4)],
+	"driver": ["Driver_head", &"address", &"swing", Vector2(0.15, 0.4)],
+}
+## The putter face this far behind the ball at address.
 const PUTT_GAP := 0.012
 const BALL_RADIUS := 0.02135
-const PUTT_SOLE := 0.003
-## Seconds into address_putt that the putter is fitted at.
-const PUTT_FIT_AT := 0.5
-## The most the grip may be choked down (metres; negative lets it out):
+## The most a grip may be choked down (metres; negative lets it out):
 ## further and the right hand would come off the bottom of the grip.
-const PUTT_CHOKE := Vector2(-0.02, 0.1)
+const CLUB_CHOKE := Vector2(-0.02, 0.1)
 const SURVEY_JITTER := 0.5  ## seconds either side of SURVEY_TIME
 const SWING_CLIPS: Array[StringName] = [&"backswing", &"swing", &"backswing_iron", &"swing_iron", &"putt"]
 ## Where the ball sits in the rig (GolferRig): a taller or shorter golfer is
@@ -150,10 +158,10 @@ var _putter: Array[Node3D] = []
 var _iron_meshes: Array[Node3D] = []
 var _iron := false
 var _putting := false
-## The putter fitted to this body (_fit_putter): the club bone's slide in
-## its own frame (choked down the grip) and the body's, in the skeleton's.
-var _putt_choke := Vector3.ZERO
-var _putt_stance := Vector3.ZERO
+## Each club fitted to this body (_fit_clubs): club -> [the club bone's
+## slide in its own frame (choked down the grip), the body's slide in the
+## skeleton's frame].
+var _fits := {}
 ## Where the model sits at address: off the origin when it is scaled for
 ## height (it is scaled about the ball).
 var _rest := Vector3.ZERO
@@ -366,8 +374,9 @@ func apply_look(p_look: PlayerLook) -> void:
 	if _walk == null:
 		_model.position = _rest
 	_dress_clubs()
-	_fit_putter()
-	_putter_fit(_putter.size() > 0 and _putter[0].visible)
+	_fit_clubs()
+	_fit_swings(offsets)
+	_club_fit("putter" if _putter.size() > 0 and _putter[0].visible else ("iron" if _iron else "driver"))
 
 
 ## A bone's bind from the pack: its basis columns and origin.
@@ -1143,90 +1152,215 @@ func _show_putter(on: bool) -> void:
 		node.visible = on
 	if _feet:
 		_feet.club_points = PackedVector3Array(CLUB_HEAD_POINTS["putter" if on else ("iron" if _iron else "driver")])
-	_putter_fit(on)
+	_club_fit("putter" if on else ("iron" if _iron else "driver"))
 
 
-## GolferFeet holds the putter as fitted to this body while it is out.
-func _putter_fit(on: bool) -> void:
+## GolferFeet holds the club in his hands as fitted to this body.
+func _club_fit(club: String) -> void:
 	if _feet:
-		_feet.choke = _putt_choke if on else Vector3.ZERO
-		_feet.stance = _putt_stance if on else Vector3.ZERO
+		var fit: Array = _fits.get(club, [Vector3.ZERO, Vector3.ZERO])
+		_feet.choke = fit[0]
+		_feet.stance = fit[1]
 
 
-## Sets the putter to this body. The putting clips were baked on the
-## Mixamo person (tools/golfer/mixamo_bake.py, club_length.py); another
-## body's joints put the hands elsewhere, and on Man 2 the putter head
-## landed 5 cm past the ball and 6 cm into the green, where GolferFeet
-## lifted it by the wrist, further out and toe down: he stood too close,
-## with the putter beyond the ball. Here, at address, the grip is choked
-## down (or let out a little) until the sole sits on the green, and the body
-## slides so the ball is in the middle of the face with the face PUTT_GAP
-## behind it. The putt strikes from the address spot, so it holds through
-## the stroke.
-func _fit_putter() -> void:
-	_putt_choke = Vector3.ZERO
-	_putt_stance = Vector3.ZERO
-	var at := _putter_address()
-	if at.is_empty():
-		return
-	var g: Transform3D = at.club
-	var shaft: Vector3 = at.shaft
-	var low := INF
-	for p: Vector3 in at.head:
-		low = minf(low, (g * p).y)
-	var choke := 0.0
-	if shaft.y < -0.1:
-		choke = clampf((PUTT_SOLE - low) / -shaft.y, PUTT_CHOKE.x, PUTT_CHOKE.y)
-	_putt_choke = -at.mid.normalized() * choke / at.unit
-	var box := _putter_box(at, _putt_choke)
-	var slide := Vector3(BALL.x + BALL_RADIUS + PUTT_GAP - box.position.x, 0.0, BALL.z - box.get_center().z)
-	_putt_stance = (at.to_golfer as Transform3D).basis.inverse() * slide
+## Fits the putter to this body. The clips were baked on the Mixamo person
+## (tools/golfer/mixamo_bake.py, club_length.py); another body's joints put
+## the hands elsewhere. On Man 2 the putter head landed 5 cm past the ball
+## and 6 cm into the green, where GolferFeet lifted it by the wrist, further
+## out and toe down: he stood too close, with the putter beyond the ball.
+## At address the grip is choked down (or let out a little) until the sole
+## sits on the green, and the body slides so the ball is in the middle of
+## the face (the head's vertices' mean, as club_length.py) with the face
+## PUTT_GAP behind it. The putt strikes from there.
+func _fit_clubs() -> void:
+	_fits.clear()
+	for club: String in CLUB_FIT:
+		var at := _club_at(club)
+		if at.is_empty():
+			continue
+		var g: Transform3D = at.club
+		var shaft: Vector3 = at.shaft
+		var low := INF
+		for p: Vector3 in at.head:
+			low = minf(low, (g * p).y)
+		var spec: Array = CLUB_FIT[club]
+		var choke := 0.0
+		if shaft.y < -0.1:
+			choke = clampf((float(spec[3]) - low) / -shaft.y, CLUB_CHOKE.x, CLUB_CHOKE.y)
+		var c: Vector3 = -(at.mid as Vector3).normalized() * choke / float(at.unit)
+		var box := _club_box(at, c)
+		var slide := Vector3(BALL.x + BALL_RADIUS + PUTT_GAP - box.position.x, 0.0, BALL.z - _club_middle(at, c).z)
+		_fits[club] = [c, (at.to_golfer as Transform3D).basis.inverse() * slide]
 
 
-## The putter head's bounds at address as fitted, in the golfer's frame
-## (the clip and GolferFeet's part, before the other runtime helpers):
-## for the tests.
-func putter_at_address() -> AABB:
-	var at := _putter_address()
-	if at.is_empty():
-		return AABB()
-	var box := _putter_box(at, _putt_choke)
-	box.position += (at.to_golfer as Transform3D).basis * _putt_stance
-	return box
+## Fits the driver and irons to this body: as the Mixamo person the clips
+## were baked on holds them (their strike checked by club_length.py and in
+## the game), not to fixed numbers. On Man 2 the iron sat 5 cm further out
+## and 8 cm into the ground at address and met the ball 2 cm out and 4 cm
+## low. The grip is choked down (or let out) until the sole at impact is as
+## low as the Mixamo person's, and the body slides in or out to split the
+## difference between where the head sits at address and meets the ball.
+func _fit_swings(offsets: Dictionary) -> void:
+	var ref := _swing_reference(offsets)
+	for club: String in SWING_FIT:
+		var mine := swing_metrics(club)
+		if mine.is_empty() or not ref.has(club):
+			continue
+		var theirs: Dictionary = ref[club]
+		var shaft: Vector3 = mine.shaft
+		var choke := 0.0
+		if shaft.y < -0.1:
+			choke = clampf((float(theirs.low) - float(mine.low)) / -shaft.y, CLUB_CHOKE.x, CLUB_CHOKE.y)
+		var c: Vector3 = -(mine.dir as Vector3) * choke / float(mine.unit)
+		mine = swing_metrics(club, c)
+		var dz := ((theirs.address as Vector3).z - (mine.address as Vector3).z
+			+ (theirs.impact as Vector3).z - (mine.impact as Vector3).z) * 0.5
+		_fits[club] = [c, (mine.basis as Basis).inverse() * Vector3(0.0, 0.0, dz)]
 
 
-## The putter at address from the clip alone: the club bone and left wrist
-## (golfer frame, the model at its spot), the head's vertices in the club's
-## frame and their middle, the shaft (grip to head) and metres per unit of
-## the skeleton.
-func _putter_address() -> Dictionary:
-	var club := _skeleton.find_bone("club")
-	var head := _club_head("Putter_head")
-	if club < 0 or head.is_empty() or not _player.has_animation(&"address_putt"):
+## The Mixamo person's swing_metrics, read once (the skeleton is set to
+## their joints for it, then back to `offsets`).
+static var _swing_ref := {}
+
+
+func _swing_reference(offsets: Dictionary) -> Dictionary:
+	if not _swing_ref.is_empty():
+		return _swing_ref
+	var parts := GolferParts.shared()
+	var who: Dictionary = (parts.info.get("people", {}) as Dictionary).get(PlayerLook.MIXAMO_PERSON, {})
+	if who.is_empty():
 		return {}
-	var anim := _player.get_animation(&"address_putt")
-	var to_golfer := Transform3D(Basis.from_scale(_model.scale), _rest) * _between(_model, _skeleton)
-	var g := to_golfer * clip_pose(_skeleton, anim, PUTT_FIT_AT, club)
-	var wrist := to_golfer * clip_pose(_skeleton, anim, PUTT_FIT_AT, _skeleton.get_bone_parent(club))
+	var theirs := parts.joint_offsets({})
+	for bone: String in who.joints:
+		var d: Array = who.joints[bone]
+		theirs[bone] = Vector3(d[0], d[1], d[2])
+	_fit_skeleton(theirs)
+	for club: String in SWING_FIT:
+		var m := swing_metrics(club)
+		if not m.is_empty():
+			_swing_ref[club] = m
+	_fit_skeleton(offsets)
+	return _swing_ref
+
+
+## Where `club`'s head sits from the clips alone, unscaled (golfer frame
+## at height 1:1, the ball at BALL), with the club bone slid `choke` in its
+## own frame: the middle of its vertices at address and at the impact key
+## (the first, down at the ball, where the face has reached it) and its sole there, the
+## shaft (grip to head) at impact, and the head's direction in the club's
+## frame, metres per skeleton unit and the skeleton's basis.
+func swing_metrics(club: String, choke := Vector3.ZERO) -> Dictionary:
+	var spec: Array = SWING_FIT[club]
+	var bone := _skeleton.find_bone("club")
+	var head := _club_head(spec[0])
+	if bone < 0 or head.is_empty() or not _player.has_animation(spec[1]) or not _player.has_animation(spec[2]):
+		return {}
+	var to := _between(_model, _skeleton)
 	var mid := Vector3.ZERO
 	for p in head:
 		mid += p
 	mid /= head.size()
+	var out := {"dir": mid.normalized(), "unit": to.basis.get_scale().x, "basis": to.basis}
+	var at := func(anim: Animation, t: float, tracks: Dictionary) -> Transform3D:
+		var g := to * clip_pose(_skeleton, anim, t, bone, tracks)
+		g.origin += g.basis * choke
+		return g
+	var anim := _player.get_animation(spec[1])
+	out["address"] = (at.call(anim, 0.5, clip_tracks(anim)) as Transform3D) * mid
+	anim = _player.get_animation(spec[2])
+	var tracks := clip_tracks(anim)
+	var hand: int = tracks.get("%s %d" % [_skeleton.get_bone_name(_skeleton.get_bone_parent(bone)), Animation.TYPE_ROTATION_3D], -1)
+	if hand < 0:
+		return {}
+	var window: Vector2 = spec[3]
+	for k in anim.track_get_key_count(hand):
+		var t := anim.track_get_key_time(hand, k)
+		if t < window.x or t > window.y:
+			continue
+		var g: Transform3D = at.call(anim, t, tracks)
+		var lead := INF
+		var low := INF
+		for p in head:
+			var q := g * p
+			lead = minf(lead, q.x)
+			low = minf(low, q.y)
+		# (Near the ground: at the top the head is past the ball too.)
+		if lead <= BALL.x + BALL_RADIUS and low < 0.2:
+			out["impact"] = g * mid
+			out["low"] = low
+			out["shaft"] = (g * mid - g.origin).normalized()
+			return out
+	return {}
+
+
+## The club head's bounds where it is fitted (CLUB_FIT), as fitted, in the
+## golfer's frame (the clip and GolferFeet's part, before the other runtime
+## helpers), and the middle of its vertices: for the tests.
+func club_at_ball(club: String) -> Array:
+	var at := _club_at(club)
+	if at.is_empty():
+		return [AABB(), Vector3.ZERO]
+	var fit: Array = _fits.get(club, [Vector3.ZERO, Vector3.ZERO])
+	var slide := (at.to_golfer as Transform3D).basis * (fit[1] as Vector3)
+	var box := _club_box(at, fit[0])
+	box.position += slide
+	return [box, _club_middle(at, fit[0]) + slide]
+
+
+## The club where it is fitted (CLUB_FIT), from the clip alone: the club bone and left
+## wrist (golfer frame, the model at its spot), the head's vertices in the
+## club's frame and their middle, the shaft (grip to head), metres per unit
+## of the skeleton, and which club.
+func _club_at(club: String) -> Dictionary:
+	var spec: Array = CLUB_FIT[club]
+	var bone := _skeleton.find_bone("club")
+	var head := _club_head(spec[0])
+	if bone < 0 or head.is_empty() or not _player.has_animation(spec[1]):
+		return {}
+	var anim := _player.get_animation(spec[1])
+	var tracks := clip_tracks(anim)
+	var to_golfer := Transform3D(Basis.from_scale(_model.scale), _rest) * _between(_model, _skeleton)
+	var mid := Vector3.ZERO
+	for p in head:
+		mid += p
+	mid /= head.size()
+	var t: float = (spec[2] as Vector2).x
+	var g := to_golfer * clip_pose(_skeleton, anim, t, bone, tracks)
+	var wrist := to_golfer * clip_pose(_skeleton, anim, t, _skeleton.get_bone_parent(bone), tracks)
 	return {"to_golfer": to_golfer, "club": g, "wrist": wrist.origin, "head": head, "mid": mid,
-		"shaft": (g * mid - g.origin).normalized(), "unit": to_golfer.basis.get_scale().x}
+		"shaft": (g * mid - g.origin).normalized(), "unit": to_golfer.basis.get_scale().x, "name": club}
+
+
+## The middle of the head's vertices, placed as _club_box places them.
+func _club_middle(at: Dictionary, choke: Vector3) -> Vector3:
+	var g := _club_lifted(at, choke)
+	var sum := Vector3.ZERO
+	for p: Vector3 in at.head:
+		sum += g * p
+	return sum / (at.head as PackedVector3Array).size()
 
 
 ## The head's bounds with the club bone slid `choke` in its own frame and,
-## where the head is still in the green (a choke at its limit), the wrist
+## where the head is still in the ground (a choke at its limit), the wrist
 ## bent to lift it as GolferFeet._keep_club_up does on level ground.
-func _putter_box(at: Dictionary, choke: Vector3) -> AABB:
+func _club_box(at: Dictionary, choke: Vector3) -> AABB:
+	var g := _club_lifted(at, choke)
+	var head: PackedVector3Array = at.head
+	var box := AABB(g * head[0], Vector3.ZERO)
+	for p in head:
+		box = box.expand(g * p)
+	return box
+
+
+## The club bone (golfer frame) for _club_box.
+func _club_lifted(at: Dictionary, choke: Vector3) -> Transform3D:
 	var g: Transform3D = at.club
 	g.origin += g.basis * choke
 	var wrist: Vector3 = at.wrist
 	for _pass in 2:
 		var lowest := 0.0
 		var deepest := Vector3.ZERO
-		for p in CLUB_HEAD_POINTS["putter"]:
+		for p in CLUB_HEAD_POINTS[at.name]:
 			var q := g * (p as Vector3)
 			if -q.y > lowest:
 				lowest = -q.y
@@ -1241,11 +1375,7 @@ func _putter_box(at: Dictionary, choke: Vector3) -> AABB:
 		var turn := minf(lowest / maxf(flat.length(), GolferFeet.CLUB_MIN_REACH), GolferFeet.MAX_CLUB_TURN)
 		var r := Basis(axis.normalized(), turn)
 		g = Transform3D(r, wrist - r * wrist) * g
-	var head: PackedVector3Array = at.head
-	var box := AABB(g * head[0], Vector3.ZERO)
-	for p in head:
-		box = box.expand(g * p)
-	return box
+	return g
 
 
 ## The club head mesh `node_name`'s vertices in the club bone's frame.
@@ -1271,10 +1401,9 @@ func _club_head(node_name: String) -> PackedVector3Array:
 ## `bone`'s pose in the skeleton's frame `t` seconds into `anim`, straight
 ## from its tracks and the skeleton's rests (no modifiers), without
 ## touching the skeleton.
-static func clip_pose(sk: Skeleton3D, anim: Animation, t: float, bone: int) -> Transform3D:
-	var tracks := {}
-	for i in anim.get_track_count():
-		tracks["%s %d" % [anim.track_get_path(i).get_concatenated_subnames(), anim.track_get_type(i)]] = i
+static func clip_pose(sk: Skeleton3D, anim: Animation, t: float, bone: int, tracks := {}) -> Transform3D:
+	if tracks.is_empty():
+		tracks = clip_tracks(anim)
 	var out := Transform3D.IDENTITY
 	while bone >= 0:
 		var local := sk.get_bone_rest(bone)
@@ -1288,6 +1417,14 @@ static func clip_pose(sk: Skeleton3D, anim: Animation, t: float, bone: int) -> T
 		out = local * out
 		bone = sk.get_bone_parent(bone)
 	return out
+
+
+## `anim`'s tracks by "bone type", for clip_pose.
+static func clip_tracks(anim: Animation) -> Dictionary:
+	var tracks := {}
+	for i in anim.get_track_count():
+		tracks["%s %d" % [anim.track_get_path(i).get_concatenated_subnames(), anim.track_get_type(i)]] = i
+	return tracks
 
 
 ## `node`'s transform relative to its ancestor `top`.
