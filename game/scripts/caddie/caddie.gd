@@ -32,11 +32,11 @@ func _init() -> void:
 
 ## Reads the shot about to be played and stands beside it. `aim_dir` is the
 ## flat direction the golfer faces down; `skill` the swing skill level;
-## `putt_range` the putting meter's top as a share of the full putt meter.
-func advise(model: ShotModel, clubs: Array[Club], hole: HoleData, from: Vector3, lie: int, wind: Vector3, skill: int, aim_dir: Vector3, putt_range := 1.0) -> void:
+## `putt_meter` the putting meter in use (PuttMeterScale).
+func advise(model: ShotModel, clubs: Array[Club], hole: HoleData, from: Vector3, lie: int, wind: Vector3, skill: int, aim_dir: Vector3, putt_meter: PuttMeterScale = null) -> void:
 	_stand(hole, from, aim_dir, CaddieAdvice._is_putting_lie(lie, CaddieAdvice._flat(from, hole.pin)))
 	advice = CaddieAdvice.new()
-	advice.start(model, clubs, hole, from, lie, wind, skill, putt_range)
+	advice.start(model, clubs, hole, from, lie, wind, skill, putt_meter)
 	note.clear()
 	_show_when_ready()
 

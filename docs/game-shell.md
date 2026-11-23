@@ -86,12 +86,19 @@ is followed by a 1 s pause instead of 2.5 s (Space or a click still goes
 on at once). The ball's physics are the same either way.
 
 In Broadcast and Tour the bar reads in distances. A putt's scale is feet on
-a level green; with Quick the putting meter is also sized to the putt
-(`GolfRound.PUTT_RANGES`: 30, 45 or 65% of the full putt meter's power, or
-all of it), the smallest whose top rolls twice the hole's distance, so the
-hole sits two thirds or so along (the roll grows as the square of the
-stroke) and a 10-footer is no longer a sliver in the first quarter of a 110
-ft meter (the original also had a long and a short putt meter). A full swing
+a level green. With Quick and the 3-click meter there are three FIXED
+putting meters (`PuttMeterScale`): 15 ft, 40 ft and the putter's full
+stroke (about 110 ft on normal greens), each a ruler in level feet with
+evenly spaced ticks, so halfway up the 15 ft meter always rolls 7.5 ft on
+the level, on any course or green speed. The 15 ft meter is used for holes
+up to 9 ft, the 40 ft one to 25 ft (room for an uphill putt), and the bar
+says which ("HOLE 8 FT 15 FT METER"). (Until 2026-11-23 the meter was
+resized for every putt in four power steps with the roll growing as the
+square of the stroke, so the same stroke to the same point of the bar
+rolled a different distance from putt to putt.) The bar's reading of power
+is our own choice (the original's meter-to-power scale is not known); the
+stroke, slope, green speed and putt miss are the round's own physics. The
+mouse swing and Classic pace keep the bare meter. A full swing
 or chip labels its quarter marks with the carry in yards for this club and
 lie, on the flat with no wind, and reads the swing as "142 YD 80%" while it
 climbs (`GolfRound.carry_yards`, worked out a sample a frame). Classic Links

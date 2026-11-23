@@ -122,7 +122,7 @@ var swing_method := 1
 ## The pace of play. Quick (the default): the three-click chip and putt
 ## meters start on the snap line and move briskly
 ## (LinksPowerStroke.QUICK_CLIMB), the Broadcast and Tour putting meter is
-## sized to the putt, and a putt that stays out is followed by a short
+## one of three fixed meters in feet (PuttMeterScale), and a putt that stays out is followed by a short
 ## pause. Classic: Links 2003's own meter timing and one putting meter.
 ## The ball's physics and the snap's difficulty are the same either way.
 var quick_pace := true

@@ -25,8 +25,9 @@ every skill level hears it. That is the meter the shot uses: a Chip's
 meter reads its own power table (`LinksPowerStroke.chip_power`, a full
 chip meter is about 35% of the club's full swing), so the caddie plans a
 chip inside it, with a longer club to run it up when a wedge's whole chip
-meter won't get there; and Quick pace's putting meter is sized to the putt,
-so a putt's number is a share of that meter. (Before, the caddie said the
+meter won't get there; and Quick pace's putting meters are fixed rulers in feet
+(`PuttMeterScale`), so a putt's number is a share of the meter in use (the
+bare meter for the mouse swing). (Before, the caddie said the
 plan's share of a full swing or of the full putt meter, which sent chips
 and putts well short, and some chips couldn't be reached at all.) From a lie that costs distance the caddie says
 how much (the shot model's lie power, which the flight uses) and how far
