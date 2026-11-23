@@ -300,6 +300,7 @@ var stand_bag: StandBag  ## the player's bag, standing behind the golfer
 var _bag_for := Vector3.INF  ## the ball the bag was set down for
 var _drive_to := -1  ## the ball the buggy is driving to
 var dynamic_resolution: DynamicResolution
+var frame_watch: FrameWatch
 var grass: GrassField
 var fescue: FescueField  ## tall fescue on the deep rough, further out
 var debris: DebrisField  ## litter, logs and stumps under tree lines (private pack)
@@ -436,10 +437,122 @@ func _ready() -> void:
 	if online == null:
 		online = next_online
 	next_online = null
+	# Behind a loading card (SceneFade), the slowest parts are done a piece a
+	# frame first, so the card can say what is happening and the browser
+	# never sees a page stuck for many seconds.
+	var carded := SceneFade.holding(get_tree())
+	if carded:
+		await _warm_up()
 	start_round()
+	if carded:
+		_reveal_when_drawn()
 	# Once the round has drawn for a few seconds, later loads skip the
 	# first-start note about preparing the graphics.
 	get_tree().create_timer(4.0).timeout.connect(SceneFade.mark_warm)
+
+
+## The course read ahead by _warm_up(), and its path.
+var _warm_course: CourseData
+var _warm_path := ""
+
+
+## The course at `path`: the one _warm_up() read, the first time.
+func _load_course(path: String) -> CourseData:
+	if _warm_course != null and _warm_path == path:
+		var c := _warm_course
+		_warm_course = null
+		return c
+	return AssetProviders.load_course(path)
+
+
+## Frame time the warm-up spends before letting the loading card draw.
+const WARM_STEP_MS := 50
+
+
+## Reads the course and builds what the first hole needs most (the ground's
+## meshes, the gallery's people) a piece at a time behind the loading card,
+## saying what it is doing, before start_round() uses them. The round's own
+## nodes are paused meanwhile, as there is no hole yet.
+func _warm_up() -> void:
+	var tree := get_tree()
+	process_mode = Node.PROCESS_MODE_DISABLED
+	SceneFade.status(tree, "Reading the course...")
+	await tree.process_frame
+	await tree.process_frame
+	var s := setup if setup != null else RoundSetup.single(course_path if not course_path.is_empty() else chosen_course)
+	if not s.facility:
+		_warm_path = course_path if not course_path.is_empty() else s.course_path
+		_warm_course = AssetProviders.load_course(_warm_path)
+	if _warm_course != null and not _warm_course.holes.is_empty():
+		var order := s.hole_indices(_warm_course.holes.size())
+		var first := _warm_course.holes[clampi(order[0] if not order.is_empty() else 0, 0, _warm_course.holes.size() - 1)]
+		if first.terrain is DesignedTerrain:
+			var ground := first.terrain as DesignedTerrain
+			var n := ground.chunk_count()
+			var t0 := Time.get_ticks_msec()
+			for cj in n.y:
+				for ci in n.x:
+					ground.chunk_mesh(Vector2i(ci, cj))
+					if Time.get_ticks_msec() - t0 >= WARM_STEP_MS:
+						SceneFade.status(tree, "Shaping the ground...", float(cj * n.x + ci + 1) / (n.x * n.y))
+						await tree.process_frame
+						t0 = Time.get_ticks_msec()
+		if broadcast and _warm_course.tournament and graphics.quality > GraphicsSettings.Quality.LOW:
+			var want: int = Gallery.CROWD_BY_QUALITY[graphics.quality]
+			var k := 0
+			while Gallery.add_spare_person(want, 7919 * (k + 1)):
+				k += 1
+				SceneFade.status(tree, "Bringing out the gallery...", float(Gallery.spare_count()) / want)
+				await tree.process_frame
+	SceneFade.status(tree, "Setting up the first hole...")
+	await tree.process_frame
+	process_mode = Node.PROCESS_MODE_INHERIT
+
+
+## Keeps the loading card up while the first frames draw (the graphics
+## driver builds each shader the first time it is drawn, which in a
+## browser on Windows can take a while), then lets it go and starts the
+## hole's flyover from the beginning, as it played unseen behind the card.
+func _reveal_when_drawn() -> void:
+	var tree := get_tree()
+	SceneFade.status(tree, "Preparing the graphics for this device...")
+	for i in 4:
+		await tree.process_frame
+	await _warm_shaders(tree)
+	SceneFade.release(tree)
+	if hole != null and camera.flying():
+		camera.start_flyover(hole)
+
+
+## Behind the loading card, a hidden camera looks all round the tee and at
+## the green, a frame each, so the graphics driver builds the shaders of
+## everything the hole shows now rather than the first time each comes
+## into view in play, where every new one is a hitch (seconds on some
+## Windows browsers, which translate every shader for Direct3D).
+func _warm_shaders(tree: SceneTree) -> void:
+	var live := get_viewport().get_camera_3d()
+	if live == null or hole == null:
+		return
+	var eye := Camera3D.new()
+	eye.fov = live.fov
+	eye.near = live.near
+	eye.far = live.far
+	add_child(eye)
+	var views: Array = []
+	var from := live.global_position
+	for k in 8:
+		var yaw := TAU * k / 8.0
+		views.append([from, from + Vector3(sin(yaw), -0.2, cos(yaw))])
+	views.append([hole.pin + Vector3(0.0, 30.0, -25.0), hole.pin])
+	views.append([hole.pin + Vector3(12.0, 4.0, 12.0), hole.pin])
+	eye.make_current()
+	for i in views.size():
+		SceneFade.status(tree, "Preparing the graphics for this device...", float(i + 1) / views.size())
+		eye.look_at_from_position(views[i][0], views[i][1])
+		await tree.process_frame
+	if is_instance_valid(live):
+		live.make_current()
+	eye.queue_free()
 
 
 func start_round() -> void:
@@ -452,7 +565,7 @@ func start_round() -> void:
 		course_path = round_setup.course_path
 	# The practice ground is built in, whatever course was picked.
 	course = PracticeGround.new().load_course(PracticeGround.PATH) if round_setup.facility \
-			else AssetProviders.load_course(course_path)
+			else _load_course(course_path)
 	round_setup.course_name = course.course_name
 	ScannedSurfaces.use_course(course)  # local cart paths and wood (private pack)
 	if round_setup.putting:
@@ -696,6 +809,8 @@ func _round_name() -> String:
 
 func start_hole(index: int) -> void:
 	hole_index = index
+	if frame_watch != null:
+		frame_watch.restart()  # the new hole's loading isn't the frame rate
 	_fold_hints()
 	shot_log.clear()
 	_undo = {}
@@ -3785,6 +3900,11 @@ func _build_world() -> void:
 	add_child(post)
 	dynamic_resolution = DynamicResolution.new()
 	add_child(dynamic_resolution)
+	# A look the game picked steps down if this machine can't keep up.
+	if DisplayServer.get_name() != "headless" and not FrameBenchmark.wanted():
+		frame_watch = FrameWatch.new()
+		add_child(frame_watch)
+		frame_watch.stepped.connect(_on_look_stepped)
 
 	var canvas := CanvasLayer.new()
 	add_child(canvas)
@@ -3910,6 +4030,8 @@ func _apply_graphics() -> void:
 	scenery.apply(graphics)
 	post.apply(graphics)
 	dynamic_resolution.setup(get_viewport(), graphics)
+	if frame_watch != null:
+		frame_watch.setup(graphics, get_viewport(), dynamic_resolution)
 	camera.fov = graphics.fov
 	camera.base_fov = graphics.fov
 	ScannedTree.hd = graphics.quality == GraphicsSettings.Quality.ULTRA and GraphicsSettings.is_forward_plus() \
@@ -3968,6 +4090,12 @@ func _apply_graphics() -> void:
 		_update_wind_shaders()
 		if hole != null:
 			_update_hud()
+
+
+## FrameWatch stepped the look down: apply it and say so.
+func _on_look_stepped(_look: int) -> void:
+	_apply_graphics()
+	hud.show_message("Graphics lowered to keep play smooth (Settings > Look to change)", 5.0)
 
 
 ## Depth of field (Forward+ only): the far distance goes softly out of
@@ -4923,9 +5051,14 @@ func _update_green_grid() -> void:
 	var on := _grid_allowed() and grid_on and graphics.putting_grid > 0 and state == State.AIM \
 		and clubs[club_index].is_putter and (lie == Surface.Type.GREEN or lie == Surface.Type.FRINGE)
 	green_grid.visible = on
-	if on:
+	if graphics.putting_grid > 0 and _grid_allowed():
 		green_grid.style = (graphics.putting_grid - 1) as GreenGrid.Style
+	if on:
 		green_grid.build_async(hole.terrain, ball_at, hole.pin)
+	elif graphics.putting_grid > 0 and _grid_allowed() and hole != null:
+		# Built ahead from the tee, so it's up the moment the ball is on the
+		# green.
+		green_grid.prewarm(hole.terrain, hole.pin)
 
 
 # --- Golfer voice -------------------------------------------------------------

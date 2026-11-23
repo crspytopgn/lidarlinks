@@ -326,6 +326,9 @@ func _on_look_selected(index: int) -> void:
 			settings.look = GraphicsSettings.Look.CUSTOM
 			settings.save()
 		return
+	# The player's own choice: FrameWatch leaves it alone from now on.
+	settings.auto_look = false
+	settings.lean = false
 	settings.apply_look(index)
 	settings.save()
 	open(settings)
