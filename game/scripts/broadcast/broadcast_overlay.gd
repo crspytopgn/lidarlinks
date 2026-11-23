@@ -82,6 +82,9 @@ var pip: SubViewportContainer
 var pip_camera: Camera3D
 var _pip_view: SubViewport
 var glass: FrostedGlass
+## The glass panels last drawn (this control's coordinates), so the HUD
+## can keep the mouse swing's meter off them (Hud.mouse_meter_room).
+var panels: Array[Rect2] = []
 
 
 func _ready() -> void:
@@ -234,6 +237,7 @@ func _process(delta: float) -> void:
 
 
 func _draw() -> void:
+	panels.clear()
 	glass.begin()
 	_draw_pieces()
 	glass.commit()
@@ -656,6 +660,7 @@ func _draw_wipe() -> void:
 ## A glass panel tinted `col`, faded by `alpha`, with `corners` rounded
 ## (top-left, top-right, bottom-right, bottom-left).
 func _panel(r: Rect2, col: Color, alpha := 1.0, corners := ALL) -> void:
+	panels.append(r)
 	glass.add(r, alpha, corners)
 	var blur := Glass.blurs()
 	var sb := _box(Color(col, col.a * (GLASS_TINT if blur else FLAT_TINT) * alpha), corners)

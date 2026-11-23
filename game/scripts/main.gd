@@ -38,7 +38,7 @@ const HINT_AIM := "Left/Right or right-drag: aim (Shift: fine), right-click: aim
 ## The object viewer needs the game folder, which browsers can't read.
 const HINT_OBJECTS := "    O: objects"
 const HINT_AIM_METER := "3-click swing: Space or click    K: use the mouse swing"
-const HINT_AIM_MOUSE := "Mouse swing: hold the left button, pull back, push up    Space: 3-click    K: use 3-click"
+const HINT_AIM_MOUSE := "Mouse swing: hold the left button, pull back, push forward    Space: 3-click    K: use 3-click"
 const HINT_PRACTICE := "Left/Right: aim (Shift: fine)    %s    V: read    N: new spot    [ ]: distance    L: slope    P: drill    T: next cup    H: next green    Esc: menu"
 const HINT_FREE_DROP := "    F: free drop"
 const HINT_DROP := "%s: option    Arrows: move the ball (Shift: fine, Page Down: back 10 m)    Space or click: drop here"
@@ -186,6 +186,11 @@ var _show_controls := false
 ## What is driving the mouse swing: the mouse, a finger or a thumbstick.
 enum SwingInput { MOUSE, TOUCH, STICK }
 var _swing_input := SwingInput.MOUSE
+## The game pad was the last thing used (so the first-time guide shows the
+## stick swing rather than the mouse's).
+var _pad_last := false
+## SwingGuide.seen for each way of swinging, read once.
+var _guide_seen: Array[bool] = [false, false, false]
 ## A touch or stick swing's movement turned into the mouse's (AnalogSwing).
 var _analog: AnalogSwing.Tracker = null
 ## The finger that touched down while aiming (-1 none) and where.
@@ -429,6 +434,9 @@ func _ready() -> void:
 	hud.mouse_swing.backswing_started.connect(_on_backswing_started)
 	hud.mouse_swing.stroke_finished.connect(_on_mouse_stroke)
 	hud.mouse_swing.stroke_cancelled.connect(_on_mouse_stroke_cancelled)
+	for k in _guide_seen.size():
+		_guide_seen[k] = SwingGuide.seen(k as SwingGuide.Kind)
+	hud.swing_guide.dismissed.connect(_on_swing_guide_done)
 	hud.touch_pad.club_pressed.connect(_change_club)
 	hud.touch_pad.menu_pressed.connect(_escape)
 	hud.target_button.pressed.connect(_toggle_target_view)
@@ -1290,6 +1298,7 @@ func _process(delta: float) -> void:
 	var shot_over := state == State.SHOT_RESULT or state == State.HOLE_DONE or state == State.ROUND_DONE \
 		or (state == State.FLIGHT and shot_time > METER_LINGER_S)
 	hud.meter.visible = state != State.DROP and state != State.DRIVE and not (shot_over and practice == null and not round_setup.practice)
+	_update_mouse_meter(paused)
 	hud.swing_button.visible = hud.touch_pad.visible and state == State.AIM and not _replaying \
 		and not hud.hand_over.visible and not paused and shooter < opponents.size() and opponents[shooter] == null and not _is_remote()
 	hud.swing_button.armed = Time.get_ticks_msec() >= _aim_ready_ms and not camera.flying() and not _target_view.busy()
@@ -1794,6 +1803,10 @@ func _made_from_touch(e: InputEventMouse) -> bool:
 func _input(event: InputEvent) -> void:
 	if photo_mode != null and photo_mode.active:
 		return
+	if event is InputEventJoypadButton or (event is InputEventJoypadMotion and absf((event as InputEventJoypadMotion).axis_value) > 0.3):
+		_pad_last = true
+	elif event is InputEventMouseButton or event is InputEventKey:
+		_pad_last = false
 	if _meter_input(event):
 		get_viewport().set_input_as_handled()
 		return
@@ -2011,6 +2024,7 @@ func _pad_button(event: InputEvent) -> bool:
 func _on_mouse_stroke(stroke: LinksMouse.Stroke) -> void:
 	if state != State.SWING:
 		return
+	_swing_guide_learnt(_guide_kind_for(_swing_input))
 	while _swing_help.size() <= shooter:
 		_swing_help.append(LinksMouse.Help.new())
 	var help := _swing_help[shooter]
@@ -2521,6 +2535,91 @@ func _set_caddie(on: bool) -> void:
 		_caddie_read()
 
 
+## Only the meter of the swing in hand: with the mouse swing chosen the
+## three-click meter steps aside (until Space starts it) and the mouse
+## swing's own meter stands empty while the player aims, placed clear of
+## the rest of the HUD. The first time, SwingGuide shows how it goes.
+func _update_mouse_meter(paused: bool) -> void:
+	var ms := hud.mouse_swing
+	var aiming := (state == State.AIM or state == State.SWING) and not paused and not _replaying \
+		and not camera.flying() and not hud.hand_over.visible and not hud.scorecard.visible \
+		and _human_turn() and not _is_remote() and read_view == GreenRead.View.PLAY \
+		and not hud.meter.is_swinging()
+	var kind := _guide_kind()
+	if ms.is_swinging() or (kind != SwingGuide.Kind.TOUCH and graphics.swing_method == 1 and hud.meter.phase == SwingMeter.Phase.IDLE):
+		hud.meter.visible = false
+	ms.putt = club_index < clubs.size() and clubs[club_index].is_putter
+	ms.idle = aiming and not ms.is_swinging() and kind != SwingGuide.Kind.TOUCH \
+		and (graphics.swing_method == 1 or kind == SwingGuide.Kind.STICK)
+	hud.mouse_meter = ms.idle or ms.is_swinging()
+	# The green read panel (only up for putts) steps left for the meter's
+	# column, as "View target" drops into the three-click meter's place, so
+	# long as it stays clear of the middle of the picture, the ball and the
+	# line to the hole; otherwise the meter fits above or below it.
+	var aside := 0.0
+	var vs := get_viewport().get_visible_rect().size
+	if hud.mouse_meter:
+		aside = MouseSwingControl.column_width(vs.y * MouseSwingControl.METER_SHARE)
+		if vs.x - 16.0 - aside - PuttingPanel.WIDTH < vs.x * 0.56:
+			aside = 0.0
+	putting_panel.offset_right = -16.0 - aside
+	putting_panel.offset_left = putting_panel.offset_right - PuttingPanel.WIDTH
+	if putting_panel.visible:
+		_lift_putting_panel()
+	if ms.idle:
+		# Kept still through the swing, as the spin ball and the rest hide.
+		ms.area = hud.mouse_meter_room()
+	elif not ms.is_swinging():
+		ms.area = Rect2()
+	elif not ms.area.has_area():
+		ms.area = hud.mouse_meter_room()
+	var guide := hud.swing_guide
+	if aiming and not _guide_seen[kind] and (ms.idle or ms.is_swinging() or kind == SwingGuide.Kind.TOUCH):
+		var at := ms.meter_rect()
+		if kind == SwingGuide.Kind.TOUCH:
+			at = hud.swing_button.get_global_rect()
+		guide.show_for(kind, at, hud.pieces_showing())
+	else:
+		guide.hide_guide()
+	ms.ghost = guide.ghost() if ms.idle else -1.0
+
+
+## Which way the player swings now: the swing under way, else a touch
+## screen's finger, the pad if that was used last, or the mouse.
+func _guide_kind() -> SwingGuide.Kind:
+	if hud.mouse_swing.is_swinging():
+		return _guide_kind_for(_swing_input)
+	if hud.touch_pad.visible:
+		return SwingGuide.Kind.TOUCH
+	if _pad_last and not Input.get_connected_joypads().is_empty():
+		return SwingGuide.Kind.STICK
+	return SwingGuide.Kind.MOUSE
+
+
+static func _guide_kind_for(source: SwingInput) -> SwingGuide.Kind:
+	match source:
+		SwingInput.TOUCH:
+			return SwingGuide.Kind.TOUCH
+		SwingInput.STICK:
+			return SwingGuide.Kind.STICK
+	return SwingGuide.Kind.MOUSE
+
+
+## A swing made that way: its guide is done with.
+func _swing_guide_learnt(kind: SwingGuide.Kind) -> void:
+	if _guide_seen[kind]:
+		return
+	if hud.swing_guide.showing() and hud.swing_guide.kind == kind:
+		hud.swing_guide.dismiss()  # saves it through _on_swing_guide_done
+	else:
+		_on_swing_guide_done(kind)
+
+
+func _on_swing_guide_done(kind: SwingGuide.Kind) -> void:
+	_guide_seen[kind] = true
+	SwingGuide.mark_seen(kind)
+
+
 ## K while aiming: switch between the 3-click meter and the mouse swing,
 ## kept for the next rounds (Settings > Swing and the round setup too).
 func _toggle_swing_method() -> void:
@@ -2529,7 +2628,7 @@ func _toggle_swing_method() -> void:
 	hud.hint.text = _aim_hint()
 	if hole != null and state == State.AIM:
 		_update_green_aids()  # the fixed putt meters are the 3-click meter's
-	hud.show_message("Mouse swing: hold the left button, pull back and push up" if graphics.swing_method == 1 \
+	hud.show_message("Mouse swing: hold the left button, pull the mouse back, then push it forward" if graphics.swing_method == 1 \
 			else "3-click swing: click (or Space) to start, set the power, then on the white line", 3.0)
 
 
@@ -5231,6 +5330,7 @@ func _update_putt_scale() -> void:
 	if not hud.meter.modern or not _putting_on_green() or shot_model == null:
 		hud.meter.set_putt_scale(PackedFloat32Array(), -1.0)
 		hud.meter.putt_label = ""
+		hud.mouse_swing.set_putt_scale(PackedFloat32Array(), -1.0)
 		_putt_meter = PuttMeterScale.bare()
 		return
 	var hole_ft := Vector2(hole.pin.x - ball_at.x, hole.pin.z - ball_at.z).length() * LinksLaunch.FEET_PER_METRE
@@ -5248,6 +5348,8 @@ func _update_putt_scale() -> void:
 		_putt_meter.full = full
 	hud.meter.set_putt_scale(_putt_meter.feet_scale(), hole_ft)
 	hud.meter.putt_label = _putt_meter.label()
+	# The mouse putt is not on the fixed meters: the full meter's scale.
+	hud.mouse_swing.set_putt_scale(full, hole_ft)
 
 
 ## The putting meter the caddie talks in: the mouse swing's putt is not on
@@ -5440,13 +5542,19 @@ func _update_putting_panel() -> void:
 
 ## The panel grows a row in the read views; it steps up rather than run
 ## over the putt meter below it (it did, hiding the meter's labels).
+## With the mouse swing's meter up, "View target" sits in the three-click
+## meter's place and the panel keeps clear of it the same way.
 func _lift_putting_panel() -> void:
 	var m := hud.meter
-	if m == null or not m.visible or not m.modern:
+	var meter_top := INF
+	if m != null and m.visible and m.modern:
+		meter_top = m.position.y
+	if hud.mouse_meter and hud.target_button.visible:
+		meter_top = minf(meter_top, hud.target_button.position.y)
+	if meter_top == INF:
 		return
 	var top := putting_panel.offset_top
 	var tall := putting_panel.get_combined_minimum_size().y
-	var meter_top := m.position.y
 	if meter_top > top and top + tall > meter_top - 10.0:
 		putting_panel.offset_top = maxf(PUTTING_PANEL_TOP, meter_top - 10.0 - tall)
 

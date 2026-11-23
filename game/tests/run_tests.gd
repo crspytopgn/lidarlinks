@@ -162,6 +162,7 @@ func _process(_delta: float) -> bool:
 	_run("caddie_and_buggy_in_round", _test_caddie_and_buggy_in_round)
 	_run("target_view", _test_target_view)
 	_run("units", _test_units)
+	_run("swing_guide", _test_swing_guide)
 	_run("feet_on_slopes", _test_feet_on_slopes)
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(PlayerProfiles.path))
 	if _failures > 0:
@@ -4127,6 +4128,44 @@ func _test_feet_on_slopes() -> void:
 func _test_free_golfer() -> void:
 	var golfer := FreeGolfer.create()
 	_check(golfer != null, "free_golfer.glb loads with an AnimationPlayer")
+	# Every body (the realistic people, and the sculpted Custom one, short
+	# and tall) meets the ball with the middle of each club's face, the head
+	# on the ground, not in it: the putter at address with the face just
+	# behind the ball, the driver and irons through impact.
+	var people: Array = [""]
+	for p: Array in PlayerLook.PEOPLE:
+		people.append(p[0])
+	for person: String in people:
+		for height: float in [155.0, 195.0]:
+			var look := PlayerLook.default_look()
+			look.person = person
+			look.height_cm = height
+			var fitted := FreeGolfer.create(look)
+			for club: String in FreeGolfer.CLUB_FIT:
+				var at: Array = fitted.club_at_ball(club)
+				var box: AABB = at[0]
+				var face := box.position.x - FreeGolfer.BALL.x - FreeGolfer.BALL_RADIUS
+				var off: float = (at[1] as Vector3).z - FreeGolfer.BALL.z
+				var sole: float = FreeGolfer.CLUB_FIT[club][3]
+				_check((club != "putter" or absf(face - FreeGolfer.PUTT_GAP) < 0.003) and absf(off) < 0.005
+					and box.position.y > minf(sole, 0.0) - 0.002,
+					"%s (%d cm) meets the ball with the middle of the %s (face %.3f m, %.3f m off the middle, sole %.3f m)"
+					% [person if person != "" else "Custom", height, club, face, off, box.position.y])
+			# The driver and irons sit at address and meet the ball as on
+			# the Mixamo person the swings were baked on.
+			for club: String in FreeGolfer.SWING_FIT:
+				var ref: Dictionary = FreeGolfer._swing_ref[club]
+				var fit: Array = fitted._fits[club]
+				var m := fitted.swing_metrics(club, fit[0])
+				var dz: float = ((m.basis as Basis) * (fit[1] as Vector3)).z
+				var addr: float = (m.address as Vector3).z + dz - (ref.address as Vector3).z
+				var imp: float = (m.impact as Vector3).z + dz - (ref.impact as Vector3).z
+				# (A sole still low has the grip choked as far as it goes.)
+				var choked := (fit[0] as Vector3).length() * float(m.unit) > FreeGolfer.CLUB_CHOKE.y - 1e-4
+				_check(absf(addr) < 0.03 and absf(imp) < 0.03 and (absf(float(m.low) - float(ref.low)) < 0.01 or choked),
+					"%s (%d cm) holds the %s as the swings were baked (address %.3f m, impact %.3f m out, sole %.3f m)"
+					% [person if person != "" else "Custom", height, club, addr, imp, float(m.low) - float(ref.low)])
+			fitted.free()
 	_check(is_equal_approx(FreeGolfer.backswing_top(&"backswing", 0.9), FreeGolfer.BACKSWING_TOP)
 		and is_equal_approx(FreeGolfer.backswing_top(&"backswing_iron", 0.9), FreeGolfer.BACKSWING_TOP_IRON)
 		and is_equal_approx(FreeGolfer.backswing_top(&"backswing", 0.5), 0.5),
@@ -4705,6 +4744,16 @@ func _test_people(parts: GolferParts) -> void:
 	_check(capped > 140 and capped < 220, "about half the gallery wears a cap (%d of 400)" % capped)
 	_check(white * 5 < capped, "few of the gallery's caps are white (%d of %d)" % [white, capped])
 	_check(Scenery.people_light(true, false).x < 1.0 and Scenery.people_light(true, true) == Vector3(1, 1, 0), "people take back the web build's turf lift only")
+	_check(Scenery.people_sky(false, false, 4.0, 0.5) == Vector4(0, 0, 0, 1), "Classic lighting leaves people's shade as it is")
+	for fwd: bool in [false, true]:
+		var ps := Scenery.people_sky(true, fwd, 4.0, 0.5)
+		var amb := 0.5 * Scenery.people_light(true, fwd).y
+		var sky := Vector3(ps.x, ps.y, ps.z).dot(Vector3(0.2126, 0.7152, 0.0722))
+		var shade := amb + sky
+		var lit := 4.0 * ps.w + shade
+		var ratio := Scenery.PEOPLE_SHADE_RATIO_FORWARD if fwd else Scenery.PEOPLE_SHADE_RATIO
+		_check(sky > 0.0 and absf(shade / lit - ratio) < 0.02, "people's shade gets the sky's light, as the turf's does (%s)" % ("Forward+" if fwd else "web"))
+	_check(Scenery.people_sky(true, false, 4.0, 0.5).w < 1.0 / Scenery.COMPAT_SUN_LIFT, "the web's extra sun is taken back on people")
 	_check(PlayerLook.from_dict({"sex": 0.0}).person == "", "a look saved before the people stays Custom")
 	var saved := PlayerLook.default_look()
 	saved.person = "Female_Adult_17"
@@ -5489,7 +5538,7 @@ func _test_team_drops() -> void:
 	card_overlay.free()
 	game._finish_drop()
 	game._process(0.0)
-	_check(game.hud.meter.visible, "drop: the meter is back after the drop")
+	_check(game.hud.meter.visible or game.hud.mouse_meter, "drop: the swing's meter is back after the drop")
 	GolfRound.setup = null
 
 
@@ -7428,3 +7477,67 @@ func _test_units() -> void:
 	_check(GraphicsSettings.load_saved(path).metric_units and Units.metric, "the Units setting is saved and applied")
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
 	Units.metric = was
+
+
+func _test_swing_guide() -> void:
+	var path := "user://test_swing_guide.cfg"
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
+	var keep := ConfigFile.new()
+	keep.set_value("game", "skill", 2)
+	keep.save(path)
+	_check(not SwingGuide.seen(SwingGuide.Kind.MOUSE, path), "a new player hasn't seen the mouse swing guide")
+	SwingGuide.mark_seen(SwingGuide.Kind.MOUSE, path)
+	_check(SwingGuide.seen(SwingGuide.Kind.MOUSE, path) and not SwingGuide.seen(SwingGuide.Kind.TOUCH, path),
+			"once done with it is never shown again, and the touch guide is its own")
+	var back := ConfigFile.new()
+	back.load(path)
+	_check(int(back.get_value("game", "skill", 0)) == 2, "the rest of the settings file is kept")
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
+	# The demonstration pulls back slowly, then pushes through quicker.
+	_check(SwingGuide.demo_at(0.0).y == 0.0 and SwingGuide.demo_at(SwingGuide.BACK_S + 0.1).y == 1.0,
+			"the drawing starts at the ball and reaches the top")
+	var push := SwingGuide.demo_at(SwingGuide.BACK_S + SwingGuide.TOP_S + SwingGuide.DOWN_S * 0.5).y
+	_check(push > 0.0 and push < 1.0, "then comes back through (%.2f)" % push)
+	_check(SwingGuide.demo_at(SwingGuide.BACK_S + SwingGuide.TOP_S + SwingGuide.DOWN_S + 0.2).y == 0.0, "and rests at the ball")
+	# The mouse meter's column stays clear of the rest of the HUD.
+	var screen := Vector2(1280, 720)
+	var wind := Rect2(1174, 50, 90, 112)
+	var spin := Rect2(1134, 186, 140, 112)
+	var target := Rect2(1080, 578, 176, 42)
+	var room := Hud.room_for(screen, 50.0, 620.0, [wind, spin, target] as Array[Rect2])
+	var r := MouseSwingControl.rect_in(screen, room)
+	var label := Rect2(r.position - Vector2(r.size.x * 1.6, MouseSwingControl.LABEL_H), r.size * Vector2(4.2, 1.0) + Vector2(0, MouseSwingControl.LABEL_H))
+	for b: Rect2 in [wind, spin, target]:
+		_check(not label.intersects(b), "the mouse meter %s misses %s" % [label, b])
+	_check(r.size.y > 200.0 and r.end.x < screen.x, "and is still tall (%.0f px)" % r.size.y)
+	# Tour's hole map down the right: the meter goes down the left, under
+	# the leaderboard.
+	var map := Rect2(1119, 58, 137, 304)
+	var rail := Rect2(0, 0, 308, 194)
+	var tour_blocks: Array[Rect2] = [wind, map, rail, Rect2(1080, 478, 176, 42)]
+	var tour_room := Hud.room_for(screen, 50.0, 520.0, tour_blocks)
+	var tr := MouseSwingControl.rect_in(screen, tour_room)
+	_check(tour_room.end.x < screen.x * 0.5 and tr.size.y > 150.0, "down the left in Tour (%s)" % tour_room)
+	for b: Rect2 in tour_blocks:
+		_check(not tour_room.intersects(b), "clear of %s in Tour" % b)
+	# The card moves up off the green read panel rather than over it.
+	var panel := Rect2(605, 372, 470, 172)
+	var y := SwingGuide.place_y(Rect2(731, 314, 390, 214), 720.0, [panel] as Array[Rect2])
+	_check(not Rect2(731, y, 390, 214).intersects(panel) and y >= 8.0, "the guide card misses the green read (y %.0f)" % y)
+	# The mouse putt's distance scale: further putts sit higher up the
+	# backswing, and the assistant's mark agrees with it.
+	var feet := PackedFloat32Array()
+	for i in 21:
+		feet.append(i * 4.0)  # 80 ft for the full putt
+	var m := LinksMouse.meter_for(1920)
+	var h10 := MouseSwingControl.putt_height(MouseSwingControl.share_for_feet(feet, 10.0), m)
+	var h30 := MouseSwingControl.putt_height(MouseSwingControl.share_for_feet(feet, 30.0), m)
+	_check(h10 > m.ball_line and h30 > h10 and h30 <= m.height - 10, "a 30 ft putt needs a longer backswing than 10 ft (%.0f, %.0f)" % [h10, h30])
+	_check_near(MouseSwingControl.share_for_feet(feet, 30.0), 0.375, 0.001, "30 ft of 80")
+	_check(MouseSwingControl.share_for_feet(feet, 90.0) < 0.0, "past the scale: no share")
+	var ms := MouseSwingControl.new()
+	ms.putt = true
+	ms.target = 0.375
+	_check_near(ms.target_height(), h30, 0.01, "the assistant's mark on the empty putting meter")
+	ms.free()
+	_check(is_equal_approx(MouseSwingControl.rect_in(screen, Rect2()).size.y, screen.y * MouseSwingControl.METER_SHARE), "with no room given it sits as before")

@@ -775,6 +775,51 @@ func _update_shade_fill() -> void:
 		var c := SHADE_FILL_COLOR * (extra * keep / SHADE_FILL_COLOR.get_luminance())
 		fill = Vector4(c.r, c.g, c.b, keep)
 	RenderingServer.global_shader_parameter_set("shade_fill", fill)
+	RenderingServer.global_shader_parameter_set("people_sky", people_sky(_photo, GraphicsSettings.is_forward_plus(),
+		sun.light_energy, environment.ambient_light_energy * environment.ambient_light_color.get_luminance()))
+
+
+## How dark a person's shade is against their sunlit side in Photoreal, on
+## a surface square to the sun (linear light, before the tone curve):
+## golfer_occlusion.gdshaderinc people_sky. Real golfers in sunshine keep
+## detail and colour in their shade: a navy shirt stays navy, a face's
+## shaded cheek a darker skin tone. With the renderers' own light it was
+## about a tenth (3.5 stops) on the web and a sixth on desktop, so the
+## shirt swung from pale blue to black as the golfer turned in his swing,
+## and a golfer under a tree went near black on mid-green turf. About the
+## turf's own shade (COMPAT_SHADE_RATIO under the web's tone curve)
+## keeps people and the ground they stand on in the
+## same light. Forward+'s sky light already fills people's shade more
+## than its flat-fill share counts here (at 0.35 a golfer under a tree
+## read as sunlit), so its ratio is set lower.
+const PEOPLE_SHADE_RATIO := 0.4
+const PEOPLE_SHADE_RATIO_FORWARD := 0.2
+## How bright a person's sunlit side is drawn in Compatibility against
+## Forward+'s. Under the web's lifted exposure and grade, khaki trousers in
+## sun clipped to (255, 238, 183) and a navy shirt went pastel, while in a
+## photo of a golfer on a sunny tee the shirt keeps its full colour and the
+## sunlit turf beside him is the brighter of the two.
+const PEOPLE_SUNLIT_COMPAT := 0.72
+
+
+## people_sky for a sun of `sun_energy` and a flat fill of `fill`
+## (energy times the fill colour's luminance): rgb the sky light added to
+## people's shade (a share of their albedo), a the sun's scale. In
+## Compatibility the sun is drawn COMPAT_SUN_LIFT stronger for the turf;
+## people take that back, or their sunlit side washes out (khaki trousers
+## near white, a navy shirt pale blue) as their shade got darker.
+## (0, 0, 0, 1) leaves people as they are (Classic).
+static func people_sky(photo: bool, forward_plus: bool, sun_energy: float, fill: float) -> Vector4:
+	if not photo or sun_energy <= 0.0:
+		return Vector4(0.0, 0.0, 0.0, 1.0)
+	var light := people_light(photo, forward_plus)
+	var amb := fill * light.y
+	var key := sun_energy if forward_plus else sun_energy / COMPAT_SUN_LIFT
+	var lit := (key + amb) * (1.0 if forward_plus else PEOPLE_SUNLIT_COMPAT)
+	var shade := maxf(lit * (PEOPLE_SHADE_RATIO_FORWARD if forward_plus else PEOPLE_SHADE_RATIO), amb)
+	var extra := shade - amb
+	var c := SHADE_FILL_COLOR * (extra / SHADE_FILL_COLOR.get_luminance())
+	return Vector4(c.r, c.g, c.b, (lit - shade) / sun_energy)
 
 
 func _apply_weather_light() -> void:
