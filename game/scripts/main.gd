@@ -435,10 +435,90 @@ func _ready() -> void:
 	if online == null:
 		online = next_online
 	next_online = null
+	# Behind a loading card (SceneFade), the slowest parts are done a piece a
+	# frame first, so the card can say what is happening and the browser
+	# never sees a page stuck for many seconds.
+	var carded := SceneFade.holding(get_tree())
+	if carded:
+		await _warm_up()
 	start_round()
+	if carded:
+		_reveal_when_drawn()
 	# Once the round has drawn for a few seconds, later loads skip the
 	# first-start note about preparing the graphics.
 	get_tree().create_timer(4.0).timeout.connect(SceneFade.mark_warm)
+
+
+## The course read ahead by _warm_up(), and its path.
+var _warm_course: CourseData
+var _warm_path := ""
+
+
+## The course at `path`: the one _warm_up() read, the first time.
+func _load_course(path: String) -> CourseData:
+	if _warm_course != null and _warm_path == path:
+		var c := _warm_course
+		_warm_course = null
+		return c
+	return AssetProviders.load_course(path)
+
+
+## Frame time the warm-up spends before letting the loading card draw.
+const WARM_STEP_MS := 50
+
+
+## Reads the course and builds what the first hole needs most (the ground's
+## meshes, the gallery's people) a piece at a time behind the loading card,
+## saying what it is doing, before start_round() uses them. The round's own
+## nodes are paused meanwhile, as there is no hole yet.
+func _warm_up() -> void:
+	var tree := get_tree()
+	process_mode = Node.PROCESS_MODE_DISABLED
+	SceneFade.status(tree, "Reading the course...")
+	await tree.process_frame
+	await tree.process_frame
+	var s := setup if setup != null else RoundSetup.single(course_path if not course_path.is_empty() else chosen_course)
+	if not s.facility:
+		_warm_path = course_path if not course_path.is_empty() else s.course_path
+		_warm_course = AssetProviders.load_course(_warm_path)
+	if _warm_course != null and not _warm_course.holes.is_empty():
+		var order := s.hole_indices(_warm_course.holes.size())
+		var first := _warm_course.holes[clampi(order[0] if not order.is_empty() else 0, 0, _warm_course.holes.size() - 1)]
+		if first.terrain is DesignedTerrain:
+			var ground := first.terrain as DesignedTerrain
+			var n := ground.chunk_count()
+			var t0 := Time.get_ticks_msec()
+			for cj in n.y:
+				for ci in n.x:
+					ground.chunk_mesh(Vector2i(ci, cj))
+					if Time.get_ticks_msec() - t0 >= WARM_STEP_MS:
+						SceneFade.status(tree, "Shaping the ground...", float(cj * n.x + ci + 1) / (n.x * n.y))
+						await tree.process_frame
+						t0 = Time.get_ticks_msec()
+		if broadcast and _warm_course.tournament and graphics.quality > GraphicsSettings.Quality.LOW:
+			var want: int = Gallery.CROWD_BY_QUALITY[graphics.quality]
+			var k := 0
+			while Gallery.add_spare_person(want, 7919 * (k + 1)):
+				k += 1
+				SceneFade.status(tree, "Bringing out the gallery...", float(Gallery.spare_count()) / want)
+				await tree.process_frame
+	SceneFade.status(tree, "Setting up the first hole...")
+	await tree.process_frame
+	process_mode = Node.PROCESS_MODE_INHERIT
+
+
+## Keeps the loading card up while the first frames draw (the graphics
+## driver builds each shader the first time it is drawn, which in a
+## browser on Windows can take a while), then lets it go and starts the
+## hole's flyover from the beginning, as it played unseen behind the card.
+func _reveal_when_drawn() -> void:
+	var tree := get_tree()
+	SceneFade.status(tree, "Preparing the graphics for this device...")
+	for i in 8:
+		await tree.process_frame
+	SceneFade.release(tree)
+	if hole != null and camera.flying():
+		camera.start_flyover(hole)
 
 
 func start_round() -> void:
@@ -451,7 +531,7 @@ func start_round() -> void:
 		course_path = round_setup.course_path
 	# The practice ground is built in, whatever course was picked.
 	course = PracticeGround.new().load_course(PracticeGround.PATH) if round_setup.facility \
-			else AssetProviders.load_course(course_path)
+			else _load_course(course_path)
 	round_setup.course_name = course.course_name
 	ScannedSurfaces.use_course(course)  # local cart paths and wood (private pack)
 	if round_setup.putting:

@@ -381,15 +381,9 @@ func _build_crowd(hole: HoleData, lines: Array[PackedVector3Array], count: int, 
 		# bakes their meshes (several ms each, 28 at Ultra).
 		var person: FreeGolfer = _spare_people.pop_back() if not _spare_people.is_empty() else null
 		if person == null:
-			person = FreeGolfer.create(look, FreeGolfer.SPECTATOR_TEXTURE)
+			person = _dress(look)
 			if person == null:
 				break  # no golfer model or look pack: ropes only
-			person.walk_in = false
-			for node in person.find_children("*", "MeshInstance3D", true, false):
-				var mi := node as MeshInstance3D
-				if mi.name.begins_with("Driver") or mi.name.begins_with("Putter") or mi.name.begins_with("Iron"):
-					mi.visible = false
-				mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		var at: Vector3 = spot[0]
 		var focus: Vector3 = spot[1]
 		add_child(person)
@@ -680,6 +674,40 @@ func release_people() -> void:
 			person.queue_free()
 	_people.clear()
 	_people_home = PackedVector3Array()
+
+
+## A spectator dressed in `look`, clubs hidden and casting no sun shadow;
+## null without a golfer model or look pack.
+static func _dress(look: PlayerLook) -> FreeGolfer:
+	var person := FreeGolfer.create(look, FreeGolfer.SPECTATOR_TEXTURE)
+	if person == null:
+		return null
+	person.walk_in = false
+	for node in person.find_children("*", "MeshInstance3D", true, false):
+		var mi := node as MeshInstance3D
+		if mi.name.begins_with("Driver") or mi.name.begins_with("Putter") or mi.name.begins_with("Iron"):
+			mi.visible = false
+		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	return person
+
+
+## Dresses one spare spectator ahead of the first gallery, so a round's
+## loading card can do it a person a frame (several ms to a tenth of a
+## second each) instead of in one long stall. False once `count` are spare
+## or there is no golfer model.
+static func add_spare_person(count: int, seed_value: int) -> bool:
+	if _spare_people.size() >= mini(count, SPARE_PEOPLE_MAX):
+		return false
+	var person := _dress(PlayerLook.spectator(seed_value))
+	if person == null:
+		return false
+	_spare_people.append(person)
+	return true
+
+
+## Spectators spare for the next gallery.
+static func spare_count() -> int:
+	return _spare_people.size()
 
 
 ## Frees the spare spectators (when the round ends).

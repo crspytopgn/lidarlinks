@@ -575,7 +575,7 @@ func effective_render_scale(viewport: Viewport) -> float:
 ## The browser's 3D scale for a chosen `scale`, a window of `pixels` device
 ## pixels, `q` quality and a device pixel ratio `dpr`.
 static func web_render_scale(scale: float, pixels: float, q: int, dpr: float) -> float:
-	var lowest := WEB_BUDGET_FLOOR_HIDPI if dpr >= 1.75 else WEB_BUDGET_FLOOR
+	var lowest := WEB_BUDGET_FLOOR_HIDPI if dpr >= 1.4 else WEB_BUDGET_FLOOR
 	var s := minf(scale, budget_scale(pixels, WEB_PIXEL_BUDGET[q]))
 	return maxf(s, minf(scale, lowest))
 
