@@ -328,13 +328,10 @@ var breakline: BreaklineIndicator
 var assistant: PuttRead  ## Links 2003's Putting Assistant
 var _assist := {}
 var _assist_from := Vector3.INF
-## The putting meter's distance scale (SwingMeter.putt_feet), and where it
-## was worked out from.
-var _putt_scale_from := Vector3.INF
-## Quick pace's putting meter is sized to the putt (PUTT_RANGES): the share
-## of the full putt meter's power the whole meter gives now, 1 for the
-## full meter (Classic, and wherever the meter shows no distances).
-var _putt_range := 1.0
+## The putting meter in use (PuttMeterScale): one of Quick pace's fixed
+## meters in feet, or the bare meter (Classic, the mouse swing, and
+## wherever the meter shows no distances).
+var _putt_meter := PuttMeterScale.bare()
 ## The full-swing and chip meter's carry scale (SwingMeter.yards), worked
 ## out a sample a frame: what it is for, and the samples still to do.
 var _yard_key := []
@@ -1917,9 +1914,9 @@ func _on_swing_finished(power: float, accuracy: float) -> void:
 			# A chip's meter position reads its own power table.
 			power = LinksPowerStroke.chip_power(hud.meter.power_position) / 100.0
 		elif clubs[club_index].is_putter:
-			# Quick pace's meter sized to the putt: its top is this share of
+			# Quick pace's fixed meters read in feet: the bar's value to
 			# the full putt meter's power.
-			power *= _putt_range
+			power = _putt_meter.power_for_value(power)
 		play_shot(power, accuracy)
 
 
@@ -2318,12 +2315,12 @@ func _caddie_read() -> void:
 		_quiet_advice()
 		if (broadcast or tour) and opponents[shooter] == null and state == State.AIM and practice == null:
 			_advice = CaddieAdvice.new()
-			_advice.start(shot_model, clubs, hole, ball_at, lie, wind.velocity(), graphics.skill, _putt_range)
+			_advice.start(shot_model, clubs, hole, ball_at, lie, wind.velocity(), graphics.skill, _caddie_putt_meter())
 		return
 	if opponents[shooter] != null or state != State.AIM:
 		caddie.step_aside()
 		return
-	caddie.advise(shot_model, clubs, hole, ball_at, lie, wind.velocity(), graphics.skill, _aim_dir(), _putt_range)
+	caddie.advise(shot_model, clubs, hole, ball_at, lie, wind.velocity(), graphics.skill, _aim_dir(), _caddie_putt_meter())
 
 
 ## The swing has started, or the shot isn't the player's: the read goes.
@@ -2367,6 +2364,8 @@ func _toggle_swing_method() -> void:
 	graphics.swing_method = 1 - graphics.swing_method
 	graphics.save()
 	hud.hint.text = _aim_hint()
+	if hole != null and state == State.AIM:
+		_update_green_aids()  # the fixed putt meters are the 3-click meter's
 	hud.show_message("Mouse swing: hold the left button, pull back and push up" if graphics.swing_method == 1 \
 			else "3-click swing: click (or Space) to start, set the power, then on the white line", 3.0)
 
@@ -3893,7 +3892,6 @@ func _apply_graphics() -> void:
 		camera.end_flyover()
 	hud.meter.quick = graphics.quick_pace
 	camera.quick = graphics.quick_pace
-	_putt_scale_from = Vector3.INF  # the putt meter's size goes with the pace
 	_yard_key = []
 	if hole != null and state == State.AIM:
 		_update_green_grid()
@@ -5038,20 +5036,17 @@ func _update_green_aids() -> void:
 
 ## The Broadcast and Tour putting meter's distance scale: how far a putt at
 ## each point of the meter rolls on a level green of this course's speed,
-## by the round's own physics, plus the hole's distance as a mark. The
-## player still reads the slope and makes the stroke; Classic Links keeps
-## the original's bare meter.
+## by the round's own physics, plus the hole's distance as a mark. In Quick
+## pace with the meter it is one of PuttMeterScale's fixed meters, a ruler
+## in feet. The player still reads the slope and makes the stroke; Classic
+## Links keeps the original's bare meter.
 func _update_putt_scale() -> void:
 	if not hud.meter.modern or not _putting_on_green() or shot_model == null:
 		hud.meter.set_putt_scale(PackedFloat32Array(), -1.0)
-		_putt_scale_from = Vector3.INF
-		_putt_range = 1.0
+		hud.meter.putt_label = ""
+		_putt_meter = PuttMeterScale.bare()
 		return
 	var hole_ft := Vector2(hole.pin.x - ball_at.x, hole.pin.z - ball_at.z).length() * LinksLaunch.FEET_PER_METRE
-	if _putt_scale_from.is_equal_approx(ball_at):
-		hud.meter.set_putt_scale(hud.meter.putt_feet, hole_ft)
-		return
-	_putt_scale_from = ball_at
 	# 21 putts on a level green: the same wherever the ball is, so worked
 	# out once per putter, lie and green speed (it stalled every arrival on
 	# the green).
@@ -5059,48 +5054,19 @@ func _update_putt_scale() -> void:
 	if not _putt_scales.has(key):
 		_putt_scales[key] = putt_roll_feet(shot_model, clubs[club_index], lie)
 	var full: PackedFloat32Array = _putt_scales[key]
-	_putt_range = putt_range_for(full, hole_ft) if graphics.quick_pace else 1.0
-	hud.meter.set_putt_scale(rescale_roll(full, _putt_range), hole_ft)
+	if graphics.quick_pace and graphics.swing_method != 1:
+		_putt_meter = PuttMeterScale.for_hole(full, hole_ft)
+	else:
+		_putt_meter = PuttMeterScale.bare()
+		_putt_meter.full = full
+	hud.meter.set_putt_scale(_putt_meter.feet_scale(), hole_ft)
+	hud.meter.putt_label = _putt_meter.label()
 
 
-## Quick pace's putting meters, as shares of the full meter's power: the
-## original has a long and a short putt meter, and one meter for every
-## putt from a tap-in to 100 feet left a 10-footer in its first quarter,
-## a sliver to judge. The smallest that rolls PUTT_RANGE_ROOM times the
-## hole's distance on the level is used, so the hole sits two thirds or so
-## along the meter with room for an uphill putt. The same stroke on any of
-## them rolls the ball by the same physics; only the meter's size changes.
-const PUTT_RANGES: Array[float] = [0.3, 0.45, 0.65, 1.0]
-const PUTT_RANGE_ROOM := 2.0
-
-
-## The putting meter for a hole `hole_ft` away, from the full meter's
-## scale (putt_roll_feet with range 1).
-static func putt_range_for(full_feet: PackedFloat32Array, hole_ft: float) -> float:
-	if full_feet.size() < 2:
-		return 1.0
-	for r in PUTT_RANGES:
-		var x := r * (full_feet.size() - 1)
-		var i := mini(int(x), full_feet.size() - 2)
-		if lerpf(full_feet[i], full_feet[i + 1], x - i) >= hole_ft * PUTT_RANGE_ROOM:
-			return r
-	return 1.0
-
-
-## The full meter's scale (`full_feet`, at 0, 1/20 ... 1) for a meter
-## whose top is `share` of the full meter's power, read off it: the roll is
-## smooth enough in the stroke that this is within an inch of simulating
-## each point again (and costs nothing).
-static func rescale_roll(full_feet: PackedFloat32Array, share: float) -> PackedFloat32Array:
-	if share >= 1.0 or full_feet.size() < 2:
-		return full_feet
-	var out := PackedFloat32Array()
-	var n := full_feet.size() - 1
-	for i in n + 1:
-		var x := float(i) / n * share * n
-		var j := mini(int(x), n - 1)
-		out.append(lerpf(full_feet[j], full_feet[j + 1], x - j))
-	return out
+## The putting meter the caddie talks in: the mouse swing's putt is not on
+## the fixed meters.
+func _caddie_putt_meter() -> PuttMeterScale:
+	return PuttMeterScale.bare() if graphics.swing_method == 1 else _putt_meter
 
 
 var _putt_scales := {}  ## see _update_putt_scale()
@@ -5236,8 +5202,8 @@ func _update_assistant() -> void:
 	if level == 2:
 		assistant.show_read(_assist, ball_at)
 		# The dot is on this putt's meter (Quick pace sizes it to the putt).
-		hud.meter.target = clampf(float(_assist.power) / _putt_range, 0.0, 1.0) if not _assist.is_empty() else -1.0
-		# The mouse swing's backswing mark: its putt isn't sized to the putt.
+		hud.meter.target = _putt_meter.value_for_power(float(_assist.power)) if not _assist.is_empty() else -1.0
+		# The mouse swing's backswing mark: its putt is on the bare meter.
 		hud.mouse_swing.target = clampf(float(_assist.power), 0.0, 1.0) if not _assist.is_empty() else -1.0
 	else:
 		assistant.show_band(_assist)
@@ -5273,7 +5239,9 @@ func _update_putting_panel() -> void:
 	if can_read:
 		var to_hole := Vector2(hole.pin.x - ball_at.x, hole.pin.z - ball_at.z)
 		lines.append("Greens: %s\nSlope at the ball: %s" % [
-			GreenRead.speed_text(graphics.green_firmness, graphics.green_speed, _links_greens()),
+			# The round's greens (its setup can override the settings).
+			GreenRead.speed_text(record.green_firmness if record != null else graphics.green_firmness,
+					record.green_speed if record != null else graphics.green_speed, _links_greens()),
 			GreenRead.lie_text(hole.terrain, ball_at, to_hole)])
 		var read := GreenRead.line(hole.terrain, ball_at, hole.pin)
 		lines.append("Putt: " + GreenRead.putt_text(read, _grid_allowed()))

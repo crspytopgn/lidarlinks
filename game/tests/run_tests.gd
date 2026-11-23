@@ -858,13 +858,27 @@ func _test_quick_pace(meter: SwingMeter, roll: PackedFloat32Array) -> void:
 				r.click_power()
 		return r._need
 	_check(through.call(true) >= through.call(false) - 1, "the snap is as easy to hit in Quick (%d vs %d frames)" % [through.call(true), through.call(false)])
-	# The putting meter sized to the putt: about twice the hole on the level.
+	# Quick pace's fixed putting meters: 15 ft, 40 ft and the full stroke,
+	# each a ruler in feet on the level.
 	var full := PackedFloat32Array()
 	for i in 21:
-		full.append(100.0 * pow(float(i) / 20.0, 1.5))  # 100 ft at the top
-	_check_near(GolfRound.putt_range_for(full, 5.0), 0.3, 1e-6, "a 5-footer gets the shortest putting meter")
-	_check_near(GolfRound.putt_range_for(full, 14.0), 0.45, 1e-6, "a 14-footer the next")
-	_check_near(GolfRound.putt_range_for(full, 80.0), 1.0, 1e-6, "a long putt the full meter")
+		full.append(110.0 * pow(maxf(float(i) / 20.0, 0.02), 2.0))  # 110 ft at the top
+	_check_near(PuttMeterScale.top_for(full, 5.0), 15.0, 1e-6, "a 5-footer gets the 15 ft putting meter")
+	_check_near(PuttMeterScale.top_for(full, 9.0), 15.0, 1e-6, "a 9-footer still the 15 ft meter")
+	_check_near(PuttMeterScale.top_for(full, 14.0), 40.0, 1e-6, "a 14-footer the 40 ft meter")
+	_check_near(PuttMeterScale.top_for(full, 80.0), 110.0, 1e-6, "a long putt the full stroke")
+	var m15 := PuttMeterScale.for_hole(full, 6.0)
+	var m15b := PuttMeterScale.for_hole(full, 3.0)
+	_check_near(m15.power_for_value(0.5), m15b.power_for_value(0.5), 1e-9, "the same stroke on the same meter is the same power, whatever the putt")
+	_check_near(m15.feet_for_power(m15.power_for_value(0.5)), 7.5, 0.05, "halfway up the 15 ft meter rolls 7.5 ft on the level")
+	_check_near(m15.value_for_power(m15.power_for_value(0.3)), 0.3, 1e-4, "the meter's value and power convert both ways")
+	_check_near(m15.power_for_value(0.0), 0.0, 1e-9, "the bottom of the meter is no stroke")
+	var spacing := m15.feet_scale()
+	_check(spacing.size() == 21 and is_equal_approx(spacing[10], 7.5) and is_equal_approx(spacing[20], 15.0), "the fixed meter's ticks are evenly spaced feet")
+	var mlong := PuttMeterScale.for_hole(full, 60.0)
+	_check_near(mlong.power_for_value(1.0), 1.0, 1e-6, "the long meter's top is the full stroke")
+	_check_near(PuttMeterScale.bare().power_for_value(0.42), 0.42, 1e-9, "the bare meter is the full meter's power")
+	_check_near(CaddieAdvice.meter_value(m15.power_for_value(0.6), true, false, m15), 0.6, 1e-4, "the caddie reads a putt on the fixed meter")
 	var putter: Club = null
 	var seven: Club = null
 	for c in Club.standard_set():
@@ -874,11 +888,15 @@ func _test_quick_pace(meter: SwingMeter, roll: PackedFloat32Array) -> void:
 			seven = c
 	var short_roll := GolfRound.putt_roll_feet(StandardShotModel.new(), putter, Surface.Type.GREEN, 0.3)
 	_check(short_roll[20] < roll[20] * 0.6 and short_roll[20] > 0.0, "the short putting meter's top rolls less (%.1f of %.1f ft)" % [short_roll[20], roll[20]])
-	var read_off := GolfRound.rescale_roll(roll, 0.3)
+	# The fixed meter's reading of feet, read off the full scale, against
+	# simulating the stroke it gives.
+	var real15 := PuttMeterScale.for_hole(roll, 5.0)
 	var worst := 0.0
-	for i in range(1, 21):
-		worst = maxf(worst, absf(read_off[i] - short_roll[i]))
-	_check(worst < 0.15, "the short meter's scale read off the full one is within %.2f ft of simulating it" % worst)
+	for v in [0.2, 0.4, 0.6, 0.8, 1.0]:
+		var p := real15.power_for_value(v)
+		var sim := GolfRound.putt_roll_feet(StandardShotModel.new(), putter, Surface.Type.GREEN, p)
+		worst = maxf(worst, absf(sim[20] - v * real15.top_ft))
+	_check(worst < 0.25, "the 15 ft meter's marks are within %.2f ft of the real roll" % worst)
 	# The full swing reads in carry yards.
 	meter.mode = LinksPowerStroke.Mode.FULL
 	meter.set_yard_scale(PackedFloat32Array([0.25, 0.5, 0.75, 1.0]), PackedFloat32Array([40.0, 80.0, 120.0, 160.0]))
@@ -1842,11 +1860,15 @@ func _test_caddie() -> void:
 	advice.finish()
 	print("  green: " + advice.text)
 	_check(advice.text.begins_with("20 feet"), "putt read gives the length (%s)" % advice.text)
-	# Quick pace's putting meter, sized to the putt: the caddie's number is
-	# the meter's, not the full putt meter's (it sent putts well short).
-	advice.start(model, clubs, hole, Vector3.ZERO, Surface.Type.GREEN, Vector3.ZERO, 0, 0.25)
+	# Quick pace's fixed putting meters: the caddie's number is the meter's,
+	# not the full putt meter's (it sent putts well short).
+	var feet := PackedFloat32Array()
+	for i in 21:
+		feet.append(110.0 * pow(maxf(float(i) / 20.0, 0.02), 2.0))
+	var fixed := PuttMeterScale.for_hole(feet, 20.0)
+	advice.start(model, clubs, hole, Vector3.ZERO, Surface.Type.GREEN, Vector3.ZERO, 0, fixed)
 	advice.finish()
-	_check_near(advice.meter, clampf(advice.power / 0.25, 0.0, 1.0), 1e-6, "putt read on the putting meter's scale")
+	_check_near(advice.meter, fixed.value_for_power(advice.power), 1e-6, "putt read on the putting meter's scale")
 	_check(advice.text.contains("about %d%% power" % roundi(advice.meter * 100.0)), "putt read says the meter's power (%s)" % advice.text)
 	# A chip: the caddie's number is the chip meter's, whose power comes from
 	# its own table (to about 35% of a full swing at the top), and swinging it
