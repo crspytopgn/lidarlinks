@@ -311,8 +311,7 @@ func show_holes(course: DesignedCourse, current: int) -> void:
 		holes.select(current)
 		var h := course.holes[current]
 		par.value = h.par
-		var yards := roundi(h.length_m() * 1.0936)
-		var text := "%d yards from the back tee." % yards
+		var text := "%s from the back tee." % Units.long_words(h.length_m())
 		if h.tees.is_empty():
 			text = "No tee yet: use the Tee tool."
 		elif h.par != DesignedHole.par_for_length(h.length_m()):

@@ -852,6 +852,8 @@ func _build_settings() -> void:
 	controls.row("Swing help", _switch(c.swing_help, set_help), "Links 2003's help for straight mouse swings.")
 	var set_pace := func(on: bool) -> void: c.quick_pace = on
 	controls.row("Quick pace", _switch(c.quick_pace, set_pace), "Brisk chip and putt meters, the golfer straight over the ball, less waiting. Off is Links 2003's meter timing with the full pre-shot routines.")
+	var set_units := func(on: bool) -> void: c.metric_units = on
+	controls.row("Metres", _switch(c.metric_units, set_units), "Show distances in metres and wind in km/h. Off is yards, with feet on the greens, and mph, as in Links 2003.")
 	var set_monitor := func(on: bool) -> void: c.launch_monitor = on
 	controls.row("Launch monitor", _switch(c.launch_monitor, set_monitor), "Take real swings from a launch monitor app (OpenConnect).")
 	_settings.add_child(controls)

@@ -61,7 +61,7 @@ func is_bare() -> bool:
 
 ## The meter's short name for the bar ("15 FT"), empty for the bare meter.
 func label() -> String:
-	return "" if is_bare() else "%d FT" % roundi(top_ft)
+	return "" if is_bare() else Units.short_caps(top_ft / Units.FEET_PER_METRE)
 
 
 ## The share of the full putt meter's power that meter value `v` (0 at the

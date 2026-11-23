@@ -303,5 +303,5 @@ func profile_text() -> String:
 
 ## "302 yd, 61% fairways, 26 ft from 150, 51% from 8 ft".
 func stats_text() -> String:
-	return "%d yd, %d%% fairways, %d ft from 150 yd, %d%% from 8 ft" % [roundi(stats[0]), roundi(stats[1]),
-		roundi(stats[2]), roundi(stats[4])]
+	return "%s, %d%% fairways, %s from %s, %d%% from %s" % [Units.from_yards(stats[0]), roundi(stats[1]),
+		Units.from_feet(stats[2]), Units.from_yards(150.0), roundi(stats[4]), Units.from_feet(8.0)]

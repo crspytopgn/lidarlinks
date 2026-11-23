@@ -391,7 +391,7 @@ func _refresh() -> void:
 static func play_help(play: int) -> String:
 	match play:
 		PLAY_RANGE:
-			return "The practice ground's driving range: target greens from 50 to 250 yards. The ball comes back after each shot and a launch monitor shows its numbers."
+			return "The practice ground's driving range: target greens from %s to %s." % [Units.from_yards(50), Units.from_yards(250)] + " The ball comes back after each shot and a launch monitor shows its numbers."
 		PLAY_TARGETS:
 			return "A bucket of %d balls at the range's target greens: more points for longer targets, double in the bullseye and for the last %d balls." % [RangeGame.BALLS, RangeGame.FINAL_BALLS]
 		PLAY_PUTTING_GREEN:
@@ -403,7 +403,7 @@ static func play_help(play: int) -> String:
 		PLAY_THROUGH:
 			return "Play the course for practice: nothing goes on your record or handicap, U takes any shot again, and N and B skip holes."
 		PLAY_COURSE_CHIPS:
-			return "Chip to this course's pins: each ball sits somewhere new round the green, from a few yards to about 40, and you see how close it finished. N and B change hole."
+			return "Chip to this course's pins: each ball sits somewhere new round the green, from a few %s to about %d, and" % ["metres" if Units.metric else "yards", Units.long_value(36.6)] + " you see how close it finished. N and B change hole."
 	return ""
 
 

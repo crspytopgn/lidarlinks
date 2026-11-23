@@ -21,11 +21,13 @@ extends RefCounted
 enum Profile { CLASSIC, AMATEUR, SCRATCH, TOUR }
 
 const NAMES := ["Classic Links", "Amateur", "Scratch", "Tour pro"]
+## What each profile is (the driver and 7 iron distances are added in the
+## player's units by description()).
 const DESCRIPTIONS := [
-	"The game's own club distances: about 276 yd with the driver in Links 2003's physics.",
-	"An average club golfer: about 225 yd with the driver, 140 with a 7 iron.",
-	"A scratch golfer: about 260 yd with the driver, 160 with a 7 iron.",
-	"A tour pro: about 300 yd with the driver, 178 with a 7 iron.",
+	"The game's own club distances: about %s with the driver in Links 2003's physics.",
+	"An average club golfer: about %s with the driver, %s with a 7 iron.",
+	"A scratch golfer: about %s with the driver, %s with a 7 iron.",
+	"A tour pro: about %s with the driver, %s with a 7 iron.",
 ]
 
 ## The clubs of Club.standard_set, in its order (the putter is never changed).
@@ -56,11 +58,19 @@ const STANDARD_SPEED := {
 const METRES_PER_YARD := 0.9144
 
 
+## DESCRIPTIONS[profile] with its distances in Units.
+static func description(profile: int) -> String:
+	if profile == 0:
+		return DESCRIPTIONS[0] % Units.from_yards(276)
+	var yd: Array = TOTAL_YD[profile]
+	return DESCRIPTIONS[profile] % [Units.from_yards(yd[0]), Units.long_value(float(yd[7]) * METRES_PER_YARD)]
+
+
 ## Every profile and what it means, for the setting's tooltip.
 static func tooltip() -> String:
 	var lines := PackedStringArray(["How far your full swings go (chips, putts and computer golfers stay the same)."])
 	for i in NAMES.size():
-		lines.append("%s: %s" % [NAMES[i], DESCRIPTIONS[i]])
+		lines.append("%s: %s" % [NAMES[i], description(i)])
 	return "\n".join(lines)
 
 

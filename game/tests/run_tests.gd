@@ -161,6 +161,7 @@ func _process(_delta: float) -> bool:
 	_run("designed_round", _test_designed_round)
 	_run("caddie_and_buggy_in_round", _test_caddie_and_buggy_in_round)
 	_run("target_view", _test_target_view)
+	_run("units", _test_units)
 	_run("swing_guide", _test_swing_guide)
 	_run("feet_on_slopes", _test_feet_on_slopes)
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(PlayerProfiles.path))
@@ -5814,7 +5815,7 @@ func _test_pause_stops_play() -> void:
 	_check(game.state == GolfRound.State.SHOT_RESULT, "pause: the turn doesn't pass while paused")
 	_check(not game.hud.meter.visible, "the swing meter is put away over the shot result")
 	_check(not game.hud.aim_reticle.visible, "no aim reticle over the shot result")
-	_check(AimReticle.label_for(245, false) == "245 YD" and AimReticle.label_for(180, true) == "BLIND  180 YD", "aim reticle labels")
+	_check(AimReticle.label_for(224.0, false) == "245 YD" and AimReticle.label_for(164.6, true) == "BLIND  180 YD", "aim reticle labels")
 	game.pause_menu.close()
 
 
@@ -7460,6 +7461,38 @@ class _RidgeTerrain extends CourseTerrain:
 	func height_at(_x: float, z: float) -> float:
 		# A 12 m ridge 15 m short of a 230 m target.
 		return 12.0 * maxf(0.0, 1.0 - absf(z - 215.0) / 6.0)
+
+
+## Settings > Units: yards and feet (mph) or metres (km/h), saved with the
+## settings, and the text that every distance on screen goes through.
+func _test_units() -> void:
+	var was := Units.metric
+	Units.metric = false
+	_check(Units.long(137.16) == "150 yd" and Units.long_caps(137.16) == "150 YD", "yards: %s" % Units.long(137.16))
+	_check(Units.short(3.6576) == "12 ft" and Units.short(1.3716, true) == "4.5 ft", "feet: %s" % Units.short(1.3716, true))
+	_check(Units.rise(3.6576) == "+12 ft" and Units.rise(0.1) == "Level", "rise in feet: %s" % Units.rise(3.6576))
+	_check(Units.speed(10.0) == "10 mph" and Units.from_yards(281) == "281 yd", "mph and stored yards")
+	_check(Units.long_words(406.9) == "445 yards", "hole card yards: %s" % Units.long_words(406.9))
+	_check(GreenRead.length_text(0.7112) == "2' 4\"" and PuttRead.aim_text(0.1016) == "4\" left", "feet and inches on the green")
+	Units.metric = true
+	_check(Units.long(137.16) == "137 m" and Units.long_caps(137.16) == "137 M", "metres: %s" % Units.long(137.16))
+	_check(Units.short(3.6576) == "3.7 m" and Units.short(12.4) == "12 m", "putts in metres: %s" % Units.short(3.6576))
+	_check(Units.rise(3.6576) == "+4 m" and Units.height(28.2) == "28 m", "rise in metres: %s" % Units.rise(3.6576))
+	_check(Units.speed(10.0) == "16 km/h" and Units.from_yards(281) == "257 m", "km/h and stored yards: %s" % Units.from_yards(281))
+	_check(Units.long_words(406.9) == "407 metres", "hole card metres")
+	_check(GreenRead.length_text(0.7112) == "71 cm" and PuttRead.aim_text(0.1016) == "10 cm left", "centimetres on the green: %s" % PuttRead.aim_text(0.1016))
+	_check(AimReticle.label_for(224.0, true) == "BLIND  224 M", "aim reticle in metres")
+	_check(CaddieAdvice.putt_text(CaddieAdvice.Detail.FULL, 3.0, 0.0, 0.0).begins_with("3.0 metres"), "caddie reads putts in metres")
+	_check(GraphicsSettings.gimme_names()[1] == "Inside 60 cm", "gimmes in centimetres")
+	# Saved and read back with the other settings, which sets Units.metric.
+	var path := "user://test_units.cfg"
+	var g := GraphicsSettings.new()
+	g.metric_units = true
+	g.save(path)
+	Units.metric = false
+	_check(GraphicsSettings.load_saved(path).metric_units and Units.metric, "the Units setting is saved and applied")
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
+	Units.metric = was
 
 
 func _test_swing_guide() -> void:

@@ -138,8 +138,7 @@ func _build_tee(hole: HoleData, toward: Vector3) -> void:
 		# Its face towards the back of the tee, turned a little to the line.
 		var right := _side_of(hole.tee, dir, sign_at)
 		sign.rotation.y = facing + PI + 0.45 * right
-		var yards := roundi(hole.length_m() / YARD)
-		_add_text(sign, [[str(hole.number), 300, 1.17], ["PAR %d" % hole.par, 96, 0.92], ["%d YARDS" % yards, 64, 0.81]],
+		_add_text(sign, [[str(hole.number), 300, 1.17], ["PAR %d" % hole.par, 96, 0.92], [Units.long_words(hole.length_m()).to_upper(), 64, 0.81]],
 				0.325, 0.0135, false)
 		add_child(sign)
 

@@ -130,6 +130,9 @@ var swing_method := 1
 ## pause. Classic: Links 2003's own meter timing and one putting meter.
 ## The ball's physics and the snap's difficulty are the same either way.
 var quick_pace := true
+## Settings > Units: false yards and feet with mph (Links 2003), true metres
+## with km/h. Copied into Units.metric, which every distance shown reads.
+var metric_units := false
 ## Links 2003's swing help for the mouse swing: once most of a player's
 ## strokes have had no sideways movement at all, strokes are nudged a few
 ## degrees off line (LinksMouse.Help).
@@ -177,6 +180,7 @@ var launch_monitor := false
 var captions := false
 const GIMME_FEET := [0.0, 2.0, 3.0, 4.0]
 const GIMME_NAMES := ["Off", "Inside 2 ft", "Inside 3 ft", "Inside the leather (4 ft)"]
+const GIMME_NAMES_METRIC := ["Off", "Inside 60 cm", "Inside 90 cm", "Inside the leather (1.2 m)"]
 
 var look: int = Look.CLASSIC
 ## The look was picked by the game for this device (detect_look()), not by
@@ -216,6 +220,11 @@ func _init() -> void:
 	if OS.has_feature("web"):
 		quality = Quality.MEDIUM
 		msaa = 2
+
+
+## The Gimmes choices in the player's units.
+static func gimme_names() -> Array:
+	return GIMME_NAMES_METRIC if Units.metric else GIMME_NAMES
 
 
 ## The look to start with on this device: Photoreal on a dedicated graphics
@@ -385,6 +394,8 @@ static func _load_saved(path: String) -> GraphicsSettings:
 	s.green_speed = clampi(int(cfg.get_value(GAME_SECTION, "green_speed", s.green_speed)), 0, 2)
 	s.swing_method = clampi(int(cfg.get_value(GAME_SECTION, "swing_method", s.swing_method)), 0, 1)
 	s.quick_pace = bool(cfg.get_value(GAME_SECTION, "quick_pace", s.quick_pace))
+	s.metric_units = bool(cfg.get_value(GAME_SECTION, "metric_units", s.metric_units))
+	Units.metric = s.metric_units
 	s.swing_help = bool(cfg.get_value(GAME_SECTION, "swing_help", s.swing_help))
 	s.putting_grid = clampi(int(cfg.get_value(GAME_SECTION, "putting_grid", s.putting_grid)), 0, PUTTING_GRID_NAMES.size() - 1)
 	s.breakline = bool(cfg.get_value(GAME_SECTION, "breakline", s.breakline))
@@ -465,6 +476,8 @@ func save(path := PATH) -> void:
 	cfg.set_value(GAME_SECTION, "green_speed", green_speed)
 	cfg.set_value(GAME_SECTION, "swing_method", swing_method)
 	cfg.set_value(GAME_SECTION, "quick_pace", quick_pace)
+	cfg.set_value(GAME_SECTION, "metric_units", metric_units)
+	Units.metric = metric_units
 	cfg.set_value(GAME_SECTION, "swing_help", swing_help)
 	cfg.set_value(GAME_SECTION, "putting_grid", putting_grid)
 	cfg.set_value(GAME_SECTION, "breakline", breakline)

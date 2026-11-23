@@ -40,6 +40,7 @@ var _skill: OptionButton
 var _power: OptionButton
 var _swing: OptionButton
 var _pace: OptionButton
+var _units: OptionButton
 var _swing_help: OptionButton
 var _ball_size: OptionButton
 var _photo_golfer: OptionButton
@@ -135,6 +136,8 @@ func _ready() -> void:
 	_swing = _row(grid, "Swing", ["Three-click meter", "Mouse swing (PowerStroke)"])
 	_pace = _row(grid, "Pace", ["Quick", "Classic (meter timing, full routines)"])
 	_pace.tooltip_text = "Quick: the 3-click chip and putt meters start on the white line and move briskly, the Broadcast and Tour putting meter is sized to each putt, the golfer steps straight up to the ball instead of the full pre-shot routine (club from the bag, tee up, putt read), computer golfers play without waiting it out, and shorter pauses after each shot and over the hole flyover. The ball's physics and the timing at the white line are the same either way."
+	_units = _row(grid, "Units", Units.NAMES)
+	_units.tooltip_text = "How every distance, height and wind speed is shown: yards with feet on the greens as in Links 2003, or metres. The shots themselves are the same."
 	_swing_help = _row(grid, "Swing help", ["Off", "On"])
 	_ball_size = _row(grid, "Ball size", ["Bigger far away (Links)", "True size (42.67 mm)"])
 	_skill = _row(grid, "Swing skill", SKILL_NAMES)
@@ -150,7 +153,7 @@ func _ready() -> void:
 	_assistant.tooltip_text = "Amateur skill: the line and a red dot on the meter for the power. Professional: a band round the line."
 	_caddie = _row(grid, "Caddie", ["Off", "On (advice follows swing skill)"])
 	_buggy = _row(grid, "Golf buggy", ["Off (walk)", "Drive between shots"])
-	_gimme = _row(grid, "Gimmes", GraphicsSettings.GIMME_NAMES)
+	_gimme = _row(grid, "Gimmes", GraphicsSettings.gimme_names())
 	_mulligans = _row(grid, "Mulligans", GraphicsSettings.MULLIGAN_NAMES)
 	_pickup = _row(grid, "Pick up", GraphicsSettings.PICKUP_NAMES)
 	_computer_play = _row(grid, "Computer golfers", GraphicsSettings.COMPUTER_PLAY_NAMES)
@@ -210,6 +213,7 @@ func open(s: GraphicsSettings) -> void:
 	_power.select(s.power_profile)
 	_swing.select(s.swing_method)
 	_pace.select(0 if s.quick_pace else 1)
+	_units.select(1 if s.metric_units else 0)
 	_swing_help.select(1 if s.swing_help else 0)
 	_ball_size.select(1 if s.true_size_ball else 0)
 	_photo_golfer.select(1 if s.photo_golfer else 0)
@@ -461,6 +465,7 @@ func _on_selected() -> void:
 	settings.power_profile = _power.selected
 	settings.swing_method = _swing.selected
 	settings.quick_pace = _pace.selected == 0
+	settings.metric_units = _units.selected == 1
 	settings.swing_help = _swing_help.selected == 1
 	settings.true_size_ball = _ball_size.selected == 1
 	settings.photo_golfer = _photo_golfer.selected == 1

@@ -283,7 +283,7 @@ func _draw_score_bug() -> void:
 	_text(disc + Vector2(0, 4), str(status.get("hole", "")), 21, PANEL_DARK, true)
 	_text(disc + Vector2(0, 17), "PAR %s" % status.get("par", ""), 8, PANEL_DARK, true)
 	_text(Vector2(x + 66, y + 27), str(status.get("player", "")).to_upper(), 18, TEXT)
-	_text(Vector2(x + 66, y + 47), "%s YDS  ·  THRU %s  ·  SHOT %s" % [status.get("yards", ""), status.get("thru", 0), status.get("stroke", 1)], 11, DIM)
+	_text(Vector2(x + 66, y + 47), "%s  ·  THRU %s  ·  SHOT %s" % [Units.from_yards(float(status.get("yards", 0))).to_upper(), status.get("thru", 0), status.get("stroke", 1)], 11, DIM)
 	var to_par := str(status.get("to_par", "E"))
 	draw_line(Vector2(x + w - 62, y + 15), Vector2(x + w - 62, y + h - 15), Color(1, 1, 1, 0.16), 1.0)
 	_text(Vector2(x + w - 32, y + 40), to_par, 24, UNDER if to_par.begins_with("-") else TEXT, true)
@@ -514,7 +514,7 @@ func _draw_hole_card() -> void:
 	_panel(Rect2(x, y, w, 64), PANEL_DARK, 1.0, TOP)
 	_text(Vector2(x + 14, y + 28), "HOLE %s" % _hole.get("number", ""), 24, ACCENT)
 	_text_right(Vector2(x + w - 14, y + 28), "PAR %s" % _hole.get("par", ""), 20, TEXT)
-	_text(Vector2(x + 14, y + 52), "%s YARDS    %s" % [_hole.get("yards", ""), str(_hole.get("name", "")).to_upper()], 13, DIM)
+	_text(Vector2(x + 14, y + 52), "%s    %s" % [Units.long_words(float(_hole.get("yards", 0)) / Units.YARDS_PER_METRE).to_upper(), str(_hole.get("name", "")).to_upper()], 13, DIM)
 	_panel(Rect2(x, y + 64, w, map_h + 16), PANEL, 1.0, BOTTOM)
 	if _hole_map != null:
 		var ms := Vector2(HoleMap.WIDTH, HoleMap.HEIGHT)

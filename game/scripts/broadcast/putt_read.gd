@@ -53,6 +53,9 @@ static func read(model: ShotModel, clubs: Array[Club], hole: HoleData, from: Vec
 
 ## "4' 9\" left", "Straight" and the like, from a sideways offset in metres.
 static func aim_text(aim_off_m: float) -> String:
+	if Units.metric:
+		var cm := roundi(absf(aim_off_m) * 100.0)
+		return "Straight" if cm < 5 else "%d cm %s" % [cm, "left" if aim_off_m > 0.0 else "right"]
 	var inches := roundi(absf(aim_off_m) * 39.3701)
 	if inches < 2:
 		return "Straight"

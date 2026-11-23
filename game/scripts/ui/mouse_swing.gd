@@ -237,24 +237,32 @@ func _draw_feet(r: Rect2, m: LinksMouse.Meter) -> void:
 	var x := reach * (putt_feet.size() - 1)
 	var i0 := mini(int(x), putt_feet.size() - 2)
 	var top_ft := lerpf(putt_feet[i0], putt_feet[i0 + 1], x - i0)
-	var step := 5.0 if top_ft <= 60.0 else 10.0
-	var label_every := 10.0 if top_ft <= 60.0 else 20.0
+	# Marks in feet, or in metres with Units.metric.
+	var per := Units.FEET_PER_METRE if Units.metric else 1.0
+	var top := top_ft / per
+	var step := 5.0 if top <= 60.0 else 10.0
+	var label_every := 10.0 if top <= 60.0 else 20.0
+	if Units.metric:
+		step = 1.0 if top <= 18.0 else 2.0
+		label_every = 5.0 if top <= 18.0 else 10.0
+	var tick := "%dm" if Units.metric else "%d'"
 	var small := GlassTheme.font(600)
 	var last_label := INF
-	var ft := step
-	while ft <= top_ft:
+	var d := step
+	while d <= top:
+		var ft := d * per
 		var share := share_for_feet(putt_feet, ft)
 		if share >= 0.0:
 			var y: float = y_of.call(putt_height(share, m))
-			var big := is_zero_approx(fmod(ft, label_every))
+			var big := is_zero_approx(fmod(d, label_every))
 			draw_line(Vector2(r.position.x - (9.0 if big else 6.0), y), Vector2(r.position.x - 2.0, y), Color(1, 1, 1, 0.6 if big else 0.32), 1.0, true)
 			if big and last_label - y > 14.0:
-				var text := "%d'" % roundi(ft)
+				var text := tick % roundi(d)
 				var tw := small.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, 11).x
 				draw_string_outline(small, Vector2(r.position.x - 12.0 - tw, y + 4.0), text, HORIZONTAL_ALIGNMENT_LEFT, -1, 11, 3, Color(0, 0, 0, 0.5))
 				draw_string(small, Vector2(r.position.x - 12.0 - tw, y + 4.0), text, HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color(1, 1, 1, 0.7))
 				last_label = y
-		ft += step
+		d += step
 	if hole_feet >= 0.0:
 		var hs := share_for_feet(putt_feet, hole_feet)
 		var hy: float = y_of.call(putt_height(hs if hs >= 0.0 else 1.0, m))
