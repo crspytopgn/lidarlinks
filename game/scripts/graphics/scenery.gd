@@ -61,8 +61,11 @@ const COMPAT_SKY_FOG := 0.08
 const FORWARD_SKY_ENERGY := 1.0
 const FORWARD_SKY_DEPTH := 1.2
 ## The sun's size for soft shadows (degrees), and its shadow normal bias
-## (1.5 lifted the golfer's shadow off his feet).
-const SUN_ANGLE := 0.15
+## (1.5 lifted the golfer's shadow off his feet). The real sun is 0.53
+## degrees across, so a shadow is sharp where it touches and blurs with
+## distance from its caster; 0.35 shows that on the golfer and the bag and
+## still keeps the club shaft's thin shadow (High and up, Forward+).
+const SUN_ANGLE := 0.35
 const SUN_NORMAL_BIAS := 0.8
 ## Where the sun's shadow splits end, as shares of the shadow distance
 ## (Godot's are 0.1, 0.2, 0.5): the first covers the golfer and the tee
