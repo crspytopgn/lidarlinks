@@ -2241,6 +2241,11 @@ func _test_graphics_settings() -> void:
 	var mapped := Scenery.sky_sun_mapping(Vector3(0.0, 0.5, 0.866), deg_to_rad(48.0))
 	_check(absf(mapped.y - deg_to_rad(30.0)) < 0.001, "sky sun: the photo's sun is moved down to a 30 degree sun")
 	_check(absf(Scenery.sky_sun_mapping(Vector3(0.0, 0.156, 0.988), deg_to_rad(48.0)).y - deg_to_rad(28.8)) < 0.001, "sky sun: a low sun stretches the sky at most 40%")
+	# The sun's first shadow split stays about 10 m deep on the long High and
+	# Ultra shadow distances (a club shaft's shadow zigzagged over 24 m),
+	# and keeps its old share on the short ones (Low, Medium, the web).
+	_check(is_equal_approx(Scenery.first_split(150.0), Scenery.SUN_SPLITS.x), "shadow split: Low keeps its share")
+	_check(is_equal_approx(Scenery.first_split(600.0) * 600.0, Scenery.NEAR_SPLIT), "shadow split: Ultra's first split is NEAR_SPLIT deep")
 	# The learned grade: a 32-cubed lookup per time of day and renderer.
 	for t in [GraphicsSettings.TimeOfDay.AFTERNOON, GraphicsSettings.TimeOfDay.MORNING, GraphicsSettings.TimeOfDay.MIDDAY, GraphicsSettings.TimeOfDay.GOLDEN]:
 		for fwd in [false, true]:

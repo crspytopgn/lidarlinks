@@ -29,6 +29,19 @@ const COMPAT_EXPOSURE_LIFT := 1.3
 ## lights the same scene a little brighter than 4.4 did, which the
 ## looks and the colour grade were fitted under.
 const FORWARD_EXPOSURE := 0.95
+## Photoreal's filmic contrast in Forward+ (Environment.tonemap_agx_contrast,
+## Godot 4.6+; 1.25 is Blender's AgX). A little steeper through the mid
+## tones, as UE5's filmic curve and real tee-shot photos: brighter sunlit
+## turf and sky against deeper shade, with middle grey where it was.
+const PHOTO_AGX_CONTRAST := 1.32
+## Photoreal's camera bloom where the renderer and quality allow it
+## (Forward+, High and up, with Settings > Bloom off): a lens's soft glow
+## round the sky between leaves, the sun on sand and white caps. Godot 4.6+
+## blends glow before the tone map, so a Screen blend off a threshold just
+## past white blooms only what is really bright, without the milky veil
+## the old whole-image bloom laid over the turf.
+const CAMERA_BLOOM := 0.3
+const CAMERA_BLOOM_THRESHOLD := 1.0
 ## Ultra's sunlit air (volumetric fog). Godot 4.6 made it brighter for the
 ## same density (more physically accurate blending); 4.4's look used 0.0004.
 const VOLUMETRIC_FOG_DENSITY := 0.00012
@@ -55,6 +68,8 @@ const SUN_NORMAL_BIAS := 0.8
 ## (Godot's are 0.1, 0.2, 0.5): the first covers the golfer and the tee
 ## at about four times the detail.
 const SUN_SPLITS := Vector3(0.04, 0.12, 0.4)
+## How far (metres) the first shadow split reaches at most (first_split).
+const NEAR_SPLIT := 10.0
 ## Forward+ only: how much brighter the photo sky's clouds are drawn
 ## (photo_sky.gdshader cloud_lift), so they read white under AgX.
 const FORWARD_CLOUD_LIFT := 1.2
@@ -194,11 +209,9 @@ func _init() -> void:
 	environment.glow_intensity = 0.25
 	environment.glow_bloom = 0.0
 	environment.glow_hdr_threshold = 1.2
-	# Godot 4.6 moved glow's defaults (Screen blend, other levels). These
-	# are 4.4's, which the looks and the colour grade were fitted under.
-	environment.glow_blend_mode = Environment.GLOW_BLEND_MODE_SOFTLIGHT
-	for level in 7:
-		environment.set_glow_level(level, 1.0 if level == 2 or level == 4 else 0.0)
+	# Godot 4.6 moved glow's defaults (Screen blend, other levels); apply()
+	# keeps 4.4's soft light, which the looks and the grade were fitted
+	# under, except for Photoreal's camera bloom (CAMERA_BLOOM).
 	# Tuned for contact shade: a tighter radius with full fine detail, so
 	# grass darkens round the golfer's shoes, the ball, the flagstick and
 	# crowd feet, and a little of it reaches the sunlit side (light_affect),
@@ -243,6 +256,7 @@ func apply(settings: GraphicsSettings) -> void:
 	var q := settings.quality
 	var photo := settings.lighting == GraphicsSettings.Lighting.PHOTOREAL
 	sun.directional_shadow_max_distance = settings.shadow_distance()
+	sun.directional_shadow_split_1 = first_split(settings.shadow_distance())
 	sun.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_2_SPLITS if q == GraphicsSettings.Quality.LOW else DirectionalLight3D.SHADOW_PARALLEL_4_SPLITS
 	# Angular size of the sun gives contact-hardening soft shadows (Forward+).
 	# Kept small: at 0.6 degrees the soft-shadow filter, over the far
@@ -256,6 +270,7 @@ func apply(settings: GraphicsSettings) -> void:
 		# Compatibility has no sky fill light, so the same sun reads hotter.
 		environment.tonemap_exposure = PHOTO_EXPOSURE if fwd else PHOTO_EXPOSURE * 0.8
 		environment.tonemap_white = 6.0
+		environment.tonemap_agx_contrast = PHOTO_AGX_CONTRAST if fwd else 1.25
 		environment.ambient_light_energy = PHOTO_AMBIENT_ENERGY
 		# Fill light from the sky itself (blue from above, green bounce from
 		# below) where the renderer supports it.
@@ -278,6 +293,16 @@ func apply(settings: GraphicsSettings) -> void:
 	# the golfer's khaki trousers on the turf behind (2K25 quality pass).
 	# Only the sun on sand, white caps and clouds should glow.
 	environment.glow_hdr_threshold = 1.8 if photo else 1.2
+	environment.glow_blend_mode = Environment.GLOW_BLEND_MODE_SOFTLIGHT
+	_set_glow_levels([0.0, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0])
+	if photo and fwd and q >= GraphicsSettings.Quality.HIGH and bloom <= 0.0:
+		environment.glow_enabled = true
+		environment.glow_blend_mode = Environment.GLOW_BLEND_MODE_SCREEN
+		environment.glow_intensity = CAMERA_BLOOM
+		environment.glow_bloom = 0.0
+		environment.glow_hdr_threshold = CAMERA_BLOOM_THRESHOLD
+		# Wide and soft, as a lens's veiling glare, not a tight halo.
+		_set_glow_levels([0.0, 0.8, 0.4, 0.2, 0.1, 0.0, 0.0])
 	environment.ssao_enabled = fwd and settings.ssao
 	environment.ssil_enabled = fwd and settings.ssao and q >= GraphicsSettings.Quality.ULTRA
 	# Low sun-lit haze that thickens with distance, and light shafts near
@@ -306,6 +331,12 @@ func apply(settings: GraphicsSettings) -> void:
 	environment.sdfgi_y_scale = Environment.SDFGI_Y_SCALE_50_PERCENT
 	environment.sdfgi_bounce_feedback = 0.5
 	environment.sdfgi_energy = 1.0
+	if _gi:
+		# More rays per probe and a longer settle: steadier bounce light in
+		# the shade, without the crawling blotches of 16 rays (the cost is
+		# spread over frames, and the camera mostly holds still in golf).
+		RenderingServer.environment_set_sdfgi_ray_count(RenderingServer.ENV_SDFGI_RAY_COUNT_32)
+		RenderingServer.environment_set_sdfgi_frames_to_converge(RenderingServer.ENV_SDFGI_CONVERGE_IN_15_FRAMES)
 	environment.ssr_max_steps = 48
 	# 4.4's default; 4.6 raised it to 0.5.
 	environment.ssr_depth_tolerance = 0.2
@@ -321,6 +352,21 @@ func apply(settings: GraphicsSettings) -> void:
 	_ambient_energy = environment.ambient_light_energy
 	_sun_angle = sun.light_angular_distance
 	_choose_sky()
+
+
+func _set_glow_levels(levels: Array) -> void:
+	for i in levels.size():
+		environment.set_glow_level(i, float(levels[i]))
+
+
+## The share of the shadow distance `distance` the sun's first shadow split
+## covers: about NEAR_SPLIT metres (the golfer, the club and the ball from
+## the tee camera), never more than SUN_SPLITS.x. As a fixed share, the
+## longer shadow distances of High and Ultra spread the first split's
+## texels over 16 to 24 m, about 1.5 cm each, wider than a club shaft, so
+## its shadow came out as a jagged zigzag (Michael, 2026-11-24).
+static func first_split(distance: float) -> float:
+	return clampf(NEAR_SPLIT / maxf(distance, 1.0), 0.01, SUN_SPLITS.x)
 
 
 ## Whether `settings` get global illumination on this machine.

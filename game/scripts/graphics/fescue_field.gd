@@ -229,6 +229,10 @@ func _build_in_frames(key: Vector2i) -> void:
 		node = Node3D.new()
 		for mm in meshes:
 			var inst := MultiMeshInstance3D.new()
+			# Thin cards or moving things: left out of the global illumination's
+			# scene (SDFGI), which they would only blotch and slow; they still
+			# receive its light.
+			inst.gi_mode = GeometryInstance3D.GI_MODE_DISABLED
 			inst.multimesh = mm
 			inst.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 			node.add_child(inst)
@@ -292,6 +296,7 @@ func _update_ring(ring: Dictionary, uid: String, size: float, r: float, here: Ve
 		var inst: MultiMeshInstance3D = null
 		if mm != null:
 			inst = MultiMeshInstance3D.new()
+			inst.gi_mode = GeometryInstance3D.GI_MODE_DISABLED
 			inst.multimesh = mm
 			inst.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 			add_child(inst)

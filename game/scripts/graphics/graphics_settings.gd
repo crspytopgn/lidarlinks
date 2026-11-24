@@ -651,9 +651,12 @@ func apply_display(viewport: Viewport) -> void:
 		_:
 			viewport.msaa_3d = Viewport.MSAA_DISABLED
 	var fsr2 := is_forward_plus() and upscaler == Upscaler.FSR2
-	# FXAA is cheap and softens the edges MSAA would otherwise catch. FSR 2
-	# does its own (temporal) anti-aliasing, even at full resolution.
-	viewport.screen_space_aa = Viewport.SCREEN_SPACE_AA_FXAA if msaa == 0 and not fsr2 and quality >= Quality.MEDIUM else Viewport.SCREEN_SPACE_AA_DISABLED
+	# FXAA is cheap and softens the edges MSAA would otherwise catch; on
+	# Forward+ at High and up, SMAA (Godot 4.5+) catches them as well
+	# without blurring the turf and leaf texture. FSR 2 does its own
+	# (temporal) anti-aliasing, even at full resolution.
+	var ssaa := Viewport.SCREEN_SPACE_AA_SMAA if is_forward_plus() and quality >= Quality.HIGH else Viewport.SCREEN_SPACE_AA_FXAA
+	viewport.screen_space_aa = ssaa if msaa == 0 and not fsr2 and quality >= Quality.MEDIUM else Viewport.SCREEN_SPACE_AA_DISABLED
 	if fsr2:
 		viewport.msaa_3d = Viewport.MSAA_DISABLED
 	# The FSR upscalers need Forward+; the browser's renderer stretches.

@@ -319,6 +319,10 @@ func _build_node(key: Vector2i) -> Node3D:
 		for i in xfs.size():
 			mm.set_instance_transform(i, xfs[i])
 		var inst := MultiMeshInstance3D.new()
+		# Thin cards or moving things: left out of the global illumination's
+		# scene (SDFGI), which they would only blotch and slow; they still
+		# receive its light.
+		inst.gi_mode = GeometryInstance3D.GI_MODE_DISABLED
 		inst.multimesh = mm
 		inst.material_override = mat
 		var big: bool = prop["kind"] == "log" or prop["kind"] == "stump"

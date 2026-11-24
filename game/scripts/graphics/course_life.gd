@@ -61,6 +61,10 @@ func spawn(centre: Vector3) -> void:
 	mm.instance_count = count
 	var offsets := formation(count, _rng)
 	var node := MultiMeshInstance3D.new()
+	# Thin cards or moving things: left out of the global illumination's
+	# scene (SDFGI), which they would only blotch and slow; they still
+	# receive its light.
+	node.gi_mode = GeometryInstance3D.GI_MODE_DISABLED
 	node.multimesh = mm
 	node.material_override = _bird_material()
 	node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF

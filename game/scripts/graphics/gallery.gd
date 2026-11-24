@@ -243,6 +243,10 @@ func _build_ropes(terrain: CourseTerrain, lines: Array[PackedVector3Array]) -> v
 			mm.set_instance_transform(i, Transform3D(Basis.IDENTITY, p + Vector3.UP * (STAKE_HEIGHT * 0.5 - 0.05)))
 			i += 1
 	var stakes := MultiMeshInstance3D.new()
+	# Thin cards or moving things: left out of the global illumination's
+	# scene (SDFGI), which they would only blotch and slow; they still
+	# receive its light.
+	stakes.gi_mode = GeometryInstance3D.GI_MODE_DISABLED
 	stakes.name = "Stakes"
 	stakes.multimesh = mm
 	add_child(stakes)
@@ -437,6 +441,7 @@ func _add_contact_shadows(node_name: String, feet: PackedVector3Array, terrain: 
 	for i in feet.size():
 		mm.set_instance_transform(i, Transform3D(Basis.IDENTITY, feet[i] + Vector3.UP * 0.02))
 	var shadows := MultiMeshInstance3D.new()
+	shadows.gi_mode = GeometryInstance3D.GI_MODE_DISABLED
 	shadows.name = node_name
 	shadows.multimesh = mm
 	shadows.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
@@ -467,6 +472,7 @@ func _add_sun_shadows(node_name: String, feet: PackedVector3Array, terrain: Cour
 		mm.set_instance_transform(i, Transform3D(Basis.from_scale(Vector3(h, h, h)), p))
 		mm.set_instance_custom_data(i, Color(slope.x, slope.y, 0.0, 0.0))
 	var node := MultiMeshInstance3D.new()
+	node.gi_mode = GeometryInstance3D.GI_MODE_DISABLED
 	node.name = node_name
 	node.multimesh = mm
 	node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
@@ -629,6 +635,7 @@ func _build_cards(hole: HoleData, lines: Array[PackedVector3Array], people: Arra
 		mm.set_instance_custom_data(i, Color(legs.r, legs.g, legs.b, rng.randf()))
 	_card_home = spots
 	var node := MultiMeshInstance3D.new()
+	node.gi_mode = GeometryInstance3D.GI_MODE_DISABLED
 	node.name = "CrowdCards"
 	node.multimesh = mm
 	node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
@@ -1263,6 +1270,7 @@ func _seat_crowd(stand: Node3D, seed_value: int, width: float) -> void:
 		var legs: Color = PlayerLook.CLOTH_COLOURS[rng.randi_range(0, PlayerLook.CLOTH_COLOURS.size() - 1)][1]
 		mm.set_instance_custom_data(i, Color(legs.r, legs.g, legs.b, rng.randf()))
 	var mi := MultiMeshInstance3D.new()
+	mi.gi_mode = GeometryInstance3D.GI_MODE_DISABLED
 	mi.name = "Seated"
 	mi.multimesh = mm
 	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF

@@ -308,6 +308,10 @@ func _grow(spots: Array[Dictionary], centre: Vector3, reach: float, seed: int) -
 			mm.instance_count = buffer.size() / 16
 			mm.buffer = buffer
 			var inst := MultiMeshInstance3D.new()
+			# Thin cards or moving things: left out of the global illumination's
+			# scene (SDFGI), which they would only blotch and slow; they still
+			# receive its light.
+			inst.gi_mode = GeometryInstance3D.GI_MODE_DISABLED
 			inst.multimesh = mm
 			# Only the detailed plants right by the camera cast shadows.
 			inst.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON if band == 0 and level >= 3 else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
