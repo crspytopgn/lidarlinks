@@ -6738,7 +6738,7 @@ func _test_broadcast_round() -> void:
 		frames += 1
 	_check(not game._replaying, "replay ends")
 	_check(game.state == GolfRound.State.SHOT_RESULT, "replay leaves the result up")
-	game.hud.overlay._draw()
+	game.hud.overlay.notification(CanvasItem.NOTIFICATION_DRAW)
 	_check(game.hud.overlay.glass.panel_count() > 0, "broadcast panels are frosted glass")
 	_check(game.hud.hint.visible and not game.hud.hint_tab.visible, "key hints up on the first hole")
 	game.start_hole(1)

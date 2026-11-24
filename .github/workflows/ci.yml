@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
 
 env:
-  GODOT_VERSION: 4.4.1
+  GODOT_VERSION: 4.7.2
 
 jobs:
   core:
@@ -79,9 +79,11 @@ jobs:
           mkdir -p template
           # ANGLE (OpenGL over D3D11 / Metal), as in the official templates:
           # Windows and macOS fall back to it where native OpenGL is poor.
+          # Each arch in its own angle-<arch> folder, which Godot 4.7's build
+          # looks for next to angle_libs (misc/scripts/install_angle.py).
           angle() {
-            curl -sSL -o /tmp/angle-$1.zip "https://github.com/godotengine/godot-angle-static/releases/download/chromium%2F6601.2/godot-angle-static-$1-release.zip"
-            mkdir -p /tmp/angle && unzip -q -o /tmp/angle-$1.zip -d /tmp/angle
+            curl -sSL -o /tmp/angle-$1.zip "https://github.com/godotengine/godot-angle-static/releases/download/chromium%2F7219/godot-angle-static-$1-release.zip"
+            mkdir -p /tmp/angle-$1 && unzip -q -o /tmp/angle-$1.zip -d /tmp/angle-$1
           }
           case "${{ matrix.platform }}" in
             linuxbsd)
@@ -92,7 +94,8 @@ jobs:
               sudo update-alternatives --set x86_64-w64-mingw32-gcc /usr/bin/x86_64-w64-mingw32-gcc-posix
               sudo update-alternatives --set x86_64-w64-mingw32-g++ /usr/bin/x86_64-w64-mingw32-g++-posix
               angle x86_64-gcc
-              (cd $src && scons platform=windows arch=x86_64 use_mingw=yes angle_libs=/tmp/angle profile=$profile -j4)
+              # Godot 4.7's Windows platform switches D3D12 on over the profile.
+              (cd $src && scons platform=windows arch=x86_64 use_mingw=yes d3d12=no winrt=no angle_libs=/tmp/angle profile=$profile -j4)
               cp $src/bin/godot.windows.template_release.x86_64.exe template/windows_release_x86_64.exe ;;
             macos)
               angle arm64-macos
@@ -219,7 +222,7 @@ jobs:
 
       - name: Launcher tests
         run: |
-          # Godot 4.4.1 sometimes segfaults on a first headless import of the
+          # Godot 4.4.1 sometimes segfaulted on a first headless import of the
           # launcher's fonts (main run 557 too); the tests below still have to
           # pass, so one more try is safe.
           ~/godot/godot --headless --path launcher --import || ~/godot/godot --headless --path launcher --import

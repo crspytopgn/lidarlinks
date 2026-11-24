@@ -9,7 +9,7 @@ and the web build from /openlinks2003/ to /lidarlinks/; GitHub redirects the
 repo, API and git URLs, but never create a repo named openlinks2003 again, or
 those redirects (which old launchers rely on) stop.
 
-Open-source, cross-platform reimplementation of Links 2003 (Godot 4.4 plus a
+Open-source, cross-platform reimplementation of Links 2003 (Godot 4.7 plus a
 C++17 core). The owner works mostly through cloud sessions, so keep `main`
 buildable and CI green.
 
