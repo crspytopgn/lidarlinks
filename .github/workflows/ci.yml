@@ -94,7 +94,8 @@ jobs:
               sudo update-alternatives --set x86_64-w64-mingw32-gcc /usr/bin/x86_64-w64-mingw32-gcc-posix
               sudo update-alternatives --set x86_64-w64-mingw32-g++ /usr/bin/x86_64-w64-mingw32-g++-posix
               angle x86_64-gcc
-              (cd $src && scons platform=windows arch=x86_64 use_mingw=yes angle_libs=/tmp/angle profile=$profile -j4)
+              # Godot 4.7's Windows platform switches D3D12 on over the profile.
+              (cd $src && scons platform=windows arch=x86_64 use_mingw=yes d3d12=no winrt=no angle_libs=/tmp/angle profile=$profile -j4)
               cp $src/bin/godot.windows.template_release.x86_64.exe template/windows_release_x86_64.exe ;;
             macos)
               angle arm64-macos
