@@ -136,6 +136,10 @@ func update_around(eye: Vector3) -> void:
 		var node: MultiMeshInstance3D = null
 		if mm != null:
 			node = MultiMeshInstance3D.new()
+			# Thin cards or moving things: left out of the global illumination's
+			# scene (SDFGI), which they would only blotch and slow; they still
+			# receive its light.
+			node.gi_mode = GeometryInstance3D.GI_MODE_DISABLED
 			node.multimesh = mm
 			node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 			add_child(node)
@@ -180,6 +184,7 @@ func _update_mown(eye: Vector3) -> void:
 		var node: MultiMeshInstance3D = null
 		if mm != null:
 			node = MultiMeshInstance3D.new()
+			node.gi_mode = GeometryInstance3D.GI_MODE_DISABLED
 			node.multimesh = mm
 			node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 			add_child(node)
