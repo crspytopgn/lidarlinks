@@ -18,11 +18,14 @@ const GRADES := [
 ]
 
 ## Neutral grade under Photoreal lighting: AgX keeps highlights natural but
-## greys colours and flattens contrast, so a filmic curve (deeper shadows,
-## brighter highlights), colour put back, a touch of sun warmth in the
-## highlights and sky blue in the shadows, as in camera footage of a sunny
-## course.
-const PHOTO_NEUTRAL := [1.0, 1.08, 1.12, Color(1.02, 1.0, 0.97), Color(0.95, 0.98, 1.04)]
+## flattens contrast, so a filmic curve (deeper shadows, brighter
+## highlights), a touch of sun warmth in the highlights and sky blue in the
+## shadows, as in camera footage of a sunny course. Measured against real
+## photos of sunny courses (2026-11-24: mean brightness 120 to 154 of 255,
+## turf saturation 0.34 to 0.45), our frames were too dark (96 to 128) and
+## too saturated (0.50 to 0.59), which read as a game: so a little more
+## exposure and no extra colour.
+const PHOTO_NEUTRAL := [1.07, 1.08, 1.02, Color(1.02, 1.0, 0.97), Color(0.95, 0.98, 1.04)]
 const PHOTO_CURVE := 0.6
 ## Extra contrast in Photoreal on the Compatibility renderer, after the
 ## learned grade (so the grade's fit is untouched): the web frame read flat
@@ -30,12 +33,13 @@ const PHOTO_CURVE := 0.6
 const COMPAT_FINISH_CONTRAST := 1.2
 
 ## The broadcast finish in Photoreal (post_process.gdshader punch_*):
-## green shift, black point, gamma and saturation, per renderer. Fitted by
-## eye and by measurement against PGA Tour 2K25 screenshots (quality pass,
-## 2026-11-17). Compatibility already gets COMPAT_FINISH_CONTRAST, so it
-## takes a lighter black point.
-const PUNCH_FORWARD := [0.035, 0.06, 1.06, 1.08]
-const PUNCH_COMPAT := [0.035, 0.03, 1.05, 1.06]
+## green shift, black point, gamma and saturation, per renderer. First
+## fitted to PGA Tour 2K25 screenshots (2026-11-17); that pushed turf and
+## leaves bluer, darker and more saturated than real photos, so only a
+## light black point (the milky veil lifted) stays. Compatibility already
+## gets COMPAT_FINISH_CONTRAST, so it takes a lighter one.
+const PUNCH_FORWARD := [0.0, 0.04, 1.0, 1.0]
+const PUNCH_COMPAT := [0.0, 0.02, 1.0, 1.0]
 
 ## Heat shimmer at 1080p, in pixels, for a 50 degree lens and a high sun
 ## (Photoreal only). A long lens magnifies it (RoundCamera.lens_factor).
