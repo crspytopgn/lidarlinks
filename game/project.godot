@@ -1,5 +1,5 @@
 ; Engine configuration file.
-; Godot 4.4
+; Godot 4.7
 
 config_version=5
 
@@ -8,9 +8,16 @@ config_version=5
 config/name="OpenLinks2003"
 config/description="LidarLinks: play any real course, built from lidar. Began as an open-source Links 2003 remake; your own Links 2003 files are optional."
 run/main_scene="res://scenes/boot.tscn"
-config/features=PackedStringArray("4.4", "Forward Plus")
+config/features=PackedStringArray("4.7", "Forward Plus")
 config/icon="res://icon.png"
 run/flush_stdout_on_print=true
+
+[animation]
+
+; Godot 4.6+: meshes built in code rely on the parent Skeleton3D being
+; their skeleton, as before 4.6 (exports never get the editor's automatic
+; compat switch).
+compatibility/default_parent_skeleton_in_mesh_instance_3d=true
 
 [display]
 

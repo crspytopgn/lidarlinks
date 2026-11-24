@@ -25,6 +25,13 @@ const PHOTO_EXPOSURE := 1.0
 const CLASSIC_SUN_ELEVATION := 38.0
 ## Photoreal exposure in Compatibility relative to Forward+ (see _apply_time).
 const COMPAT_EXPOSURE_LIFT := 1.3
+## Photoreal exposure in Forward+ relative to the time of day's: Godot 4.7
+## lights the same scene a little brighter than 4.4 did, which the
+## looks and the colour grade were fitted under.
+const FORWARD_EXPOSURE := 0.95
+## Ultra's sunlit air (volumetric fog). Godot 4.6 made it brighter for the
+## same density (more physically accurate blending); 4.4's look used 0.0004.
+const VOLUMETRIC_FOG_DENSITY := 0.00012
 ## Photoreal fill light in Compatibility relative to the time of day's.
 const COMPAT_FILL_LIFT := 1.6
 ## The photographed sky in Photoreal on the Compatibility renderer: its
@@ -187,6 +194,11 @@ func _init() -> void:
 	environment.glow_intensity = 0.25
 	environment.glow_bloom = 0.0
 	environment.glow_hdr_threshold = 1.2
+	# Godot 4.6 moved glow's defaults (Screen blend, other levels). These
+	# are 4.4's, which the looks and the colour grade were fitted under.
+	environment.glow_blend_mode = Environment.GLOW_BLEND_MODE_SOFTLIGHT
+	for level in 7:
+		environment.set_glow_level(level, 1.0 if level == 2 or level == 4 else 0.0)
 	# Tuned for contact shade: a tighter radius with full fine detail, so
 	# grass darkens round the golfer's shoes, the ball, the flagstick and
 	# crowd feet, and a little of it reaches the sunlit side (light_affect),
@@ -273,7 +285,7 @@ func apply(settings: GraphicsSettings) -> void:
 	environment.volumetric_fog_enabled = fwd and photo and q >= GraphicsSettings.Quality.ULTRA
 	# A clear day's air: at 0.0012 (about 3 km visibility) the sunlit
 	# haze laid a milky veil over everything past the tee.
-	environment.volumetric_fog_density = 0.0004
+	environment.volumetric_fog_density = VOLUMETRIC_FOG_DENSITY
 	environment.volumetric_fog_albedo = Color(0.9, 0.93, 1.0)
 	environment.volumetric_fog_anisotropy = 0.6
 	environment.volumetric_fog_length = 160.0
@@ -295,6 +307,8 @@ func apply(settings: GraphicsSettings) -> void:
 	environment.sdfgi_bounce_feedback = 0.5
 	environment.sdfgi_energy = 1.0
 	environment.ssr_max_steps = 48
+	# 4.4's default; 4.6 raised it to 0.5.
+	environment.ssr_depth_tolerance = 0.2
 	environment.fog_aerial_perspective = 0.5 if photo else 0.3
 	_photo = photo
 	_quality = settings.quality
@@ -383,7 +397,7 @@ func _pick_sky() -> void:
 		if real and _weather_overcast > 0.0:
 			# Under cloud the haze loses the sun's colour and goes grey.
 			environment.fog_light_color = environment.fog_light_color.lerp(deck_color(_weather_rain), _weather_overcast * 0.8)
-		environment.volumetric_fog_density = 0.0004 * fog_scale(_weather_fog)
+		environment.volumetric_fog_density = VOLUMETRIC_FOG_DENSITY * fog_scale(_weather_fog)
 		# The haze lights up warm towards a low sun (light through the air
 		# between the tree rows), as on TV and in GSPro, cheap on every
 		# renderer.
@@ -559,7 +573,7 @@ func _apply_time() -> void:
 	var fwd := GraphicsSettings.is_forward_plus()
 	# Compatibility's turf measured about a stop's third darker than real
 	# course photos once its colour matched them (Lab L* 51 against 56).
-	_base_exposure = PHOTO_EXPOSURE * float(_time.exposure) * (1.0 if fwd else COMPAT_EXPOSURE_LIFT)
+	_base_exposure = PHOTO_EXPOSURE * float(_time.exposure) * (FORWARD_EXPOSURE if fwd else COMPAT_EXPOSURE_LIFT)
 	environment.tonemap_exposure = _base_exposure * _adapt
 	var sky: Color = _time.sky
 	RenderingServer.global_shader_parameter_set("sky_tint", Vector3(sky.r, sky.g, sky.b))

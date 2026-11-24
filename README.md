@@ -118,7 +118,7 @@ outfit. The browser build can't read local folders yet.
   WAV, the golfer object store, courses), and the ball physics: flight,
   bounce and roll per surface, holing out, clubs, the swing-to-launch
   mapping and scoring. All with tests.
-- **`game/`**: the Godot 4.4 game. The classic three-click swing meter and
+- **`game/`**: the Godot 4.7 game. The classic three-click swing meter and
   the mouse swing, broadcast presentation, photoreal looks that scale from
   phones to high-end PCs, a course designer, career mode, computer
   opponents and handicaps. Decoders plug in through the interfaces in
@@ -146,7 +146,7 @@ cmake --build build --parallel
 ctest --test-dir build --output-on-failure
 ```
 
-The game: open `game/project.godot` in Godot 4.4 and press F5.
+The game: open `game/project.godot` in Godot 4.7 and press F5.
 
 ## Roadmap
 
