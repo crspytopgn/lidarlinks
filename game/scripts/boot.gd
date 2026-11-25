@@ -20,8 +20,13 @@ var _play: Button
 var _main_box: Control
 var _setup: RoundSetupPanel
 var _online: OnlinePanel
+var _leaderboard: LeaderboardPanel
+## The menu's items as last shown (to add the online ones when the server
+## answers).
+var _items: Array = []
 var _settings: SettingsPanel
 var _players: PlayersPanel
+var _stats: StatsPanel
 var _creator: PlayerCreator
 var _golfer_select: GolferSelectPanel
 ## Where the player creator goes back to: the Players page, or Select
@@ -61,6 +66,10 @@ func _show_title() -> void:
 func _ready() -> void:
 	_show_title()
 	_graphics = GraphicsSettings.load_saved()
+	# Once a run: the launch in the player's own stats, and the anonymous
+	# start count (PlayCount, Settings > Play-time count).
+	PlayerStats.note_launch()
+	PlayCount.start()
 	get_window().content_scale_factor = GraphicsSettings.UI_SCALES[_graphics.ui_scale]
 	Glass.allow_blur = _graphics.quality != GraphicsSettings.Quality.LOW
 	GlassTheme.install()
@@ -117,10 +126,21 @@ func _build_ui() -> void:
 	_players.back_pressed.connect(_close_players)
 	_players.edit_golfer.connect(_open_creator)
 	center.add_child(_players)
+	_stats = StatsPanel.new()
+	_stats.back_pressed.connect(_close_stats)
+	center.add_child(_stats)
 	_online = OnlinePanel.new()
 	_online.start_pressed.connect(_on_online_start)
 	_online.back_pressed.connect(_close_online)
 	center.add_child(_online)
+	_leaderboard = LeaderboardPanel.new()
+	_leaderboard.back_pressed.connect(_close_leaderboard)
+	_leaderboard.play_pressed.connect(func() -> void:
+		_leaderboard.visible = false
+		_main_box.visible = true
+		_play_daily())
+	center.add_child(_leaderboard)
+	_probe_online()
 	add_child(_home)
 	_creator = PlayerCreator.new()
 	_creator.closed.connect(_close_creator)
@@ -193,6 +213,7 @@ func _build_community(box: VBoxContainer) -> void:
 
 
 func _set_buttons(items: Array) -> void:
+	_items = items
 	var labels: Array = items.map(func(item: Array) -> String: return item[0])
 	_play = _home.set_items(items, primary_button(labels))
 	if _play:
@@ -240,6 +261,7 @@ func _ask_for_files(problem := "") -> void:
 		["Play now", _play_placeholders],
 		["Daily round", _play_daily],
 		["Play a round", _setup_placeholders],
+	] + _online_items() + [
 		["Load disc images...", _pick.bind(false)],
 		["Load a game folder...", _pick.bind(true)],
 		["Tour event", _open_tour_event],
@@ -249,6 +271,7 @@ func _ask_for_files(problem := "") -> void:
 		["Courses", _open_courses],
 		["Select golfer", _open_golfer_select],
 		["Players", _open_players],
+		["Stats", _open_stats],
 		["Settings", _open_settings],
 	])
 
@@ -344,14 +367,13 @@ func _show_ready(courses: PackedStringArray, extra: Array) -> void:
 		_status.text += "
 Saved round: %s." % SavedRound.describe()
 	var items: Array = [["Play a round", _open_setup], ["Daily round", _play_daily]]
-	if OnlineSettings.available():
-		items.append(["Play online", _open_online])
+	items += _online_items()
 	if _can_resume():
 		items.append(["Resume round", _resume_round])
 	items.append(["Tour event", _open_tour_event])
 	items.append(["Career", _open_career])
 	items.append(["Tournament", _open_tournament])
-	items += extra + [["Select golfer", _open_golfer_select], ["Players", _open_players], ["Courses", _open_courses], ["Course designer", _open_designer], ["Settings", _open_settings]]
+	items += extra + [["Select golfer", _open_golfer_select], ["Players", _open_players], ["Stats", _open_stats], ["Courses", _open_courses], ["Course designer", _open_designer], ["Settings", _open_settings]]
 	if not OS.has_feature("web"):
 		items.append(["Quit", get_tree().quit])
 	_set_buttons(items)
@@ -436,6 +458,53 @@ func _open_online() -> void:
 	SceneFade.pop_in(_online)
 
 
+## Asks the online server if it's there (a few bytes, once a run). When it
+## answers, the menu showing gets Play online and Leaderboard.
+func _probe_online() -> void:
+	if OnlineSettings.reachable or OnlineSettings.server().is_empty():
+		return
+	var http := HTTPRequest.new()
+	http.timeout = 8.0
+	add_child(http)
+	http.request_completed.connect(func(result: int, code: int, _h: PackedStringArray, body: PackedByteArray) -> void:
+		http.queue_free()
+		if result != HTTPRequest.RESULT_SUCCESS or not OnlineSettings.is_hello(code, body):
+			return
+		OnlineSettings.reachable = true
+		var labels: Array = _items.map(func(item: Array) -> String: return item[0])
+		if _items.is_empty() or labels.has("Play online"):
+			return
+		var at := labels.find("Play a round")
+		var items := _items.duplicate()
+		var extra := _online_items()
+		for i in extra.size():
+			items.insert(at + 1 + i if at >= 0 else items.size(), extra[i])
+		_set_buttons(items))
+	if http.request(OnlineSettings.server() + "/") != OK:
+		http.queue_free()
+
+
+## "Play online" and "Leaderboard", once there is a server (OnlineSettings).
+func _online_items() -> Array:
+	if not OnlineSettings.available():
+		return []
+	return [["Play online", _open_online], ["Leaderboard", _open_leaderboard]]
+
+
+func _open_leaderboard() -> void:
+	if _busy:
+		return
+	_main_box.visible = false
+	_leaderboard.open()
+	SceneFade.pop_in(_leaderboard)
+
+
+func _close_leaderboard() -> void:
+	_leaderboard.visible = false
+	_main_box.visible = true
+	SceneFade.pop_in(_main_box)
+
+
 func _close_online() -> void:
 	_online.visible = false
 	_main_box.visible = true
@@ -516,6 +585,18 @@ func _edit_from_select(player_name: String) -> void:
 	_creator_from_select = true
 	_creator.open(player_name)
 	SceneFade.pop_in(_creator)
+
+
+func _open_stats() -> void:
+	_main_box.visible = false
+	_stats.open()
+	SceneFade.pop_in(_stats)
+
+
+func _close_stats() -> void:
+	_stats.close()
+	_main_box.visible = true
+	SceneFade.pop_in(_main_box)
 
 
 func _close_players() -> void:
@@ -755,6 +836,8 @@ func _unhandled_input(event: InputEvent) -> void:
 			_golfer_select.cancel()
 		elif _players.visible:
 			_close_players()
+		elif _stats.visible:
+			_close_stats()
 		elif _career.visible:
 			_close_career()
 		elif _tournament.visible:
@@ -848,6 +931,7 @@ func _show_desktop_choice() -> void:
 		["Play now", _play_placeholders],
 		["Daily round", _play_daily],
 		["Play a round", _setup_placeholders],
+	] + _online_items() + [
 		["Choose game folder...", _choose_folder],
 		["Tour event", _open_tour_event],
 		["Career", _open_career],
@@ -856,6 +940,7 @@ func _show_desktop_choice() -> void:
 		["Courses", _open_courses],
 		["Select golfer", _open_golfer_select],
 		["Players", _open_players],
+		["Stats", _open_stats],
 		["Settings", _open_settings],
 	])
 

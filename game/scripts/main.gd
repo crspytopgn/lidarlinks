@@ -398,9 +398,17 @@ var _mouse_help: LinksMouse.Help = null
 var online: OnlineRound
 ## Another player's shot being played here, to check against theirs.
 var _incoming: ShotRecord = null
+## When the person last touched a key, the mouse, the screen or a pad
+## (msec ticks): the play-time clock stops after PlayerStats.IDLE_S without.
+var _last_input_ms := Time.get_ticks_msec()
+## Whether the play-time clock ran last frame: when it stops, PlayCount
+## reports the total so far.
+var _clock_ran := false
 
 
 func _exit_tree() -> void:
+	PlayCount.flush()
+	PlayerStats.write_summary()
 	# Physics still running on worker threads (BackgroundWork: the strike,
 	# plans, shot reads) must end before the game can quit.
 	BackgroundWork.wait_all()
@@ -575,6 +583,13 @@ func start_round() -> void:
 	course = PracticeGround.new().load_course(PracticeGround.PATH) if round_setup.facility \
 			else _load_course(course_path)
 	round_setup.course_name = course.course_name
+	if resume.is_empty():
+		var kind := "round"
+		if round_setup.facility or round_setup.practice or round_setup.putting:
+			kind = "putting" if round_setup.putting else "range"
+		PlayerStats.note_round_start(course.course_name, kind)
+	if PlayCount.notice_once():
+		get_tree().create_timer(4.0).timeout.connect(func() -> void: hud.show_message(PlayCount.NOTICE, 9.0))
 	ScannedSurfaces.use_course(course)  # local cart paths and wood (private pack)
 	if round_setup.putting:
 		round_setup.trim_for_practice()
@@ -1288,6 +1303,7 @@ func _process(delta: float) -> void:
 	# in the air and the countdowns all wait.
 	var paused := pause_menu.visible or settings_panel.visible or (photo_mode != null and photo_mode.active)
 	hud.meter.set_process(not paused)
+	_tick_play_clock(delta, paused)
 	# Show the putting meter as soon as the putter is in hand, not only once
 	# the stroke starts.
 	if state == State.AIM and not hud.meter.is_swinging() and club_index < clubs.size():
@@ -1801,6 +1817,8 @@ func _made_from_touch(e: InputEventMouse) -> bool:
 ## Touches reach the swing before the HUD does, so a tap anywhere but on a
 ## button counts at once: over the info panels or the meter as well.
 func _input(event: InputEvent) -> void:
+	if not (event is InputEventJoypadMotion and absf((event as InputEventJoypadMotion).axis_value) < 0.3):
+		_last_input_ms = Time.get_ticks_msec()
 	if photo_mode != null and photo_mode.active:
 		return
 	if event is InputEventJoypadButton or (event is InputEventJoypadMotion and absf((event as InputEventJoypadMotion).axis_value) > 0.3):
@@ -2152,6 +2170,22 @@ func _pick_backspin(steps: int) -> void:
 	_update_hud()
 
 
+## The shot just played, into PlayerStats (the person's own shots only).
+func _note_player_stats(strokes_before: int) -> void:
+	if not _counts_for_me(shooter):
+		return
+	var club := clubs[club_index]
+	var penalty := ""
+	if shot.outcome == ShotResult.Outcome.WATER:
+		penalty = "water"
+	elif shot.outcome == ShotResult.Outcome.OUT_OF_BOUNDS:
+		penalty = "out"
+	var tee_driver := strokes_before == 0 and club.short_name == "Dr" and shot.outcome == ShotResult.Outcome.REST
+	var fairway := players[current].fairway if strokes_before == 0 and hole.par >= 4 else -1
+	PlayerStats.note_shot(club.short_name, shot.total_m, club.is_putter, shot.outcome == ShotResult.Outcome.HOLED,
+		_flat_distance(shot_from, hole.pin), tee_driver, fairway, penalty)
+
+
 ## A driver from the tee that stays in play counts for the longest drive.
 func _note_drive(strokes_before: int) -> void:
 	if strokes_before != 0 or clubs[club_index].short_name != "Dr" or shot.outcome != ShotResult.Outcome.REST:
@@ -2362,6 +2396,7 @@ func _on_range() -> bool:
 
 
 func _practice_shot_done() -> void:
+	PlayerStats.note_practice_ball()
 	var club := clubs[club_index]
 	var reading := LaunchMonitor.read(club.full_name, shot, shot_from, aim_deg)
 	practice_session.add(reading)
@@ -2819,6 +2854,7 @@ func _complete_flight() -> void:
 	strokes += 1
 	_count_stats(strokes_before)
 	_note_drive(strokes_before)
+	_note_player_stats(strokes_before)
 	shot_log.append("%s %d: %s from %s %.0f m, %s, %.1f m left on %s" % [
 		scoring.names[shooter], strokes, clubs[club_index].short_name, Surface.name_of(lie),
 		_flat_distance(shot_from, hole.pin), ShotResult.Outcome.keys()[shot.outcome],
@@ -3172,12 +3208,39 @@ func _hole_out(picked_up: bool) -> void:
 	result_timer = RESULT_PAUSE
 
 
+## True for the person's own players: not a computer golfer, nor another
+## person online. Only their shots and holes go into PlayerStats.
+func _counts_for_me(i: int) -> bool:
+	return round_setup != null and not round_setup.is_computer(i) and (online == null or online.owns(i))
+
+
+## The play-time clock (PlayerStats, PlayCount, Support): runs while the
+## round or the range is in front, not paused, with someone at the controls.
+func _tick_play_clock(delta: float, paused: bool) -> void:
+	var runs := not paused and get_window().has_focus() and Time.get_ticks_msec() - _last_input_ms <= int(PlayerStats.IDLE_S * 1000.0)
+	if runs != _clock_ran:
+		_clock_ran = runs
+		if not runs:
+			PlayCount.flush()
+			PlayerStats.save()
+	if not runs:
+		return
+	# A frame hitch (loading a hole) is not play.
+	var dt := minf(delta, 0.5)
+	PlayerStats.add_play_time(dt)
+	PlayCount.add_play(dt)
+
+
 func _finish_hole(add_stats := true) -> void:
 	for i in players.size():
 		var p := players[ball_of[i]]
 		scoring.cards[i].record(hole_index, p.strokes)
 		if i < opponents.size() and opponents[i] != null:
 			opponents[i].end_hole(p.strokes - hole.par)
+		if _counts_for_me(i):
+			PlayerStats.note_hole(course.course_name, hole.par, p.strokes, p.picked_up)
+			if add_stats:
+				PlayerStats.note_green(p.gir)
 		if not add_stats:
 			continue
 		var st := round_stats[i]
@@ -3252,6 +3315,11 @@ func _next_hole() -> void:
 			text += "  Net %d (%s)." % [net.total_strokes(), Scorecard.format_to_par(net.to_par())]
 	var records := _record_rounds()
 	_save_record()
+	for i in scoring.player_count():
+		if _counts_for_me(i) and scoring.cards[i].holes_played() == scoring.cards[i].pars.size():
+			PlayerStats.note_round_done(course.course_name, scoring.cards[i].pars.size(), scoring.cards[i].total_strokes(), scoring.cards[i].to_par())
+	PlayerStats.write_summary()
+	PlayCount.flush()
 	if not round_setup.daily.is_empty() and card.holes_played() == card.pars.size():
 		var best := DailyRound.record(round_setup.daily, card.to_par())
 		text += "\nDaily round: best today %s, %d in a row." % [Scorecard.format_to_par(best), DailyRound.streak(round_setup.daily)]
@@ -3268,12 +3336,41 @@ func _next_hole() -> void:
 		if not report.is_empty():
 			text = report + "\n" + text
 	hud.show_message(text)
+	if not round_setup.daily.is_empty() and card.holes_played() == card.pars.size() and not round_setup.play_through:
+		_send_daily(text)
 	hud.scorecard.show_round(scoring, _round_name(), "Final")
+	if not round_setup.play_through and card.holes_played() >= mini(9, card.pars.size()) and Support.thank_once():
+		hud.scorecard.show_support()
 	hud.hint.text = HINT_DONE
 	if not round_setup.career.is_empty():
 		hud.hint.text = HINT_CAREER_DONE
 	elif not round_setup.tournament.is_empty():
 		hud.hint.text = HINT_TOURNAMENT_DONE
+
+
+## Puts a finished daily round on the online leaderboard (DailyBoard) and
+## adds where it came to `text`, the round's closing message. Does nothing
+## without a server; a slow or missing connection never holds the game up.
+func _send_daily(text: String) -> void:
+	if not OnlineSettings.available() or record == null:
+		return
+	var http := HTTPRequest.new()
+	http.timeout = 20.0
+	add_child(http)
+	http.request_completed.connect(func(result: int, _code: int, _h: PackedStringArray, body: PackedByteArray) -> void:
+		http.queue_free()
+		var d: Variant = JSON.parse_string(body.get_string_from_utf8())
+		var line := ""
+		if result == HTTPRequest.RESULT_SUCCESS and d is Dictionary:
+			line = DailyBoard.reply_text(d)
+		elif result != HTTPRequest.RESULT_SUCCESS:
+			line = "Daily leaderboard: no connection, so this round isn't on it."
+		if not line.is_empty() and state == State.ROUND_DONE:
+			hud.show_message(text + "\n" + line))
+	var body := DailyBoard.submission(record, scoring.names[0], card.total_par())
+	if http.request(DailyBoard.url(OnlineSettings.server(), round_setup.daily), ["Content-Type: application/json"],
+			HTTPClient.METHOD_POST, body) != OK:
+		http.queue_free()
 
 
 ## Keeps the finished round in user://replays/ (RoundRecord).
@@ -5736,6 +5833,7 @@ func _practice_drop() -> void:
 ## A practice putt has finished: score it, say how it went, and drop the
 ## next ball once the pause is over (_after_result).
 func _practice_result() -> void:
+	PlayerStats.note_practice_ball()
 	var holed := shot.outcome == ShotResult.Outcome.HOLED
 	if holed:
 		sounds.play(&"cup")

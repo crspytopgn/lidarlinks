@@ -85,8 +85,8 @@ it can use fixed maths and be bit-exact.
 
 ### Live rounds
 
-Built (phase 2, not yet live: the server isn't deployed). Every game in the
-room plays the whole round itself, **in step**:
+Built (phase 2; the game shows it once the server answers). Every game in
+the room plays the whole round itself, **in step**:
 
 1. The **host** (whoever made the room) picks the course and starts the
    round. Its `setup` message carries the `RoundSetup`, the seed, the wind
@@ -154,6 +154,13 @@ for people who want no server at all. Desktop LAN play over ENet isn't
 worth a second transport.
 
 ## Leaderboards
+
+Built first: the **daily round's board** (`/boards/daily-DATE`, see
+[server/README.md](../server/README.md#daily-leaderboard)). Finishing the
+daily round sends its result code; the server checks the day's seed, the
+mode and the card, keeps each player's best and ranks by strokes. Main menu
+> Leaderboard shows today's or yesterday's board. The server can't re-run
+the round yet (phase 3), but it keeps each round so any game can.
 
 - **Daily and weekly challenges:** one course, tees, wind level and seed for
   everyone, so everyone gets the same wind on every shot. One ranked attempt

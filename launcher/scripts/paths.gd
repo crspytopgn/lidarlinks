@@ -17,6 +17,9 @@ const GAME_NAME := "OpenLinks2003"
 const REPO := "crspytopgn/lidarlinks"
 const RELEASES_PAGE := "https://github.com/crspytopgn/lidarlinks/releases/tag/latest"
 const PROJECT_PAGE := "https://github.com/crspytopgn/lidarlinks"
+## Where people can chip in: the same page as the game's Support button
+## (game/scripts/support.gd).
+const SUPPORT_PAGE := "https://ko-fi.com/crspytopgn"
 const WEB_BUILD := "https://crspytopgn.github.io/lidarlinks/"
 
 
@@ -95,6 +98,11 @@ static func game_user_dir(plat := platform()) -> String:
 
 static func game_settings() -> String:
 	return game_user_dir().path_join("settings.cfg")
+
+
+## The player's own stats the game keeps (PlayerStats), shown in the Stats tab.
+static func game_stats() -> String:
+	return game_user_dir().path_join("stats.cfg")
 
 
 ## The game's program inside an unpacked build, or "" when it isn't there.

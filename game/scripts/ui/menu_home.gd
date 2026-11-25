@@ -16,14 +16,15 @@ const TILES := {
 	"Daily round": ["tournament", "Today's course, the same for everyone"],
 	"Play a round": ["play", "Pick a course and tees"],
 	"Resume round": ["play", "Carry on where you stopped"],
-	"Play online": ["online", "Rounds and leaderboards"],
+	"Play online": ["online", "Play friends with a room code"],
+	"Leaderboard": ["tournament", "Today's best daily rounds"],
 	"Tour event": ["tournament", "72 holes against the pros"],
 	"Career": ["career", "Tours, cuts, prize money"],
 	"Tournament": ["tournament", "Build your own event"],
 	"Course designer": ["designer", "Make your own course"],
 }
 ## Menu items that go in the top bar instead.
-const NAV := ["Select golfer", "Courses", "Players", "Settings", "Quit"]
+const NAV := ["Select golfer", "Courses", "Players", "Stats", "Settings", "Quit"]
 const GOLD := Color(0.914, 0.78, 0.4)
 const TILE_SIZE := Vector2(212, 196)
 const RADIUS := 22.0
@@ -293,6 +294,15 @@ func _top_bar() -> Control:
 	_nav = HBoxContainer.new()
 	_nav.add_theme_constant_override("separation", 8)
 	row.add_child(_nav)
+	# Always there, last in the bar and quieter than the menu links.
+	var support := _nav_button(Support.BUTTON)
+	support.name = "SupportButton"
+	support.tooltip_text = Support.TOOLTIP
+	support.add_theme_color_override("font_color", Color(GOLD, 0.8))
+	support.add_theme_color_override("font_hover_color", GOLD)
+	support.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	support.pressed.connect(Support.open)
+	row.add_child(support)
 	return bar
 
 

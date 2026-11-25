@@ -1,0 +1,23 @@
+# LidarLinks' anonymous play-time count (stats/README.md). Deploy from this folder: npx wrangler@4.152.0 deploy
+name = "lidarlinks-stats"
+main = "src/index.js"
+compatibility_date = "2026-11-01"
+workers_dev = true
+
+[[d1_databases]]
+binding = "DB"
+database_name = "lidarlinks-stats"
+database_id = "c8b0e946-5cb7-495f-9fb8-6f274d06e61a"
+
+[observability]
+enabled = true
+
+# A per-address limit (src/index.js, underLimit) on counts and on the open page, so one machine can't use up the
+# account's daily D1 allowance (shared with OpenSGolf's boards). The game sends a count every 5 minutes.
+[[ratelimits]]
+name = "LIMITER"
+namespace_id = "3972"
+
+  [ratelimits.simple]
+  limit = 60
+  period = 60

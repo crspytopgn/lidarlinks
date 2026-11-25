@@ -133,6 +133,9 @@ var quick_pace := true
 ## Settings > Units: false yards and feet with mph (Links 2003), true metres
 ## with km/h. Copied into Units.metric, which every distance shown reads.
 var metric_units := false
+## Settings > Play-time count: the anonymous 15-minute count (PlayCount).
+## Copied into PlayCount.enabled.
+var play_count := true
 ## Links 2003's swing help for the mouse swing: once most of a player's
 ## strokes have had no sideways movement at all, strokes are nudged a few
 ## degrees off line (LinksMouse.Help).
@@ -396,6 +399,8 @@ static func _load_saved(path: String) -> GraphicsSettings:
 	s.quick_pace = bool(cfg.get_value(GAME_SECTION, "quick_pace", s.quick_pace))
 	s.metric_units = bool(cfg.get_value(GAME_SECTION, "metric_units", s.metric_units))
 	Units.metric = s.metric_units
+	s.play_count = bool(cfg.get_value(GAME_SECTION, "play_count", s.play_count))
+	PlayCount.enabled = s.play_count
 	s.swing_help = bool(cfg.get_value(GAME_SECTION, "swing_help", s.swing_help))
 	s.putting_grid = clampi(int(cfg.get_value(GAME_SECTION, "putting_grid", s.putting_grid)), 0, PUTTING_GRID_NAMES.size() - 1)
 	s.breakline = bool(cfg.get_value(GAME_SECTION, "breakline", s.breakline))
@@ -478,6 +483,8 @@ func save(path := PATH) -> void:
 	cfg.set_value(GAME_SECTION, "quick_pace", quick_pace)
 	cfg.set_value(GAME_SECTION, "metric_units", metric_units)
 	Units.metric = metric_units
+	cfg.set_value(GAME_SECTION, "play_count", play_count)
+	PlayCount.set_enabled(play_count)
 	cfg.set_value(GAME_SECTION, "swing_help", swing_help)
 	cfg.set_value(GAME_SECTION, "putting_grid", putting_grid)
 	cfg.set_value(GAME_SECTION, "breakline", breakline)

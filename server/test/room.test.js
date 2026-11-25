@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { RoomState } from "../src/room.js";
+import { AWAY_GRACE_MS, RoomState } from "../src/room.js";
 import { PROTOCOL_VERSION, cleanName, isCode, randomCode } from "../src/protocol.js";
 
 const hello = (name) => ({ type: "hello", v: PROTOCOL_VERSION, name });
@@ -102,4 +102,64 @@ test("the state survives being stored", () => {
   assert.equal(copy.setup.course, "Kauri");
   assert.match(copy.join(hello("Bo")).error, /started/);
   assert.equal(copy.seq, 0);
+});
+
+test("a dropped connection keeps its seat for a while and catches up when it's back", () => {
+  const room = new RoomState("ABCD");
+  const aj = room.join(hello("Ann"));
+  const a = aj.id;
+  const bj = room.join(hello("Bo"));
+  const b = bj.id;
+  const bKey = bj.sends[0].msg.key;
+  assert.match(bKey, /^[A-Za-z0-9_-]{24}$/);
+  assert.notEqual(bKey, aj.sends[0].msg.key);
+  room.message(a, { type: "setup", owners: [0, 1] });
+  room.message(a, { type: "event", seq: 0, player: 0, kind: "shot", shot: { p: 1 } });
+  // Bo's phone loses signal: Ann hears, but Bo keeps their seat.
+  const away = room.away(b, 1000);
+  assert.deepEqual(away.map((s) => s.msg.type), ["away"]);
+  assert.deepEqual(room.setup.owners, [0, 1]);
+  assert.equal(room.nextExpiry(), 1000 + AWAY_GRACE_MS);
+  room.message(a, { type: "event", seq: 1, player: 0, kind: "shot", shot: { p: 2 } });
+  assert.deepEqual(room.expire(1000 + AWAY_GRACE_MS - 1), []);
+  // A wrong key, or a new name after the start, gets nowhere.
+  assert.match(room.join({ ...hello("Bo"), rejoin: { id: b, key: "nope" } }).error, /away too long/);
+  // Back with the key: the events from `since` on, and the server's number.
+  const back = room.join({ ...hello("Bo"), rejoin: { id: b, key: bKey }, since: 1 });
+  assert.equal(back.id, b);
+  const mine = back.sends.filter((s) => s.to === b).map((s) => s.msg);
+  assert.equal(mine[0].type, "welcome");
+  assert.equal(mine[0].seq, 2);
+  assert.equal(mine[1].type, "setup");
+  assert.deepEqual(mine.filter((m) => m.type === "event").map((m) => m.seq), [1]);
+  assert.ok(back.sends.some((s) => s.msg.type === "back"));
+  assert.equal(room.nextExpiry(), null);
+  // Bo plays on as before.
+  assert.ok(room.message(b, { type: "event", seq: 2, player: 1, kind: "shot" }).sends);
+});
+
+test("away for longer than the grace: the host plays their players", () => {
+  const room = new RoomState("ABCD");
+  const a = room.join(hello("Ann")).id;
+  const b = room.join(hello("Bo")).id;
+  room.message(a, { type: "setup", owners: [0, 1] });
+  room.away(b, 0);
+  const sends = room.expire(AWAY_GRACE_MS);
+  assert.deepEqual(sends.map((s) => s.msg.type), ["left", "owners", "members"]);
+  assert.deepEqual(room.setup.owners, [0, 0]);
+  // Before the round, a dropped player just leaves.
+  const lobby = new RoomState("WXYZ");
+  lobby.join(hello("Ann"));
+  const c = lobby.join(hello("Cy")).id;
+  assert.deepEqual(lobby.away(c, 0).map((s) => s.msg.type), ["left", "members"]);
+});
+
+test("the event log isn't in the stored state (each event is stored apart)", () => {
+  const room = new RoomState("ABCD");
+  const a = room.join(hello("Ann")).id;
+  room.message(a, { type: "setup", owners: [0] });
+  const out = room.message(a, { type: "event", seq: 0, player: 0, kind: "shot" });
+  assert.equal(out.event.seq, 0);
+  assert.equal(room.events.length, 1);
+  assert.equal(JSON.parse(JSON.stringify(room.toJSON())).events, undefined);
 });

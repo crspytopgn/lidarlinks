@@ -20,6 +20,7 @@ const DiscImage := preload("res://scripts/disc_image.gd")
 const GameConfig := preload("res://scripts/game_config.gd")
 const BuildInfo := preload("res://scripts/build_info.gd")
 const Net := preload("res://scripts/net.gd")
+const GameStats := preload("res://scripts/game_stats.gd")
 
 const BG_SHADER := """
 shader_type canvas_item;
@@ -47,7 +48,7 @@ void fragment() {
 
 enum State { CHECKING, NO_GAME, OFFLINE_NO_GAME, UPDATE, DOWNLOADING, INSTALLING, READY, PLAYING }
 
-const TAB_NAMES := ["What's New", "Settings", "Game Files"]
+const TAB_NAMES := ["What's New", "Settings", "Game Files", "Stats"]
 const ON_LAUNCH := ["Keep the launcher open", "Minimise the launcher", "Close the launcher"]
 const RENDERERS := ["Automatic", "Forward+ (Vulkan, Metal, D3D12)", "Compatibility (OpenGL)"]
 const RENDERER_ARGS := [[], ["--rendering-method", "forward_plus"], ["--rendering-method", "gl_compatibility"]]
@@ -95,6 +96,7 @@ var _pages: Array[Control] = []
 var _news: VBoxContainer
 var _settings: VBoxContainer
 var _files: VBoxContainer
+var _stats: VBoxContainer
 
 
 func _ready() -> void:
@@ -244,6 +246,12 @@ func _build_hero() -> Control:
 	_check_button.tooltip_text = "Looks for a newer build on GitHub now. The launcher also checks every few minutes while it's open."
 	_check_button.pressed.connect(_check)
 	check_row.add_child(_check_button)
+	check_row.add_child(UI.label("·", 12, "Regular", UI.TEXT_3))
+	var support := UI.link_button("Support LidarLinks")
+	support.add_theme_font_size_override("font_size", 12)
+	support.tooltip_text = "LidarLinks is free. This opens its Ko-fi page in your browser, if you'd like to chip in."
+	support.pressed.connect(func() -> void: OS.shell_open(Paths.SUPPORT_PAGE))
+	check_row.add_child(support)
 	return hero
 
 
@@ -278,6 +286,7 @@ func _build_card() -> Control:
 	_news = _pages[0].get_child(0) as VBoxContainer
 	_settings = _pages[1].get_child(0) as VBoxContainer
 	_files = _pages[2].get_child(0) as VBoxContainer
+	_stats = _pages[3].get_child(0) as VBoxContainer
 	_build_settings()
 	return card
 
@@ -316,6 +325,8 @@ func _show_tab(i: int) -> void:
 		_pages[p].get_child(0).visible = p == i
 	if i == 2:
 		_build_files()
+	if i == 3:
+		_build_stats()
 
 
 func _process(delta: float) -> void:
@@ -881,6 +892,12 @@ func _build_settings() -> void:
 	launcher.row("Launcher updates", get_new, "The game updates itself; a newer launcher is downloaded from the releases page.")
 	_settings.add_child(launcher)
 
+	var privacy := Group.new("Privacy")
+	var set_count := func(on: bool) -> void: c.play_count = on
+	privacy.row("Play-time count", _switch(c.play_count, set_count),
+		"Sends how long you play, anonymously, with the platform and build only: no names, scores or courses. Your stats stay on this computer either way.")
+	_settings.add_child(privacy)
+
 
 func _save_settings() -> void:
 	_cfg.save_to()
@@ -945,6 +962,65 @@ func _build_files() -> void:
 
 	var note := UI.wrap(UI.label("You can also drop images or folders on this window. LidarLinks contains nothing from Links 2003: your files are read on this computer and never uploaded.", 12, "Regular", UI.TEXT_3))
 	_files.add_child(note)
+
+
+# ---- Stats ------------------------------------------------------------------------
+
+## The player's own stats, as the game's Stats page shows them (GameStats).
+func _build_stats() -> void:
+	for ch in _stats.get_children():
+		ch.queue_free()
+	var st: RefCounted = GameStats.load_from()
+	if st.is_empty():
+		var empty := Group.new("Your stats")
+		empty.row("Nothing yet", null, "Play a round and your time played, scores, drives, putts and handicap appear here.")
+		_stats.add_child(empty)
+		return
+	var chart := Group.new("Time played, last 30 days")
+	var bars := DayBars.new()
+	bars.days = st.days
+	bars.custom_minimum_size = Vector2(0, 64)
+	var bm := MarginContainer.new()
+	for side: String in ["left", "right", "top", "bottom"]:
+		bm.add_theme_constant_override("margin_" + side, 12)
+	bm.add_child(bars)
+	chart.wide(bm)
+	_stats.add_child(chart)
+	var play := Group.new("Your play")
+	for r: Variant in st.rows:
+		if r is Array and (r as Array).size() >= 2:
+			play.row(str(r[0]), _value(str(r[1])))
+	_stats.add_child(play)
+	if not st.players.is_empty():
+		var people := Group.new("Players")
+		for p: Variant in st.players:
+			if not (p is Dictionary):
+				continue
+			var d: Dictionary = p
+			var hint := PackedStringArray()
+			for key: String in ["career", "records"]:
+				if not str(d.get(key, "")).is_empty():
+					hint.append(str(d[key]))
+			var trend: Array = d.get("trend", [])
+			if trend.size() >= 2:
+				hint.append("Index %s to %s over the last %d rounds" % [GameStats.index_text(int(trend[0])), GameStats.index_text(int(trend[trend.size() - 1])), trend.size()])
+			var rounds := int(d.get("rounds", 0))
+			people.row("%s · %d round%s" % [str(d.get("name", "")), rounds, "" if rounds == 1 else "s"], _value("Index " + str(d.get("index", "-"))), "\n".join(hint))
+		_stats.add_child(people)
+	if not st.best.is_empty():
+		var bests := Group.new("Best rounds")
+		for b: Variant in st.best.slice(0, 10):
+			if b is Array and (b as Array).size() >= 5:
+				bests.row("%s (%d holes)" % [str(b[0]), int(b[1])], _value("%d (%s)" % [int(b[2]), GameStats.to_par(int(b[3]))]), str(b[4]))
+		_stats.add_child(bests)
+	var note := UI.wrap(UI.label("Kept on this computer only, updated each time you play (last %s). Only an anonymous count of play time is sent, and Privacy in Settings turns that off." % st.updated.replace("T", " ").left(16), 12, "Regular", UI.TEXT_3))
+	_stats.add_child(note)
+
+
+func _value(text: String) -> Label:
+	var l := UI.label(text, 14, "Medium", UI.TEXT_2)
+	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	return l
 
 
 func _pick_images() -> void:
@@ -1068,3 +1144,29 @@ class GradientText extends Control:
 		for i in text.length():
 			var t := clampf((cursor - x) / maxf(width, 1.0), 0.0, 1.0)
 			cursor += font.draw_char(get_canvas_item(), Vector2(cursor, y), text.unicode_at(i), font_size, from.lerp(to, t))
+
+
+## Seconds played per day as bars, today on the right.
+class DayBars:
+	extends Control
+	const UI := preload("res://scripts/ui.gd")
+	var days: Array = []
+
+	func _draw() -> void:
+		if days.is_empty():
+			return
+		var top := 1.0
+		for d: Variant in days:
+			top = maxf(top, float(d))
+		var w := size.x / days.size()
+		var h := size.y - 16.0
+		for i in days.size():
+			var v := float(days[i])
+			if v <= 0.0:
+				continue
+			var bh := maxf(h * v / top, 2.0)
+			draw_rect(Rect2(i * w + 1.0, h - bh, maxf(w - 2.0, 1.0), bh), UI.GREEN if i == days.size() - 1 else Color(1, 1, 1, 0.45))
+		draw_line(Vector2(0, h), Vector2(size.x, h), UI.HAIRLINE)
+		var font := UI.font("Regular")
+		draw_string(font, Vector2(0, size.y - 2), "30 days ago", HORIZONTAL_ALIGNMENT_LEFT, -1, 11, UI.TEXT_3)
+		draw_string(font, Vector2(size.x - 120, size.y - 2), "Today", HORIZONTAL_ALIGNMENT_RIGHT, 120, 11, UI.TEXT_3)

@@ -1,11 +1,16 @@
 # Online play server
 
-The server behind online rooms and rounds played in your own time
-([docs/online-play.md](../docs/online-play.md)). It runs as a Cloudflare
-Worker with Durable Objects on the free plan. It is plain JavaScript with no
-dependencies, and `node --test "test/*.test.js"` tests it without Cloudflare.
+The server behind online rooms, rounds played in your own time and the daily
+leaderboard ([docs/online-play.md](../docs/online-play.md)). It runs as a
+Cloudflare Worker (`lidarlinks`) with Durable Objects on the free plan, at
+`https://lidarlinks.openmcm2-laps.workers.dev` (`OnlineSettings.DEFAULT_SERVER`).
+It is plain JavaScript with no dependencies, and `node --test "test/*.test.js"`
+tests it without Cloudflare (`npx wrangler@4 dev` runs the real thing
+locally).
 
-It is **not deployed yet**. Until it is, the game's online menu stays hidden.
+The game asks `GET /` once at the start and shows Play online and
+Leaderboard only when the server answers, so the game is fine while it isn't
+deployed, or offline.
 
 ## What it does
 
@@ -25,11 +30,60 @@ It is **not deployed yet**. Until it is, the game's online menu stays hidden.
   in `user://`. The server stores only a hash of it, and names are checked
   for length and characters.
 
+### Low bandwidth, low latency
+
+- A shot is sent as its inputs (club, aim, power, accuracy or the mouse
+  stroke, where it stopped), about half a KB of JSON. Every game plays it
+  through its own physics, so no ball positions stream during the flight. A
+  whole four-player round is a couple of hundred KB, far less than one
+  photo, so it plays fine on 2G or a weak phone signal.
+- Your own shot plays at once: the meter never waits on the network. The
+  others' shots arrive one hop through Cloudflare's edge (tens of ms).
+- Keep-alives are a 15-byte ping every 15 s, answered by Cloudflare without
+  waking the room (WebSocket auto-response), so they cost nothing.
+- **Dropped connections heal.** If a game's connection drops in a round, its
+  player keeps their seat for three minutes (`AWAY_GRACE_MS`). The game
+  reconnects by itself with the key from its `welcome`, gets every event it
+  missed, and resends any of its own the server never got. Only after the
+  grace does the host's game take over their players.
+
+### Daily leaderboard
+
+`/boards/daily-DATE` (UTC date). Finishing the daily round sends its result
+code (gzipped `RoundRecord`, a few KB). The server decodes it and checks it is
+that day's seed (`dailySeed`, the same as `DailyRound.seed_for`), stroke
+play, one human player, finished, and that the shots add up to the card. It
+keeps each player's best and ranks by strokes (the same order as to par,
+since everyone plays the same course). Rounds can be sent for the day and up
+to six hours after it. Each entry's round can be fetched
+(`/boards/daily-DATE/rounds/ROUND`) so anyone's game can re-run it.
+
+Until the server can re-run rounds itself (phase 3 of docs/online-play.md), a
+made-up card is the easy way to cheat, so impossible ones are turned away:
+more than two holes in one, or under 2.5 strokes a hole. A faked or rude
+entry can be taken off by hand, for good, with
+`curl -u admin:PASSWORD -X POST https://lidarlinks.openmcm2-laps.workers.dev/boards/daily-DATE/hide/ROUND`
+(ROUND is the entry's `round` in the board's JSON). That needs an
+`ADMIN_PASSWORD` secret on the Worker (Cloudflare dashboard > Workers >
+lidarlinks > Settings > Variables and Secrets, type Secret); without one,
+hiding is simply off.
+
+### Abuse limits
+
+Everything that makes or changes something (every POST, and every WebSocket
+join) counts towards 60 a minute per address (`underLimit`, Cloudflare's
+rate limiting binding `LIMITER` in `wrangler.toml`). The address is only the
+counter's key and is never stored. A game sends far less, and the limit stops
+one machine using up the free plan's daily allowance, which would stop
+everyone playing (on the free plan going over never costs money: requests
+just fail until the next day).
+
 ### Room messages
 
 Every message is JSON with a `type`. A new connection's first message is
 `{type: "hello", v: 1, name}`, and the server answers with `welcome {code,
-you, seat, host}`. Everyone also gets `members` whenever someone comes or
+you, seat, host, key, seq}`. A game coming back after a dropped connection
+sends `{type: "hello", v: 1, name, rejoin: {id, key}, since}` instead. Everyone also gets `members` whenever someone comes or
 goes. Nobody can join once the round has started.
 
 | From | Type | Goes to | Notes |
@@ -39,7 +93,8 @@ goes. Nobody can join once the round has started.
 | host | `state`, `end` | everyone else | `end` closes the room |
 | anyone | `chat {id}` | everyone | Quick-chat number, 0 to 7; no free text |
 | anyone | `mismatch {shot}` | everyone | My replay of that event disagrees |
-| anyone | `ping` | sender (`pong`) | |
+| anyone | `ping` | sender (`pong`) | Answered without waking the room |
+| server | `away`, `back` | everyone else | A player's connection dropped, or they reconnected |
 | server | `members`, `left`, `host_left`, `owners`, `error {reason}` | | When someone leaves, the host's game plays their players (`owners`). When the host leaves, the oldest remaining player becomes host |
 
 Limits: four players, 64 KB a message, 256 KB a round record. Idle rooms are
@@ -53,17 +108,19 @@ deleted after 6 hours, and rounds 30 days after their last shot.
   before sending it. Ranked challenges will need the seed revealed hole by
   hole.
 
-## Deploying (needs Michael's free Cloudflare account)
+## Deploying
 
-1. Make a free account at https://dash.cloudflare.com/sign-up.
-2. Under My Profile > API Tokens, create a token from the "Edit Cloudflare
-   Workers" template. Copy the token and your account ID (shown on the
-   Workers & Pages overview).
-3. In the GitHub repo, go to Settings > Secrets and variables > Actions. Add
-   `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`.
-4. Run the "Deploy online server" workflow from the Actions tab. It prints
-   the Worker's address (`https://openlinks2003.<account>.workers.dev`),
-   which then goes into the game's online settings.
+It runs on Michael's Cloudflare account (free plan, account subdomain
+`openmcm2-laps`). Either:
+
+- **Workers Builds (no tokens):** in the Cloudflare dashboard, Workers &
+  Pages > Create > Import a repository, pick this repo, set the root
+  directory to `server`, Deploy. Cloudflare then redeploys by itself on every
+  merge to `main`.
+- **GitHub Actions:** add `CLOUDFLARE_API_TOKEN` (from the "Edit Cloudflare
+  Workers" token template) and `CLOUDFLARE_ACCOUNT_ID` as repo secrets; the
+  "Deploy online server" workflow then deploys on merges that touch
+  `server/` (and can be run by hand).
 
 The free plan's daily request limits are far beyond what a few rounds use. A
 golf round sends a few messages per shot.

@@ -9,6 +9,8 @@
 <a href="https://crspytopgn.github.io/lidarlinks/"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/brand/readme/button-play-dark.png"><img alt="Play in your browser" src="docs/brand/readme/button-play-light.png" height="42"></picture></a>
 &nbsp;
 <a href="https://github.com/crspytopgn/lidarlinks/releases/tag/latest"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/brand/readme/button-download-dark.png"><img alt="Download" src="docs/brand/readme/button-download-light.png" height="42"></picture></a>
+&nbsp;
+<a href="https://ko-fi.com/crspytopgn"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/brand/readme/button-support-dark.png"><img alt="Support LidarLinks" src="docs/brand/readme/button-support-light.png" height="42"></picture></a>
 </p>
 
 <p align="center">
@@ -169,10 +171,26 @@ The logo, app icon and the images on this page live in
 
 ## Supporting the project
 
-LidarLinks is free and always will be. If you enjoy it and want to chip in,
-you can [sponsor it on GitHub](https://github.com/sponsors/crspytopgn).
+LidarLinks is free, with no ads and nothing to unlock, and it always will be.
+It's made by one person in their spare time. If you enjoy it and want to help
+keep it going, you can chip in any amount, once or monthly:
+
+- [Ko-fi](https://ko-fi.com/crspytopgn): card or PayPal, no account needed
+- [GitHub Sponsors](https://github.com/sponsors/crspytopgn): if you're on GitHub
+
+Thank you!
+
+The game has a **Support** button on its main menu (desktop and browser) and in
+the launcher, so you can always find this page again.
 
 More from me: [OpenMCM2](https://github.com/crspytopgn/openmcm2) · [OpenSGolf](https://github.com/crspytopgn/opensgolf) · [Pitwall](https://github.com/crspytopgn/pitwall).
+
+## Privacy
+
+Your stats (time played, rounds, scores, drives, putts, handicap) stay on your own device: see them under **Stats** in
+the main menu or the launcher. The only thing the game sends is an anonymous count of play time (seconds played, with
+the platform and build, no names or scores) so we can see how much LidarLinks is played. Settings > Play-time count
+turns it off. Details: [docs/stats.md](docs/stats.md).
 
 ## Licence
 
