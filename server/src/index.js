@@ -13,7 +13,7 @@
 //
 // See server/README.md.
 
-import { GAME_ID_LENGTH, ROOM_CODE_LENGTH, isCode, randomCode } from "./protocol.js";
+import { GAME_ID_LENGTH, ROOM_CODE_LENGTH, isCode, randomCode, underLimit } from "./protocol.js";
 export { RoomObject } from "./room_object.js";
 export { GameObject } from "./game_object.js";
 export { BoardObject } from "./board_object.js";
@@ -22,7 +22,7 @@ import { isBoardKey } from "./board.js";
 const CORS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type",
+  "Access-Control-Allow-Headers": "Content-Type, Authorization",
 };
 
 function withCors(response) {
@@ -48,6 +48,12 @@ export default {
     if (request.method === "OPTIONS") return new Response(null, { headers: CORS });
     const url = new URL(request.url);
     const parts = url.pathname.split("/").filter(Boolean);
+    // Anything that makes or changes something (and every WebSocket join) counts towards a per-address limit, so one
+    // machine can't flood the free plan's daily allowance and stop everyone playing.
+    const writes = request.method === "POST" || request.headers.get("Upgrade") === "websocket";
+    if (writes && !(await underLimit(env, request, "w"))) {
+      return withCors(Response.json({ error: "too many requests, try again in a minute" }, { status: 429 }));
+    }
     let response;
     if (parts[0] === "rooms" && parts.length === 1 && request.method === "POST") {
       response = await createIn(env.ROOMS, ROOM_CODE_LENGTH, { method: "POST" });

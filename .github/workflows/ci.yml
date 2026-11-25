@@ -6,6 +6,10 @@ on:
   pull_request:
   workflow_dispatch:
 
+# Read-only by default; the release and Pages jobs ask for what they need.
+permissions:
+  contents: read
+
 env:
   GODOT_VERSION: 4.7.2
 

@@ -58,6 +58,26 @@ since everyone plays the same course). Rounds can be sent for the day and up
 to six hours after it. Each entry's round can be fetched
 (`/boards/daily-DATE/rounds/ROUND`) so anyone's game can re-run it.
 
+Until the server can re-run rounds itself (phase 3 of docs/online-play.md), a
+made-up card is the easy way to cheat, so impossible ones are turned away:
+more than two holes in one, or under 2.5 strokes a hole. A faked or rude
+entry can be taken off by hand, for good, with
+`curl -u admin:PASSWORD -X POST https://lidarlinks.openmcm2-laps.workers.dev/boards/daily-DATE/hide/ROUND`
+(ROUND is the entry's `round` in the board's JSON). That needs an
+`ADMIN_PASSWORD` secret on the Worker (Cloudflare dashboard > Workers >
+lidarlinks > Settings > Variables and Secrets, type Secret); without one,
+hiding is simply off.
+
+### Abuse limits
+
+Everything that makes or changes something (every POST, and every WebSocket
+join) counts towards 60 a minute per address (`underLimit`, Cloudflare's
+rate limiting binding `LIMITER` in `wrangler.toml`). The address is only the
+counter's key and is never stored. A game sends far less, and the limit stops
+one machine using up the free plan's daily allowance, which would stop
+everyone playing (on the free plan going over never costs money: requests
+just fail until the next day).
+
 ### Room messages
 
 Every message is JSON with a `type`. A new connection's first message is

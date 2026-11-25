@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { gzipSync } from "node:zlib";
 import { BoardState, boardOpen, checkRecord, isBoardKey } from "../src/board.js";
 import { decodeCode } from "../src/board_object.js";
-import { dailySeed, godotStringHash } from "../src/protocol.js";
+import { dailySeed, godotStringHash, isAdmin, underLimit } from "../src/protocol.js";
 
 const KEY = "daily-2026-11-25";
 const card = [4, 3, 5, 4, 4, 3, 5, 4, 4];
@@ -69,4 +69,39 @@ test("each player's best round, ranked by strokes, ties to whoever got there fir
   assert.equal(b.find(v.entries[1].round), "b".repeat(64));
   const copy = new BoardState(KEY, JSON.parse(JSON.stringify(b.toJSON())));
   assert.equal(copy.rank("a".repeat(64)), 1);
+});
+
+test("impossible cards are turned away", () => {
+  assert.match(checkRecord(KEY, record({ cards: [[1, 1, 1, 4, 4, 3, 5, 4, 4]] })).error, /can't be right/, "three aces");
+  assert.match(checkRecord(KEY, record({ cards: [[2, 2, 2, 2, 2, 2, 2, 3, 3]], shots: shots(20) })).error, /can't be right/, "20 on nine holes");
+  assert.deepEqual(checkRecord(KEY, record({ cards: [[1, 1, 3, 3, 3, 3, 3, 3, 3]], shots: shots(23) })), { strokes: 23, holes: 9 }, "two aces and 23 is still allowed");
+});
+
+test("an entry taken off the board stays off", () => {
+  const b = new BoardState(KEY);
+  b.submit("a".repeat(64), "Ann", 30, 9, 1);
+  b.submit("b".repeat(64), "Bo", 36, 9, 2);
+  assert.equal(b.hide("a".repeat(16)), "a".repeat(64));
+  assert.deepEqual(b.view().entries.map((e) => e.name), ["Bo"]);
+  assert.match(b.submit("a".repeat(64), "Ann", 29, 9, 3).error, /taken off/);
+  assert.equal(b.hide("c".repeat(16)), null);
+  const again = new BoardState(KEY, JSON.parse(JSON.stringify(b.toJSON())));
+  assert.match(again.submit("a".repeat(64), "Ann", 29, 9, 4).error, /taken off/, "kept through storage");
+  assert.deepEqual(new BoardState(KEY, { key: KEY, entries: [] }).hidden, [], "boards saved before hiding existed");
+});
+
+test("admin password and the per-address limit", async () => {
+  const req = (auth, ip = "1.2.3.4") => new Request("https://x/", { headers: { ...(auth ? { Authorization: "Basic " + btoa(auth) } : {}), "CF-Connecting-IP": ip } });
+  assert.ok(!isAdmin(req("x:pw"), {}), "no secret, no admin");
+  assert.ok(isAdmin(req("x:pw"), { ADMIN_PASSWORD: "pw" }));
+  assert.ok(!isAdmin(req("x:pwx"), { ADMIN_PASSWORD: "pw" }));
+  assert.ok(!isAdmin(req(null), { ADMIN_PASSWORD: "pw" }));
+  assert.ok(await underLimit({}, req(null), "w"), "no binding: allowed");
+  const seen = [];
+  const env = { LIMITER: { limit: async ({ key }) => (seen.push(key), { success: seen.length <= 2 }) } };
+  assert.ok(await underLimit(env, req(null), "w"));
+  assert.ok(await underLimit(env, req(null), "w"));
+  assert.ok(!(await underLimit(env, req(null), "w")));
+  assert.equal(seen[0], "w:1.2.3.4");
+  assert.ok(await underLimit({ LIMITER: { limit: async () => { throw new Error("down"); } } }, req(null), "w"), "a broken limiter lets play on");
 });
