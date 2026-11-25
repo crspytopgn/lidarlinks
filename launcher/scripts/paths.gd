@@ -17,6 +17,9 @@ const GAME_NAME := "OpenLinks2003"
 const REPO := "crspytopgn/lidarlinks"
 const RELEASES_PAGE := "https://github.com/crspytopgn/lidarlinks/releases/tag/latest"
 const PROJECT_PAGE := "https://github.com/crspytopgn/lidarlinks"
+## Where people can chip in: the same page as the game's Support button
+## (game/scripts/support.gd).
+const SUPPORT_PAGE := "https://github.com/sponsors/crspytopgn"
 const WEB_BUILD := "https://crspytopgn.github.io/lidarlinks/"
 
 

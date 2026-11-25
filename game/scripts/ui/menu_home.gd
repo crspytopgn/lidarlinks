@@ -293,6 +293,15 @@ func _top_bar() -> Control:
 	_nav = HBoxContainer.new()
 	_nav.add_theme_constant_override("separation", 8)
 	row.add_child(_nav)
+	# Always there, last in the bar and quieter than the menu links.
+	var support := _nav_button(Support.BUTTON)
+	support.name = "SupportButton"
+	support.tooltip_text = Support.TOOLTIP
+	support.add_theme_color_override("font_color", Color(GOLD, 0.8))
+	support.add_theme_color_override("font_hover_color", GOLD)
+	support.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	support.pressed.connect(Support.open)
+	row.add_child(support)
 	return bar
 
 

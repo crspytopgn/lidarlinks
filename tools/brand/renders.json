@@ -141,6 +141,14 @@
 		"scale": 2
 	},
 	{
+		"src": "templates/button.html",
+		"query": "b=support",
+		"out": "readme/button-support-light.png",
+		"w": 260,
+		"h": 84,
+		"scale": 2
+	},
+	{
 		"src": "templates/hero.html",
 		"query": "dark",
 		"out": "readme/hero-dark.webp",
@@ -216,6 +224,14 @@
 		"query": "b=download&dark",
 		"out": "readme/button-download-dark.png",
 		"w": 340,
+		"h": 84,
+		"scale": 2
+	},
+	{
+		"src": "templates/button.html",
+		"query": "b=support&dark",
+		"out": "readme/button-support-dark.png",
+		"w": 260,
 		"h": 84,
 		"scale": 2
 	},

@@ -951,6 +951,12 @@ func _test_scorecard() -> void:
 	_check((grid.get_child(21 + 10) as Label).text == "36", "scorecard: par out")
 	_check((grid.get_child(42 + 10) as Label).text == "45", "scorecard: strokes out")
 	_check((grid.get_child(63 + 10) as Label).text == "9", "scorecard: points out")
+	_check(not panel._support.visible, "scorecard: no Support line mid-round")
+	panel.show_support()
+	_check(panel._support.visible, "scorecard: Support line on the final card")
+	panel.show_round(scoring, "Test")
+	_check(not panel._support.visible, "scorecard: Support line goes when the card is redrawn")
+	_check(Support.URL.begins_with("https://github.com/sponsors/"), "support: GitHub Sponsors page")
 	panel.free()
 
 
