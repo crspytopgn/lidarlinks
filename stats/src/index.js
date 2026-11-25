@@ -73,7 +73,7 @@ export async function storeCount(db, c, now) {
      ON CONFLICT (sid) DO NOTHING`,
   ).bind(c.sid, c.platform, c.version, c.country, at).run();
   if (c.kind !== "play") return;
-  const run = await db.prepare(`SELECT secs, platform, version, country FROM runs WHERE sid = ?1`).bind(c.sid).first();
+  const run = await db.prepare(`SELECT secs, platform, version, country, last_at FROM runs WHERE sid = ?1`).bind(c.sid).first();
   if (!run || c.t <= run.secs) return;
   const r = await db.prepare(`UPDATE runs SET secs = ?2, beats = MAX(beats, ?3), last_at = ?4 WHERE sid = ?1 AND secs = ?5`)
     .bind(c.sid, c.t, c.n, at, run.secs).run();
@@ -82,7 +82,40 @@ export async function storeCount(db, c, now) {
   await db.prepare(
     `INSERT INTO play_hourly (hour, platform, version, country, kept, secs) VALUES (?1, ?2, ?3, ?4, 0, ?5)
      ON CONFLICT (hour, platform, version, country, kept) DO UPDATE SET secs = secs + ?5`,
-  ).bind(hourOf(now), run.platform, run.version, run.country, c.t - run.secs).run();
+  ).bind(hourOf(now), run.platform, run.version, run.country, believable(c.t - run.secs, run.last_at, now)).run();
+}
+
+/** A run can't have played more since its last count than the time that has passed, plus SLACK_SECS (a first report,
+ * or one re-sent at the next start, whose earlier counts never got through). Anything past that is a made-up report:
+ * its run's total still moves on, but only the believable part is added to the hours. */
+export const SLACK_SECS = 30 * 60;
+export function believable(increase, lastAt, now) {
+  const since = Math.max(0, Math.floor((now.getTime() - Date.parse(lastAt)) / 1000));
+  return Math.min(increase, (Number.isFinite(since) ? since : 0) + SLACK_SECS);
+}
+
+/** Whether one more request of kind `bucket` from this address is allowed (env.LIMITER, Cloudflare's rate limiting
+ * binding, per location). The address is only the counter's key and is never stored. No binding: allowed. */
+export async function underLimit(env, request, bucket) {
+  if (!env || !env.LIMITER) return true;
+  try {
+    const { success } = await env.LIMITER.limit({ key: `${bucket}:${request.headers.get("CF-Connecting-IP") || ""}` });
+    return success;
+  } catch {
+    return true;
+  }
+}
+
+/** The page's numbers, worked out at most once a minute per Worker instance: the page is open to anyone, and every
+ * fresh answer reads the whole table, so reloading it in a loop must not use up the account's daily D1 reads (which
+ * OpenSGolf's boards share). */
+let cached = null;
+export async function cachedStats(db, now = new Date()) {
+  const age = cached && cached.db === db ? now.getTime() - cached.at : -1;
+  if (age >= 0 && age < 60e3) return cached.value;
+  const value = await stats(db, now);
+  cached = { db, at: now.getTime(), value };
+  return value;
 }
 
 /** Session-length buckets, by seconds played in the run: [label, from, up to (not included)]. */
@@ -144,16 +177,19 @@ export default {
     if (url.pathname === "/count") {
       if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: { ...CORS, "Access-Control-Allow-Methods": "GET" } });
       const c = readCount(url, request.cf && request.cf.country);
-      if (c) await storeCount(env.DB, c, new Date());
+      if (c && (await underLimit(env, request, "count"))) await storeCount(env.DB, c, new Date());
       // the same answer whether it was kept or not: the game only looks at whether it got through
       return new Response(null, { status: 204, headers: CORS });
     }
     if (url.pathname === "/robots.txt") return new Response("User-agent: *\nDisallow: /\n");
     // The page and its numbers are open to anyone: totals only, nothing about a person.
-    if (url.pathname === "/api/stats") return Response.json(await stats(env.DB), { headers: { ...CORS, "Cache-Control": "public, max-age=60" } });
+    if ((url.pathname === "/api/stats" || url.pathname === "/") && !(await underLimit(env, request, "page"))) {
+      return new Response("Too many requests, try again in a minute", { status: 429 });
+    }
+    if (url.pathname === "/api/stats") return Response.json(await cachedStats(env.DB), { headers: { ...CORS, "Cache-Control": "public, max-age=60" } });
     if (url.pathname === "/") {
       const { page } = await import("./page.js");
-      return new Response(page(await stats(env.DB)), { headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "public, max-age=60" } });
+      return new Response(page(await cachedStats(env.DB)), { headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "public, max-age=60" } });
     }
     return new Response("Not found", { status: 404 });
   },

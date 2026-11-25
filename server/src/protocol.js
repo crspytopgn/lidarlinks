@@ -88,3 +88,36 @@ export function dailySeed(date) {
 export function utcDate(ms) {
   return new Date(ms).toISOString().slice(0, 10);
 }
+
+// Basic auth against env.ADMIN_PASSWORD (any user name). Without the secret nothing is allowed.
+export function isAdmin(request, env) {
+  const want = env && env.ADMIN_PASSWORD;
+  if (!want) return false;
+  const h = request.headers.get("Authorization") || "";
+  if (!h.startsWith("Basic ")) return false;
+  let pass = "";
+  try {
+    pass = atob(h.slice(6)).split(":").slice(1).join(":");
+  } catch {
+    return false;
+  }
+  const a = new TextEncoder().encode(pass);
+  const b = new TextEncoder().encode(want);
+  let diff = a.length ^ b.length;
+  for (let i = 0; i < Math.max(a.length, b.length); i++) diff |= (a[i] || 0) ^ (b[i] || 0);
+  return diff === 0;
+}
+
+// Whether one more request of kind `bucket` from this address is allowed (env.LIMITER, Cloudflare's rate limiting
+// binding, counted per Cloudflare location). The address is only the counter's key: it is never stored. Without the
+// binding (tests, wrangler dev) everything is allowed.
+export async function underLimit(env, request, bucket) {
+  if (!env || !env.LIMITER) return true;
+  const ip = request.headers.get("CF-Connecting-IP") || "";
+  try {
+    const { success } = await env.LIMITER.limit({ key: `${bucket}:${ip}` });
+    return success;
+  } catch {
+    return true;  // never lock players out because the limiter itself failed
+  }
+}

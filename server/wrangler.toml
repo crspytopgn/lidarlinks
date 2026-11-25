@@ -26,3 +26,13 @@ new_sqlite_classes = ["RoomObject", "GameObject"]
 [[migrations]]
 tag = "v2"
 new_sqlite_classes = ["BoardObject"]
+
+# A per-address limit on everything that makes or changes something (src/index.js, underLimit): 60 a minute is
+# far more than any game sends (a shot or a round record at a time), and stops one machine flooding the free plan.
+[[ratelimits]]
+name = "LIMITER"
+namespace_id = "3971"
+
+  [ratelimits.simple]
+  limit = 60
+  period = 60

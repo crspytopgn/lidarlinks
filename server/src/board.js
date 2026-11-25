@@ -12,6 +12,10 @@ import { cleanName, dailySeed, utcDate } from "./protocol.js";
 
 export const MAX_ENTRIES = 1000;
 export const SHOWN = 50;
+/** The most holes in one a believable card has. */
+export const MAX_ACES = 2;
+/** The fewest strokes a hole a believable card averages. */
+export const MIN_PER_HOLE = 2.5;
 
 export function isBoardKey(key) {
   return typeof key === "string" && /^daily-\d{4}-\d{2}-\d{2}$/.test(key) && !Number.isNaN(Date.parse(key.slice(6)));
@@ -38,10 +42,15 @@ export function checkRecord(key, record) {
   const card = Array.isArray(record.cards) ? record.cards[0] : null;
   if (!Array.isArray(card) || card.length < 9 || card.length > 18) return { error: "the card is missing" };
   let strokes = 0;
+  let aces = 0;
   for (const v of card) {
     if (!Number.isInteger(v) || v < 1 || v > 20) return { error: "every hole needs a score" };
     strokes += v;
+    if (v === 1) aces++;
   }
+  // A made-up card is the easy way to cheat until the server can re-run rounds (docs/online-play.md, phase 3), so the
+  // impossible ones are turned away: more than two holes in one, or under 2.5 a hole (27 under on 18 holes).
+  if (aces > MAX_ACES || strokes < Math.ceil(card.length * MIN_PER_HOLE)) return { error: "that score can't be right" };
   const shots = Array.isArray(record.shots) ? record.shots.filter((s) => s && !s.mulligan) : [];
   // Each stroke on the card is a shot in the record, except penalty strokes.
   if (shots.length > strokes || shots.length < card.length) return { error: "the shots don't add up to the card" };
@@ -53,11 +62,13 @@ export class BoardState {
     this.key = key;
     // {id, name, strokes, holes, at}
     this.entries = [];
+    // ids taken off the board by hand (BoardObject's /hide): they can't come back that day
+    this.hidden = [];
     if (data) Object.assign(this, data);
   }
 
   toJSON() {
-    return { key: this.key, entries: this.entries };
+    return { key: this.key, entries: this.entries, hidden: this.hidden };
   }
 
   _sort() {
@@ -69,6 +80,7 @@ export class BoardState {
   submit(id, name, strokes, holes, now, par = 0) {
     const clean = cleanName(name);
     if (!clean) return { error: "pick a name of 1 to 20 letters" };
+    if (this.hidden.includes(id)) return { error: "that round was taken off the board" };
     if (!Number.isInteger(par) || par < holes * 3 || par > holes * 5) par = 0;
     if (this.entries.length && this.entries[0].holes !== holes) return { error: "that round has a different number of holes" };
     const mine = this.entries.find((e) => e.id === id);
@@ -126,6 +138,15 @@ export class BoardState {
       if (mine) v.you = { rank: this.rank(id), strokes: mine.strokes };
     }
     return v;
+  }
+
+  // Takes the entry with short round id `shortId` off the board for good. Returns its full id, or null.
+  hide(shortId) {
+    const id = this.find(shortId);
+    if (!id) return null;
+    this.entries = this.entries.filter((e) => e.id !== id);
+    if (!this.hidden.includes(id)) this.hidden.push(id);
+    return id;
   }
 
   // The full id of a short round id from view(), or null.

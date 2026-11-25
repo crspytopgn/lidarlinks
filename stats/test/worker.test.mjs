@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { memoryDb } from "./d1shim.mjs";
-import worker, { readCount, storeCount, stats } from "../src/index.js";
+import worker, { SLACK_SECS, believable, cachedStats, readCount, storeCount, stats, underLimit } from "../src/index.js";
 import { page } from "../src/page.js";
 
 const u = (q) => new URL(`https://x.test/count?${q}`);
@@ -56,4 +56,33 @@ test("the Worker: counts and the page are open", async () => {
   const ok = await worker.fetch(new Request("https://x.test/api/stats"), env);
   assert.equal(ok.status, 200);
   assert.equal((await ok.json()).totals.runs, 1);
+});
+
+test("made-up reports can't add more play than time has passed", async () => {
+  const now = new Date("2026-11-20T12:00:00Z");
+  assert.equal(believable(600, "2026-11-20T11:50:00Z", now), 600);
+  assert.equal(believable(7 * 24 * 3600, "2026-11-20T12:00:00Z", now), SLACK_SECS, "a brand-new run claiming a week");
+  assert.equal(believable(5000, "2026-11-20T11:00:00Z", now), 5000);
+  assert.equal(believable(9000, "2026-11-20T11:00:00Z", now), 3600 + SLACK_SECS);
+  const db = memoryDb();
+  for (let i = 0; i < 3; i++) {
+    await storeCount(db, readCount(u(`e=play/web&v=f191d18&s=f00d000${i}&n=1&t=604800`), "GB"), now);
+  }
+  const s = await stats(db, now);
+  assert.equal(Math.round(s.totals.hours * 3600), 3 * SLACK_SECS);
+});
+
+test("the open page is worked out at most once a minute, and floods get a 429", async () => {
+  const db = memoryDb();
+  const t = new Date("2026-11-20T12:00:00Z");
+  const a = await cachedStats(db, t);
+  assert.equal(await cachedStats(db, new Date(t.getTime() + 30e3)), a);
+  assert.notEqual(await cachedStats(db, new Date(t.getTime() + 61e3)), a);
+  const req = new Request("https://x.test/", { headers: { "CF-Connecting-IP": "9.9.9.9" } });
+  let n = 0;
+  const env = { DB: db, LIMITER: { limit: async ({ key }) => ({ success: key === "page:9.9.9.9" && ++n <= 1 }) } };
+  assert.ok(await underLimit(env, req, "page"));
+  assert.ok(!(await underLimit(env, req, "page")));
+  assert.equal((await worker.fetch(req, env)).status, 429);
+  assert.ok(await underLimit({}, req, "page"), "no binding: allowed");
 });

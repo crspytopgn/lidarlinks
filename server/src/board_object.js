@@ -3,12 +3,13 @@
 //   GET  /boards/KEY?token=T           -> view (with your place if T given)
 //   POST /boards/KEY {token, name, par, code} -> {improved, rank, ...view}
 //   GET  /boards/KEY/rounds/ROUND       -> {code}  that round, to watch or check
+//   POST /boards/KEY/hide/ROUND  (ADMIN_PASSWORD) -> view  takes that entry off for good
 //
 // `code` is the game's result code (RoundRecord.to_code: "OLR1-" and the
 // gzipped record in URL-safe base64), so a whole round is a few KB.
 
 import { BoardState, boardOpen, checkRecord } from "./board.js";
-import { MAX_RECORD_BYTES, hashToken, isToken } from "./protocol.js";
+import { MAX_RECORD_BYTES, hashToken, isAdmin, isToken } from "./protocol.js";
 
 // Boards are kept for a year.
 const KEEP_MS = 366 * 24 * 60 * 60 * 1000;
@@ -56,6 +57,16 @@ export class BoardObject {
       return Response.json(this.board.view(id));
     }
     if (request.method !== "POST") return Response.json({ error: "not found" }, { status: 404 });
+    if (parts[0] === "hide" && parts[1]) {
+      // POST /boards/KEY/hide/ROUND with the ADMIN_PASSWORD (basic auth): takes a faked or rude entry off for good
+      if (!isAdmin(request, this.env)) return Response.json({ error: "password needed" }, { status: 401 });
+      const id = this.board.hide(parts[1]);
+      if (!id) return Response.json({ error: "no such round" }, { status: 404 });
+      await this.ctx.storage.delete("rec:" + id);
+      await this.ctx.storage.put("board", this.board.toJSON());
+      return Response.json(this.board.view());
+    }
+    if (parts.length) return Response.json({ error: "not found" }, { status: 404 });
     const text = await request.text();
     if (text.length > MAX_RECORD_BYTES) return Response.json({ error: "too large" }, { status: 413 });
     let body;
