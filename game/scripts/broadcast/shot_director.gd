@@ -50,8 +50,10 @@ const PUTT_BACK := 2.8
 const PUTT_UP := 1.15
 ## The putting camera keeps this far (sideways) from the golfer, who stands
 ## beside the line: easing after the ball it used to pass through their hips,
-## and it stopped right behind them as they walked to the hole.
-const PUTT_GOLFER_CLEAR := 1.3
+## and it stopped right behind them as they walked to the hole. 1.3 m from
+## their feet still let their arms and hands, reaching out to the line, sweep
+## across the lens as it eased after the ball.
+const PUTT_GOLFER_CLEAR := 2.0
 const KEEP_ABOVE_GROUND := 1.2
 ## A fixed camera keeps this far from any tree trunk, canopy or building,
 ## so it never stands inside a tree with the screen full of leaves.
