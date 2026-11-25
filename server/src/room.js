@@ -10,7 +10,12 @@
 // Each method returns a list of sends: {to, msg}, where `to` is a member id,
 // "all", or {except: id}.
 
-import { MAX_PLAYERS, QUICK_CHAT_COUNT, PROTOCOL_VERSION, cleanName } from "./protocol.js";
+import { MAX_PLAYERS, QUICK_CHAT_COUNT, PROTOCOL_VERSION, cleanName, randomKey } from "./protocol.js";
+
+// A player whose connection drops in the middle of a round keeps their seat
+// for this long (a phone changing masts, a train tunnel). Their game
+// reconnects by itself and gets every event it missed.
+export const AWAY_GRACE_MS = 3 * 60 * 1000;
 
 // Messages only the host sends, relayed to everyone else.
 const HOST_ONLY = new Set(["setup", "state", "end"]);
@@ -31,7 +36,12 @@ export class RoomState {
     this.setup = null;
     this.state = null;
     this.ended = false;
+    // Every event of the round, in order, so a game that reconnects can
+    // catch up. Stored apart from the rest (one storage key each), so it
+    // isn't in toJSON.
+    this.events = [];
     if (data) Object.assign(this, data);
+    if (!Array.isArray(this.events)) this.events = [];
   }
 
   toJSON() {
@@ -47,15 +57,16 @@ export class RoomState {
     return {
       type: "members",
       host: this.host,
-      members: this.members.map((m) => ({ id: m.id, name: m.name, seat: m.seat })),
+      members: this.members.map((m) => ({ id: m.id, name: m.name, seat: m.seat, away: m.away !== undefined })),
     };
   }
 
   // A new connection says hello: {type: "hello", v, name}. Returns
   // {id, sends} or {error}.
-  join(hello) {
+  join(hello, random = undefined) {
     if (!hello || hello.type !== "hello") return { error: "say hello first" };
     if (hello.v !== PROTOCOL_VERSION) return { error: `this room speaks version ${PROTOCOL_VERSION}; update the game` };
+    if (hello.rejoin) return this.rejoin(hello);
     const name = cleanName(hello.name);
     if (!name) return { error: "pick a name of 1 to 20 letters" };
     if (this.ended) return { error: "this round has finished" };
@@ -67,9 +78,11 @@ export class RoomState {
     let seat = 0;
     while (this.members.some((m) => m.seat === seat)) seat++;
     const id = this.nextId++;
-    this.members.push({ id, name, seat });
+    // The key lets this player's game back in if its connection drops.
+    const key = randomKey(random);
+    this.members.push({ id, name, seat, key });
     if (this.members.length === 1) this.host = id;
-    const welcome = { type: "welcome", code: this.code, you: id, seat, host: this.host };
+    const welcome = { type: "welcome", code: this.code, you: id, seat, host: this.host, key, seq: this.seq };
     const sends = [{ to: id, msg: welcome }];
     if (this.setup) sends.push({ to: id, msg: this.setup });
     if (this.state) sends.push({ to: id, msg: this.state });
@@ -77,7 +90,55 @@ export class RoomState {
     return { id, sends };
   }
 
-  // A connection closed. The oldest remaining player becomes host; their
+  // A game whose connection dropped says hello again: {rejoin: {id, key},
+  // since}. It gets its seat back, the setup and state, and every event from
+  // `since` on (and the server's next number, so it can resend any of its
+  // own events that never arrived). Returns {id, sends} or {error}.
+  rejoin(hello) {
+    const r = hello.rejoin;
+    const m = r && Number.isInteger(r.id) ? this.member(r.id) : null;
+    if (!m || typeof r.key !== "string" || r.key !== m.key) return { error: "you've been away too long to rejoin" };
+    delete m.away;
+    const since = Number.isInteger(hello.since) && hello.since >= 0 ? hello.since : 0;
+    const welcome = { type: "welcome", code: this.code, you: m.id, seat: m.seat, host: this.host, key: m.key, seq: this.seq, rejoined: true };
+    const sends = [{ to: m.id, msg: welcome }];
+    if (this.setup) sends.push({ to: m.id, msg: this.setup });
+    if (this.state) sends.push({ to: m.id, msg: this.state });
+    for (const ev of this.events) {
+      if (ev.seq >= since) sends.push({ to: m.id, msg: ev });
+    }
+    sends.push({ to: { except: m.id }, msg: { type: "back", name: m.name, seat: m.seat } });
+    sends.push({ to: "all", msg: this._roster() });
+    return { id: m.id, sends };
+  }
+
+  // A connection dropped. Before the round, the player just leaves. During
+  // it, they keep their seat for AWAY_GRACE_MS so their game can reconnect;
+  // expire() hands their players to the host after that.
+  away(id, now) {
+    const m = this.member(id);
+    if (!m) return [];
+    if (!this.setup || this.ended) return this.leave(id);
+    m.away = now;
+    return [{ to: { except: id }, msg: { type: "away", name: m.name, seat: m.seat } }];
+  }
+
+  // Players away for longer than the grace leave for good.
+  expire(now) {
+    let sends = [];
+    for (const m of [...this.members]) {
+      if (m.away !== undefined && now - m.away >= AWAY_GRACE_MS) sends = sends.concat(this.leave(m.id));
+    }
+    return sends;
+  }
+
+  // When the next away player runs out of grace, or null.
+  nextExpiry() {
+    const times = this.members.filter((m) => m.away !== undefined).map((m) => m.away + AWAY_GRACE_MS);
+    return times.length ? Math.min(...times) : null;
+  }
+
+  // A connection closed for good. The oldest remaining player becomes host; their
   // game carries on from the last state it saw.
   leave(id) {
     const m = this.member(id);
@@ -86,7 +147,8 @@ export class RoomState {
     const sends = [];
     if (this.members.length === 0) return sends;
     if (id === this.host) {
-      this.host = this.members[0].id;
+      const here = this.members.find((x) => x.away === undefined) || this.members[0];
+      this.host = here.id;
       sends.push({ to: "all", msg: { type: "host_left", name: m.name, host: this.host } });
     } else {
       sends.push({ to: "all", msg: { type: "left", name: m.name, seat: m.seat } });
@@ -133,7 +195,9 @@ export class RoomState {
         if (msg.seq !== this.seq) return { error: `expected event ${this.seq}` };
         if (msg.kind !== "shot" && msg.kind !== "drop") return { error: "events are shots or drops" };
         this.seq++;
-        return { sends: [{ to: { except: id }, msg: { ...msg, from: m.seat } }] };
+        const out = { ...msg, from: m.seat };
+        this.events.push(out);
+        return { sends: [{ to: { except: id }, msg: out }], event: out };
       }
       case "chat":
         if (!Number.isInteger(msg.id) || msg.id < 0 || msg.id >= QUICK_CHAT_COUNT) return { error: "unknown quick chat" };

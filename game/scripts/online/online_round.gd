@@ -61,6 +61,15 @@ func poll() -> void:
 					host_seat = int(msg.host)
 			"left", "host_left":
 				notices.append("%s left the round." % msg.get("name", "?"))
+			"away":
+				notices.append("%s's connection dropped: waiting for them to come back." % msg.get("name", "?"))
+			"back":
+				notices.append("%s is back." % msg.get("name", "?"))
+			"_link":
+				notices.append("Connection lost: reconnecting...")
+			"welcome":
+				if bool(msg.get("_back", false)):
+					notices.append("Reconnected.")
 			"error":
 				notices.append("Server: %s" % msg.get("reason", "error"))
 
