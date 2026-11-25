@@ -34,6 +34,14 @@ jobs:
       - name: Online server tests
         if: runner.os == 'Linux'
         run: node --test "server/test/*.test.js"
+      - name: Node 22 for the play-time counter tests (node:sqlite)
+        if: runner.os == 'Linux'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Play-time counter tests
+        if: runner.os == 'Linux'
+        run: node --test "stats/test/*.test.mjs"
       - name: Upload olcourse
         uses: actions/upload-artifact@v4
         with:

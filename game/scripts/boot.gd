@@ -26,6 +26,7 @@ var _leaderboard: LeaderboardPanel
 var _items: Array = []
 var _settings: SettingsPanel
 var _players: PlayersPanel
+var _stats: StatsPanel
 var _creator: PlayerCreator
 var _golfer_select: GolferSelectPanel
 ## Where the player creator goes back to: the Players page, or Select
@@ -65,6 +66,10 @@ func _show_title() -> void:
 func _ready() -> void:
 	_show_title()
 	_graphics = GraphicsSettings.load_saved()
+	# Once a run: the launch in the player's own stats, and the anonymous
+	# start count (PlayCount, Settings > Play-time count).
+	PlayerStats.note_launch()
+	PlayCount.start()
 	get_window().content_scale_factor = GraphicsSettings.UI_SCALES[_graphics.ui_scale]
 	Glass.allow_blur = _graphics.quality != GraphicsSettings.Quality.LOW
 	GlassTheme.install()
@@ -121,6 +126,9 @@ func _build_ui() -> void:
 	_players.back_pressed.connect(_close_players)
 	_players.edit_golfer.connect(_open_creator)
 	center.add_child(_players)
+	_stats = StatsPanel.new()
+	_stats.back_pressed.connect(_close_stats)
+	center.add_child(_stats)
 	_online = OnlinePanel.new()
 	_online.start_pressed.connect(_on_online_start)
 	_online.back_pressed.connect(_close_online)
@@ -263,6 +271,7 @@ func _ask_for_files(problem := "") -> void:
 		["Courses", _open_courses],
 		["Select golfer", _open_golfer_select],
 		["Players", _open_players],
+		["Stats", _open_stats],
 		["Settings", _open_settings],
 	])
 
@@ -364,7 +373,7 @@ Saved round: %s." % SavedRound.describe()
 	items.append(["Tour event", _open_tour_event])
 	items.append(["Career", _open_career])
 	items.append(["Tournament", _open_tournament])
-	items += extra + [["Select golfer", _open_golfer_select], ["Players", _open_players], ["Courses", _open_courses], ["Course designer", _open_designer], ["Settings", _open_settings]]
+	items += extra + [["Select golfer", _open_golfer_select], ["Players", _open_players], ["Stats", _open_stats], ["Courses", _open_courses], ["Course designer", _open_designer], ["Settings", _open_settings]]
 	if not OS.has_feature("web"):
 		items.append(["Quit", get_tree().quit])
 	_set_buttons(items)
@@ -576,6 +585,18 @@ func _edit_from_select(player_name: String) -> void:
 	_creator_from_select = true
 	_creator.open(player_name)
 	SceneFade.pop_in(_creator)
+
+
+func _open_stats() -> void:
+	_main_box.visible = false
+	_stats.open()
+	SceneFade.pop_in(_stats)
+
+
+func _close_stats() -> void:
+	_stats.close()
+	_main_box.visible = true
+	SceneFade.pop_in(_main_box)
 
 
 func _close_players() -> void:
@@ -815,6 +836,8 @@ func _unhandled_input(event: InputEvent) -> void:
 			_golfer_select.cancel()
 		elif _players.visible:
 			_close_players()
+		elif _stats.visible:
+			_close_stats()
 		elif _career.visible:
 			_close_career()
 		elif _tournament.visible:
@@ -917,6 +940,7 @@ func _show_desktop_choice() -> void:
 		["Courses", _open_courses],
 		["Select golfer", _open_golfer_select],
 		["Players", _open_players],
+		["Stats", _open_stats],
 		["Settings", _open_settings],
 	])
 

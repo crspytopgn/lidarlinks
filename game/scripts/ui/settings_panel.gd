@@ -41,6 +41,7 @@ var _power: OptionButton
 var _swing: OptionButton
 var _pace: OptionButton
 var _units: OptionButton
+var _play_count: OptionButton
 var _swing_help: OptionButton
 var _ball_size: OptionButton
 var _photo_golfer: OptionButton
@@ -158,6 +159,8 @@ func _ready() -> void:
 	_pickup = _row(grid, "Pick up", GraphicsSettings.PICKUP_NAMES)
 	_computer_play = _row(grid, "Computer golfers", GraphicsSettings.COMPUTER_PLAY_NAMES)
 	_computer_play.tooltip_text = "Realistic: computer golfers miss like real golfers of their level (calibrated to tour statistics). Classic Links: with the original physics, Links 2003's own computer misses."
+	_play_count = _row(grid, "Play-time count", ["On (anonymous)", "Off"])
+	_play_count.tooltip_text = "Sends how long you play, anonymously, with the platform and build only: no names, scores or courses. It shows how much LidarLinks is played. Your own stats stay on this device either way."
 	if OpenConnectServer.supported():
 		_monitor = _row(grid, "Launch monitor", ["Off", "On (OpenConnect, port 921)"])
 	_add_hd_rows(box, grid)
@@ -214,6 +217,7 @@ func open(s: GraphicsSettings) -> void:
 	_swing.select(s.swing_method)
 	_pace.select(0 if s.quick_pace else 1)
 	_units.select(1 if s.metric_units else 0)
+	_play_count.select(0 if s.play_count else 1)
 	_swing_help.select(1 if s.swing_help else 0)
 	_ball_size.select(1 if s.true_size_ball else 0)
 	_photo_golfer.select(1 if s.photo_golfer else 0)
@@ -466,6 +470,7 @@ func _on_selected() -> void:
 	settings.swing_method = _swing.selected
 	settings.quick_pace = _pace.selected == 0
 	settings.metric_units = _units.selected == 1
+	settings.play_count = _play_count.selected == 0
 	settings.swing_help = _swing_help.selected == 1
 	settings.true_size_ball = _ball_size.selected == 1
 	settings.photo_golfer = _photo_golfer.selected == 1

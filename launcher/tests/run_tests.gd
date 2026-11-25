@@ -10,6 +10,7 @@ const Installer := preload("res://scripts/installer.gd")
 const DiscImage := preload("res://scripts/disc_image.gd")
 const DiscImport := preload("res://scripts/disc_import.gd")
 const GameConfig := preload("res://scripts/game_config.gd")
+const GameStats := preload("res://scripts/game_stats.gd")
 
 var _failures := 0
 var _checks := 0
@@ -27,6 +28,7 @@ func _initialize() -> void:
 	_test_disc_image()
 	_test_import()
 	_test_game_config()
+	_test_game_stats()
 	_test_installer()
 	Paths.remove_tree(_tmp)
 	if _failures == 0:
@@ -318,6 +320,8 @@ func _test_game_config() -> void:
 	c.master = 40
 	c.swing_method = 0
 	c.quick_pace = false
+	_check(c.play_count, "settings: the play-time count is on by default")
+	c.play_count = false
 	c.folder = "/games/links"
 	_check(c.save_to(path) == OK, "settings: saved")
 	cfg = ConfigFile.new()
@@ -329,7 +333,23 @@ func _test_game_config() -> void:
 	_check(cfg.get_value("game", "folder") == "/games/links" and cfg.get_value("round", "course") == "keep me", "settings: game folder set, other sections kept")
 	var again := GameConfig.load_from(path) as GameConfig
 	_check(again.display_choice() == 2 and again.shown_look() == 4 and again.shown_quality() == 2 and again.swing_method == 0 \
-		and not again.quick_pace, "settings: read back")
+		and not again.quick_pace and not again.play_count, "settings: read back")
+	_check(cfg.get_value("game", "play_count") == false, "settings: the play-time count turned off for the game")
+
+
+func _test_game_stats() -> void:
+	_check(GameStats.load_from(_tmp.path_join("none.cfg")).is_empty(), "stats: nothing before the game has written any")
+	_check(Paths.game_stats().ends_with("stats.cfg"), "stats: next to the game's settings")
+	var path := _tmp.path_join("stats.cfg")
+	var cfg := ConfigFile.new()
+	cfg.set_value("summary", "rows", [["Time played", "5 h 20 min"], ["Rounds finished", "4 of 6 started"]])
+	cfg.set_value("summary", "best", [["Kettle Hollow", 9, 38, 2, "2026-11-25"]])
+	cfg.set_value("summary", "players", [{"name": "Michael", "index": "14.2", "rounds": 4, "trend": [160, 142]}])
+	cfg.set_value("summary", "days", [0.0, 600.0])
+	cfg.save(path)
+	var st := GameStats.load_from(path)
+	_check(not st.is_empty() and st.rows.size() == 2 and st.players[0].name == "Michael", "stats: the game's summary is read")
+	_check(GameStats.to_par(2) == "+2" and GameStats.to_par(0) == "E" and GameStats.index_text(-14) == "+1.4", "stats: to par and plus handicaps")
 
 
 func _test_installer() -> void:

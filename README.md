@@ -175,6 +175,13 @@ the launcher, so you can always find this page again.
 
 More from me: [OpenMCM2](https://github.com/crspytopgn/openmcm2) · [OpenSGolf](https://github.com/crspytopgn/opensgolf) · [Pitwall](https://github.com/crspytopgn/pitwall).
 
+## Privacy
+
+Your stats (time played, rounds, scores, drives, putts, handicap) stay on your own device: see them under **Stats** in
+the main menu or the launcher. The only thing the game sends is an anonymous count of play time (seconds played, with
+the platform and build, no names or scores) so we can see how much LidarLinks is played. Settings > Play-time count
+turns it off. Details: [docs/stats.md](docs/stats.md).
+
 ## Licence
 
 MIT. See [LICENSE](LICENSE). Links and Links 2003 are trademarks of their

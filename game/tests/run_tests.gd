@@ -21,6 +21,11 @@ func _initialize() -> void:
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(PlayerProfiles.path))
 	SavedRound.path = "user://test_saved_round.cfg"
 	SavedRound.clear()
+	# Nor into the device's own stats.
+	PlayerStats.file = "user://test_stats.cfg"
+	PlayerStats.support_path = "user://test_support_old.cfg"
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(PlayerStats.file))
+	PlayerStats.reread()
 	# The round's physics runs on the main thread here, so each test sees a
 	# shot fly the moment it is played; the threads have tests of their own.
 	BackgroundWork.enabled = false
@@ -28,6 +33,7 @@ func _initialize() -> void:
 	_run("physics_matches_olcore", _test_physics_matches_olcore)
 	_run("club_table_matches_physics", _test_club_table_matches_physics)
 	_run("putting", _test_putting)
+	_run("player_stats", _test_player_stats)
 	_run("hazards", _test_hazards)
 	_run("wind_matches_olcore", _test_wind_matches_olcore)
 	_run("wind_conditions", _test_wind_conditions)
@@ -961,15 +967,108 @@ func _test_scorecard() -> void:
 	_check(Support.URL.begins_with("https://ko-fi.com/"), "support: Ko-fi page")
 	var seen := "user://test_support.cfg"
 	DirAccess.remove_absolute(seen)
-	_check(not Support.thank_once(seen), "support: no after-round line before five hours of play")
-	for _i in 11:
-		Support.add_play_time(1500.0, seen)
-	_check(not Support.thank_once(seen), "support: still none at 4.6 hours")
-	Support.add_play_time(4000.0, seen)  # a hole left open counts 30 minutes
-	_check(Support.thank_once(seen), "support: the line shows after about five hours")
+	_check(not Support.thank_once(seen, 0.0), "support: no after-round line before five hours of play")
+	_check(not Support.thank_once(seen, 4.6 * 3600.0), "support: still none at 4.6 hours")
+	_check(Support.thank_once(seen, 5.1 * 3600.0), "support: the line shows after about five hours")
 	_check(not Support.thank_once(seen), "support: and never again")
 	DirAccess.remove_absolute(seen)
 	panel.free()
+
+
+func _test_player_stats() -> void:
+	var path := "user://test_stats_only.cfg"
+	var old := "user://test_support_carry.cfg"
+	var was_path := PlayerStats.file
+	var was_support := PlayerStats.support_path
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
+	var carry := ConfigFile.new()
+	carry.set_value("support", "played_s", 7200.0)
+	carry.save(old)
+	PlayerStats.file = path
+	PlayerStats.support_path = old
+	PlayerStats.reread()
+	_check(is_equal_approx(PlayerStats.play_seconds(), 7200.0), "stats: Support's play time is carried over")
+	PlayerStats.add_play_time(30.0, "2026-11-24")
+	PlayerStats.add_play_time(90.0, "2026-11-25")
+	_check(is_equal_approx(PlayerStats.play_seconds(), 7320.0) and PlayerStats.get_int("time", "days") == 2, "stats: play time and days played")
+	var days := PlayerStats.recent_days(3, "2026-11-25")
+	_check(days.size() == 3 and is_equal_approx(days[1], 30.0) and is_equal_approx(days[2], 90.0), "stats: the last days, oldest first")
+	_check(PlayerStats.score_key(3, 4) == "birdie" and PlayerStats.score_key(2, 5) == "albatross" and PlayerStats.score_key(7, 4) == "worse"
+		and PlayerStats.score_key(6, 4) == "double", "stats: score names")
+	PlayerStats.note_round_start("Kettle Hollow")
+	PlayerStats.note_shot("Dr", 250.0, false, false, 380.0, true, 1, "")
+	PlayerStats.note_shot("7i", 140.0, false, false, 130.0, false, -1, "")
+	PlayerStats.note_shot("7i", 120.0, false, false, 130.0, false, -1, "water")
+	_check(PlayerStats.note_shot("Pt", 6.0, true, true, 6.0, false, -1, "") == "putt", "stats: longest putt holed")
+	PlayerStats.note_hole("Kettle Hollow", 4, 3, false)
+	PlayerStats.note_hole("Kettle Hollow", 4, 0, true)
+	PlayerStats.note_green(true)
+	PlayerStats.note_round_done("Kettle Hollow", 9, 40, 4)
+	PlayerStats.note_round_done("Kettle Hollow", 9, 38, 2)
+	_check(PlayerStats.get_int("shots", "total") == 4 and PlayerStats.get_int("putts", "holed") == 1, "stats: shots and putts")
+	_check(PlayerStats.favourite_club() == "7i", "stats: favourite club leaves the putter out")
+	_check(is_equal_approx(PlayerStats.get_float("drives", "longest_m"), 250.0) and PlayerStats.get_int("drives", "fairways") == 1, "stats: drives and fairways")
+	_check(PlayerStats.get_int("scores", "birdie") == 1 and PlayerStats.get_int("holes", "picked_up") == 1, "stats: a birdie, and a hole picked up")
+	_check(PlayerStats.get_int("shots", "water") == 1, "stats: balls in the water")
+	var best := PlayerStats.best_rounds()
+	_check(best.size() == 1 and best[0][2] == 38, "stats: the best round per course")
+	var labels: Array = PlayerStats.headline().map(func(r: Array) -> String: return r[0])
+	_check(labels.has("Time played") and labels.has("Longest drive") and labels.has("Favourite club"), "stats: the headline rows")
+	_check(PlayerStats.index_trend([100, 120, 90, 80]).size() == 2, "stats: an index from the third round on")
+	PlayerStats.write_summary()
+	PlayerStats.reread()
+	var c := ConfigFile.new()
+	c.load(path)
+	_check((c.get_value("summary", "rows", []) as Array).size() > 5, "stats: the launcher's summary is written")
+	_check(PlayerStats.format_time(7320.0) == "2 h 2 min" and PlayerStats.format_time(1800.0) == "30 min", "stats: time worded")
+	PlayerStats.reset()
+	_check(PlayerStats.play_seconds() == 0.0 and PlayerStats.get_int("shots", "total") == 0, "stats: reset")
+	PlayerStats.reread()
+	_check(PlayerStats.play_seconds() == 0.0, "stats: a reset doesn't bring Support's old time back")
+	# The anonymous count: the run's total every 5 minutes of play and when
+	# play stops, kept so the next start sends the last one again.
+	_check(not PlayCount.active() or PlayCount.log_only, "count: never from a headless test run")
+	_check(PlayCount.is_build("f191d18") and not PlayCount.is_build("dev"), "count: only released builds count")
+	_check(PlayCount.platform("Windows", "x86_64") == "windows" and PlayCount.platform("macOS", "arm64") == "macos-arm64"
+		and PlayCount.platform("Web", "wasm32") == "web", "count: platform names")
+	_check(PlayCount.url_for("play/web", "abcdef12", 3, 300, "f191d18").begins_with(PlayCount.URL + "?e=play%2Fweb&v=f191d18&s=abcdef12&n=3&t=300&rnd="), "count: the address")
+	PlayCount.log_only = true
+	PlayCount.sent_log.clear()
+	PlayCount._run_play_s = 0.0
+	PlayCount._reported_s = 0
+	PlayCount._reports = 0
+	PlayCount.add_play(PlayCount.EVERY_S * 2.0 + 10.0)
+	_check(PlayCount.sent_log.size() == 1 and PlayCount.sent_log[0].contains("&t=610&"), "count: the run's total, once it's 5 minutes on")
+	PlayCount.add_play(PlayCount.EVERY_S - 1.0)
+	_check(PlayCount.sent_log.size() == 1, "count: not before another 5 minutes")
+	PlayCount.add_play(2.0)
+	PlayCount.flush()
+	_check(PlayCount.sent_log.size() == 2 and PlayCount.sent_log[1].contains("&t=911&") and PlayCount.sent_log[1].contains("&n=2&"), "count: total and number go up")
+	PlayCount.add_play(3.0)
+	PlayCount.flush()
+	_check(PlayCount.sent_log.size() == 2, "count: no report for a few seconds")
+	var kept: Array = PlayerStats._data().get_value("count", "runs", [])
+	_check(kept.size() == 1 and int(kept[0].t) == 911 and kept[0].s == PlayCount.run_id(), "count: the run's last total is kept for the next start")
+	# The next start: a new run id, and the old run's total sent again.
+	PlayerStats._data().set_value("count", "runs", [{"s": "0011223344556677", "t": 1234, "n": 4, "v": "ff3633c", "p": "linux"}])
+	PlayCount._started = false
+	PlayCount.sent_log.clear()
+	PlayCount.start()
+	_check(PlayCount.sent_log.size() == 2 and PlayCount.sent_log[0].contains("e=start%2F") and PlayCount.sent_log[1].contains("e=play%2Flinux&v=ff3633c&s=0011223344556677&n=5&t=1234&"),
+		"count: an earlier run's last total goes again at start")
+	_check((PlayerStats._data().get_value("count", "runs", []) as Array).is_empty(), "count: and is forgotten once it's through")
+	PlayCount.set_enabled(false)
+	PlayCount.add_play(PlayCount.EVERY_S * 3.0)
+	PlayCount.flush()
+	_check(PlayCount.sent_log.size() == 2, "count: nothing when turned off")
+	PlayCount.set_enabled(true)
+	PlayCount.log_only = false
+	PlayCount.sent_log.clear()
+	PlayerStats.file = was_path
+	PlayerStats.support_path = was_support
+	PlayerStats.reread()
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(old))
 
 
 ## The same cases as test_game_modes in libs/olcore/tests/test_main.cpp.
