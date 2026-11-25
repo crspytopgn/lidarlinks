@@ -11,6 +11,8 @@ const OVER := Color(0.1, 0.2, 0.7)
 var _title: Label
 var _grid: GridContainer
 var _footer: Label
+## A quiet link to Support under the final card (show_support).
+var _support: LinkButton
 ## True while show_round draws an 18-hole card, which gets an Out column
 ## after the ninth hole.
 var _split := false
@@ -36,9 +38,23 @@ func _ready() -> void:
 	_footer.add_theme_color_override("font_color", Color(0.1, 0.25, 0.1))
 	_footer.add_theme_font_size_override("font_size", 17)
 	box.add_child(_footer)
+	_support = LinkButton.new()
+	_support.name = "SupportLink"
+	_support.text = Support.THANKS
+	_support.tooltip_text = Support.TOOLTIP
+	_support.underline = LinkButton.UNDERLINE_MODE_ON_HOVER
+	_support.add_theme_color_override("font_color", Color(0.1, 0.25, 0.1, 0.65))
+	_support.add_theme_color_override("font_hover_color", Color(0.1, 0.25, 0.1))
+	_support.add_theme_font_size_override("font_size", 14)
+	_support.size_flags_horizontal = Control.SIZE_SHRINK_END
+	_support.focus_mode = Control.FOCUS_NONE
+	_support.visible = false
+	_support.pressed.connect(Support.open)
+	box.add_child(_support)
 
 
 func show_card(card: Scorecard, course_name: String, footer := "") -> void:
+	_support.visible = false
 	_title.text = course_name + ("   " + footer if footer != "" else "")
 	for child in _grid.get_children():
 		child.queue_free()
@@ -67,8 +83,15 @@ func show_card(card: Scorecard, course_name: String, footer := "") -> void:
 	visible = true
 
 
+## Shows the quiet Support line under the card: only on the final card of
+## the player's first finished round (Support.thank_once), never mid-round.
+func show_support() -> void:
+	_support.visible = true
+
+
 ## Every player's card for a round, with the rows the game mode adds.
 func show_round(scoring: RoundScoring, course_name: String, footer := "") -> void:
+	_support.visible = false
 	_title.text = course_name + ("   " + footer if footer != "" else "")
 	for child in _grid.get_children():
 		child.queue_free()
