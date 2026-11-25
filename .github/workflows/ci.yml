@@ -349,6 +349,8 @@ jobs:
             **Launcher (recommended):** download OpenLinks2003-Launcher (the LidarLinks launcher) for your system. It installs the game, keeps it up to date, shows what's new, sets the options worth choosing before you play, and gets your Links 2003 discs, disc images or install ready.
 
             **macOS:** unzip, move the app to Applications, then right-click it and choose Open (the apps are ad-hoc signed, not notarized). On macOS 15 or later, if it still won't open, go to System Settings > Privacy & Security and click Open Anyway.
+
+            LidarLinks is free, with no ads, and always will be. If you enjoy it, you can support it on [Ko-fi](https://ko-fi.com/crspytopgn) (card or PayPal, no account needed) or [GitHub Sponsors](https://github.com/sponsors/crspytopgn). Thank you!
         run: |
           head=$(gh api "repos/$GH_REPO/commits/main" --jq .sha)
           if [ "$head" != "$GITHUB_SHA" ]; then
