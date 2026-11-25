@@ -1,7 +1,10 @@
-# Cloudflare Worker for online play. Not deployed yet: see server/README.md.
-name = "openlinks2003"
+# Cloudflare Worker for online play and leaderboards: see server/README.md.
+# Cloudflare deploys it by itself from main (Workers Builds, root directory
+# server/), or the manual "Deploy online server" workflow does.
+name = "lidarlinks"
 main = "src/index.js"
 compatibility_date = "2026-10-01"
+workers_dev = true
 
 [[durable_objects.bindings]]
 name = "ROOMS"
@@ -11,7 +14,15 @@ class_name = "RoomObject"
 name = "GAMES"
 class_name = "GameObject"
 
+[[durable_objects.bindings]]
+name = "BOARDS"
+class_name = "BoardObject"
+
 # SQLite-backed Durable Objects are available on the Workers free plan.
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["RoomObject", "GameObject"]
+
+[[migrations]]
+tag = "v2"
+new_sqlite_classes = ["BoardObject"]

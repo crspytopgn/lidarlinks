@@ -7,12 +7,17 @@
 //   GET  /games/ID                          -> view   everyone's progress
 //   POST /games/ID/join   {token, name}     -> view
 //   POST /games/ID/record {token, record}   -> view   send your round so far
+//   GET  /boards/daily-DATE[?token=T]          -> board  the daily round's leaderboard
+//   POST /boards/daily-DATE {token, name, code} -> board send your finished round
+//   GET  /boards/daily-DATE/rounds/ROUND       -> {code} one round on it
 //
 // See server/README.md.
 
 import { GAME_ID_LENGTH, ROOM_CODE_LENGTH, isCode, randomCode } from "./protocol.js";
 export { RoomObject } from "./room_object.js";
 export { GameObject } from "./game_object.js";
+export { BoardObject } from "./board_object.js";
+import { isBoardKey } from "./board.js";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -55,8 +60,16 @@ export default {
       const stub = env.GAMES.get(env.GAMES.idFromName(parts[1]));
       const action = parts[2] || "";
       response = await stub.fetch(new Request(`https://do/${action}`, request));
+    } else if (parts[0] === "boards" && parts.length >= 2 && isBoardKey(parts[1])) {
+      const stub = env.BOARDS.get(env.BOARDS.idFromName(parts[1]));
+      const rest = parts.slice(2).join("/");
+      const inner = new URL(`https://do/${rest}`);
+      inner.searchParams.set("key", parts[1]);
+      const token = url.searchParams.get("token");
+      if (token) inner.searchParams.set("token", token);
+      response = await stub.fetch(new Request(inner, request));
     } else if (url.pathname === "/") {
-      response = Response.json({ name: "openlinks2003", version: 1 });
+      response = Response.json({ name: "lidarlinks", version: 1 });
     } else {
       response = Response.json({ error: "not found" }, { status: 404 });
     }

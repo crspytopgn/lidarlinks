@@ -1,10 +1,14 @@
-# Deploys the online-play server (server/) to Cloudflare. Manual only, and
-# it does nothing until the CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID
-# secrets are set (see server/README.md).
+# Deploys the online-play server (server/) to Cloudflare when it changes on
+# main, or by hand. Needs the CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID
+# secrets; without them it only runs the tests (Cloudflare's own Workers
+# Builds can deploy instead, see server/README.md).
 name: Deploy online server
 
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ["server/**", ".github/workflows/server.yml"]
 
 jobs:
   deploy:
@@ -20,7 +24,7 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
           if [ -z "$CLOUDFLARE_API_TOKEN" ]; then
-            echo "No CLOUDFLARE_API_TOKEN secret yet: see server/README.md"
-            exit 1
+            echo "::notice::No CLOUDFLARE_API_TOKEN secret: not deploying from here (see server/README.md)"
+            exit 0
           fi
           cd server && npx --yes wrangler@4 deploy

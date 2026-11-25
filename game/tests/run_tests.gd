@@ -57,6 +57,8 @@ func _initialize() -> void:
 	_run("career_playoff", _test_career_playoff)
 	_run("key_remap", _test_key_remap)
 	_run("daily_round", _test_daily_round)
+	_run("daily_board", _test_daily_board)
+	_run("websocket_rejoin", _test_websocket_rejoin)
 	_run("tour_pros", _test_tour_pros)
 	_run("tournament_hole_odds", _test_tournament_hole_odds)
 	_run("tournament_stroke_play", _test_tournament_stroke_play)
@@ -5996,6 +5998,53 @@ func _test_daily_round() -> void:
 	_check(DailyRound.streak("2026-11-19", path) == 2 and DailyRound.describe("2026-11-19", path).ends_with("best +1"),
 			"two days in a row: %s" % DailyRound.describe("2026-11-19", path))
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
+
+
+## The daily leaderboard: the server works out the same seed for a day
+## (server/test/board.test.js), the token is kept, and the board's answers
+## read well.
+func _test_daily_board() -> void:
+	_check(DailyRound.seed_for("2026-11-25") == 615564749 and DailyRound.seed_for("2026-11-19") == 615564719,
+			"the server's daily seed matches: %d" % DailyRound.seed_for("2026-11-25"))
+	var path := "user://test_online_token.cfg"
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
+	var t := OnlineSettings.token(path)
+	_check(t.length() >= 40 and OnlineSettings.token(path) == t and not t.contains("+") and not t.contains("="),
+			"a URL-safe token, kept: %s" % t)
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
+	_check(DailyBoard.ordinal(1) == "1st" and DailyBoard.ordinal(2) == "2nd" and DailyBoard.ordinal(3) == "3rd"
+			and DailyBoard.ordinal(11) == "11th" and DailyBoard.ordinal(12) == "12th" and DailyBoard.ordinal(22) == "22nd"
+			and DailyBoard.ordinal(104) == "104th", "ordinals")
+	_check(DailyBoard.reply_text({"rank": 3, "count": 41, "improved": true}) == "Daily leaderboard: 3rd of 41.",
+			"the place: %s" % DailyBoard.reply_text({"rank": 3, "count": 41}))
+	_check(DailyBoard.reply_text({"error": "the round isn't finished"}).ends_with("isn't finished."), "the server's no")
+	var rows := DailyBoard.rows({"par": 36, "entries": [{"rank": 1, "name": "Ann", "strokes": 34}, {"rank": 2, "name": "Bo", "strokes": 36}]})
+	_check(rows.size() == 2 and rows[0].begins_with("1st") and rows[0].contains("Ann") and rows[0].ends_with("(-2)")
+			and rows[1].ends_with("(E)"), "board rows: %s" % [rows])
+	_check(DailyBoard.url("https://x.workers.dev", "2026-11-25") == "https://x.workers.dev/boards/daily-2026-11-25", "the board's address")
+
+
+## A dropped room connection: once back in, only my events the server never
+## got are sent again, after the hello.
+func _test_websocket_rejoin() -> void:
+	var link := WebSocketLink.new("ws://127.0.0.1:9/rooms/ABCD", {"type": "hello", "v": 1, "name": "Ann"})
+	link._note({"type": "welcome", "you": 2, "key": "k".repeat(24), "seq": 0})
+	link.send({"type": "event", "seq": 0, "player": 1, "kind": "shot"})
+	link.send({"type": "event", "seq": 1, "player": 1, "kind": "shot"})
+	link._note({"type": "event", "seq": 2, "player": 0, "kind": "shot"})
+	_check(link._since == 3, "events seen so far: %d" % link._since)
+	link._outbox.clear()
+	link._down_since = 1.0
+	link._open()
+	var hello: Variant = JSON.parse_string(link._outbox[0])
+	_check(hello is Dictionary and hello.rejoin.id == 2 and int(hello.since) == 3, "the hello asks to rejoin from event 3: %s" % link._outbox[0])
+	var back := {"type": "welcome", "you": 2, "key": "k".repeat(24), "seq": 1, "rejoined": true}
+	link._note(back)
+	_check(link._outbox.size() == 2 and link._outbox[1].contains("\"seq\":1") and back.get("_back", false),
+			"event 1 never got there, so it goes again: %s" % [link._outbox])
+	_check(link.is_open() and not link.is_reconnecting(), "still in the room")
+	link.close()
+	_check(not link.is_open(), "closed for good")
 
 
 ## Settings > Keys: a chosen key plays the control; what it did moves to
