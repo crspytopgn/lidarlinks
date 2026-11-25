@@ -959,7 +959,12 @@ func _test_scorecard() -> void:
 	_check(Support.URL.begins_with("https://ko-fi.com/"), "support: Ko-fi page")
 	var seen := "user://test_support.cfg"
 	DirAccess.remove_absolute(seen)
-	_check(Support.thank_once(seen), "support: the after-round line shows the first time")
+	_check(not Support.thank_once(seen), "support: no after-round line before five hours of play")
+	for _i in 11:
+		Support.add_play_time(1500.0, seen)
+	_check(not Support.thank_once(seen), "support: still none at 4.6 hours")
+	Support.add_play_time(4000.0, seen)  # a hole left open counts 30 minutes
+	_check(Support.thank_once(seen), "support: the line shows after about five hours")
 	_check(not Support.thank_once(seen), "support: and never again")
 	DirAccess.remove_absolute(seen)
 	panel.free()
@@ -3002,7 +3007,7 @@ static func _synthetic_aero_exe() -> PackedByteArray:
 		b.encode_u32(0, 11)
 		b.encode_u32(4, 14)
 		var q := 8
-		for i in 11:
+		for _i in 11:
 			b.encode_float(q, 30.0 * i)
 			q += 4
 		for i in 14:

@@ -398,9 +398,12 @@ var _mouse_help: LinksMouse.Help = null
 var online: OnlineRound
 ## Another player's shot being played here, to check against theirs.
 var _incoming: ShotRecord = null
+## When play time was last added up for Support (msec ticks).
+var _play_tick := Time.get_ticks_msec()
 
 
 func _exit_tree() -> void:
+	_count_play_time()
 	# Physics still running on worker threads (BackgroundWork: the strike,
 	# plans, shot reads) must end before the game can quit.
 	BackgroundWork.wait_all()
@@ -3172,7 +3175,16 @@ func _hole_out(picked_up: bool) -> void:
 	result_timer = RESULT_PAUSE
 
 
+## Adds the time since the last count to the player's total play time
+## (Support's once-ever thank-you line waits for about five hours).
+func _count_play_time() -> void:
+	var now := Time.get_ticks_msec()
+	Support.add_play_time((now - _play_tick) / 1000.0)
+	_play_tick = now
+
+
 func _finish_hole(add_stats := true) -> void:
+	_count_play_time()
 	for i in players.size():
 		var p := players[ball_of[i]]
 		scoring.cards[i].record(hole_index, p.strokes)

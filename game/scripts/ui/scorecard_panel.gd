@@ -84,7 +84,7 @@ func show_card(card: Scorecard, course_name: String, footer := "") -> void:
 
 
 ## Shows the quiet Support line under the card: only on the final card of
-## the player's first finished round (Support.thank_once), never mid-round.
+## a finished round, once ever (Support.thank_once), never mid-round.
 func show_support() -> void:
 	_support.visible = true
 
