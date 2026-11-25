@@ -36,7 +36,13 @@ images or install, on their own computer.
   Compatibility, passed as `--rendering-method`), window or fullscreen mode
   (borderless or exclusive), window size, vertical sync, interface size,
   volume and menu music, swing method, skill, swing help, launch monitor,
-  and the presentation.
+  the presentation, and Privacy > Play-time count (docs/stats.md).
+- **Stats.** The player's own stats from the game's `user://stats.cfg`:
+  time played with the last 30 days as bars, rounds, holes, shots, scoring,
+  fairways, greens, putts, drives, scores, favourite club, players with
+  their handicap index and trend, and best rounds. The game writes them
+  there already worded (`PlayerStats.write_summary`); the launcher only
+  reads them (`launcher/scripts/game_stats.gd`).
 - **Game Files.** Finds Links 2003 CDs and mounted images (`/Volumes`,
   `/media`, `/run/media`, drive letters) and installed copies (Program Files,
   the Wine prefixes of `tools/mac/links2003-mac.sh`). An installed copy is

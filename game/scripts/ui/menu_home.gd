@@ -23,7 +23,7 @@ const TILES := {
 	"Course designer": ["designer", "Make your own course"],
 }
 ## Menu items that go in the top bar instead.
-const NAV := ["Select golfer", "Courses", "Players", "Settings", "Quit"]
+const NAV := ["Select golfer", "Courses", "Players", "Stats", "Settings", "Quit"]
 const GOLD := Color(0.914, 0.78, 0.4)
 const TILE_SIZE := Vector2(212, 196)
 const RADIUS := 22.0
