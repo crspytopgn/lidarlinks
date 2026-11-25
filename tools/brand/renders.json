@@ -241,5 +241,37 @@
 		"w": 1280,
 		"h": 640,
 		"quality": 90
+	},
+	{
+		"src": "templates/tile.html",
+		"query": "tile=weather",
+		"out": "readme/tile-weather-light.webp",
+		"w": 1000,
+		"h": 860,
+		"quality": 88
+	},
+	{
+		"src": "templates/tile.html",
+		"query": "tile=weather&dark",
+		"out": "readme/tile-weather-dark.webp",
+		"w": 1000,
+		"h": 860,
+		"quality": 88
+	},
+	{
+		"src": "templates/tile.html",
+		"query": "tile=builtin",
+		"out": "readme/tile-builtin-light.webp",
+		"w": 1000,
+		"h": 860,
+		"quality": 88
+	},
+	{
+		"src": "templates/tile.html",
+		"query": "tile=builtin&dark",
+		"out": "readme/tile-builtin-dark.webp",
+		"w": 1000,
+		"h": 860,
+		"quality": 88
 	}
 ]

@@ -39,6 +39,11 @@ func _init() -> void:
 	mat.billboard_mode = BaseMaterial3D.BILLBOARD_FIXED_Y
 	mat.albedo_color = Color(0.82, 0.86, 0.9, 0.28)
 	mat.disable_receive_shadows = true
+	# A streak that falls past the lens would draw as a thick white bar
+	# across the frame: fade them out inside the nearest couple of metres.
+	mat.distance_fade_mode = BaseMaterial3D.DISTANCE_FADE_PIXEL_ALPHA
+	mat.distance_fade_min_distance = 0.6
+	mat.distance_fade_max_distance = 2.5
 	quad.material = mat
 	_drops.mesh = quad
 	add_child(_drops)

@@ -1,0 +1,65 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><link rel="stylesheet" href="../brand/templates/brand.css">
+<!-- The "every platform" shot: window frames for Mac, Windows and Linux, an
+     iPad and a browser, drawn with clear screens. ?layer=back draws the
+     backdrop, ?layer=front the frames and labels; the footage goes between
+     them at the SCREENS rectangles (promo_edit.py). No real logos. -->
+<style>
+body { width: 1920px; height: 1080px; position: relative; overflow: hidden; }
+.back { position: absolute; inset: 0; background: radial-gradient(1400px 800px at 50% 120%, #10301b 0%, #050607 62%), #050607; }
+.win { position: absolute; border-radius: 14px; box-shadow: 0 30px 80px rgba(0,0,0,0.55); }
+.bar { position: absolute; left: 0; right: 0; top: 0; height: 40px; border-radius: 14px 14px 0 0; display: flex; align-items: center; padding: 0 16px; font-size: 17px; }
+.mac .bar { background: #E8E8EA; color: #3a3a3c; justify-content: center; }
+.mac .dots { position: absolute; left: 16px; display: flex; gap: 8px; }
+.mac .dots i { width: 13px; height: 13px; border-radius: 50%; display: block; }
+.win10 .bar { background: #1F1F1F; color: #e6e6e6; border-radius: 8px 8px 0 0; }
+.win10 { border-radius: 8px; }
+.win10 .ctl { position: absolute; right: 0; top: 0; height: 40px; display: flex; }
+.win10 .ctl span { width: 52px; display: flex; align-items: center; justify-content: center; color: #e6e6e6; font-size: 18px; }
+.gnome .bar { background: #303030; color: #f0f0f0; justify-content: center; font-weight: 600; }
+.gnome .x { position: absolute; right: 12px; width: 24px; height: 24px; border-radius: 50%; background: #4a4a4a; color: #fff; font-size: 14px; display: flex; align-items: center; justify-content: center; }
+.border { position: absolute; left: 0; right: 0; bottom: 0; top: 40px; border: 1px solid rgba(255,255,255,0.12); border-top: none; border-radius: 0 0 14px 14px; }
+.tablet { position: absolute; border-radius: 46px; border: 22px solid #1b1b1d; box-shadow: 0 0 0 2px #3a3a3e, 0 30px 80px rgba(0,0,0,0.55); }
+.browser .bar { background: #2B2B2E; height: 76px; flex-direction: column; align-items: stretch; padding: 0; }
+.browser .tabs { height: 36px; display: flex; align-items: flex-end; padding-left: 70px; position: relative; }
+.browser .tabs .dots { position: absolute; left: 14px; top: 13px; display: flex; gap: 7px; }
+.browser .tabs .dots i { width: 11px; height: 11px; border-radius: 50%; background: #5a5a5e; display: block; }
+.browser .tab { background: #3B3B3F; color: #eee; font-size: 14px; padding: 8px 18px; border-radius: 9px 9px 0 0; display: flex; gap: 8px; align-items: center; }
+.browser .tab img { width: 16px; height: 16px; border-radius: 4px; }
+.browser .url { height: 40px; background: #3B3B3F; display: flex; align-items: center; padding: 0 12px; }
+.browser .url div { flex: 1; background: #232325; border-radius: 16px; height: 28px; color: #e8e8e8; font-size: 15px; display: flex; align-items: center; padding: 0 14px; gap: 8px; }
+.label { position: absolute; color: #F5F5F7; font-size: 30px; font-weight: 600; text-align: center; letter-spacing: -0.01em; }
+.title { position: absolute; left: 0; right: 0; top: 26px; text-align: center; color: #F5F5F7; font-size: 60px; font-weight: 600; letter-spacing: -0.03em; }
+.title span { color: #A1A1A6; font-weight: 400; }
+</style></head>
+<body>
+<script>
+// Screen rectangles (x, y, w, h) the footage fills, in page pixels.
+const SCREENS = {
+	mac: [70, 190, 560, 315],
+	windows: [680, 190, 560, 315],
+	linux: [1290, 190, 560, 315],
+	ipad: [330, 618, 480, 360],
+	browser: [940, 654, 640, 324],
+};
+const q = new URLSearchParams(location.search);
+let h = '';
+if (q.get('layer') === 'back') {
+	h = '<div class="back"></div>';
+} else {
+	const [mx, my, mw, mh] = SCREENS.mac, [wx, wy, ww, wh] = SCREENS.windows, [lx, ly, lw, lh] = SCREENS.linux;
+	const [ix, iy, iw, ih] = SCREENS.ipad, [bx, by, bw, bh] = SCREENS.browser;
+	h += `<div class="title">One game. <span>Every screen.</span></div>`;
+	h += `<div class="win mac" style="left:${mx}px;top:${my - 40}px;width:${mw}px;height:${mh + 40}px"><div class="bar"><div class="dots"><i style="background:#FF5F57"></i><i style="background:#FEBC2E"></i><i style="background:#28C840"></i></div>LidarLinks</div><div class="border"></div></div>`;
+	h += `<div class="win win10" style="left:${wx}px;top:${wy - 40}px;width:${ww}px;height:${wh + 40}px"><div class="bar">LidarLinks<div class="ctl"><span>&#8212;</span><span>&#9744;</span><span>&#10005;</span></div></div><div class="border" style="border-radius:0 0 8px 8px"></div></div>`;
+	h += `<div class="win gnome" style="left:${lx}px;top:${ly - 40}px;width:${lw}px;height:${lh + 40}px"><div class="bar">LidarLinks<div class="x">&#10005;</div></div><div class="border"></div></div>`;
+	h += `<div class="tablet" style="left:${ix - 22}px;top:${iy - 22}px;width:${iw + 44}px;height:${ih + 44}px"></div>`;
+	h += `<div class="win browser" style="left:${bx}px;top:${by - 76}px;width:${bw}px;height:${bh + 76}px"><div class="bar"><div class="tabs"><div class="dots"><i></i><i></i><i></i></div><div class="tab"><img src="../../docs/brand/png/app-icon-32.png">LidarLinks</div></div><div class="url"><div>&#128274; crspytopgn.github.io/lidarlinks</div></div></div></div>`;
+	const lab = (t, x, y, w) => `<div class="label" style="left:${x}px;top:${y}px;width:${w}px">${t}</div>`;
+	h += lab('Mac', mx, my + mh + 16, mw) + lab('Windows', wx, wy + wh + 16, ww) + lab('Linux', lx, ly + lh + 16, lw);
+	h += lab('iPad', ix - 160, iy + ih / 2 - 20, 130) + lab('Browser', bx + bw + 20, by + bh / 2 - 20, 170);
+}
+document.body.innerHTML = h;
+window.SCREENS = SCREENS;
+</script>
+</body></html>

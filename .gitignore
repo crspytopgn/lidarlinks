@@ -59,3 +59,6 @@ tools/audio/.cache/
 game/assets/props/sketchfab/*.jpg
 game/assets/props/sketchfab/*.png
 tools/free_pack/.cache/
+
+# Per-run window override written by tools/promo/capture.sh
+game/override.cfg
