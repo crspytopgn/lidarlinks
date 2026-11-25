@@ -3007,7 +3007,7 @@ static func _synthetic_aero_exe() -> PackedByteArray:
 		b.encode_u32(0, 11)
 		b.encode_u32(4, 14)
 		var q := 8
-		for _i in 11:
+		for i in 11:
 			b.encode_float(q, 30.0 * i)
 			q += 4
 		for i in 14:
