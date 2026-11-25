@@ -3336,6 +3336,8 @@ func _next_hole() -> void:
 		if not report.is_empty():
 			text = report + "\n" + text
 	hud.show_message(text)
+	if not round_setup.daily.is_empty() and card.holes_played() == card.pars.size() and not round_setup.play_through:
+		_send_daily(text)
 	hud.scorecard.show_round(scoring, _round_name(), "Final")
 	if not round_setup.play_through and card.holes_played() >= mini(9, card.pars.size()) and Support.thank_once():
 		hud.scorecard.show_support()
@@ -3344,6 +3346,31 @@ func _next_hole() -> void:
 		hud.hint.text = HINT_CAREER_DONE
 	elif not round_setup.tournament.is_empty():
 		hud.hint.text = HINT_TOURNAMENT_DONE
+
+
+## Puts a finished daily round on the online leaderboard (DailyBoard) and
+## adds where it came to `text`, the round's closing message. Does nothing
+## without a server; a slow or missing connection never holds the game up.
+func _send_daily(text: String) -> void:
+	if not OnlineSettings.available() or record == null:
+		return
+	var http := HTTPRequest.new()
+	http.timeout = 20.0
+	add_child(http)
+	http.request_completed.connect(func(result: int, _code: int, _h: PackedStringArray, body: PackedByteArray) -> void:
+		http.queue_free()
+		var d: Variant = JSON.parse_string(body.get_string_from_utf8())
+		var line := ""
+		if result == HTTPRequest.RESULT_SUCCESS and d is Dictionary:
+			line = DailyBoard.reply_text(d)
+		elif result != HTTPRequest.RESULT_SUCCESS:
+			line = "Daily leaderboard: no connection, so this round isn't on it."
+		if not line.is_empty() and state == State.ROUND_DONE:
+			hud.show_message(text + "\n" + line))
+	var body := DailyBoard.submission(record, scoring.names[0], card.total_par())
+	if http.request(DailyBoard.url(OnlineSettings.server(), round_setup.daily), ["Content-Type: application/json"],
+			HTTPClient.METHOD_POST, body) != OK:
+		http.queue_free()
 
 
 ## Keeps the finished round in user://replays/ (RoundRecord).
