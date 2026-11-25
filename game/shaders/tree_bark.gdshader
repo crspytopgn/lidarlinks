@@ -57,6 +57,12 @@ void fragment() {
 	if (tree_lod_discard(lod_span, FRAGCOORD.xy)) {
 		discard;
 	}
+	// In the impostor bake each tree has a cell of the atlas; a trunk foot
+	// that reaches below the ground spilled into the top of the cell under
+	// it, and every far tree of that kind wore a pale dash over its crown.
+	if ((bake || bake_normal) && up < 0.0) {
+		discard;
+	}
 	vec2 uv = scanned ? UV : UV / 1.5;
 	vec3 col;
 	if (scanned && branch > 0.5) {
