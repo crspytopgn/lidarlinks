@@ -19,7 +19,7 @@ const RELEASES_PAGE := "https://github.com/crspytopgn/lidarlinks/releases/tag/la
 const PROJECT_PAGE := "https://github.com/crspytopgn/lidarlinks"
 ## Where people can chip in: the same page as the game's Support button
 ## (game/scripts/support.gd).
-const SUPPORT_PAGE := "https://github.com/sponsors/crspytopgn"
+const SUPPORT_PAGE := "https://ko-fi.com/crspytopgn"
 const WEB_BUILD := "https://crspytopgn.github.io/lidarlinks/"
 
 

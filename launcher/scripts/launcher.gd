@@ -247,7 +247,7 @@ func _build_hero() -> Control:
 	check_row.add_child(UI.label("·", 12, "Regular", UI.TEXT_3))
 	var support := UI.link_button("Support LidarLinks")
 	support.add_theme_font_size_override("font_size", 12)
-	support.tooltip_text = "LidarLinks is free. This opens GitHub Sponsors in your browser, if you'd like to chip in."
+	support.tooltip_text = "LidarLinks is free. This opens its Ko-fi page in your browser, if you'd like to chip in."
 	support.pressed.connect(func() -> void: OS.shell_open(Paths.SUPPORT_PAGE))
 	check_row.add_child(support)
 	return hero

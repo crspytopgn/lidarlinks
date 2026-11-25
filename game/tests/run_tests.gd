@@ -956,7 +956,7 @@ func _test_scorecard() -> void:
 	_check(panel._support.visible, "scorecard: Support line on the final card")
 	panel.show_round(scoring, "Test")
 	_check(not panel._support.visible, "scorecard: Support line goes when the card is redrawn")
-	_check(Support.URL.begins_with("https://github.com/sponsors/"), "support: GitHub Sponsors page")
+	_check(Support.URL.begins_with("https://ko-fi.com/"), "support: Ko-fi page")
 	panel.free()
 
 
