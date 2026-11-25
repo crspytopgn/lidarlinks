@@ -3269,8 +3269,6 @@ func _next_hole() -> void:
 			text = report + "\n" + text
 	hud.show_message(text)
 	hud.scorecard.show_round(scoring, _round_name(), "Final")
-	if not round_setup.play_through and card.holes_played() >= mini(9, card.pars.size()):
-		hud.scorecard.show_support()
 	hud.hint.text = HINT_DONE
 	if not round_setup.career.is_empty():
 		hud.hint.text = HINT_CAREER_DONE

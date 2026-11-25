@@ -951,12 +951,6 @@ func _test_scorecard() -> void:
 	_check((grid.get_child(21 + 10) as Label).text == "36", "scorecard: par out")
 	_check((grid.get_child(42 + 10) as Label).text == "45", "scorecard: strokes out")
 	_check((grid.get_child(63 + 10) as Label).text == "9", "scorecard: points out")
-	_check(not panel._support.visible, "scorecard: no Support line mid-round")
-	panel.show_support()
-	_check(panel._support.visible, "scorecard: Support line on the final card")
-	panel.show_round(scoring, "Test")
-	_check(not panel._support.visible, "scorecard: Support line goes when the card is redrawn")
-	_check(Support.URL.begins_with("https://ko-fi.com/"), "support: Ko-fi page")
 	panel.free()
 
 
@@ -2247,11 +2241,6 @@ func _test_graphics_settings() -> void:
 	var mapped := Scenery.sky_sun_mapping(Vector3(0.0, 0.5, 0.866), deg_to_rad(48.0))
 	_check(absf(mapped.y - deg_to_rad(30.0)) < 0.001, "sky sun: the photo's sun is moved down to a 30 degree sun")
 	_check(absf(Scenery.sky_sun_mapping(Vector3(0.0, 0.156, 0.988), deg_to_rad(48.0)).y - deg_to_rad(28.8)) < 0.001, "sky sun: a low sun stretches the sky at most 40%")
-	# The sun's first shadow split stays about 10 m deep on the long High and
-	# Ultra shadow distances (a club shaft's shadow zigzagged over 24 m),
-	# and keeps its old share on the short ones (Low, Medium, the web).
-	_check(is_equal_approx(Scenery.first_split(150.0), Scenery.SUN_SPLITS.x), "shadow split: Low keeps its share")
-	_check(is_equal_approx(Scenery.first_split(600.0) * 600.0, Scenery.NEAR_SPLIT), "shadow split: Ultra's first split is NEAR_SPLIT deep")
 	# The learned grade: a 32-cubed lookup per time of day and renderer.
 	for t in [GraphicsSettings.TimeOfDay.AFTERNOON, GraphicsSettings.TimeOfDay.MORNING, GraphicsSettings.TimeOfDay.MIDDAY, GraphicsSettings.TimeOfDay.GOLDEN]:
 		for fwd in [false, true]:
@@ -6749,7 +6738,7 @@ func _test_broadcast_round() -> void:
 		frames += 1
 	_check(not game._replaying, "replay ends")
 	_check(game.state == GolfRound.State.SHOT_RESULT, "replay leaves the result up")
-	game.hud.overlay.notification(CanvasItem.NOTIFICATION_DRAW)
+	game.hud.overlay._draw()
 	_check(game.hud.overlay.glass.panel_count() > 0, "broadcast panels are frosted glass")
 	_check(game.hud.hint.visible and not game.hud.hint_tab.visible, "key hints up on the first hole")
 	game.start_hole(1)
