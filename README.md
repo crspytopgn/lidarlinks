@@ -33,21 +33,29 @@ It began as an open-source remake of <b>Links 2003</b> and keeps its physics.
 
 <p align="center">
 <picture><source media="(prefers-color-scheme: dark)" srcset="docs/brand/readme/tile-broadcast-dark.webp"><img alt="Tour-grade coverage: TV cameras, a score bug, live wind and a gallery" src="docs/brand/readme/tile-broadcast-light.webp" width="49%"></picture>
-<picture><source media="(prefers-color-scheme: dark)" srcset="docs/brand/readme/tile-course-dark.webp"><img alt="A real nine, on real land: Kettle Hollow, routed on lidar terrain" src="docs/brand/readme/tile-course-light.webp" width="49%"></picture>
+<picture><source media="(prefers-color-scheme: dark)" srcset="docs/brand/readme/tile-course-dark.webp"><img alt="Any course, built for you: Pebble Beach's 7th, built from open lidar, map data and aerial photos" src="docs/brand/readme/tile-course-light.webp" width="49%"></picture>
 </p>
 <p align="center">
-<picture><source media="(prefers-color-scheme: dark)" srcset="docs/brand/readme/tile-tracer-dark.webp"><img alt="Every shot, traced: a TV tracer and a landing cam follow every ball home" src="docs/brand/readme/tile-tracer-light.webp" width="49%"></picture>
+<picture><source media="(prefers-color-scheme: dark)" srcset="docs/brand/readme/tile-tracer-dark.webp"><img alt="Every shot, traced: Links 2003 physics, a TV tracer and a landing cam on every ball" src="docs/brand/readme/tile-tracer-light.webp" width="49%"></picture>
 <picture><source media="(prefers-color-scheme: dark)" srcset="docs/brand/readme/tile-greens-dark.webp"><img alt="Read every break: a TV grid with flowing slope dots, a real-depth cup and the Green Analyzer" src="docs/brand/readme/tile-greens-light.webp" width="49%"></picture>
 </p>
 <p align="center">
 <picture><source media="(prefers-color-scheme: dark)" srcset="docs/brand/readme/tile-swing-dark.webp"><img alt="Real people, real swings: scanned golfers with motion-captured swings, chips and putts" src="docs/brand/readme/tile-swing-light.webp" width="49%"></picture>
 <picture><source media="(prefers-color-scheme: dark)" srcset="docs/brand/readme/tile-designer-dark.webp"><img alt="Build your own course: shape the land, draw the holes, plant trees, play" src="docs/brand/readme/tile-designer-light.webp" width="49%"></picture>
 </p>
+<p align="center">
+<picture><source media="(prefers-color-scheme: dark)" srcset="docs/brand/readme/tile-weather-dark.webp"><img alt="Live weather: the real forecast where the course is, rain, wind, dawn to sunset and local birdsong" src="docs/brand/readme/tile-weather-light.webp" width="49%"></picture>
+<picture><source media="(prefers-color-scheme: dark)" srcset="docs/brand/readme/tile-builtin-dark.webp"><img alt="Five built-in courses, from parkland to desert mesas, an alpine valley and a tropical coast" src="docs/brand/readme/tile-builtin-light.webp" width="49%"></picture>
+</p>
 
 ## What you can play
 
-- **Kettle Hollow**, the built-in nine, routed on real lidar terrain, plus
-  the course designer for your own (or a real place, from map data).
+- **Any real course**: search for a club and the game builds it from open
+  lidar, map data and aerial photos (greens, bunkers, water, trees,
+  buildings and the land round it).
+- **Five built-in courses**: the Kettle Hollow nine, routed on real lidar
+  terrain, plus Red Spire, Vermilion Ridge, Glacier Crown and Ember Coast,
+  and the course designer for your own.
 - **Realistic golfers**: scanned people with motion-captured swings, chips,
   putts, walks and green reading. Pick a person and their clothes, or build
   a custom golfer.
@@ -60,6 +68,8 @@ It began as an open-source remake of <b>Links 2003</b> and keeps its physics.
   sticks.
 - **Greens you can read**: stimp speeds, a TV slope grid with flowing dots,
   a putt read in the panel and the Green Analyzer's free camera.
+- **Weather and sound**: the real forecast where a course is (rain, wind,
+  dawn to sunset), and the birds of that region singing in the trees.
 - **Looks that scale**: from Low on phones and old laptops to Ultra on
   high-end PCs, with Natural and Classic Links looks and a broadcast
   presentation.

@@ -82,7 +82,16 @@ void vertex() {
 }
 
 void fragment() {
-	vec2 uv = vec2((frame + clamp(UV.x, 0.002, 0.998)) / frames, (atlas_row + clamp(UV.y, 0.002, 0.998)) / rows);
+	// Keep the filter's footprint inside this frame: far off, the mipmaps
+	// blur neighbouring frames together, and the trunk foot of the row
+	// above showed as a pale dash floating over every far crown. The
+	// margin is the footprint in the half-size normals atlas (the wider).
+	vec2 frame_px = vec2(textureSize(atlas, 0)) / vec2(frames, rows) * 0.5;
+	vec2 fw = fwidth(UV) * frame_px;
+	vec2 texels = vec2(max(max(fw.x, fw.y), 1.0));
+	vec2 edge = clamp(texels / frame_px, vec2(0.002), vec2(0.2));
+	vec2 fuv = clamp(UV, edge, 1.0 - edge);
+	vec2 uv = vec2((frame + fuv.x) / frames, (atlas_row + fuv.y) / rows);
 	if (tree_lod_discard(lod_span, FRAGCOORD.xy)) {
 		discard;
 	}

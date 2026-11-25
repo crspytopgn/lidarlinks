@@ -1,0 +1,69 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><link rel="stylesheet" href="../brand/templates/brand.css">
+<!-- The promo video's titles, drawn on a transparent page and laid over the
+     footage (tools/promo/overlays.js renders each to PNG). ?kind= picks one:
+     caption, hook, chip, birds, devices, end; ?v=1 lays it out for the
+     vertical cut. -->
+<style>
+body { width: 1920px; height: 1080px; position: relative; overflow: hidden; }
+body.v { width: 1080px; height: 1920px; }
+.scrim { position: absolute; inset: 0; }
+.scrim.low { background: linear-gradient(to top, rgba(0,0,0,0.55) 0%, rgba(0,0,0,0.25) 28%, rgba(0,0,0,0) 45%); }
+.scrim.mid { background: radial-gradient(1100px 420px at 50% 52%, rgba(0,0,0,0.42) 0%, rgba(0,0,0,0.18) 55%, rgba(0,0,0,0) 100%); }
+.scrim.top { background: linear-gradient(to bottom, rgba(0,0,0,0.3) 0%, rgba(0,0,0,0) 18%); }
+.v .scrim.low { background: linear-gradient(to top, rgba(0,0,0,0.6) 0%, rgba(0,0,0,0.3) 22%, rgba(0,0,0,0) 36%); }
+.shadow { text-shadow: 0 2px 18px rgba(0,0,0,0.45), 0 1px 3px rgba(0,0,0,0.35); }
+.caption { position: absolute; left: 96px; bottom: 92px; color: #fff; max-width: 1200px; }
+.v .caption { left: 64px; right: 64px; bottom: 300px; }
+.eyebrow { font-size: 30px; font-weight: 600; color: #7BE495; letter-spacing: 0.02em; margin-bottom: 8px; }
+.title { font-size: 72px; font-weight: 600; letter-spacing: -0.025em; line-height: 1.04; }
+.v .title { font-size: 76px; }
+.sub { margin-top: 14px; font-size: 32px; font-weight: 400; color: rgba(255,255,255,0.88); }
+.hook { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; color: #fff; text-align: center; }
+.hook .title { font-size: 104px; }
+.v .hook .title { font-size: 96px; padding: 0 50px; }
+.hook .sub { font-size: 38px; }
+.chip { position: absolute; right: 64px; top: 56px; padding: 14px 30px; font-size: 28px; font-weight: 500; }
+.v .chip { right: auto; left: 50%; transform: translateX(-50%); top: 230px; white-space: nowrap; }
+.birds { position: absolute; left: 96px; bottom: 92px; color: #fff; display: flex; align-items: center; gap: 26px; }
+.v .birds { left: 64px; bottom: 300px; }
+.birds svg { width: 64px; height: 64px; flex: none; }
+.end { position: absolute; inset: 0; background: radial-gradient(1200px 700px at 30% 110%, #0d2a17 0%, #000 60%), #000; color: #F5F5F7;
+	display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
+.end img.icon { width: 220px; height: 220px; margin-bottom: 34px; }
+.end .word { font-size: 120px; letter-spacing: -0.035em; line-height: 1; }
+.end .word b { font-weight: 600; } .end .word span { font-weight: 300; color: #A1A1A6; }
+.end .tag { margin-top: 26px; font-size: 46px; font-weight: 600; background: linear-gradient(90deg, #30B94D, #2997FF); -webkit-background-clip: text; color: transparent; }
+.end .plat { margin-top: 22px; font-size: 32px; color: #A1A1A6; }
+.end .url { margin-top: 46px; font-size: 40px; font-weight: 500; color: #F5F5F7; }
+.end .kofi { margin-top: 18px; font-size: 30px; color: #A1A1A6; }
+.end .kofi b { color: #F5F5F7; font-weight: 500; }
+.v .end .word { font-size: 104px; } .v .end .tag { font-size: 44px; padding: 0 40px; }
+</style></head>
+<body>
+<script>
+const q = new URLSearchParams(location.search);
+const v = q.has('v');
+if (v) document.body.className = 'v';
+const esc = (s) => (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;');
+const kind = q.get('kind');
+let h = '';
+if (kind === 'caption') {
+	h = `<div class="scrim low"></div><div class="caption shadow">${q.get('e') ? `<div class="eyebrow">${esc(q.get('e'))}</div>` : ''}<div class="title">${esc(q.get('t'))}</div>${q.get('s') ? `<div class="sub">${esc(q.get('s'))}</div>` : ''}</div>`;
+} else if (kind === 'hook') {
+	h = `<div class="scrim mid"></div><div class="hook shadow"><div class="title">${esc(q.get('t'))}</div>${q.get('s') ? `<div class="sub">${esc(q.get('s'))}</div>` : ''}</div>`;
+} else if (kind === 'chip') {
+	h = `<div class="chip glass">${esc(q.get('t'))}</div>`;
+} else if (kind === 'birds') {
+	h = `<div class="scrim low"></div><div class="birds shadow"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9.5h3.2L12 5.5v13l-4.8-4H4z" fill="rgba(255,255,255,0.9)"/><path d="M15.5 9a4.2 4.2 0 0 1 0 6"/><path d="M18.2 6.5a8 8 0 0 1 0 11"/></svg>
+		<div><div class="eyebrow">${esc(q.get('e') || 'Birdsong from the region')}</div><div class="title" style="font-size:56px">${esc(q.get('t'))}</div><div class="sub">${esc(q.get('s'))}</div></div></div>`;
+} else if (kind === 'end') {
+	h = `<div class="end"><img class="icon" src="../../docs/brand/png/app-icon-512.png"><div class="word"><b>Lidar</b><span>Links</span></div>
+		<div class="tag">Play any real course on Earth.</div>
+		<div class="plat">Free and open source · Mac · Windows · Linux · iPad · your browser</div>
+		<div class="url">crspytopgn.github.io/lidarlinks</div>
+		<div class="kofi">Free forever. Support it: <b>ko-fi.com/crspytopgn</b></div></div>`;
+}
+document.body.innerHTML = h;
+</script>
+</body></html>
