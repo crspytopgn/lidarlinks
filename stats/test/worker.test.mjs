@@ -45,15 +45,15 @@ test("a run's seconds add up once: repeats, late and lost reports", async () => 
   assert.ok(page(s).includes("LidarLinks play time"));
 });
 
-test("the Worker: counts are open, the page needs the password", async () => {
-  const env = { DB: memoryDb(), STATS_PASSWORD: "pw" };
+test("the Worker: counts and the page are open", async () => {
+  const env = { DB: memoryDb() };
   const res = await worker.fetch(new Request("https://x.test/count?e=start/web/f191d18&s=0123abcd"), env);
   assert.equal(res.status, 204);
   assert.equal(res.headers.get("Access-Control-Allow-Origin"), "*");
   assert.equal((await worker.fetch(new Request("https://x.test/count?e=junk"), env)).status, 204);
   assert.equal(env.DB.raw.prepare("SELECT COUNT(*) AS n FROM runs").get().n, 1);
-  assert.equal((await worker.fetch(new Request("https://x.test/"), env)).status, 401);
-  const ok = await worker.fetch(new Request("https://x.test/api/stats", { headers: { Authorization: "Basic " + btoa("me:pw") } }), env);
+  assert.equal((await worker.fetch(new Request("https://x.test/"), env)).status, 200);
+  const ok = await worker.fetch(new Request("https://x.test/api/stats"), env);
   assert.equal(ok.status, 200);
   assert.equal((await ok.json()).totals.runs, 1);
 });

@@ -7,7 +7,7 @@
 //   makes at each start (kept only until the next start re-sends the last report); `n` the report's number in the run.
 //   `t` adds up, so a lost or repeated report costs nothing: the highest `t` per run is kept and only its increase is
 //   added to the hour it arrived in. Nothing else is kept: no address, only the country Cloudflare reads from it.
-// * GET / (password): the stats page; GET /api/stats the same as JSON.
+// * GET /: the stats page, open to anyone; GET /api/stats the same as JSON.
 
 /** Platforms the game names (PlayCount.platform). */
 export const PLATFORMS = new Set([
@@ -136,21 +136,7 @@ export async function stats(db, now = new Date()) {
   };
 }
 
-/** Basic auth against STATS_PASSWORD (any user name). */
-export function authorized(request, env) {
-  if (!env.STATS_PASSWORD) return false;
-  const h = request.headers.get("Authorization") || "";
-  if (!h.startsWith("Basic ")) return false;
-  let pass = "";
-  try { pass = atob(h.slice(6)).split(":").slice(1).join(":"); } catch { return false; }
-  const a = new TextEncoder().encode(pass), b = new TextEncoder().encode(env.STATS_PASSWORD);
-  let diff = a.length ^ b.length;
-  for (let i = 0; i < Math.max(a.length, b.length); i++) diff |= (a[i] || 0) ^ (b[i] || 0);
-  return diff === 0;
-}
-
 const CORS = { "Access-Control-Allow-Origin": "*", "Cache-Control": "no-store" };
-const ASK = () => new Response("Password needed", { status: 401, headers: { "WWW-Authenticate": 'Basic realm="LidarLinks stats"' } });
 
 export default {
   async fetch(request, env) {
@@ -163,11 +149,11 @@ export default {
       return new Response(null, { status: 204, headers: CORS });
     }
     if (url.pathname === "/robots.txt") return new Response("User-agent: *\nDisallow: /\n");
-    if (!authorized(request, env)) return ASK();
-    if (url.pathname === "/api/stats") return Response.json(await stats(env.DB), { headers: { "Cache-Control": "no-store" } });
+    // The page and its numbers are open to anyone: totals only, nothing about a person.
+    if (url.pathname === "/api/stats") return Response.json(await stats(env.DB), { headers: { ...CORS, "Cache-Control": "public, max-age=60" } });
     if (url.pathname === "/") {
       const { page } = await import("./page.js");
-      return new Response(page(await stats(env.DB)), { headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" } });
+      return new Response(page(await stats(env.DB)), { headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "public, max-age=60" } });
     }
     return new Response("Not found", { status: 404 });
   },
