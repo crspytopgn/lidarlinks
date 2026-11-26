@@ -1,30 +1,24 @@
 name: GDExtension
-
-# Builds the Olcore GDExtension (extensions/olcore) on Linux, Windows
-# and macOS, and uploads the per-platform binaries the `export` job
-# needs. The `core` job never builds it (BUILD_GDEXTENSION defaults to
-# OFF there). macOS builds both architectures for the universal export.
-# The web build never ships it: the GDScript port is the fallback there.
-
 on:
   push:
-    branches: [main]
+    branches: [main, perf/**]
     paths:
       - "extensions/olcore/**"
       - "extensions/godot-cpp"
       - "libs/olcore/**"
+      - "game/addons/olcore/**"
       - ".github/workflows/gdextension.yml"
   pull_request:
     paths:
       - "extensions/olcore/**"
       - "extensions/godot-cpp"
       - "libs/olcore/**"
+      - "game/addons/olcore/**"
       - ".github/workflows/gdextension.yml"
   workflow_dispatch:
-
+  workflow_call:
 permissions:
   contents: read
-
 jobs:
   build:
     name: GDExtension (${{ matrix.os }}${{ matrix.arch }})
@@ -52,7 +46,7 @@ jobs:
       - name: Configure
         run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_GDEXTENSION=ON ${{ matrix.cmake_arch }}
       - name: Build extension
-        run: cmake --build build --config Release --target olcore_gdext --parallel
+        run: cmake --build build --config Release --target olcore_gdext olcore_snapshot_tests --parallel 2
       - name: Test snapshot core
         run: ctest --test-dir build -C Release -R olcore_snapshot_tests --output-on-failure
       - name: Upload library
