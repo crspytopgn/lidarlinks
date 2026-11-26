@@ -217,7 +217,8 @@ jobs:
           {
             echo "### GDExtension libraries"
             echo ""
-            ls -l game/addons/olcore/bin/
+            echo "Files under game/addons/olcore/bin/ (recursive — a library in a Release/ subdirectory is in the wrong place):"
+            find game/addons/olcore/bin -type f -exec ls -l {} +
             if [ "$missing" = 1 ]; then
               echo ""
               echo ":warning: A desktop library is missing — the affected export ships GDScript physics instead of native physics."
