@@ -1288,14 +1288,24 @@ func play_shot(power: float, accuracy: float, monitor: OpenConnect.Launch = null
 		_strike["task"] = BackgroundWork.start(work, "strike")
 		state = State.STRIKE
 		return
-	if _incoming == null:
-		# No worker threads (the web build): the strike sim cannot start
-		# earlier, so chunk it across frames instead of blocking the frame
-		# of the strike (ResumableShot, Phase 3). The launch is cheap and
-		# runs now, on a model of its own as the worker path does; the
-		# flight and roll advance STRIKE_CHUNK_MS a frame in
-		# _process_strike, while the club comes down, and give the same
-		# result as the one-shot sim.
+	if _incoming == null and OS.has_feature("web"):
+		# Only the web build chunks the strike: there are no worker
+		# threads there, so the strike sim cannot start earlier, and
+		# chunking it across frames keeps the page from freezing on a
+		# shot (ResumableShot, Phase 3). The launch is cheap and runs
+		# now, on a model of its own as the worker path does; the flight
+		# and roll advance STRIKE_CHUNK_MS a frame in _process_strike,
+		# while the club comes down, and give the same result as the
+		# one-shot sim.
+		# Everywhere else the shot flies the moment it is played, as
+		# before: a desktop build with threads off (the headless tests
+		# switch BackgroundWork off, and a one-core machine has no
+		# threads either) used to fall through to the one-shot sim
+		# below, and play_shot callers — the pause test, the launch
+		# monitor, touch and stick swings, auto-play — all read the
+		# shot and the FLIGHT state straight after play_shot returns.
+		# Chunking there left them in STRIKE with no shot recorded,
+		# which failed 22 checks in run_tests.gd.
 		var chunk_model := shot_model.fresh()
 		var start := RoundReplay.launch_shot(chunk_model, rec, club, round_seed)
 		_strike = {"rec": rec, "club": club, "power": power, "accuracy": accuracy,
