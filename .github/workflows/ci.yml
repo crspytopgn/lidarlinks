@@ -139,11 +139,16 @@ jobs:
   export:
     name: Godot export
     needs: [launcher-templates, gdextension]
-    # A failed extension build must not block the exports: the game
-    # falls back to the GDScript physics port when a library is absent
-    # (checked by "Check GDExtension libraries" below). always() lets
-    # this job start when a need failed; the launcher templates are
-    # still required, so a failed launcher-templates job skips it.
+    # A failed desktop extension build must not block the exports:
+    # the game falls back to the GDScript physics port when a desktop
+    # library is absent (checked by "Check GDExtension libraries"
+    # below). always() lets this job start when a need failed; the
+    # launcher templates are still required, so a failed
+    # launcher-templates job skips it. The web library is different:
+    # the Web export preset has extensions_support=true, so Godot
+    # fails the whole Web export when libolcore.web.wasm32.wasm is
+    # absent — the check step fails the job fast instead of letting
+    # the export run for half an hour and fail (PR #402, 2026-11-26).
     if: ${{ always() && needs.launcher-templates.result == 'success' }}
     runs-on: ubuntu-latest
     steps:
@@ -181,17 +186,21 @@ jobs:
           sudo apt-get update -q && sudo apt-get install -y -q python3-pil python3-numpy
           python3 tools/fetch_free_assets.py
 
-      # Desktop libraries built by the gdextension job (same run, via the
-      # reusable workflow call above). merge-multiple puts all four
+      # Libraries built by the gdextension job (same run, via the
+      # reusable workflow call above). merge-multiple puts all five
       # libraries straight into bin/, where olcore.gdextension expects
-      # them. No web library is wanted: the web preset has
-      # extensions_support=false and runs the GDScript port. If the
-      # build failed or produced nothing, this step still succeeds with
-      # zero downloads and the exports below run with the GDScript
-      # physics port. (download-artifact v4 has no if-no-files-found
-      # input — that is upload-artifact only, and the dead input used
-      # to sit here. A pattern matching nothing succeeds with
-      # "Total of 0 artifact(s) downloaded", per the v4 source.)
+      # them: the four desktop ones, and the web one
+      # (libolcore.web.wasm32.wasm, from the wasm job's
+      # olcore-gdext-web-wasm32 artifact, which the olcore-gdext-*
+      # pattern below also matches). If the build failed or produced
+      # nothing, this step still succeeds with zero downloads and the
+      # exports below run with the GDScript physics port — except the
+      # Web export, which fails outright without its library (see
+      # "Check GDExtension libraries" below). (download-artifact v4
+      # has no if-no-files-found input — that is upload-artifact
+      # only, and the dead input used to sit here. A pattern matching
+      # nothing succeeds with "Total of 0 artifact(s) downloaded",
+      # per the v4 source.)
       - name: Download GDExtension libraries
         uses: actions/download-artifact@v4
         with:
@@ -200,11 +209,28 @@ jobs:
           merge-multiple: true
 
       # Loud about what the exports will ship: which native libraries
-      # are present, and a warning (not a failure) when any desktop
-      # target falls back to GDScript physics.
+      # are present. A missing desktop library is a warning (not a
+      # failure): that desktop export falls back to GDScript physics.
+      # A missing web library FAILS the job, here and fast, instead of
+      # letting the Web export run for half an hour and fail: the Web
+      # preset has extensions_support=true, so Godot cannot open the
+      # export at all without libolcore.web.wasm32.wasm (PR #402,
+      # 2026-11-26: the Web export failed with exit code 1 after 36
+      # minutes, while this step had listed only the four desktop
+      # libraries and passed). The game itself would still run with
+      # the GDScript port if the file were missing at runtime — the
+      # failure is the export's, not the game's — so this step must
+      # never silently pass while the Web export then fails.
       - name: Check GDExtension libraries
         run: |
           mkdir -p game/addons/olcore/bin
+          web=libolcore.web.wasm32.wasm
+          if [ -s "game/addons/olcore/bin/$web" ]; then
+            echo "present: $web"
+          else
+            echo "::error::MISSING: $web — the Web export preset has extensions_support=true and Godot fails the Web export when this file is absent (PR #402, 2026-11-26). Check the wasm job in the gdextension workflow."
+            exit 1
+          fi
           missing=0
           for lib in libolcore.linux.x86_64.so libolcore.windows.x86_64.dll libolcore.macos.arm64.dylib libolcore.macos.x86_64.dylib; do
             if [ -s "game/addons/olcore/bin/$lib" ]; then

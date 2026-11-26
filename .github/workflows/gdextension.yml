@@ -4,11 +4,17 @@ name: GDExtension
 # and macOS, and uploads the per-platform binaries the `export` job
 # needs. The `core` job never builds it (BUILD_GDEXTENSION defaults to
 # OFF there). macOS builds both architectures for the universal export.
-# The web build never ships it from CI yet: the wasm extension is
-# built locally with Emscripten 4.0.20 (see
-# extensions/olcore/CMakeLists.txt and docs/gdextension.md), and
-# there is no wasm job in this workflow yet — until one lands, a web
-# export from CI runs the GDScript port.
+# The web build ships it too, as a wasm side module
+# (`libolcore.web.wasm32.wasm`) built by the `wasm` job below with
+# Emscripten 4.0.20 — the version the Godot 4.7.2 export templates
+# were built with (see extensions/olcore/CMakeLists.txt and
+# docs/gdextension.md). That version pin is load-bearing: a side
+# module built with another Emscripten disagrees with the engine
+# about the dynamic-link ABI and fails to load in the browser.
+# The web export preset has extensions_support=true, so the Web
+# export fails outright when the wasm file is absent (PR #402,
+# 2026-11-26: exit code 1 after 36 minutes) — the wasm job is not
+# optional for the export the way a desktop leg is.
 #
 # This workflow is also called from ci.yml (the `gdextension` job, via
 # workflow_call) so the `export` job can download the libraries: a
@@ -112,5 +118,69 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: olcore-gdext-${{ matrix.os }}-${{ matrix.arch }}
+          path: game/addons/olcore/bin/
+          if-no-files-found: error
+
+  # The web build of the same extension, as a wasm side module for the
+  # Web export (extensions_support=true in the export preset). Same
+  # shape as the desktop legs — configure, build, verify the library
+  # sits flat in bin/, run the snapshot tests, upload the artifact —
+  # but under Emscripten, so the job installs the SDK first. The
+  # artifact name (olcore-gdext-web-wasm32) matches the
+  # `olcore-gdext-*` pattern the export job in ci.yml downloads, so
+  # it lands in game/addons/olcore/bin/ with the desktop libraries.
+  wasm:
+    name: GDExtension (web wasm32)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Setup Emscripten 4.0.20
+        # 4.0.20 is the version the Godot 4.7.2 export templates were
+        # built with; the pin is load-bearing (see the header comment).
+        uses: mymindstorm/setup-emsdk@v14
+        with:
+          version: 4.0.20
+          actions-cache-folder: emsdk-cache
+      - name: Verify Emscripten
+        run: emcc --version
+      - name: Configure
+        # GODOTCPP_THREADS=OFF is load-bearing: the web preset has
+        # thread_support=false, so the export uses the
+        # web_dlink_nothreads_release template, and a side module
+        # built with threads cannot load into a single-threaded main
+        # module (see extensions/olcore/CMakeLists.txt).
+        run: emcmake cmake -S . -B build-wasm -DCMAKE_BUILD_TYPE=Release -DBUILD_GDEXTENSION=ON -DGODOTCPP_THREADS=OFF
+      - name: Build extension
+        # The snapshot tests are a separate target from the library,
+        # so build them too, as on the desktop legs. --parallel 2,
+        # not unbounded, for the same reason: godot-cpp's
+        # template-heavy translation units each peak at several GB
+        # under emcc too.
+        run: cmake --build build-wasm --target olcore_gdext olcore_snapshot_tests --parallel 2
+      - name: Verify library location
+        # Fail here, in minutes, not in the export job 30 minutes
+        # later: the Web export preset has extensions_support=true,
+        # so Godot fails the whole Web export when this file is
+        # absent (PR #402, 2026-11-26). The library must sit flat in
+        # game/addons/olcore/bin/, exactly where olcore.gdextension
+        # points and where the export job downloads it to.
+        shell: bash
+        run: |
+          ls -R game/addons/olcore/bin
+          if [ ! -s "game/addons/olcore/bin/libolcore.web.wasm32.wasm" ]; then
+            echo "::error::Expected libolcore.web.wasm32.wasm flat in game/addons/olcore/bin/ — the library landed somewhere else"
+            exit 1
+          fi
+          echo "present: game/addons/olcore/bin/libolcore.web.wasm32.wasm"
+      - name: Test snapshot core
+        # The wasm tests run under node (CMAKE_CROSSCOMPILING_EMULATOR),
+        # the same snapshot tests as on desktop.
+        run: ctest --test-dir build-wasm -R olcore_snapshot_tests --output-on-failure
+      - name: Upload library
+        uses: actions/upload-artifact@v4
+        with:
+          name: olcore-gdext-web-wasm32
           path: game/addons/olcore/bin/
           if-no-files-found: error
