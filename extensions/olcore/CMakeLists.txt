@@ -135,11 +135,34 @@ endif()
 # on a fresh checkout (local or CI) the link otherwise fails with
 # "cannot open output file .../bin/libolcore...: No such file or
 # directory" and the CI job uploads no artifact.
+#
+# The per-configuration directories below are load-bearing, not tidy:
+# multi-configuration generators (Visual Studio on the Windows CI leg,
+# Xcode on the macOS legs) append a per-configuration subdirectory
+# (Release/, Debug/, ...) to LIBRARY/RUNTIME_OUTPUT_DIRECTORY, so
+# without them the Windows DLL lands in bin/Release/ instead of bin/.
+# The CI upload step then ships the artifact with that Release/
+# nesting, the export job downloads it into bin/Release/, and both the
+# "Check GDExtension libraries" step and Godot's export look for the
+# library flat in bin/ — so the Windows export failed with the DLL
+# "not found" even though the Windows build itself had passed. The
+# per-config properties pin every configuration to the flat directory
+# the .gdextension file, the CI artifact and Godot all expect.
+# (Single-configuration generators such as Unix Makefiles and Ninja
+# ignore the per-config properties; the plain properties cover them.)
 file(MAKE_DIRECTORY ${CMAKE_SOURCE_DIR}/game/addons/olcore/bin)
 set_target_properties(olcore_gdext PROPERTIES
   LIBRARY_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/game/addons/olcore/bin
   RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/game/addons/olcore/bin
   ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+  LIBRARY_OUTPUT_DIRECTORY_DEBUG ${CMAKE_SOURCE_DIR}/game/addons/olcore/bin
+  LIBRARY_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/game/addons/olcore/bin
+  LIBRARY_OUTPUT_DIRECTORY_RELWITHDEBINFO ${CMAKE_SOURCE_DIR}/game/addons/olcore/bin
+  LIBRARY_OUTPUT_DIRECTORY_MINSIZEREL ${CMAKE_SOURCE_DIR}/game/addons/olcore/bin
+  RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_SOURCE_DIR}/game/addons/olcore/bin
+  RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/game/addons/olcore/bin
+  RUNTIME_OUTPUT_DIRECTORY_RELWITHDEBINFO ${CMAKE_SOURCE_DIR}/game/addons/olcore/bin
+  RUNTIME_OUTPUT_DIRECTORY_MINSIZEREL ${CMAKE_SOURCE_DIR}/game/addons/olcore/bin
 )
 if(EMSCRIPTEN)
   # Web: a wasm side module, named as the web entry in olcore.gdextension
