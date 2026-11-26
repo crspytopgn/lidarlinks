@@ -1,0 +1,63 @@
+name: GDExtension
+
+# Builds the Olcore GDExtension (extensions/olcore) on Linux, Windows
+# and macOS, and uploads the per-platform binaries the `export` job
+# needs. The `core` job never builds it (BUILD_GDEXTENSION defaults to
+# OFF there). macOS builds both architectures for the universal export.
+# The web build never ships it: the GDScript port is the fallback there.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "extensions/olcore/**"
+      - "extensions/godot-cpp"
+      - "libs/olcore/**"
+      - ".github/workflows/gdextension.yml"
+  pull_request:
+    paths:
+      - "extensions/olcore/**"
+      - "extensions/godot-cpp"
+      - "libs/olcore/**"
+      - ".github/workflows/gdextension.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: GDExtension (${{ matrix.os }}${{ matrix.arch }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            arch: x86_64
+            cmake_arch: ""
+          - os: windows-latest
+            arch: x86_64
+            cmake_arch: ""
+          - os: macos-latest
+            arch: arm64
+            cmake_arch: "-DCMAKE_OSX_ARCHITECTURES=arm64"
+          - os: macos-latest
+            arch: x86_64
+            cmake_arch: "-DCMAKE_OSX_ARCHITECTURES=x86_64"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Configure
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_GDEXTENSION=ON ${{ matrix.cmake_arch }}
+      - name: Build extension
+        run: cmake --build build --config Release --target olcore_gdext --parallel
+      - name: Test snapshot core
+        run: ctest --test-dir build -C Release -R olcore_snapshot_tests --output-on-failure
+      - name: Upload library
+        uses: actions/upload-artifact@v4
+        with:
+          name: olcore-gdext-${{ matrix.os }}-${{ matrix.arch }}
+          path: game/addons/olcore/bin/
+          if-no-files-found: error
