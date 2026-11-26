@@ -36,3 +36,32 @@ namespace_id = "3971"
   [ratelimits.simple]
   limit = 60
   period = 60
+
+# Previews: Workers Builds runs `npx wrangler preview` on every PR, and Wrangler
+# refuses without a `previews` block. Every binding the Worker reads from `env`
+# needs a Preview-safe copy here. Durable Objects get a fresh namespace and
+# storage per Preview automatically (same class names, no script_name), and the
+# rate limiter uses a new namespace id (3973, next after production's 3971) so
+# Preview traffic never shares production's limiter. No production data is
+# touched. (Verified against Wrangler 4.168.0: `wrangler preview` only requires
+# a `previews` block with no <REPLACE_ME> placeholders; it does not require
+# every production binding to be mirrored.)
+[[previews.durable_objects.bindings]]
+name = "ROOMS"
+class_name = "RoomObject"
+
+[[previews.durable_objects.bindings]]
+name = "GAMES"
+class_name = "GameObject"
+
+[[previews.durable_objects.bindings]]
+name = "BOARDS"
+class_name = "BoardObject"
+
+[[previews.ratelimits]]
+name = "LIMITER"
+namespace_id = "3973"
+
+  [previews.ratelimits.simple]
+  limit = 60
+  period = 60
