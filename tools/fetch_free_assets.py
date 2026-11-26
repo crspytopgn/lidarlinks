@@ -107,14 +107,8 @@ SLOTS = {
     "sky_overcast": ("hdris", ["kloofendal_overcast_puresky", "overcast_soil_puresky"], ["overcast"], {"panorama.hdr": ("hdri", "1k", "hdr")}),
 }
 
-# Import settings Godot would otherwise guess: VRAM-compressed with mipmaps,
-# as 3D textures need. Lossy WebP was small to download but sat uncompressed
-# in video memory, and the runtime block-compressor only runs in the editor
-# (FreeAssets.gpu_compress), so exported games paid the full size; imported
-# VRAM-compressed, the exporter bakes the block format for each build
-# (S3TC on desktop, ETC2/ASTC on mobile) instead. Normal maps take the
-# normal_map form (BC5/RGTC on desktop), which keeps their bumps smooth;
-# lossless stays for the alpha maps whose fringes lossy compression invents.
+# Import settings Godot would otherwise guess: compressed with mipmaps, as
+# 3D textures need. Written next to each file before the project is imported.
 # The HDR sky is not imported: pack_sky() writes it for the game instead.
 TEXTURE_IMPORT = """[remap]
 
@@ -124,7 +118,6 @@ type="CompressedTexture2D"
 [params]
 
 compress/mode={mode}
-compress/normal_map={normal}
 compress/lossy_quality=0.85
 mipmaps/generate={mipmaps}
 process/size_limit={limit}
@@ -200,7 +193,7 @@ def fetch_slot(out_dir, slot, spec):
             pack_sky(path)
             continue
         with open(path + ".import", "w") as f:
-            f.write(TEXTURE_IMPORT.format(mode=2, normal=1 if out_name == "normal.jpg" else 0, limit=size_limit(f"{slot}_{out_name}"), mipmaps="true"))
+            f.write(TEXTURE_IMPORT.format(mode=1, limit=size_limit(f"{slot}_{out_name}"), mipmaps="true"))
     authors = ", ".join(info.get("authors", {}).keys())
     return f"- **{slot}**: [{info.get('name', asset_id)}](https://polyhaven.com/a/{asset_id}) by {authors or 'Poly Haven'}, CC0"
 
@@ -212,10 +205,8 @@ SMALL_SLOTS = ("path_", "dirt_", "bark_", "cliff_", "finish_")
 
 # Lossy WebP quality of the detail maps (normal, height and roughness).
 # They are high-frequency noise that shading turns into sparkle, so 0.75 is
-# indistinguishable from 0.85 at 1:1 (checked side by side) and saved about
-# 3 MB of every download while they were lossy. They are VRAM-compressed
-# now, which ignores the lossy quality; tune_detail_quality() below is kept
-# for any import still on lossy, and is a no-op otherwise.
+# indistinguishable from 0.85 at 1:1 (checked side by side) and saves about
+# 3 MB of every download. Colour maps keep TEXTURE_IMPORT's 0.85.
 DETAIL_QUALITY = 0.75
 DETAIL_MAPS = ("_normal.", "_height.", "_roughness.")
 
@@ -259,7 +250,7 @@ def fetch_ambient_ground(out_dir, slot):
                 open(marker, "w").close()
             for name, p in paths.items():
                 with open(p + ".import", "w") as f:
-                    f.write(TEXTURE_IMPORT.format(mode=2, normal=1 if name == "normal.jpg" else 0, limit=size_limit(f"{slot}_{name}"), mipmaps="true"))
+                    f.write(TEXTURE_IMPORT.format(mode=1, limit=size_limit(f"{slot}_{name}"), mipmaps="true"))
             return f"- **{slot}**: [{asset_id}]({AMBIENTCG}/view?id={asset_id}) by ambientCG, CC0"
         except Exception as e:  # noqa: BLE001 - try the next set, then Poly Haven
             print(f"  {slot}: {asset_id} failed: {e}")
@@ -290,7 +281,7 @@ def fetch_fabrics(out_dir):
         # 256 pixels: the weave is only seen in close-ups, and the browser's
         # video memory is tight.
         with open(path + ".import", "w") as f:
-            f.write(TEXTURE_IMPORT.format(mode=2, normal=1, limit=256, mipmaps="true"))
+            f.write(TEXTURE_IMPORT.format(mode=1, limit=256, mipmaps="true"))
         credits.append(f"- **{name}**: [{asset_id}]({AMBIENTCG}/view?id={asset_id}) by ambientCG, CC0")
     return credits
 
@@ -311,7 +302,7 @@ def fetch_leaves(out_dir):
             # transparent pixels, which then show as bright leaf edges.
             for p in paths.values():
                 with open(p + ".import", "w") as f:
-                    f.write(TEXTURE_IMPORT.format(mode=0, normal=0, limit=0, mipmaps="true"))
+                    f.write(TEXTURE_IMPORT.format(mode=0, limit=0, mipmaps="true"))
             return f"- **leaves**: [{asset_id}]({AMBIENTCG}/view?id={asset_id}) by ambientCG, CC0"
         except Exception as e:  # noqa: BLE001 - try the next set
             print(f"  leaves: {asset_id} failed: {e}")
@@ -332,12 +323,12 @@ def make_leaf_spray(out_dir):
     # atlas fills the gaps round the leaves with green, so no bright
     # fringes show.
     with open(out + ".import", "w") as f:
-        f.write(TEXTURE_IMPORT.format(mode=2, normal=0, limit=1024, mipmaps="true"))
+        f.write(TEXTURE_IMPORT.format(mode=1, limit=1024, mipmaps="true"))
     # The single leaves are now only the fallback (the sprays are drawn
     # from them above), so they ship small to keep the download in budget.
     for name in LEAF_MAPS:
         with open(os.path.join(out_dir, name) + ".import", "w") as f:
-            f.write(TEXTURE_IMPORT.format(mode=0, normal=0, limit=256, mipmaps="true"))
+            f.write(TEXTURE_IMPORT.format(mode=0, limit=256, mipmaps="true"))
 
 
 def make_fescue(out_dir):
@@ -352,7 +343,7 @@ def make_fescue(out_dir):
     # Lossy is fine (the gaps are filled with the blades' colours), at 512:
     # a tuft is 256 px, more than it ever covers on screen.
     with open(out + ".import", "w") as f:
-        f.write(TEXTURE_IMPORT.format(mode=2, normal=0, limit=256, mipmaps="true"))
+        f.write(TEXTURE_IMPORT.format(mode=1, limit=256, mipmaps="true"))
 
 
 def make_meadow(out_dir):
@@ -366,7 +357,7 @@ def make_meadow(out_dir):
         print("  meadow: drawing the plant atlas")
         meadow_atlas.build(out)
     with open(out + ".import", "w") as f:
-        f.write(TEXTURE_IMPORT.format(mode=2, normal=0, limit=512, mipmaps="true"))
+        f.write(TEXTURE_IMPORT.format(mode=1, limit=512, mipmaps="true"))
 
 
 def make_sward(out_dir):
@@ -379,7 +370,7 @@ def make_sward(out_dir):
         print("  sward: drawing the grass atlas")
         sward_atlas.build(out)
     with open(out + ".import", "w") as f:
-        f.write(TEXTURE_IMPORT.format(mode=2, normal=0, limit=512, mipmaps="true"))
+        f.write(TEXTURE_IMPORT.format(mode=1, limit=512, mipmaps="true"))
 
 
 def fetch_twigs(out_dir):
@@ -397,7 +388,7 @@ def fetch_twigs(out_dir):
     # so no bright fringes show (unlike the leaves); the alpha is lossless.
     for name, p in paths.items():
         with open(p + ".import", "w") as f:
-            f.write(TEXTURE_IMPORT.format(mode=2 if name.endswith(".jpg") else 0, normal=0, limit=512, mipmaps="true"))
+            f.write(TEXTURE_IMPORT.format(mode=1 if name.endswith(".jpg") else 0, limit=512, mipmaps="true"))
     return f"- **twigs**: [Fir Tree 01](https://polyhaven.com/a/{TWIG_ASSET}) twig atlas by Poly Haven, CC0"
 
 
@@ -416,7 +407,7 @@ def fetch_scan_trees(out_dir):
         # so no light fringes), the alpha lossless.
         for name, p in paths.items():
             with open(p + ".import", "w") as f:
-                f.write(TEXTURE_IMPORT.format(mode=0 if name.endswith(".png") else 2, normal=1 if name == "trunk_normal.jpg" else 0, limit=maps[name][2], mipmaps="true"))
+                f.write(TEXTURE_IMPORT.format(mode=0 if name.endswith(".png") else 1, limit=maps[name][2], mipmaps="true"))
         info = json.loads(get(f"{API}/info/{asset}"))
         authors = ", ".join(info.get("authors", {}).keys()) or "Poly Haven"
         credits.append(f"- **tree**: [{info.get('name', asset)}](https://polyhaven.com/a/{asset}) by {authors}, CC0")
