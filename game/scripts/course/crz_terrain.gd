@@ -149,6 +149,39 @@ func finalize() -> void:
 				fill[cell] += 1
 
 
+## The lookup grid finalize() built, as plain data (CrzCourseLoader caches
+## it with the decoded course, so a repeat load restores it instead of
+## rebuilding it).
+func grid_dict() -> Dictionary:
+	return {"origin": _origin, "cols": _cols, "rows": _rows,
+		"cell_start": _cell_start, "cell_items": _cell_items, "cell_max": _cell_max}
+
+
+## Takes `normals` and a grid_dict() back in place of _vertex_normals() and
+## finalize(). False when they don't fit this terrain (a stale cache), and
+## the caller then rebuilds them instead.
+func restore_grid(p_normals: PackedVector3Array, grid: Dictionary) -> bool:
+	if p_normals.size() != positions.size():
+		return false
+	var cols := int(grid.get("cols", 0))
+	var rows := int(grid.get("rows", 0))
+	var start: PackedInt32Array = grid.get("cell_start", PackedInt32Array())
+	var items: PackedInt32Array = grid.get("cell_items", PackedInt32Array())
+	var maxs: PackedFloat32Array = grid.get("cell_max", PackedFloat32Array())
+	if cols <= 0 or rows <= 0 or start.size() != cols * rows + 1 or maxs.size() != cols * rows:
+		return false
+	if items.size() != start[start.size() - 1]:
+		return false
+	normals = p_normals
+	_origin = grid.get("origin", Vector2.ZERO)
+	_cols = cols
+	_rows = rows
+	_cell_start = start
+	_cell_items = items
+	_cell_max = maxs
+	return true
+
+
 func _col(x: float) -> int:
 	return clampi(int((x - _origin.x) / CELL), 0, _cols - 1)
 

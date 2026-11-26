@@ -260,7 +260,7 @@ func apply(settings: GraphicsSettings) -> void:
 	var photo := settings.lighting == GraphicsSettings.Lighting.PHOTOREAL
 	sun.directional_shadow_max_distance = settings.shadow_distance()
 	sun.directional_shadow_split_1 = first_split(settings.shadow_distance())
-	sun.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_2_SPLITS if q == GraphicsSettings.Quality.LOW else DirectionalLight3D.SHADOW_PARALLEL_4_SPLITS
+	sun.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_4_SPLITS if settings.shadow_splits() == 4 else DirectionalLight3D.SHADOW_PARALLEL_2_SPLITS
 	# Angular size of the sun gives contact-hardening soft shadows (Forward+).
 	# Kept small: at 0.6 degrees the soft-shadow filter, over the far
 	# splits' big texels, blurred the golfer's and the bag's shadows to a

@@ -209,6 +209,7 @@ var grass := 0
 var foliage_wind := false
 ## Shadows of passing clouds drifting over the course with the wind.
 var cloud_shadows := false
+var terrain_occlusion := true  ## the ground hides far trees and objects behind hills (TerrainOcclusion)
 ## 0 classic trees, 1 to 3 photo-textured 3D trees (see TREE_NAMES).
 var trees := 0
 ## Photoreal lighting only, and not part of the looks.
@@ -454,6 +455,7 @@ static func _load_saved(path: String) -> GraphicsSettings:
 	s.foliage_wind = bool(cfg.get_value(SECTION, "foliage_wind", s.foliage_wind))
 	s.cloud_shadows = bool(cfg.get_value(SECTION, "cloud_shadows", s.cloud_shadows))
 	s.trees = clampi(int(cfg.get_value(SECTION, "trees", s.trees)), 0, TREE_NAMES.size() - 1)
+	s.terrain_occlusion = bool(cfg.get_value(SECTION, "terrain_occlusion", s.terrain_occlusion))
 	return s
 
 
@@ -502,7 +504,7 @@ func save(path := PATH) -> void:
 	cfg.set_value(GAME_SECTION, "captions", captions)
 	cfg.set_value(GAME_SECTION, "launch_monitor", launch_monitor)
 	cfg.set_value(SECTION, "look_version", LOOK_VERSION)
-	for key in ["look", "auto_look", "lean", "lighting", "upscaler", "dynamic_res", "sharpen", "bloom", "vignette", "grain", "grade", "ssao", "dof", "grass", "foliage_wind", "cloud_shadows", "trees"]:
+	for key in ["look", "auto_look", "lean", "lighting", "upscaler", "dynamic_res", "sharpen", "bloom", "vignette", "grain", "grade", "ssao", "dof", "grass", "foliage_wind", "cloud_shadows", "terrain_occlusion", "trees"]:
 		cfg.set_value(SECTION, key, get(key))
 	var err := cfg.save(path)
 	if err != OK:
@@ -606,8 +608,32 @@ static func web_render_scale(scale: float, pixels: float, q: int, dpr: float) ->
 	return maxf(s, minf(scale, lowest))
 
 
+## The sun's shadow atlas, per quality (Low to Ultra): four splits at Ultra
+## on Forward+ take 8192 squared (256 MB of video memory); Compatibility
+## caps at 4096, and Medium takes 2048 — the baked ground shade carries
+## the far trees' shadows, so the atlas is spent near the player, where
+## the shadows are sharpest.
 func shadow_atlas_size() -> int:
-	return [2048, 4096, 4096, 8192][quality]
+	return shadow_atlas_size_for(quality, is_forward_plus())
+
+
+static func shadow_atlas_size_for(q: int, forward_plus: bool) -> int:
+	var size: int = [2048, 2048, 4096, 8192][clampi(q, 0, 3)]
+	return mini(size, 8192 if forward_plus else 4096)
+
+
+## How many directional-light shadow splits the sun draws: four only at
+## Ultra on Forward+, two everywhere else. Each split re-draws every
+## caster, so two splits roughly halves the shadow pass's draw calls; the
+## first split still covers the golfer and the tee at full detail
+## (Scenery.first_split), and the baked ground shade carries the far
+## trees' shadows.
+func shadow_splits() -> int:
+	return shadow_splits_for(quality, is_forward_plus())
+
+
+static func shadow_splits_for(q: int, forward_plus: bool) -> int:
+	return 4 if q >= Quality.ULTRA and forward_plus else 2
 
 
 func soft_shadow_quality() -> RenderingServer.ShadowQuality:

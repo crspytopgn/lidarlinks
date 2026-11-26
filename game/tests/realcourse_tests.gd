@@ -48,6 +48,7 @@ func run_all() -> Array[String]:
 	_test_tee_off_the_last_green()
 	_test_pin_out_of_the_pond()
 	_test_lidar_must_agree()
+	_test_fetch_cache()
 	return failures
 
 
@@ -1884,3 +1885,62 @@ func _test_lidar_must_agree() -> void:
 	check(not RealLandscape.dry(c), "ground at sea level isn't dry")
 	c.source["base_height"] = 6.0
 	check(RealLandscape.dry(c), "ground 6 m up is")
+
+
+## The fetcher's disk cache: answers come back without the network, a
+## different byte range is another entry, stale answers are missed, and
+## the oldest entries go first when the cap is hit.
+func _test_fetch_cache() -> void:
+	var old_dir := RealCourseFetcher.fetch_cache_dir
+	var old_max := RealCourseFetcher.fetch_cache_max_bytes
+	RealCourseFetcher.fetch_cache_dir = "user://test_fetch_cache"
+	RealCourseFetcher.fetch_cache_max_bytes = 256
+	DirAccess.make_dir_recursive_absolute(RealCourseFetcher.fetch_cache_dir)
+	for name in DirAccess.open(RealCourseFetcher.fetch_cache_dir).get_files():
+		DirAccess.remove_absolute(RealCourseFetcher.fetch_cache_dir.path_join(name))
+	var tile := "https://example.invalid/tiles/1/2/3.png"
+	var key := RealCourseFetcher._fetch_cache_key(tile, HTTPClient.METHOD_GET, "", [])
+	check(key.length() == 64, "fetch cache key is a hash")
+	check(RealCourseFetcher._fetch_cache_lookup(key, tile).is_empty(), "a miss before any store")
+	RealCourseFetcher._fetch_cache_store(key, 200, PackedByteArray([1, 2, 3]))
+	var hit := RealCourseFetcher._fetch_cache_lookup(key, tile)
+	check(not hit.is_empty() and int(hit[0]) == 200 and (hit[1] as PackedByteArray) == PackedByteArray([1, 2, 3]), "a stored answer comes back")
+	var ranged := RealCourseFetcher._fetch_cache_key(tile, HTTPClient.METHOD_GET, "", ["Range: bytes=0-9"])
+	check(ranged != key, "a byte range is another cache entry")
+	check(RealCourseFetcher._fetch_cache_key(tile, HTTPClient.METHOD_POST, "data=x", []) != key, "a map query is another cache entry")
+	# Stale: the same file with its saved time a month and a day back.
+	var stale := PackedByteArray()
+	stale.resize(12)
+	stale.encode_u32(0, 200)
+	stale.encode_u64(4, Time.get_unix_time_from_system() - 31 * 86400)
+	var f := FileAccess.open(RealCourseFetcher._fetch_cache_path(key), FileAccess.WRITE)
+	f.store_buffer(stale)
+	f.store_buffer(PackedByteArray([1, 2, 3]))
+	f.close()  # a nulled handle stays open in this frame; close it so the prune can read the file back
+	check(RealCourseFetcher._fetch_cache_lookup(key, tile).is_empty(), "a stale tile answer is a miss")
+	# Pruning: three entries of 112 bytes against a 256-byte cap, the
+	# oldest saved first, then one fresh store drops the next oldest.
+	var body := PackedByteArray()
+	body.resize(100)
+	var keys: Array[String] = []
+	for i in 3:
+		var k := RealCourseFetcher._fetch_cache_key(tile + "?%d" % i, HTTPClient.METHOD_GET, "", [])
+		keys.append(k)
+		var h := PackedByteArray()
+		h.resize(12)
+		h.encode_u32(0, 200)
+		h.encode_u64(4, Time.get_unix_time_from_system() - (300 - 100 * i))
+		var g := FileAccess.open(RealCourseFetcher._fetch_cache_path(k), FileAccess.WRITE)
+		g.store_buffer(h)
+		g.store_buffer(body)
+		g.close()
+	var fresh := RealCourseFetcher._fetch_cache_key(tile + "?fresh", HTTPClient.METHOD_GET, "", [])
+	RealCourseFetcher._fetch_cache_store(fresh, 200, body)
+	check(RealCourseFetcher._fetch_cache_lookup(keys[0], tile).is_empty(), "pruning drops the oldest first")
+	check(RealCourseFetcher._fetch_cache_lookup(keys[1], tile).is_empty(), "and the next oldest when still over")
+	check(not RealCourseFetcher._fetch_cache_lookup(keys[2], tile).is_empty(), "but keeps the newest old entry")
+	check(not RealCourseFetcher._fetch_cache_lookup(fresh, tile).is_empty(), "and the fresh one")
+	for name in DirAccess.open(RealCourseFetcher.fetch_cache_dir).get_files():
+		DirAccess.remove_absolute(RealCourseFetcher.fetch_cache_dir.path_join(name))
+	RealCourseFetcher.fetch_cache_dir = old_dir
+	RealCourseFetcher.fetch_cache_max_bytes = old_max

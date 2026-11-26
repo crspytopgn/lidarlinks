@@ -23,10 +23,15 @@ and don't start a "(needs data)" item on guesses.
   in a session, use them only for analysis and write findings into
   `docs/formats/` in your own words.
 - Keep `libs/olcore` engine-independent: no Godot headers there.
-- Until GDExtension lands, `game/scripts/physics/` holds a GDScript port of
-  `libs/olcore` (`ball_physics.cpp`, `shot.cpp`, `swing.cpp`, `scoring.cpp`).
+- `game/scripts/physics/` holds a GDScript port of `libs/olcore`
+  (`ball_physics.cpp`, `shot.cpp`, `swing.cpp`, `scoring.cpp`).
   Change both together; `game/tests/run_tests.gd` checks the port against
-  numbers printed by the C++ tests. `obstacle_field.gd` ports
+  numbers printed by the C++ tests. The GDExtension (Phase 1, see
+  `docs/gdextension.md`) exposes `olcore::simulate_shot` to the game
+  through `OlcoreShotModel`, opt-in only (`--native-physics` /
+  `LIDARLINKS_NATIVE_PHYSICS=1`), with the GDScript port as the
+  default and the fallback — it stays the web implementation until
+  olcore is built for wasm, so keep the port in step with the C++. `obstacle_field.gd` ports
   `obstacles.cpp`, `links_aero.gd` ports `links_flight.cpp` and
   `links_ground.gd` ports `links_ground.cpp`, `links_launch.gd` ports
   `links_launch.cpp` the same way, `links_mouse.gd` ports `links_mouse.cpp`, `links_objects.gd` ports

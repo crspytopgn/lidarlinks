@@ -655,6 +655,33 @@ cascade. The tee view of the round was already at 1.9 million and this took
 it just over 2.0. A hero golfer of that size is ordinary for a sports game,
 and the extra 0.2 million is about 5 to 6 golfers' worth.
 
+2026-11-25: hole changes stopped rebuilding what the hole does not
+change. The golfers are kept by look (creating one bakes its meshes)
+and re-parented to the new hole, and the terrain's ground — chunks,
+paths, water, rocks, plants — is kept too on a designed course, with
+only the distant trees re-sorted for the hole; the gallery already
+reused its people the same way, and grass, fescue and debris already
+skipped setup when the terrain was the same object. GroundShade
+re-bakes only when its key changes (hole, sun, casters, size) and
+bakes at 1024 pixels below High, and it starts a few frames past the
+hole change, so the change never waits on the synchronous readback
+(GDScript has no async readback). Shadow cuts: two splits and a
+smaller atlas below Ultra (8192 and four splits only at Ultra on
+Forward+), and trees, placed objects and course-placed models whose
+shadows cannot reach the line of play skip the sun's shadow pass —
+the baked ground shade carries them. Occlusion from the terrain
+itself (TerrainOcclusion, Settings > Terrain occlusion, on by
+default): far tree batches and placed objects behind a hill are
+hidden, judged by sight lines that must clear the ground by 2 m at
+4 m samples, re-checked at most twice a second once the camera has
+moved 8 m, never within 60 m of the camera. At High the grass
+reaches 48 m instead of 55 and the mown fur 4 m instead of 5, the
+fescue 150 m instead of 180, the meadow 70 m instead of 85 and the
+sward 20 m instead of 24 — densities untouched, the far tufts and
+cards being a few pixels where the ground texture carries them. The
+golfer's mesh is unchanged: the saving there is not rebuilding him
+every hole.
+
 ## Download size
 
 `tools/size_report.py` runs after the CI export. It writes each build's
@@ -684,7 +711,6 @@ defaults).
 
 ## Still to do
 
-- Occlusion from the terrain itself (hollows, cliffs).
 - Texture compression tiers per device (Basis/ASTC), and the HD pack in
   the browser.
 
@@ -725,6 +751,19 @@ memory. At the Ultra tee view this cut Forward+ video memory from 1027 to
 it (players' builds still use the larger figure); importing the textures
 VRAM-compressed for desktop exports would be the real fix. Compatibility
 keeps them as they are, so its CI budget still stands for the browser.
+
+2026-11-25: the real fix landed. The free textures
+(`tools/fetch_free_assets.py`) and the scanned-tree textures
+(`game/assets/trees/textures/*.import`) are imported VRAM-compressed
+(normal maps in their normal form), so the exporter bakes the block
+format for each build instead of the game compressing at load; the
+alpha maps stay lossless, as lossy compression invents bright fringes
+round transparent pixels. `FreeAssets.gpu_compress` stays as the fallback
+for textures that arrive uncompressed at runtime (the Megascans pack,
+the golfer's look pack), and Compatibility still keeps its WebP, as
+phones in the browser can't read S3TC. The check is that the textures
+come out VRAM-compressed: the imported files are named `*.s3tc.ctex` on
+desktop, and `tools/size_report.py` shows the format after the CI export.
 
 The benchmark ends with 90 seconds of automatic play (shots, flights,
 camera moves, the next hole) with v-sync on, and reports frame-time

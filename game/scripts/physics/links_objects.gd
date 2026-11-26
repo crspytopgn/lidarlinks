@@ -132,6 +132,134 @@ func model_count() -> int:
 	return _model_mesh.size()
 
 
+## The alpha of `img` as bytes, one per pixel. Billboards read their
+## picture bottom-row first (LinksSpriteMask row 0 is the bottom row), so
+## `flip` is true for them; 3D hole textures read it top-row first (their
+## uvs count v = 0 at the top). Other formats are converted on a copy.
+static func _alpha_bytes(img: Image, flip: bool) -> PackedByteArray:
+	if img == null:
+		return PackedByteArray()
+	var im := img
+	if im.get_format() != Image.FORMAT_RGBA8:
+		im = img.duplicate() as Image
+		im.convert(Image.FORMAT_RGBA8)
+	var data := im.get_data()
+	var w := im.get_width()
+	var h := im.get_height()
+	var out := PackedByteArray()
+	out.resize(w * h)
+	for y in h:
+		var row := h - 1 - y if flip else y
+		for x in w:
+			out[y * w + x] = data[(row * w + x) * 4 + 3]
+	return out
+
+
+## The object types for the native bake (OlcoreLinksObjects.set_types):
+## {collisions, shapes, aspects, mask_widths, mask_heights, mask_alphas,
+## mask_offsets}. Mask alpha is bottom-row first (see _alpha_bytes); a
+## type without a mask gets width 0.
+func export_types() -> Dictionary:
+	var collisions := PackedInt32Array()
+	var shapes := PackedFloat32Array()
+	var aspects := PackedFloat32Array()
+	var widths := PackedInt32Array()
+	var heights := PackedInt32Array()
+	var alphas := PackedByteArray()
+	var offsets := PackedInt32Array()
+	for t in types:
+		collisions.append(t.collision)
+		shapes.append_array(t.shape)
+		aspects.append(t.aspect)
+		offsets.append(alphas.size())
+		if t.mask == null:
+			widths.append(0)
+			heights.append(0)
+		else:
+			widths.append(t.mask.get_width())
+			heights.append(t.mask.get_height())
+			alphas.append_array(_alpha_bytes(t.mask, true))
+	return {"collisions": collisions, "shapes": shapes, "aspects": aspects,
+			"mask_widths": widths, "mask_heights": heights, "mask_alphas": alphas,
+			"mask_offsets": offsets}
+
+
+## Billboards whose picture meets the Godot-metre rect (x0, z0, x1, z1),
+## in the game's frame (feet, z up): {bases, heights, anchor_x, anchor_z,
+## types}. A billboard's reach is its width in the game's frame, so the
+## rect is widened by it before the test.
+func billboards_in(x0: float, z0: float, x1: float, z1: float) -> Dictionary:
+	var bases := PackedVector3Array()
+	var heights := PackedFloat32Array()
+	var anchor_x := PackedFloat32Array()
+	var anchor_z := PackedFloat32Array()
+	var type_ids := PackedInt32Array()
+	var fpm := LinksGround.FEET_PER_METRE
+	var gx0 := -x1 * fpm
+	var gx1 := -x0 * fpm
+	var gy0 := z0 * fpm
+	var gy1 := z1 * fpm
+	for i in _base.size():
+		var base: Vector3 = _base[i]
+		var aspect := types[_type[i]].aspect if _type[i] >= 0 and _type[i] < types.size() else 1.0
+		var reach := _height[i] * aspect
+		if base.x + reach < gx0 or base.x - reach > gx1:
+			continue
+		if base.y + reach < gy0 or base.y - reach > gy1:
+			continue
+		bases.append(base)
+		heights.append(_height[i])
+		anchor_x.append(_anchor_x[i])
+		anchor_z.append(_anchor_z[i])
+		type_ids.append(_type[i])
+	return {"bases": bases, "heights": heights, "anchor_x": anchor_x,
+			"anchor_z": anchor_z, "types": type_ids}
+
+
+## The 3D meshes, one Dictionary per mesh, for the native bake
+## (OlcoreLinksObjects.add_mesh): {positions, uvs, corners, faces,
+## hole_widths, hole_heights, hole_alphas, hole_offsets}. Hole alpha is
+## top-row first (see _alpha_bytes); a solid texture gets width 0.
+func export_meshes() -> Array:
+	var out := []
+	for mesh in meshes:
+		var hole_widths := PackedInt32Array()
+		var hole_heights := PackedInt32Array()
+		var hole_alphas := PackedByteArray()
+		var hole_offsets := PackedInt32Array()
+		for hole in mesh.holes:
+			hole_offsets.append(hole_alphas.size())
+			if hole == null:
+				hole_widths.append(0)
+				hole_heights.append(0)
+			else:
+				hole_widths.append(hole.get_width())
+				hole_heights.append(hole.get_height())
+				hole_alphas.append_array(_alpha_bytes(hole, false))
+		out.append({"positions": mesh.positions, "uvs": mesh.uvs, "corners": mesh.corners,
+				"faces": mesh.faces, "hole_widths": hole_widths, "hole_heights": hole_heights,
+				"hole_alphas": hole_alphas, "hole_offsets": hole_offsets})
+	return out
+
+
+## Placed 3D models whose bounds meet the Godot-metre rect, one
+## Dictionary per model: {mesh, points}. Points are in the game's frame.
+func models_in(x0: float, z0: float, x1: float, z1: float) -> Array:
+	var out := []
+	var fpm := LinksGround.FEET_PER_METRE
+	var gx0 := -x1 * fpm
+	var gx1 := -x0 * fpm
+	var gy0 := z0 * fpm
+	var gy1 := z1 * fpm
+	for i in _model_mesh.size():
+		var lo: Vector3 = _model_lo[i]
+		var hi: Vector3 = _model_hi[i]
+		if hi.x < gx0 or lo.x > gx1 or hi.y < gy0 or lo.y > gy1:
+			continue
+		out.append({"mesh": _model_mesh[i], "points": _model_points[i]})
+	return out
+
+
 ## The first billboard or 3D object the path p -> q goes through, skipping
 ## the billboard `last`; null if none. `facing` is the horizontal unit
 ## vector from the billboards to the viewer. Mirrors olcore::LinksObjects::hit.

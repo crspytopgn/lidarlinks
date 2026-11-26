@@ -170,6 +170,7 @@ func _process(_delta: float) -> bool:
 	_run("caddie_and_buggy_in_round", _test_caddie_and_buggy_in_round)
 	_run("target_view", _test_target_view)
 	_run("units", _test_units)
+	_run("terrain_occlusion", _test_terrain_occlusion)
 	_run("swing_guide", _test_swing_guide)
 	_run("feet_on_slopes", _test_feet_on_slopes)
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(PlayerProfiles.path))
@@ -2363,6 +2364,16 @@ func _test_graphics_settings() -> void:
 	# and keeps its old share on the short ones (Low, Medium, the web).
 	_check(is_equal_approx(Scenery.first_split(150.0), Scenery.SUN_SPLITS.x), "shadow split: Low keeps its share")
 	_check(is_equal_approx(Scenery.first_split(600.0) * 600.0, Scenery.NEAR_SPLIT), "shadow split: Ultra's first split is NEAR_SPLIT deep")
+	# Shadow splits and atlas: four splits and the 8192 atlas (256 MB) only
+	# at Ultra on Forward+; two splits everywhere else, and Compatibility
+	# caps the atlas at 4096 (64 MB).
+	_check(GraphicsSettings.shadow_splits_for(GraphicsSettings.Quality.ULTRA, true) == 4, "shadow splits: four at Ultra on Forward+")
+	_check(GraphicsSettings.shadow_splits_for(GraphicsSettings.Quality.ULTRA, false) == 2, "shadow splits: two at Ultra on Compatibility")
+	_check(GraphicsSettings.shadow_splits_for(GraphicsSettings.Quality.HIGH, true) == 2, "shadow splits: two below Ultra")
+	_check(GraphicsSettings.shadow_atlas_size_for(GraphicsSettings.Quality.ULTRA, true) == 8192, "shadow atlas: 8192 at Ultra on Forward+")
+	_check(GraphicsSettings.shadow_atlas_size_for(GraphicsSettings.Quality.ULTRA, false) == 4096, "shadow atlas: 4096 at Ultra on Compatibility")
+	_check(GraphicsSettings.shadow_atlas_size_for(GraphicsSettings.Quality.MEDIUM, true) == 2048, "shadow atlas: 2048 at Medium")
+	_check(GraphicsSettings.shadow_atlas_size_for(GraphicsSettings.Quality.HIGH, false) == 4096, "shadow atlas: 4096 at High on Compatibility")
 	# The learned grade: a 32-cubed lookup per time of day and renderer.
 	for t in [GraphicsSettings.TimeOfDay.AFTERNOON, GraphicsSettings.TimeOfDay.MORNING, GraphicsSettings.TimeOfDay.MIDDAY, GraphicsSettings.TimeOfDay.GOLDEN]:
 		for fwd in [false, true]:
@@ -2728,6 +2739,16 @@ func _test_ground_shade() -> void:
 	var placed := GroundShade.placed_casters(hole)
 	_check(placed.size() % GroundShade.CASTER_SIZE == 0, "placed objects give whole casters")
 	GroundShade.bake(hole, null, sun)  # headless: nothing to draw, no error
+	# The bake key: the same hole, sun and casters bake once, and any of
+	# them moving bakes again; below High the bake is smaller (soft blobs
+	# at a 0.9 m texel instead of 0.6 m).
+	var footprints := PackedFloat32Array()
+	var key := GroundShade._key_for(hole.number, 0, rect, sun, GroundShade.MAX_PIXELS, casters, footprints)
+	_check(key == GroundShade._key_for(hole.number, 0, rect, sun, GroundShade.MAX_PIXELS, casters, footprints), "the same shade has the same key")
+	_check(key != GroundShade._key_for(hole.number, 0, rect, Vector3(1, -1, 0).normalized(), GroundShade.MAX_PIXELS, casters, footprints), "a moved sun changes the key")
+	_check(key != GroundShade._key_for(hole.number, 0, rect, sun, GroundShade.MAX_PIXELS, PackedFloat32Array([1, 0, 0, 4, 10, 3, 5]), footprints), "a moved caster changes the key")
+	_check(GroundShade.max_pixels_for(GraphicsSettings.Quality.ULTRA) == GroundShade.MAX_PIXELS and GroundShade.max_pixels_for(GraphicsSettings.Quality.HIGH) == GroundShade.MAX_PIXELS, "full bake at High and Ultra")
+	_check(GroundShade.max_pixels_for(GraphicsSettings.Quality.MEDIUM) == 1024 and GroundShade.max_pixels_for(GraphicsSettings.Quality.LOW) == 1024, "smaller bake below High")
 	# Photo ground: the pale 2003 colours become deeper, darker turf.
 	var pale := Color(0.62, 0.78, 0.55)
 	var turf := CrzTerrain.realistic(pale, Surface.Type.FAIRWAY)
@@ -7630,6 +7651,33 @@ class _RidgeTerrain extends CourseTerrain:
 	func height_at(_x: float, z: float) -> float:
 		# A 12 m ridge 15 m short of a 230 m target.
 		return 12.0 * maxf(0.0, 1.0 - absf(z - 215.0) / 6.0)
+
+
+## Terrain occlusion: a low thing behind the ridge is hidden, a tall
+## one over it is not, and flat ground hides nothing. A batch hides only
+## when every sampled top hides, so one tall tree over the crest keeps
+## its cell visible.
+func _test_terrain_occlusion() -> void:
+	var hill := _RidgeTerrain.new()
+	var flat := TiltTerrain.new(Vector2.ZERO)
+	var eye := Vector3(0, 2, 0)
+	var far := Vector3(0, 0, 230)
+	_check(TerrainOcclusion.hidden_by_terrain(hill, eye, far + Vector3.UP * 8.0), "a low top behind the ridge is hidden")
+	_check(not TerrainOcclusion.hidden_by_terrain(hill, eye, far + Vector3.UP * 20.0), "a tall top over the ridge is not")
+	_check(not TerrainOcclusion.hidden_by_terrain(flat, eye, far + Vector3.UP * 8.0), "flat ground hides nothing")
+	_check(not TerrainOcclusion.hidden_by_terrain(hill, eye, eye + Vector3(0, 0, 0.5)), "too short a sight line hides nothing")
+	_check(not TerrainOcclusion.hidden_by_terrain(null, eye, far), "no terrain hides nothing")
+	_check(TerrainOcclusion.batch_hidden(hill, eye, Vector3(0, 0, 240), 5.0, 6.0), "a low batch behind the ridge hides")
+	_check(not TerrainOcclusion.batch_hidden(hill, eye, Vector3(0, 0, 240), 5.0, 20.0), "a tall batch over the ridge does not")
+	_check(not TerrainOcclusion.batch_hidden(flat, eye, far, 10.0, 8.0), "a low batch on flat ground does not")
+	# The setting: on by default, saved and read back.
+	var g := GraphicsSettings.new()
+	_check(g.terrain_occlusion, "terrain occlusion is on by default")
+	var path := "user://test_occlusion.cfg"
+	g.terrain_occlusion = false
+	g.save(path)
+	_check(not GraphicsSettings.load_saved(path).terrain_occlusion, "the setting is saved and read back")
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
 
 
 ## Settings > Units: yards and feet (mph) or metres (km/h), saved with the

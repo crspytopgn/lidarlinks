@@ -7,12 +7,14 @@ extends CourseLoader
 ## Most course archives are locked. The cipher tables and key are recovered
 ## from the player's game executable the first time and kept in
 ## user://crz_keys.cfg. The decoded terrain is cached in user://course_cache/
-## so later loads skip the slow decrypt.
+## so later loads skip the slow decrypt — and with it the vertex normals and
+## the lookup grid _build used to work out again on every load (see decode):
+## a repeat load restores them instead of rebuilding them.
 
 const FEET := 0.3048
 const KEYS_PATH := "user://crz_keys.cfg"
 const CACHE_DIR := "user://course_cache"
-const CACHE_VERSION := 5
+const CACHE_VERSION := 6
 static var EXE_NAMES := ["LINKSM_1.EXE", "LinksMMIII.exe", "LinksM~1.exe"]
 static var TEXTURE_LIBRARIES := ["STDTER_1.LIB", "StdTerrain.lib", "StdTer~1.lib"]
 ## How far one repeat of a free ground texture spans.
@@ -32,6 +34,12 @@ const MATERIAL_SLOTS := 12
 static var _keys := {}
 static var _free_means := {}  ## free ground slot -> its average colour
 static var _library: Arc0 = null
+## This course's decoded textures (lowercased name -> Texture2D), so a
+## repeat load skips the TGA decode and the mipmaps. One course only: the
+## same texture name in another course is another texture, so the cache is
+## cleared when the course (its cache key) changes.
+static var _tex_cache := {}
+static var _tex_cache_key := ""
 
 
 func can_load(path: String) -> bool:
@@ -41,7 +49,8 @@ func can_load(path: String) -> bool:
 
 func load_course(path: String) -> CourseData:
 	HdPack.course = path.get_file().get_basename().to_lower()
-	var data := _cached(path)
+	var key := _cache_key(path)
+	var data := _cached(key, path)
 	var archive: CrzArchive = null
 	if data.is_empty():
 		archive = _open(path)
@@ -52,8 +61,8 @@ func load_course(path: String) -> CourseData:
 			return null
 		if data.name.is_empty():
 			data.name = path.get_file().get_basename().capitalize()
-		_store_cache(path, data)
-	return _build(path, data, archive)
+		_store_cache(key, path, data)
+	return _build(path, data, archive, key)
 
 
 # --- Keys and cache -----------------------------------------------------------
@@ -106,16 +115,33 @@ static func _game_keys(course_path: String) -> Dictionary:
 	return _keys
 
 
-static func _cache_path(path: String) -> String:
-	var size := 0
+## The cache key for a course file: the SHA-256 of its bytes, so a course
+## that changes (even to the same size) gets a fresh cache, and two courses
+## that share a name do not share one. "" when the file can't be read; the
+## load then decodes and doesn't store.
+static func _cache_key(path: String) -> String:
 	var f := FileAccess.open(path, FileAccess.READ)
-	if f != null:
-		size = f.get_length()
-	return CACHE_DIR.path_join("%s_%d.bin" % [path.get_file().get_basename().to_lower(), size])
+	if f == null:
+		return ""
+	var ctx := HashingContext.new()
+	if ctx.start(HashingContext.HASH_SHA256) != OK:
+		return ""
+	while not f.eof_reached():
+		var chunk := f.get_buffer(1 << 20)
+		if chunk.is_empty():
+			break
+		ctx.update(chunk)
+	return ctx.finish().hex_encode()
 
 
-static func _cached(path: String) -> Dictionary:
-	var f := FileAccess.open_compressed(_cache_path(path), FileAccess.READ, FileAccess.COMPRESSION_ZSTD)
+static func _cache_path(key: String, path: String) -> String:
+	return CACHE_DIR.path_join("%s_%s.bin" % [path.get_file().get_basename().to_lower(), key])
+
+
+static func _cached(key: String, path: String) -> Dictionary:
+	if key.is_empty():
+		return {}
+	var f := FileAccess.open_compressed(_cache_path(key, path), FileAccess.READ, FileAccess.COMPRESSION_ZSTD)
 	if f == null:
 		return {}
 	var v: Variant = f.get_var()
@@ -124,9 +150,11 @@ static func _cached(path: String) -> Dictionary:
 	return v
 
 
-static func _store_cache(path: String, data: Dictionary) -> void:
+static func _store_cache(key: String, path: String, data: Dictionary) -> void:
+	if key.is_empty():
+		return
 	DirAccess.make_dir_recursive_absolute(CACHE_DIR)
-	var f := FileAccess.open_compressed(_cache_path(path), FileAccess.WRITE, FileAccess.COMPRESSION_ZSTD)
+	var f := FileAccess.open_compressed(_cache_path(key, path), FileAccess.WRITE, FileAccess.COMPRESSION_ZSTD)
 	if f != null:
 		f.store_var(data)
 
@@ -136,13 +164,22 @@ static func _store_cache(path: String, data: Dictionary) -> void:
 ## Everything the game needs from an open archive, as plain data (so it can
 ## be cached): {version, name, holes, positions, triangles, triangle_material,
 ## ground_classes, terrain_types, hole_shapes, ob_shapes, material_textures,
-## material_layers, triangle_mapping, mappings, objects}. Empty on error.
+## material_layers, triangle_mapping, mappings, objects, normals, grid}.
+## Empty on error. The normals and the lookup grid are worked out here,
+## once, rather than in _build on every load: they depend only on the
+## terrain, so the cached copy is the built one.
 static func decode(archive: CrzArchive) -> Dictionary:
 	var holes := parse_holes(archive.read_named("header"))
 	var terrain := parse_terrain(archive.read_named("vertex"))
 	if holes.is_empty() or terrain.is_empty():
 		push_warning("Course has no holes or no terrain")
 		return {}
+	var normals := _vertex_normals(terrain.positions, terrain.triangles)
+	var probe := CrzTerrain.new()
+	probe.positions = terrain.positions
+	probe.triangles = terrain.triangles
+	probe.finalize()
+	var grid := probe.grid_dict()
 	var name := ""
 	var text := parse_course_text(archive.read_named("english.txt"))
 	if text.has("CourseName"):
@@ -191,6 +228,8 @@ static func decode(archive: CrzArchive) -> Dictionary:
 		"mappings": TerrainMappings.parse(archive.read_named("Mappings")) if archive.has("Mappings") else [],
 		"objects": CourseObjects.decode(archive.read_named),
 		"scenery": parse_course_scenery(archive.read_named("header")),
+		"normals": normals,
+		"grid": grid,
 	}
 
 
@@ -391,7 +430,10 @@ static func parse_ground_classes(b: PackedByteArray) -> PackedByteArray:
 
 # --- Building the game's course -------------------------------------------------
 
-func _build(path: String, data: Dictionary, archive: CrzArchive) -> CourseData:
+func _build(path: String, data: Dictionary, archive: CrzArchive, cache_key := "") -> CourseData:
+	if _tex_cache_key != cache_key:
+		_tex_cache.clear()
+		_tex_cache_key = cache_key
 	var terrain := CrzTerrain.new()
 	terrain.positions = data.positions
 	terrain.triangles = data.triangles
@@ -409,8 +451,13 @@ func _build(path: String, data: Dictionary, archive: CrzArchive) -> CourseData:
 	ob_shapes.assign(data.get("ob_shapes", []))
 	if not hole_shapes.is_empty() or not ob_shapes.is_empty():
 		terrain.bounds = CourseAreas.HoleBounds.new(hole_shapes, ob_shapes)
-	terrain.normals = _vertex_normals(terrain.positions, terrain.triangles)
-	terrain.finalize()
+	# The cached build (normals and grid worked out in decode, once), or
+	# the same work now for a course decoded before this cache existed.
+	if data.has("normals") and data.has("grid") and terrain.restore_grid(data.normals, data.grid):
+		pass
+	else:
+		terrain.normals = _vertex_normals(terrain.positions, terrain.triangles)
+		terrain.finalize()
 	if archive == null:
 		archive = _open(path)
 	terrain.materials = _materials(data.material_textures, terrain.ground_classes, archive)
@@ -591,6 +638,9 @@ static func _texture_library() -> Arc0:
 
 
 static func _load_texture(tex_name: String, archive: CrzArchive, library: Arc0) -> Texture2D:
+	var key := tex_name.to_lower()
+	if _tex_cache.has(key):
+		return _tex_cache[key]
 	var bytes := PackedByteArray()
 	var hd_dir := "terrain/" + HdPack.course
 	if archive != null and archive.has(tex_name):
@@ -605,7 +655,9 @@ static func _load_texture(tex_name: String, archive: CrzArchive, library: Arc0) 
 		return null
 	image = HdPack.replace(hd_dir, tex_name, image)
 	image.generate_mipmaps()
-	return ImageTexture.create_from_image(image)
+	var tex := ImageTexture.create_from_image(image)
+	_tex_cache[key] = tex
+	return tex
 
 
 ## The free ground texture for a ground class, tinted towards the class

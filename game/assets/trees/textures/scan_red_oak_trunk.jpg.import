@@ -3,21 +3,25 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://ca438eer3aoby"
-path="res://.godot/imported/scan_red_oak_trunk.jpg-5234b5e293e3440404dba7bfa539d506.ctex"
+path.s3tc="res://.godot/imported/scan_red_oak_trunk.jpg-5234b5e293e3440404dba7bfa539d506.s3tc.ctex"
+path.etc2="res://.godot/imported/scan_red_oak_trunk.jpg-5234b5e293e3440404dba7bfa539d506.etc2.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc", "etc2_astc"],
+"vram_texture": true
 }
 
 [deps]
 
 source_file="res://assets/trees/textures/scan_red_oak_trunk.jpg"
-dest_files=["res://.godot/imported/scan_red_oak_trunk.jpg-5234b5e293e3440404dba7bfa539d506.ctex"]
+dest_files=["res://.godot/imported/scan_red_oak_trunk.jpg-5234b5e293e3440404dba7bfa539d506.s3tc.ctex", "res://.godot/imported/scan_red_oak_trunk.jpg-5234b5e293e3440404dba7bfa539d506.etc2.ctex"]
 
 [params]
 
-compress/mode=1
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.85
+compress/uastc_level=0
+compress/rdo_quality_loss=0.0
 compress/hdr_compression=1
 compress/normal_map=0
 compress/channel_pack=0
@@ -25,6 +29,10 @@ mipmaps/generate=true
 mipmaps/limit=-1
 roughness/mode=0
 roughness/src_normal=""
+process/channel_remap/red=0
+process/channel_remap/green=1
+process/channel_remap/blue=2
+process/channel_remap/alpha=3
 process/fix_alpha_border=true
 process/premult_alpha=false
 process/normal_map_invert_y=false

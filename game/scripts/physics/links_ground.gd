@@ -191,12 +191,20 @@ class Ctx:
 	var objects: LinksObjects
 	var facing := Vector3(0, -1, 0)
 	var depth := 0
+	## Scratch for _f32c(): one per shot (a Ctx is never shared between
+	## shots), so no allocation per cup sub-step and no shared state.
+	var f32_scratch := PackedFloat32Array([0.0])
 
 
 ## The game's random numbers. Mirrors olcore::LinksRandom.
 class Rng:
 	const MASK := 0xffffffff
 	var state := 0x12345678
+	## Scratch for next_fraction(): a shot's Rng is its own, so reusing
+	## one float32 slot here is safe and avoids allocating a
+	## PackedFloat32Array on every draw. The value returned is still the
+	## float32-rounded fraction, exactly as before.
+	var _f32_scratch := PackedFloat32Array([0.0])
 
 	func _init(p_seed := 0x12345678) -> void:
 		state = p_seed & MASK
@@ -221,8 +229,10 @@ class Rng:
 		return (out << 1) & MASK
 
 	func next_fraction() -> float:
-		# The game keeps the fraction as a float.
-		return PackedFloat32Array([next_u32() / 4294967296.0])[0]
+		# The game keeps the fraction as a float; the scratch slot rounds
+		# it to float32 without allocating a new array per draw.
+		_f32_scratch[0] = next_u32() / 4294967296.0
+		return _f32_scratch[0]
 
 
 ## The ground in the game's frame. Mirrors olcore::LinksGround.
@@ -306,12 +316,12 @@ static func surface_for_class(ground_class: int) -> Params:
 	if ground_class == GREEN and greens != null:
 		return greens
 	# Made once per class: every step on the ground asks for one, and nothing
-	# changes a record once made.
-	# Shots are played on worker threads too (ShotWorker), so the cache is
-	# read and filled under a lock.
-	_class_lock.lock()
+	# changes a record once made. The hot path therefore reads the cache
+	# without the lock and only a miss takes it, re-checking under it: two
+	# threads racing a miss both build the same values and one wins the
+	# store, so the record a step gets is always the same. (Shots are
+	# played on worker threads too, ShotWorker.)
 	var made: Params = _class_records.get(ground_class)
-	_class_lock.unlock()
 	if made != null:
 		return made
 	var c := ground_class if LinksGround.SURFACES.has(ground_class) else FAIRWAY
@@ -329,6 +339,10 @@ static func surface_for_class(ground_class: int) -> Params:
 		p.lie_spin = v[7]
 		p.lie_power = v[8]
 	_class_lock.lock()
+	var raced: Params = _class_records.get(ground_class)
+	if raced != null:
+		_class_lock.unlock()
+		return raced
 	_class_records[ground_class] = p
 	_class_lock.unlock()
 	return p
@@ -584,6 +598,11 @@ static func simulate_shot(start: BallState, terrain: CourseTerrain, has_cup: boo
 	c.wind = wind
 	c.rng = rng
 	c.cup = hole
+	# One obstacle result for the whole shot, refilled every step: the
+	# Dictionary form allocated one per step (and one per candidate hit).
+	var hit := ObstacleField.Hit.new()
+	# Flat ground with no obstacles at all skips the per-step lookup.
+	var has_obstacles := terrain.has_links_obstacles()
 
 	while t < BallPhysics.MAX_TIME:
 		var before := _from_game(b.position) - Vector3(0, radius_m, 0)
@@ -599,12 +618,11 @@ static func simulate_shot(start: BallState, terrain: CourseTerrain, has_cup: boo
 		# Walls and the like (and trees, when the course has no billboards
 		# for the game's own model): our own handling, as in
 		# BallPhysics.simulate_shot.
-		var hit := terrain.links_obstacle_hit(before, after)
-		if not hit.is_empty() and (was_flying or int(hit.kind) == ObstacleField.Kind.SOLID):
-			var solid := int(hit.kind) == ObstacleField.Kind.SOLID
-			var hb := BallState.new(before.lerp(after, float(hit.fraction)), before_velocity, before_spin)
+		if has_obstacles and terrain.links_obstacle_hit_into(before, after, hit) and (was_flying or hit.kind == ObstacleField.Kind.SOLID):
+			var solid := hit.kind == ObstacleField.Kind.SOLID
+			var hb := BallState.new(before.lerp(after, hit.fraction), before_velocity, before_spin)
 			BallPhysics.hit_obstacle(hb, hit)
-			hb.position += (hit.normal as Vector3) * (BallPhysics.OBSTACLE_GAP if solid else -BallPhysics.OBSTACLE_GAP)
+			hb.position += hit.normal * (BallPhysics.OBSTACLE_GAP if solid else -BallPhysics.OBSTACLE_GAP)
 			r.obstacle_hits += 1
 			r.add_sample(t, hb.position)
 			b.position = _to_game(hb.position) + Vector3(0, 0, RADIUS)
@@ -968,9 +986,11 @@ static func _in_cup_mode(m: int) -> bool:
 	return m == Mode.CUP_AIR or m == Mode.CUP_RIM or m == Mode.CUP_WALL or m == Mode.CUP_DROP
 
 
-static func _f32(x: float) -> float:
-	var a := PackedFloat32Array([x])
-	return a[0]
+## `x` rounded to float32, as the game stores it, without allocating:
+## the caller's Ctx owns the scratch slot. Mirrors the C++ static_cast<float>.
+static func _f32c(c: Ctx, x: float) -> float:
+	c.f32_scratch[0] = x
+	return c.f32_scratch[0]
 
 
 ## The game's state blend: position by the fraction s of the path, velocity
@@ -1256,11 +1276,11 @@ static func _cup_sub(c: Ctx, b: Ball, h: float) -> void:
 ## single precision as the game does.
 static func _cup_frame(c: Ctx, b: Ball, dt: float) -> void:
 	b.position -= c.cup.pin
-	var sub := _f32(CUP_SUB_STEP)
-	var remaining := _f32(dt)
+	var sub := _f32c(c, CUP_SUB_STEP)
+	var remaining := _f32c(c, dt)
 	while remaining >= sub and _in_cup_mode(b.mode):
 		_cup_sub(c, b, sub)
-		remaining = _f32(remaining - sub)
+		remaining = _f32c(c, remaining - sub)
 	if remaining > 0.0 and _in_cup_mode(b.mode):
 		_cup_sub(c, b, remaining)
 	b.position += c.cup.pin

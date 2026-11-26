@@ -16,8 +16,10 @@ const INPUT_TOLERANCE := 1e-6
 ## Launches and flies a shot from its record. Sets the LinksShotModel up the
 ## way GolfRound does and gives it the shot's own random draws.
 static func run_shot(model: ShotModel, r: ShotRecord, club: Club, terrain: CourseTerrain, pin: Vector3, wind: Vector3, round_seed: int) -> ShotResult:
-	if model is LinksShotModel:
-		var links := model as LinksShotModel
+	# Unwrap OlcoreShotModel: the Links-only flags live on the inner
+	# model, and `is LinksShotModel` fails through the wrapper.
+	var links := OlcoreShotModel.links_of(model)
+	if links != null:
 		links.skill = r.skill
 		links.computer = r.computer
 		links.computer_ratings = null
@@ -70,7 +72,7 @@ static func monitor_launch(r: ShotRecord, club: Club, model: ShotModel) -> BallS
 		l.vla_deg = 0.0
 	var b := OpenConnect.ball_state(l, r.aim_deg)
 	b.position = r.from
-	b.on_ground = club.is_putter and model is LinksShotModel
+	b.on_ground = club.is_putter and OlcoreShotModel.links_of(model) != null
 	return b
 
 
@@ -120,7 +122,7 @@ static func holes_for(course: CourseData, holes_setting: int, tees: int, pins :=
 static func check(record: RoundRecord, course_path: String) -> Dictionary:
 	AssetProviders.ensure_defaults()
 	var model := AssetProviders.shot_model
-	var mine := "links" if model is LinksShotModel else "standard"
+	var mine := "links" if OlcoreShotModel.links_of(model) != null else "standard"
 	var errors: Array[String] = []
 	if record.model != mine:
 		errors.append("the round used the %s physics, this game has the %s physics" % [record.model, mine])

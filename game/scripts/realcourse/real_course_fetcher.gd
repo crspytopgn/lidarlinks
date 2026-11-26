@@ -80,6 +80,19 @@ const LAND_SAMPLES_PER_STEP := 8000
 ## walls...): courses built before it offer "Update" on the Courses page.
 ## Saved in each course's source as "builder" (RealCourseUpdate).
 const BUILDER_VERSION := 9  ## 5: big lakes as water, native grass from the photo; 6: seas under cliffs, scrub, ponds from the land cover, Ireland off England's lidar; 7: beaches, woods out of the tile ground; 8: lidar ground without faint grid lines; 9: tree heights v2, more photo services, dormant photos
+## How long a cached answer is trusted: a day for the search and the map
+## (places and mapping change), a month for ground heights, lidar, photos
+## and land cover (the ground doesn't). 404s are cached too: a tile service
+## has no tile where it has no data, and asking again won't change that.
+const FETCH_CACHE_TTL_SHORT := 86400
+const FETCH_CACHE_TTL_LONG := 30 * 86400
+## Where fetched course data is kept between builds, keyed by the request,
+## so rebuilding a course (or building the club's next one) reuses the
+## ground heights, lidar, photos and map instead of downloading them again.
+## Capped, oldest first out; the tests point it elsewhere.
+static var fetch_cache_dir := "user://realcourse_cache"
+static var fetch_cache_enabled := true
+static var fetch_cache_max_bytes := 256 * 1024 * 1024
 
 var busy := false
 ## Use national lidar and aerial photos where they cover the course.
@@ -1078,7 +1091,16 @@ func _make_request(timeout: float) -> HTTPRequest:
 
 
 ## Sends `req` and frees it; [status code (0 on failure), body bytes].
+## A cached answer (see _fetch_cache_lookup) comes back without asking the
+## server, and doesn't spend the server's rate limit.
 func _send(req: HTTPRequest, url: String, method: int, body: String, headers: Array) -> Array:
+	var cache_key := ""
+	if fetch_cache_enabled:
+		cache_key = _fetch_cache_key(url, method, body, headers)
+		var hit := _fetch_cache_lookup(cache_key, url)
+		if not hit.is_empty():
+			req.queue_free()
+			return hit
 	if not OS.has_feature("web"):
 		headers = headers + ["User-Agent: " + USER_AGENT]
 	var host := NetDoor.host_of(url)
@@ -1107,4 +1129,96 @@ func _send(req: HTTPRequest, url: String, method: int, body: String, headers: Ar
 	door.finished(host, id, int(res[1]) if ok else 0, res[2] if ok else PackedStringArray(), Time.get_ticks_msec())
 	if not ok:
 		return [0, PackedByteArray()]
+	if fetch_cache_enabled and not cache_key.is_empty() and int(res[1]) in [200, 206, 404]:
+		_fetch_cache_store(cache_key, int(res[1]), res[3])
 	return [res[1], res[3]]
+
+
+## The cache entry for a request: the SHA-256 of its method, URL, body and
+## byte range, so the same tile asked for twice is one entry and a different
+## range is another. "" when the hash can't be started.
+static func _fetch_cache_key(url: String, method: int, body: String, headers: Array) -> String:
+	var range := ""
+	for h in headers:
+		if str(h).to_lower().begins_with("range:"):
+			range = str(h)
+			break
+	var ctx := HashingContext.new()
+	if ctx.start(HashingContext.HASH_SHA256) != OK:
+		return ""
+	ctx.update(("%d\n%s\n%s\n%s" % [method, url, body, range]).to_utf8_buffer())
+	return ctx.finish().hex_encode()
+
+
+static func _fetch_cache_path(key: String) -> String:
+	return fetch_cache_dir.path_join(key + ".bin")
+
+
+static func _fetch_cache_ttl(url: String) -> int:
+	if url.contains("nominatim") or url.contains("overpass"):
+		return FETCH_CACHE_TTL_SHORT
+	return FETCH_CACHE_TTL_LONG
+
+
+## A cached answer for `key`, [code, body], or [] on a miss or a stale one.
+## The file is a u32 status, a u64 time saved (unix) and the body.
+static func _fetch_cache_lookup(key: String, url: String) -> Array:
+	if key.is_empty() or not fetch_cache_enabled:
+		return []
+	var f := FileAccess.open(_fetch_cache_path(key), FileAccess.READ)
+	if f == null:
+		return []
+	var head := f.get_buffer(12)
+	if head.size() < 12:
+		return []
+	var code := head.decode_u32(0)
+	if not code in [200, 206, 404]:
+		return []
+	if Time.get_unix_time_from_system() - int(head.decode_u64(4)) > _fetch_cache_ttl(url):
+		return []
+	return [code, f.get_buffer(f.get_length() - 12)]
+
+
+static func _fetch_cache_store(key: String, code: int, body: PackedByteArray) -> void:
+	if key.is_empty() or not fetch_cache_enabled:
+		return
+	DirAccess.make_dir_recursive_absolute(fetch_cache_dir)
+	var head := PackedByteArray()
+	head.resize(12)
+	head.encode_u32(0, code)
+	head.encode_u64(4, Time.get_unix_time_from_system())
+	var f := FileAccess.open(_fetch_cache_path(key), FileAccess.WRITE)
+	if f == null:
+		return
+	f.store_buffer(head)
+	f.store_buffer(body)
+	f.close()  # close before pruning: the prune reads the file back, and
+	# a still-open write handle keeps it from opening again
+	_fetch_cache_prune()
+
+
+## Drops the oldest entries until the cache fits its cap.
+static func _fetch_cache_prune() -> void:
+	var dir := DirAccess.open(fetch_cache_dir)
+	if dir == null:
+		return
+	var entries: Array = []
+	var total := 0
+	for name in dir.get_files():
+		if not name.ends_with(".bin"):
+			continue
+		var p := fetch_cache_dir.path_join(name)
+		var f := FileAccess.open(p, FileAccess.READ)
+		if f == null:
+			continue
+		var head := f.get_buffer(12)
+		entries.append([int(head.decode_u64(4)) if head.size() == 12 else 0, f.get_length(), p])
+		total += f.get_length()
+	if total <= fetch_cache_max_bytes:
+		return
+	entries.sort_custom(func(a: Array, b: Array) -> bool: return a[0] < b[0])
+	for e in entries:
+		if total <= fetch_cache_max_bytes:
+			break
+		DirAccess.remove_absolute(e[2])
+		total -= int(e[1])

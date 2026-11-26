@@ -135,14 +135,14 @@ static func bounce(s: BallState, ground_normal: Vector3, surface: int) -> void:
 
 ## Mirrors olcore::hit_obstacle: a solid sends the ball back with some of its
 ## speed; a canopy soaks up most of it, so the ball drops. `hit` comes from
-## CourseTerrain.obstacle_hit().
-static func hit_obstacle(s: BallState, hit: Dictionary) -> void:
+## CourseTerrain.obstacle_hit_into().
+static func hit_obstacle(s: BallState, hit: ObstacleField.Hit) -> void:
 	var n: Vector3 = hit.normal
 	var vn := s.velocity.dot(n)
 	if vn >= 0.0:
 		return
 	var vt := s.velocity - n * vn
-	if int(hit.kind) == ObstacleField.Kind.SOLID:
+	if hit.kind == ObstacleField.Kind.SOLID:
 		s.velocity = vt * SOLID_FRICTION - n * (vn * SOLID_RESTITUTION)
 		s.spin *= 0.5
 	else:
@@ -162,6 +162,11 @@ static func simulate_shot(start: BallState, terrain: CourseTerrain, has_cup := f
 	var t := 0.0
 	var step := 0
 	var landed := false
+	# One obstacle result for the whole shot, refilled every step: the
+	# Dictionary form allocated one per step (and one per candidate hit).
+	var hit := ObstacleField.Hit.new()
+	# Flat ground with no obstacles at all skips the per-step lookup.
+	var has_obstacles := terrain.has_obstacles()
 	# The ground under the end of the last rolling step, reused by the next.
 	var ahead_at := Vector3(INF, INF, INF)
 	var ahead_normal := Vector3.UP
@@ -207,20 +212,19 @@ static func simulate_shot(start: BallState, terrain: CourseTerrain, has_cup := f
 			# An obstacle met before the ground. Time keeps the whole step,
 			# so a ball wedged between obstacles still runs out of time.
 			var ground := (h0 / (h0 - h1) if h0 > 0.0 else 0.0) if h1 <= 0.0 else 2.0
-			var hit := terrain.obstacle_hit(s.position, nxt.position)
-			if not hit.is_empty() and float(hit.fraction) < ground:
+			if has_obstacles and terrain.obstacle_hit_into(s.position, nxt.position, hit) and hit.fraction < ground:
 				var f: float = hit.fraction
 				var b := BallState.new(s.position.lerp(nxt.position, f), s.velocity.lerp(nxt.velocity, f), nxt.spin)
 				hit_obstacle(b, hit)
 				# Just outside a solid, or just inside a canopy, so the same
 				# face is not met again.
-				var gap := OBSTACLE_GAP if int(hit.kind) == ObstacleField.Kind.SOLID else -OBSTACLE_GAP
-				b.position += (hit.normal as Vector3) * gap
+				var gap := OBSTACLE_GAP if hit.kind == ObstacleField.Kind.SOLID else -OBSTACLE_GAP
+				b.position += hit.normal * gap
 				r.obstacle_hits += 1
 				r.add_sample(t, b.position)
 				# Settled on top of something flat enough (a wall, a bridge).
 				var n: Vector3 = hit.normal
-				if int(hit.kind) == ObstacleField.Kind.SOLID and n.y > FLAT_TOP and b.velocity.dot(n) < ROLL_THRESHOLD:
+				if hit.kind == ObstacleField.Kind.SOLID and n.y > FLAT_TOP and b.velocity.dot(n) < ROLL_THRESHOLD:
 					if not landed:
 						landed = true
 						r.first_landing = b.position
@@ -266,6 +270,12 @@ static func simulate_shot(start: BallState, terrain: CourseTerrain, has_cup := f
 				if vn < ROLL_THRESHOLD or frac < LAND_AT_START or leaving:
 					rolling = true
 					s.velocity = b.velocity - n * vn
+					# The next rolling step starts here: its normal and
+					# surface are already known, as the rolling branch
+					# caches them for the step after.
+					ahead_at = pos
+					ahead_normal = n
+					ahead_surface = surf
 				continue
 			s = nxt
 		else:
@@ -309,9 +319,8 @@ static func simulate_shot(start: BallState, terrain: CourseTerrain, has_cup := f
 			step += 1
 
 			# Rolling into a trunk or a wall; leaves do not stop a rolling ball.
-			var hit := terrain.obstacle_hit(pos, npos)
-			if not hit.is_empty() and int(hit.kind) == ObstacleField.Kind.SOLID:
-				var hp := pos.lerp(npos, float(hit.fraction)) + (hit.normal as Vector3) * OBSTACLE_GAP
+			if has_obstacles and terrain.obstacle_hit_into(pos, npos, hit) and hit.kind == ObstacleField.Kind.SOLID:
+				var hp := pos.lerp(npos, hit.fraction) + hit.normal * OBSTACLE_GAP
 				hp.y = terrain.height_at(hp.x, hp.z)
 				var b := BallState.new(hp, nv, s.spin)
 				hit_obstacle(b, hit)

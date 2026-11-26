@@ -51,6 +51,9 @@ var broadcast := false
 var badge: ScoreBadge
 
 var _message_time := 0.0
+## The last layout signature _process() ran the layout passes for (see
+## _layout_signature()): empty until the first frame.
+var _layout_sig: Array = []
 
 
 func _ready() -> void:
@@ -280,8 +283,6 @@ func _process(delta: float) -> void:
 	if hint.text != _hint_relabelled:
 		hint.text = KeyRemap.relabel(hint.text)
 		_hint_relabelled = hint.text
-	if art != null and not broadcast:
-		_update_bars()
 	if _message_time > 0.0:
 		_message_time -= delta
 		if _message_time <= 0.0:
@@ -290,19 +291,45 @@ func _process(delta: float) -> void:
 		_sound_caption_time -= delta
 		if _sound_caption_time <= 0.0:
 			sound_caption.text = ""
-	# Keep the card centred as its contents change size.
-	# It also shrinks back to fit (a PanelContainer keeps the size of its
-	# tallest contents, which left an empty band under a shorter card), and
-	# moves up clear of a Broadcast caption, such as the end-of-round
-	# result, which it used to cover.
-	if scorecard.visible:
-		scorecard.reset_size()
-		var at := (size - scorecard.size) * 0.5
-		if broadcast:
-			at.y = maxf(8.0, minf(at.y, overlay.caption_top() - scorecard.size.y - 12.0))
-		scorecard.position = at
-	_clear_hints()
-	_fold_detail()
+	# The layout passes below (info bars, scorecard centring, hint
+	# clearance, detail fold) only re-run when something they read changed:
+	# every frame they rewrote the same offsets, modulates and bar texts,
+	# and reset_size() on the scorecard. The timers above still tick
+	# every frame.
+	var sig := _layout_signature()
+	if sig != _layout_sig:
+		_layout_sig = sig
+		if art != null and not broadcast:
+			_update_bars()
+		if scorecard.visible:
+			# Keep the card centred as its contents change size.
+			# It also shrinks back to fit (a PanelContainer keeps the size of its
+			# tallest contents, which left an empty band under a shorter card), and
+			# moves up clear of a Broadcast caption, such as the end-of-round
+			# result, which it used to cover.
+			scorecard.reset_size()
+			var at := (size - scorecard.size) * 0.5
+			if broadcast:
+				at.y = maxf(8.0, minf(at.y, overlay.caption_top() - scorecard.size.y - 12.0))
+			scorecard.position = at
+		_clear_hints()
+		_fold_detail()
+
+
+## Everything the layout passes read, as one comparable value. The child
+## loop only reads visibility and position (no writes); the passes
+## themselves are what wrote every frame.
+func _layout_signature() -> Array:
+	var sig: Array = [info.text, art != null, broadcast, hint.visible, hint.text,
+		hint_tab.visible, hint_tab.position.y, size, scorecard.visible, scorecard.size,
+		overlay.detail() if broadcast else 1.0,
+		overlay.caption_top() if broadcast and scorecard.visible else INF]
+	for c in get_children():
+		if c is CaddieNote:
+			var note := c as Control
+			sig.append(note.visible)
+			sig.append(note.position.y)
+	return sig
 
 
 ## Broadcast folds the shot detail away a few seconds into each shot

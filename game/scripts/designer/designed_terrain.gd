@@ -550,6 +550,25 @@ func surface_weights(surface: int) -> Vector2:
 	return Materials.terrain_weights(surface)
 
 
+## Rebuilds only the distant trees of a visual built by build_visual(),
+## for the hole now being played: the ground, paths, water, rocks and
+## plants are the same every hole (and the chunk meshes are cached), so a
+## hole change keeps that node and only the woods beyond this hole are
+## re-sorted. The old batches are freed at once, not queued: the new hole
+## must not draw both sets for a frame.
+func refresh_distant_trees(root: Node3D) -> void:
+	if not TreeFactory.enabled() or hole_number <= 0:
+		return
+	var old: Array[Node] = []
+	for c in root.get_children():
+		if c.name == "DistantTrees":
+			old.append(c)
+	for c in old:
+		root.remove_child(c)
+		c.free()
+	_add_distant_trees(root)
+
+
 ## The course's trees beyond the ones the round places for this hole
 ## (DesignedCourse.near_hole), as batched trees that are impostors far off,
 ## so the woods across the course are seen rather than bare ground. Visual
@@ -575,6 +594,10 @@ func _add_distant_trees(root: Node3D) -> void:
 		# drawing them again for the sun is most of what woods cost.
 		var node := TreeFactory.batch_node(batch, false)
 		node.name = "DistantTrees"
+		# As in CourseObjects._add_trees: only one cell's full trees can
+		# hide behind a hill (TerrainOcclusion).
+		if batch.get("full", false) and not batch.get("near", false):
+			node.set_meta("occlusion_reach", float(batch.get("reach", 0.0)))
 		root.add_child(node)
 
 
@@ -2030,6 +2053,37 @@ const SHADOW_SLOPE_MARGIN := 0.8
 
 static func casts_sun_shadow(steep: float, sun_tan: float) -> bool:
 	return steep >= sun_tan * SHADOW_SLOPE_MARGIN
+
+
+## The sun's height as rise over run, from the way its light travels
+## (pointing down): the same `t` _update_casters works out from the sun.
+static func sun_tan(sun_travel: Vector3) -> float:
+	var down := -sun_travel.y
+	var flat := Vector2(sun_travel.x, sun_travel.z).length()
+	return down / maxf(flat, 1e-3)
+
+
+## How far (metres) off the line of play the camera can stand and still see
+## a shadow there: the flyover and a ball well off line.
+const SHADOW_VIEW := 30.0
+## And how far off the line the camera itself can be (flyover), so an
+## object still within the shadow camera's reach of it counts.
+const SHADOW_CAMERA_OFF := 60.0
+
+
+## Whether a thing standing `distance` from the line of play, `height`
+## tall, casts a real-time sun shadow: its shadow only reaches
+## `height / sun_tan` along the ground (at most MAX_SLANT heights, as
+## GroundShade stamps it), and only where the shadow camera reaches. Past
+## that the baked ground shade carries its shadow, so the shadow pass
+## skips it — most of a course's woods from most tees. Conservative on
+## both counts: the camera looks at the ball, which can be SHADOW_VIEW
+## off the line, and the camera itself SHADOW_CAMERA_OFF.
+static func object_casts_sun_shadow(distance: float, height: float, sun_tan_value: float, shadow_distance: float) -> bool:
+	if height <= 0.0 or distance < 0.0:
+		return false
+	var reach := minf(height / maxf(sun_tan_value, 0.05), GroundShade.MAX_SLANT * height)
+	return distance <= reach + SHADOW_VIEW and distance <= shadow_distance + SHADOW_CAMERA_OFF
 
 
 const ARRAY_FLAGS := Mesh.ARRAY_CUSTOM_RGBA_FLOAT << Mesh.ARRAY_FORMAT_CUSTOM0_SHIFT

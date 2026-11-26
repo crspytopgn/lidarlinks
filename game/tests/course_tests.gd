@@ -16,6 +16,7 @@ func run_all() -> Array[String]:
 	_test_bunky_round_trips()
 	_test_locked_archive()
 	_test_terrain()
+	_test_built_terrain_cache()
 	_test_mappings()
 	_test_shadow_file()
 	_test_holes_and_ground()
@@ -256,6 +257,58 @@ func _test_terrain() -> void:
 		var a := pos[tri[3 * k]]
 		var n := (pos[tri[3 * k + 1]] - a).cross(pos[tri[3 * k + 2]] - a)
 		check(n.y < 0.0, "triangle %d is clockwise seen from above" % k)
+
+
+## The built terrain a repeat load restores from the cache (normals and
+## lookup grid), and the cache key that tells courses apart.
+func _test_built_terrain_cache() -> void:
+	var t := CrzCourseLoader.parse_terrain(_square_terrain(false))
+	var terrain := CrzTerrain.new()
+	terrain.positions = t.positions
+	terrain.triangles = t.triangles
+	terrain.triangle_material = t.triangle_material
+	terrain.normals = CrzCourseLoader._vertex_normals(terrain.positions, terrain.triangles)
+	terrain.finalize()
+	var f := CrzCourseLoader.FEET
+	var grid := terrain.grid_dict()
+	var again := CrzTerrain.new()
+	again.positions = t.positions
+	again.triangles = t.triangles
+	again.triangle_material = t.triangle_material
+	check(again.restore_grid(terrain.normals, grid), "a grid built here restores")
+	check(again.height_at(15.0 * f, -15.0 * f) == terrain.height_at(15.0 * f, -15.0 * f), "restored grid answers heights")
+	check(again.triangle_at(15.0 * f, -15.0 * f) == terrain.triangle_at(15.0 * f, -15.0 * f), "restored grid answers triangles")
+	check(again.max_height_in(10.0 * f, -20.0 * f, 11.0 * f, -19.0 * f) == terrain.max_height_in(10.0 * f, -20.0 * f, 11.0 * f, -19.0 * f), "restored grid answers bounds")
+	check(again.normals == terrain.normals, "restored normals match")
+	var wrong := CrzTerrain.new()
+	wrong.positions = (t.positions as PackedVector3Array).slice(0, 2)
+	wrong.triangles = t.triangles
+	check(not wrong.restore_grid(terrain.normals, grid), "normals for another terrain don't restore")
+	var broken: Dictionary = grid.duplicate()
+	broken["cell_start"] = PackedInt32Array([0, 1])
+	var third := CrzTerrain.new()
+	third.positions = t.positions
+	third.triangles = t.triangles
+	check(not third.restore_grid(terrain.normals, broken), "a truncated grid doesn't restore")
+	# The key: the file's bytes, not its name or size.
+	var a_path := "user://test_key_a.bin"
+	var b_path := "user://test_key_b.bin"
+	var fa := FileAccess.open(a_path, FileAccess.WRITE)
+	fa.store_buffer(PackedByteArray([1, 2, 3, 4, 5, 6, 7, 8]))
+	fa = null
+	var fb := FileAccess.open(b_path, FileAccess.WRITE)
+	fb.store_buffer(PackedByteArray([1, 2, 3, 4, 5, 6, 7, 8]))
+	fb = null
+	var ka := CrzCourseLoader._cache_key(a_path)
+	var kb := CrzCourseLoader._cache_key(b_path)
+	check(ka == kb and ka.length() == 64, "same bytes share a key: %s" % ka)
+	fb = FileAccess.open(b_path, FileAccess.WRITE)
+	fb.store_buffer(PackedByteArray([1, 2, 3, 4, 5, 6, 7, 9]))
+	fb = null
+	check(CrzCourseLoader._cache_key(b_path) != ka, "one changed byte changes the key (same size)")
+	check(CrzCourseLoader._cache_key("user://test_key_missing.bin").is_empty(), "a missing file has no key")
+	DirAccess.remove_absolute(a_path)
+	DirAccess.remove_absolute(b_path)
 
 
 func _put_name(b: PackedByteArray, name: String) -> void:
