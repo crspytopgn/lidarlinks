@@ -27,12 +27,9 @@ const SPARE_MAX := 160
 ## Light chunks (such as the meadow plants') still built a few a frame.
 const BUILDS_PER_FRAME := 2
 ## Per Grass level (Off, Low, Medium, High): tufts per square metre of deep
-## rough, and how far out they grow. High reaches 150 m, not 180: a card
-## of fescue that far out is a few pixels, and the deep rough's own
-## texture carries it, for about a third less deep-rough area.
-## Densities are untouched.
+## rough, and how far out they grow.
 const DENSITY := [0.0, 0.4, 0.6, 0.8]
-const RADIUS := [0.0, 90.0, 140.0, 150.0]
+const RADIUS := [0.0, 90.0, 140.0, 180.0]
 const SURFACES := [Surface.Type.DEEP_ROUGH]
 ## Understory, per Grass level: tufts per square metre of a crown's
 ## footprint. It grows on the deep rough out to UNDER_REACH_DEEP crown radii
@@ -90,8 +87,7 @@ const REED_COLOUR := Color(0.42, 0.5, 0.26)
 ## share of each atlas cell (daisies, buttercups, rosette, yarrow).
 const MEADOW_UID := "_meadow"
 const MEADOW_DENSITY := [0.0, 0.5, 0.9, 1.3]
-## High reaches 70 m, not 85, for the same reason as the fescue.
-const MEADOW_RADIUS := [0.0, 45.0, 65.0, 70.0]
+const MEADOW_RADIUS := [0.0, 45.0, 65.0, 85.0]
 const MEADOW_CHUNK := 16.0
 const MEADOW_SCALE := 18.0
 const MEADOW_HEIGHT := Vector2(0.55, 0.95)
@@ -111,9 +107,7 @@ const MEADOW_NEAR := Vector2(5.0, 14.0)
 ## crossed cards there read as green stars on the ground.
 const SWARD_UID := "_sward"
 const SWARD_DENSITY := [0.0, 5.0, 8.0, 11.0]
-## High's ring reaches 20 m, not 24: the mat is under the near blades,
-## and past 20 m the 3D grass is what reads.
-const SWARD_RADIUS := [0.0, 12.0, 18.0, 20.0]
+const SWARD_RADIUS := [0.0, 12.0, 18.0, 24.0]
 const SWARD_CHUNK := 8.0
 const SWARD_HEIGHT := Vector2(0.17, 0.36)
 const SWARD_GROUND_PULL := 0.9

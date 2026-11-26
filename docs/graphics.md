@@ -666,19 +666,18 @@ re-bakes only when its key changes (hole, sun, casters, size) and
 bakes at 1024 pixels below High, and it starts a few frames past the
 hole change, so the change never waits on the synchronous readback
 (GDScript has no async readback). Shadow cuts: two splits and a
-smaller atlas below Ultra (8192 and four splits only at Ultra on
-Forward+), and trees, placed objects and course-placed models whose
+2048 atlas at Low and Medium (High and Ultra keep four splits; the
+8192 atlas only at Ultra on Forward+, Compatibility capped at 4096),
+and trees, placed objects and course-placed models whose
 shadows cannot reach the line of play skip the sun's shadow pass —
 the baked ground shade carries them. Occlusion from the terrain
 itself (TerrainOcclusion, Settings > Terrain occlusion, on by
 default): far tree batches and placed objects behind a hill are
 hidden, judged by sight lines that must clear the ground by 2 m at
 4 m samples, re-checked at most twice a second once the camera has
-moved 8 m, never within 60 m of the camera. At High the grass
-reaches 48 m instead of 55 and the mown fur 4 m instead of 5, the
-fescue 150 m instead of 180, the meadow 70 m instead of 85 and the
-sward 20 m instead of 24 — densities untouched, the far tufts and
-cards being a few pixels where the ground texture carries them. The
+moved 8 m, never within 60 m of the camera. Grass, fescue, meadow
+and sward keep their full reach at the top Grass level (Ultra looks):
+the top tier spends freely. The
 golfer's mesh is unchanged: the saving there is not rebuilding him
 every hole.
 

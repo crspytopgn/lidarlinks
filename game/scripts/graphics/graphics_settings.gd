@@ -622,18 +622,18 @@ static func shadow_atlas_size_for(q: int, forward_plus: bool) -> int:
 	return mini(size, 8192 if forward_plus else 4096)
 
 
-## How many directional-light shadow splits the sun draws: four only at
-## Ultra on Forward+, two everywhere else. Each split re-draws every
-## caster, so two splits roughly halves the shadow pass's draw calls; the
-## first split still covers the golfer and the tee at full detail
-## (Scenery.first_split), and the baked ground shade carries the far
-## trees' shadows.
+## How many directional-light shadow splits the sun draws: four at High
+## and Ultra (as before), two at Low and Medium. Each split re-draws every
+## caster, so two splits roughly halves the shadow pass's draw calls on
+## the lower tiers; the first split still covers the golfer and the tee at
+## full detail (Scenery.first_split), and the baked ground shade carries
+## the far trees' shadows.
 func shadow_splits() -> int:
 	return shadow_splits_for(quality, is_forward_plus())
 
 
-static func shadow_splits_for(q: int, forward_plus: bool) -> int:
-	return 4 if q >= Quality.ULTRA and forward_plus else 2
+static func shadow_splits_for(q: int, _forward_plus: bool) -> int:
+	return 4 if q >= Quality.HIGH else 2
 
 
 func soft_shadow_quality() -> RenderingServer.ShadowQuality:

@@ -2082,20 +2082,11 @@ void test_links_cup() {
   CHECK(run_cup_ball(b) == 31);
   CHECK(b.mode == LinksMode::Holed);
   // Near the edge at 4 ft/s: round the rim and out. (The roll after it
-  // differs by about 1e-3 ft between compilers, as the other roll tests do.
-  // The rim exit is knife-edge: the exit event time differs by ~5e-14
-  // between x86-64 (glibc) and wasm (musl) — one step's inputs agree to
-  // ~1e-13 — and that flips whether the ball re-enters the rim on the next
-  // sub-step. Measured 2026-11-26 with Emscripten 7.0.1: native stops on
-  // step 63 at (-0.084640, 0.641452); wasm fires the rim-exit event three
-  // times instead of once, stops on step 65 at (-0.086740, 0.643333).
-  // Same code, same outcome (Rest, out past the hole), so this case allows
-  // steps 63-65 and 3e-3 ft on x; nothing else in this test is loosened.)
+  // differs by about 1e-3 ft between compilers, as the other roll tests do.)
   b = links_ball({0.16, -1, 0.07}, {0, 4, 0}, {}, LinksMode::Skid);
-  const int rim_steps = run_cup_ball(b);
-  CHECK(rim_steps >= 63 && rim_steps <= 65);
+  CHECK(run_cup_ball(b) == 63);
   CHECK(b.mode == LinksMode::Rest);
-  CHECK_NEAR(b.position.x, -0.08464, 3e-3);
+  CHECK_NEAR(b.position.x, -0.08464, 2e-3);
   CHECK_NEAR(b.position.y, 0.64145, 2e-3);
   // Outside the hole's circle: it passes by.
   b = links_ball({0.19, -1, 0.07}, {0, 3.5, 0}, {}, LinksMode::Skid);

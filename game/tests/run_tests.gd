@@ -2364,12 +2364,13 @@ func _test_graphics_settings() -> void:
 	# and keeps its old share on the short ones (Low, Medium, the web).
 	_check(is_equal_approx(Scenery.first_split(150.0), Scenery.SUN_SPLITS.x), "shadow split: Low keeps its share")
 	_check(is_equal_approx(Scenery.first_split(600.0) * 600.0, Scenery.NEAR_SPLIT), "shadow split: Ultra's first split is NEAR_SPLIT deep")
-	# Shadow splits and atlas: four splits and the 8192 atlas (256 MB) only
-	# at Ultra on Forward+; two splits everywhere else, and Compatibility
-	# caps the atlas at 4096 (64 MB).
+	# Shadow splits and atlas: four splits at High and Ultra, two at Low
+	# and Medium; the 8192 atlas (256 MB) only at Ultra on Forward+, and
+	# Compatibility caps the atlas at 4096 (64 MB).
 	_check(GraphicsSettings.shadow_splits_for(GraphicsSettings.Quality.ULTRA, true) == 4, "shadow splits: four at Ultra on Forward+")
-	_check(GraphicsSettings.shadow_splits_for(GraphicsSettings.Quality.ULTRA, false) == 2, "shadow splits: two at Ultra on Compatibility")
-	_check(GraphicsSettings.shadow_splits_for(GraphicsSettings.Quality.HIGH, true) == 2, "shadow splits: two below Ultra")
+	_check(GraphicsSettings.shadow_splits_for(GraphicsSettings.Quality.ULTRA, false) == 4, "shadow splits: four at Ultra on Compatibility")
+	_check(GraphicsSettings.shadow_splits_for(GraphicsSettings.Quality.HIGH, true) == 4, "shadow splits: four at High")
+	_check(GraphicsSettings.shadow_splits_for(GraphicsSettings.Quality.MEDIUM, true) == 2, "shadow splits: two at Medium")
 	_check(GraphicsSettings.shadow_atlas_size_for(GraphicsSettings.Quality.ULTRA, true) == 8192, "shadow atlas: 8192 at Ultra on Forward+")
 	_check(GraphicsSettings.shadow_atlas_size_for(GraphicsSettings.Quality.ULTRA, false) == 4096, "shadow atlas: 4096 at Ultra on Compatibility")
 	_check(GraphicsSettings.shadow_atlas_size_for(GraphicsSettings.Quality.MEDIUM, true) == 2048, "shadow atlas: 2048 at Medium")

@@ -36,10 +36,9 @@ const BUILD_BUDGET_MS := 4.0
 ## lines between them (West Essex, 2026-11-23).
 const THIN_FROM := 0.2
 const DENSITY := [0.0, 4.0, 8.0, 13.0]
-## High reaches 48 m, not 55: past that the tufts are a few pixels tall
-## and the ground texture carries the rough, for a quarter less rough
-## area (and triangles) at the top level. Densities are untouched.
-const RADIUS := [0.0, 22.0, 36.0, 48.0]
+## The top level (Ultra looks only) keeps its full 55 m reach: Ultra is
+## where the game spends freely; the lower levels carry the savings.
+const RADIUS := [0.0, 22.0, 36.0, 55.0]
 const NEAR := 0.45
 const FAR_SHARE := 0.25
 ## Tuft height range (m) per surface: real first cut is mown at about
@@ -58,10 +57,7 @@ const BLADES := 12
 ## texture alone reads as a flat print. Per level: tufts per square metre
 ## and the radius (m). Small chunks, as the radius is small.
 const MOWN_DENSITY := [0.0, 0.0, 130.0, 220.0]
-## High's fur reaches 4 m, not 5: past that the blades are sub-pixel at
-## any normal view, for a third fewer mown tufts (220 a square metre
-## over the disc is the densest fur in the game).
-const MOWN_RADIUS := [0.0, 0.0, 3.5, 4.0]
+const MOWN_RADIUS := [0.0, 0.0, 3.5, 5.0]
 const MOWN_CHUNK := 3.0
 ## Blade heights (m) as cut: tees and fairways at about 12 to 15 mm, the
 ## fringe a little longer. Leaning blades stand a bit lower than that.
