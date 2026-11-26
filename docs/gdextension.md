@@ -120,21 +120,25 @@ export). The libraries are build products, not committed (`*.so`,
 `*.dll`, `*.dylib`, `*.wasm` are gitignored). In CI, `.github/workflows/ci.yml`
 calls `.github/workflows/gdextension.yml` as a reusable workflow, so
 the build runs inside the CI run and the `export` job can download
-its artifacts: the four `olcore-gdext-<os>-<arch>` artifacts, merged
-into `game/addons/olcore/bin/`, before `--import`. The `gdextension`
+its artifacts: the four `olcore-gdext-<os>-<arch>` artifacts and the
+`olcore-gdext-web-wasm32` artifact, merged into
+`game/addons/olcore/bin/`, before `--import`. The `gdextension`
 workflow also runs standalone — on pushes to `main` and `perf/**`
 and on PRs touching `extensions/olcore`, `libs/olcore` or
 `game/addons/olcore` — for fast feedback without running the export.
 
-If the extension build fails, the export still runs: the `export`
+If a desktop extension build fails, the export still runs: the `export`
 job starts anyway (its `if: always()` only requires the launcher
 templates), the download ignores missing artifacts, and the "Check
 GDExtension libraries" step reports which libraries are present and
 warns — in the log and on the job summary — when a desktop export
 falls back to the GDScript physics port. A missing library is a loud
 fallback, not a silent one, and the failed `gdextension` job still
-fails the run overall. A web export from CI never gets a library (there is no wasm job
-in the workflow yet), so it runs the GDScript port.
+fails the run overall. The web library is the exception: the Web
+export preset has `extensions_support=true`, so Godot fails the
+whole Web export when `libolcore.web.wasm32.wasm` is absent — the
+check step fails the job fast instead of letting the export run
+for half an hour and fail (PR #402, 2026-11-26).
 
 ### Web (wasm)
 
@@ -289,9 +293,12 @@ both carried 188.93 m / 202.55 m total on the flat driver, native
   confirms it: the extension loads, `OlcorePhysics` registers, and
   the smoke checks pass (see "Web smoke test" above), so the web
   build now runs the native sim when the extension is present and
-  the GDScript port when it is absent. The CI `gdextension` workflow
-  has no wasm job yet, and the CI export job does not download a wasm
-  artifact, so a web export from CI still runs the GDScript port —
-  that wiring is follow-up, not part of this branch.- Per-hole bake cost measurement on real courses (the bake is GDScript
+  the GDScript port when it is absent. The CI wiring is done too:
+  the `gdextension` workflow has a `wasm` job (Emscripten 4.0.20)
+  that uploads `olcore-gdext-web-wasm32`, the export job downloads
+  it into `game/addons/olcore/bin/` with the desktop libraries, and
+  the "Check GDExtension libraries" step fails the job fast when
+  it is missing instead of letting the Web export fail (PR #402,
+  2026-11-26).- Per-hole bake cost measurement on real courses (the bake is GDScript
   sampling, once per hole, cached) and a bake that reuses the course's
   own heightfield instead of sampling point by point.
