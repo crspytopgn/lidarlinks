@@ -569,6 +569,36 @@ func refresh_distant_trees(root: Node3D) -> void:
 	_add_distant_trees(root)
 
 
+## Which of the desert plants in `root` cast a real-time sun shadow for
+## the hole on `hole_path`: the same rule as a placed tree (main.gd, and
+## object_casts_sun_shadow), judged per 400 m area node by its nearest
+## plant. A saguaro's shadow reaches about 20 m, a palm's a little more,
+## so most of a desert course's plants stand too far off the line of play
+## for their shadows ever to be seen from the tee or the flyover, and the
+## shadow pass skips them: on the desert courses most of what it drew was
+## plants (see docs/graphics.md). Re-run on every hole change (main.gd
+## start_hole), as the terrain itself is kept between holes. Nodes
+## without a shadow height keep casting, so a plant built before this
+## keeps its shadow.
+static func refresh_plant_shadows(root: Node3D, hole_path: PackedVector2Array, sun_tan: float, shadow_distance: float) -> void:
+	if root == null or hole_path.is_empty():
+		return
+	for plants in root.find_children("DesertPlants", "Node3D", false, false):
+		for node in (plants as Node).find_children("*", "MultiMeshInstance3D", false, false):
+			var mmi := node as MultiMeshInstance3D
+			if mmi == null or mmi.multimesh == null or not mmi.has_meta("shadow_height"):
+				continue
+			var height := float(mmi.get_meta("shadow_height"))
+			var mm := mmi.multimesh
+			var buf := mm.buffer
+			var nearest := INF
+			for k in mm.instance_count:
+				var d := CourseObjects.distance_to_path(Vector2(buf[k * 12 + 3], buf[k * 12 + 11]), hole_path)
+				nearest = minf(nearest, d)
+			var cast := object_casts_sun_shadow(nearest, height, sun_tan, shadow_distance)
+			mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON if cast else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+
+
 ## The course's trees beyond the ones the round places for this hole
 ## (DesignedCourse.near_hole), as batched trees that are impostors far off,
 ## so the woods across the course are seen rather than bare ground. Visual

@@ -9,9 +9,12 @@ extends ShotModel
 ## native path can run exactly (see simulate()).
 ##
 ## Enable it with --native-physics on the command line or
-## LIDARLINKS_NATIVE_PHYSICS=1 in the environment. It never runs on web:
-## the web build has no extension (variant/extensions_support=false) and
-## ClassDB has no OlcorePhysics there.
+## LIDARLINKS_NATIVE_PHYSICS=1 in the environment. On web it is on
+## whenever the extension is present: the web export ships the wasm
+## extension (variant/extensions_support=true) and there is no command
+## line to pass a flag through. Wherever the extension is absent —
+## a web export without it, or a desktop run without the flag —
+## ClassDB has no OlcorePhysics and the GDScript port runs instead.
 ##
 ## Phase 2: the native sim meets the same obstacles and billboards as the
 ## GDScript port. The baked terrain carries the merged obstacle field the
@@ -51,14 +54,17 @@ func _init(p_inner: ShotModel) -> void:
 
 
 static func use_native_enabled() -> bool:
+	# On web there is no command line to pass --native-physics through,
+	# so the wasm extension is used whenever it loaded; the GDScript
+	# port is still the fallback when it did not (see native_available).
+	if OS.has_feature("web"):
+		return native_available()
 	if OS.get_cmdline_user_args().has("--native-physics"):
 		return true
 	return OS.get_environment("LIDARLINKS_NATIVE_PHYSICS") == "1"
 
 
 static func native_available() -> bool:
-	if OS.has_feature("web"):
-		return false
 	return ClassDB.class_exists("OlcorePhysics")
 
 
@@ -333,6 +339,13 @@ func _putt_links_native(links: LinksShotModel, clubs, power: float, accuracy: fl
 	links.rng.state = rng_state
 	b.position = from
 	return b
+
+
+func simulate_chunked(start: BallState, terrain: CourseTerrain, cup: Vector3, wind := Vector3.ZERO) -> ResumableShot:
+	# No chunked form of the native sim, and none is needed: the native
+	# path only runs where worker threads exist. The GDScript port chunks,
+	# and gives the same result as the native sim.
+	return inner.simulate_chunked(start, terrain, cup, wind)
 
 
 func simulate(start: BallState, terrain: CourseTerrain, cup: Vector3, wind := Vector3.ZERO) -> ShotResult:

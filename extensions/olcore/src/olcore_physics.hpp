@@ -22,6 +22,15 @@
 // any shot runs).
 #pragma once
 
+// godot-cpp's headers name unused callback parameters, which -Wall
+// -Wextra (set by the extension build) reports when this header is
+// parsed. Silence just that warning for the third-party includes, so
+// this extension still builds warning-free; our own code keeps the
+// full warnings.
+#if defined(__clang__) || defined(__GNUC__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-parameter"
+#endif
 #include <godot_cpp/classes/ref.hpp>
 #include <godot_cpp/classes/ref_counted.hpp>
 #include <godot_cpp/core/class_db.hpp>
@@ -35,6 +44,9 @@
 #include <godot_cpp/variant/vector2.hpp>
 #include <godot_cpp/variant/vector2i.hpp>
 #include <godot_cpp/variant/vector3.hpp>
+#if defined(__clang__) || defined(__GNUC__)
+#pragma GCC diagnostic pop
+#endif
 
 #include "olcore/links_launch.hpp"
 #include "olcore/links_mouse.hpp"

@@ -21,7 +21,7 @@ constexpr std::size_t kClipSamples = 0x3c;
 constexpr std::size_t kChannelSize = 20;
 
 // Carrera::Transform fields (Joint extends Transform).
-constexpr std::size_t kNodeName = 0x10;
+constexpr std::size_t kNodeName [[maybe_unused]] = 0x10;
 constexpr std::size_t kNodeParent = 0x1c;
 constexpr std::size_t kNodeTranslate = 280;
 constexpr std::size_t kNodeRotate = 292;

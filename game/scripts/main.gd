@@ -222,11 +222,14 @@ const GALLERY_RECLEAR_DEG := 6.0
 ## how far the camera must have moved to run it again, how close a thing
 ## must be to never hide, and how tall a tree batch is judged. The check
 ## itself is a few dozen height samples per batch, so it runs at most
-## twice a second and only once the camera has moved.
+## twice a second and only once the camera has moved — and a sweep is
+## spread over frames at OCCLUSION_BUDGET_MS, so a hole's few hundred
+## batches never stall one frame the way they did (120 to 400 ms).
 const OCCLUSION_INTERVAL_S := 0.5
 const OCCLUSION_MOVE_M := 8.0
 const OCCLUSION_MIN_DIST_M := 60.0
 const OCCLUSION_TREE_HEIGHT_M := 20.0
+const OCCLUSION_BUDGET_MS := 4.0
 var _aim_ready_ms := 0
 var _gallery_aim := 1000.0
 ## A shot's flight can't be skipped this early, so the tap or click that
@@ -344,10 +347,15 @@ var gallery: Gallery  ## the ropes, crowd and grandstand (Broadcast only)
 ## Things the terrain can hide from the camera this hole: {node, height,
 ## reach} — tree batches tagged with their cell reach, placed objects
 ## with their height (see _register_occludables). The camera the last
-## check ran from, and the time until the next one.
+## check ran from, and the time until the next one. A sweep in progress
+## keeps its place (_occlusion_index) and the eye it started from
+## (_occlusion_eye), so the batches are judged a budget at a time over
+## frames instead of all at once.
 var _occludables: Array = []
 var _occlusion_camera := Vector3.INF
 var _occlusion_timer := 0.0
+var _occlusion_index := 0
+var _occlusion_eye := Vector3.ZERO
 var tracer: BallTracer
 var green_grid: GreenGrid
 ## The Tour presentation (GraphicsSettings.Presentation.TOUR): the tour
@@ -964,6 +972,12 @@ func start_hole(index: int) -> void:
 		hole_root.add_child(node)
 	TreeFactory.batch_impostors(hole_root)
 	_register_occludables()
+	if hole.terrain is DesignedTerrain and _terrain_visual != null:
+		# The desert plants' shadows, like a placed tree's: only the
+		# areas near this hole's line of play cast (DesignedTerrain
+		# .refresh_plant_shadows). The terrain is kept between holes, so
+		# this runs on every hole change, not just when it is built.
+		DesignedTerrain.refresh_plant_shadows(_terrain_visual, hole_path, sun_tan, graphics.shadow_distance() if graphics != null else 600.0)
 	var on_range := _on_range()
 	if practice != null:
 		practice_cups = PracticeCups.new()
@@ -1274,18 +1288,53 @@ func play_shot(power: float, accuracy: float, monitor: OpenConnect.Launch = null
 		_strike["task"] = BackgroundWork.start(work, "strike")
 		state = State.STRIKE
 		return
+	if _incoming == null:
+		# No worker threads (the web build): the strike sim cannot start
+		# earlier, so chunk it across frames instead of blocking the frame
+		# of the strike (ResumableShot, Phase 3). The launch is cheap and
+		# runs now, on a model of its own as the worker path does; the
+		# flight and roll advance STRIKE_CHUNK_MS a frame in
+		# _process_strike, while the club comes down, and give the same
+		# result as the one-shot sim.
+		var chunk_model := shot_model.fresh()
+		var start := RoundReplay.launch_shot(chunk_model, rec, club, round_seed)
+		_strike = {"rec": rec, "club": club, "power": power, "accuracy": accuracy,
+				"sim": chunk_model.simulate_chunked(start, hole.terrain, hole.pin, rec.wind),
+				"start": start}
+		state = State.STRIKE
+		return
 	_struck(rec, club, power, accuracy, RoundReplay.run_shot(shot_model, rec, club, hole.terrain, hole.pin, rec.wind, round_seed))
 
 
 ## The strike on a worker thread (play_shot): {rec, club, power, accuracy,
-## out, task} while State.STRIKE.
+## out, task} while State.STRIKE. On the web build, where there are no
+## worker threads, it is a chunked sim instead: {rec, club, power,
+## accuracy, sim, start} (see play_shot).
 var _strike := {}
+
+
+## Milliseconds of strike sim per frame on the web build (ResumableShot):
+## a 15-60 ms sim then takes a few frames of the club coming down, and no
+## frame stalls on it.
+const STRIKE_CHUNK_MS := 8.0
 
 
 ## State.STRIKE: the flight starts once the worker thread has it, or at
 ## once with `wait`.
 func _process_strike(wait := false) -> void:
 	if _strike.is_empty():
+		return
+	if _strike.has("sim"):
+		var sim: ResumableShot = _strike["sim"]
+		if wait:
+			sim.run()
+		elif not sim.advance_ms(STRIKE_CHUNK_MS):
+			return
+		var s := _strike
+		_strike = {}
+		var out := sim.result()
+		out.launch = s["start"]
+		_struck(s["rec"], s["club"], s["power"], s["accuracy"], out)
 		return
 	var task: int = _strike["task"]
 	if wait:
@@ -1469,6 +1518,7 @@ func _process(delta: float) -> void:
 	_update_reticle(paused)
 	_step_advice()
 	_step_yard_scale()
+	_step_putt_scale()
 	grass.update_around(camera.global_position)
 	fescue.update_around(camera.global_position)
 	debris.update_around(camera.global_position)
@@ -2818,6 +2868,7 @@ func _register_occludables() -> void:
 	_occludables.clear()
 	_occlusion_camera = Vector3.INF
 	_occlusion_timer = 0.0
+	_occlusion_index = 0
 	if hole_root == null:
 		return
 	for c in hole_root.find_children("*", "Node3D", true, false):
@@ -2833,41 +2884,56 @@ func _register_occludables() -> void:
 ## Hides what the terrain hides from the camera, and shows it again when
 ## the camera rounds the hill. Throttled (and only once the camera has
 ## moved), so a hole's few hundred batches cost a few dozen height
-## samples each at most twice a second. Off in the settings, or without
-## a camera or a hole, nothing hides. Near things never hide: a tree
-## beside the player popping out would read as a bug, a wood 60 m off
-## reads as haze.
+## samples each at most twice a second — and a sweep is spread over
+## frames at OCCLUSION_BUDGET_MS a frame, so it never stalls one frame
+## the way judging every batch at once did. Off in the settings, or
+## without a camera or a hole, nothing hides. Near things never hide: a
+## tree beside the player popping out would read as a bug, a wood 60 m
+## off reads as haze.
 func _update_occlusion(delta: float) -> void:
 	_occlusion_timer -= delta
-	if _occlusion_timer > 0.0 or _occludables.is_empty():
+	if _occludables.is_empty():
 		return
-	_occlusion_timer = OCCLUSION_INTERVAL_S
-	if graphics == null or not graphics.terrain_occlusion or hole == null or hole.terrain == null:
+	if _occlusion_index == 0:
+		if _occlusion_timer > 0.0:
+			return
+		if graphics == null or not graphics.terrain_occlusion or hole == null or hole.terrain == null:
+			return
+		var camera := get_viewport().get_camera_3d()
+		if camera == null:
+			return
+		var eye := camera.global_position
+		if _occlusion_camera != Vector3.INF and eye.distance_to(_occlusion_camera) < OCCLUSION_MOVE_M:
+			_occlusion_timer = OCCLUSION_INTERVAL_S
+			return
+		_occlusion_camera = eye
+		_occlusion_eye = eye
+	if hole == null or hole.terrain == null:
+		_occlusion_index = 0
 		return
-	var camera := get_viewport().get_camera_3d()
-	if camera == null:
-		return
-	var eye := camera.global_position
-	if _occlusion_camera != Vector3.INF and eye.distance_to(_occlusion_camera) < OCCLUSION_MOVE_M:
-		return
-	_occlusion_camera = eye
 	var terrain := hole.terrain
-	for i in range(_occludables.size() - 1, -1, -1):
-		var entry: Dictionary = _occludables[i]
+	var deadline := Time.get_ticks_usec() + int(OCCLUSION_BUDGET_MS * 1000.0)
+	while _occlusion_index < _occludables.size():
+		var entry: Dictionary = _occludables[_occlusion_index]
 		var node := entry["node"] as Node3D
 		if node == null or not is_instance_valid(node):
-			_occludables.remove_at(i)
+			_occludables.remove_at(_occlusion_index)
 			continue
 		var height := float(entry["height"])
 		var hidden := false
-		if eye.distance_to(node.global_position) >= OCCLUSION_MIN_DIST_M:
+		if _occlusion_eye.distance_to(node.global_position) >= OCCLUSION_MIN_DIST_M:
 			if float(entry["reach"]) > 0.0:
-				hidden = TerrainOcclusion.batch_hidden(terrain, eye, node.global_position, float(entry["reach"]), height)
+				hidden = TerrainOcclusion.batch_hidden(terrain, _occlusion_eye, node.global_position, float(entry["reach"]), height)
 			else:
-				hidden = TerrainOcclusion.hidden_by_terrain(terrain, eye, node.global_position + Vector3.UP * height)
+				hidden = TerrainOcclusion.hidden_by_terrain(terrain, _occlusion_eye, node.global_position + Vector3.UP * height)
 		var want := not hidden
 		if node.visible != want:
 			node.visible = want
+		_occlusion_index += 1
+		if Time.get_ticks_usec() >= deadline:
+			return
+	_occlusion_index = 0
+	_occlusion_timer = OCCLUSION_INTERVAL_S
 
 
 ## Keeps the gallery out of the line of play (Gallery.clear_line): when
@@ -5602,11 +5668,25 @@ func _update_putt_scale() -> void:
 		return
 	var hole_ft := Vector2(hole.pin.x - ball_at.x, hole.pin.z - ball_at.z).length() * LinksLaunch.FEET_PER_METRE
 	# 21 putts on a level green: the same wherever the ball is, so worked
-	# out once per putter, lie and green speed (it stalled every arrival on
-	# the green).
-	var key := "%d|%s|%d" % [shot_model.get_instance_id(), clubs[club_index].short_name, lie]
+	# out once per putter, lie and green speed. Worked out a sample a frame
+	# (_step_putt_scale), like the yard scale: all 21 at once stalled every
+	# arrival on the green (about 400 ms on a slow machine).
+	var key := _putt_scale_key()
 	if not _putt_scales.has(key):
-		_putt_scales[key] = putt_roll_feet(shot_model, clubs[club_index], lie)
+		if _putt_job_key != key:
+			# A new key starts over (the putter or the lie changed under
+			# a job still running); the meter reads the bare meter until
+			# the samples land, as the yard scale does.
+			_putt_job_key = key
+			_putt_job = putt_meter_values()
+			_putt_done = PackedFloat32Array()
+			_putt_meter = PuttMeterScale.bare()
+			hud.meter.set_putt_scale(PackedFloat32Array(), -1.0)
+			hud.mouse_swing.set_putt_scale(PackedFloat32Array(), -1.0)
+		return
+	_putt_job_key = ""
+	_putt_job = PackedFloat32Array()
+	_putt_done = PackedFloat32Array()
 	var full: PackedFloat32Array = _putt_scales[key]
 	if graphics.quick_pace and graphics.swing_method != 1:
 		_putt_meter = PuttMeterScale.for_hole(full, hole_ft)
@@ -5626,6 +5706,25 @@ func _caddie_putt_meter() -> PuttMeterScale:
 
 
 var _putt_scales := {}  ## see _update_putt_scale()
+## A putt scale being worked out a sample a frame (_step_putt_scale): the
+## key it is for, the meter values still to run and the samples so far.
+var _putt_job_key := ""
+var _putt_job := PackedFloat32Array()
+var _putt_done := PackedFloat32Array()
+
+
+## What a putt scale depends on: the shot model, the putter and the lie.
+func _putt_scale_key() -> String:
+	return "%d|%s|%d" % [shot_model.get_instance_id(), clubs[club_index].short_name, lie]
+
+
+## The meter values the putt scale samples: 0, 1/20 ... 1 of a meter whose
+## top is `share` of the full meter's power.
+static func putt_meter_values(share := 1.0) -> PackedFloat32Array:
+	var out := PackedFloat32Array()
+	for i in 21:
+		out.append(maxf(float(i) / 20.0 * share, 0.02))
+	return out
 
 
 ## Feet a putt rolls on a level green for meter values 0, 1/20 ... 1 of a
@@ -5640,15 +5739,53 @@ static func putt_roll_feet(model: ShotModel, putter: Club, from_lie: int, share 
 	var mouse: LinksMouse.Outcome = links.mouse_swing if links != null else null
 	if links != null:
 		links.mouse_swing = null
-	for i in 21:
-		var v := maxf(float(i) / 20.0 * share, 0.02)
-		var start := model.launch(putter, v, 0.0, 0.0, from_lie, Vector3.ZERO)
-		var r := model.simulate(start, flat, Vector3(0, 0, 1.0e5))
-		out.append(Vector2(r.rest.x, r.rest.z).length() * LinksLaunch.FEET_PER_METRE)
+	for v in putt_meter_values(share):
+		out.append(putt_roll_one(model, putter, from_lie, flat, v))
 	if links != null:
 		links.rng.state = rng_state
 		links.mouse_swing = mouse
 	return out
+
+
+## One sample of putt_roll_feet: feet a putt at meter value `v` rolls on
+## the level green `flat`, by `model`'s own physics.
+static func putt_roll_one(model: ShotModel, putter: Club, from_lie: int, flat: CourseTerrain, v: float) -> float:
+	var start := model.launch(putter, v, 0.0, 0.0, from_lie, Vector3.ZERO)
+	var r := model.simulate(start, flat, Vector3(0, 0, 1.0e5))
+	return Vector2(r.rest.x, r.rest.z).length() * LinksLaunch.FEET_PER_METRE
+
+
+## Works out a putt scale a sample a frame, like _step_yard_scale: one
+## putt on a flat green per frame, with the model's random numbers and
+## mouse swing held as putt_roll_feet (and carry_yards) hold them, so the
+## samples land exactly as the all-at-once scale's and the round's own
+## random numbers are left where they were.
+func _step_putt_scale() -> void:
+	if _putt_job.size() == 0 or _putt_done.size() >= _putt_job.size():
+		return
+	# A job for another putter or lie is dropped: _update_putt_scale
+	# starts the right one when it is next asked.
+	if _putt_job_key != _putt_scale_key():
+		_putt_job_key = ""
+		_putt_job = PackedFloat32Array()
+		_putt_done = PackedFloat32Array()
+		return
+	var v := _putt_job[_putt_done.size()]
+	var links := OlcoreShotModel.links_of(shot_model)
+	var rng_state := links.rng.state if links != null else 0
+	var mouse: LinksMouse.Outcome = links.mouse_swing if links != null else null
+	if links != null:
+		links.mouse_swing = null
+	_putt_done.append(putt_roll_one(shot_model, clubs[club_index], lie, FlatTerrain.new(Surface.Type.GREEN), v))
+	if links != null:
+		links.rng.state = rng_state
+		links.mouse_swing = mouse
+	if _putt_done.size() == _putt_job.size():
+		_putt_scales[_putt_job_key] = _putt_done.duplicate()
+		_putt_job_key = ""
+		_putt_job = PackedFloat32Array()
+		_putt_done = PackedFloat32Array()
+		_update_putt_scale()
 
 
 ## The Broadcast and Tour full-swing and chip meter's carry scale: what

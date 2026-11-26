@@ -86,7 +86,8 @@ class LinksMouseClub {
        watch_rise_ = false, rose_ = false, surge_ = false, turned_ = false, hit_ = false;
   int reversed_ = 0;  // 0 not yet, 1 the mouse just turned, 2 turned, 3 the club turned
   int peak_ = 0, rise_ = 0, dip_ = 0, rise_frame_ = 0;
-  double last_v_ = 0, delta_ = 0, pos_ = 0, drift_ = 0, top_pos_ = 0, backswing_ = 1;
+  double last_v_ = 0, delta_ = 0, pos_ = 0, drift_ = 0, backswing_ = 1;
+  [[maybe_unused]] double top_pos_ = 0;
   bool top_set_ = false;
   int straight_ = 0;
   std::array<Sample, 4> s_{};

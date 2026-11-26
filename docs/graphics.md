@@ -743,6 +743,27 @@ frame; the shadow pass's tree triangles 257k to 132k, ground 149k to 106k
 (132 to 65 chunks casting), stakes 86k to none. Each hole change there was
 also half a second faster: the ponds' water meshes are kept between holes.
 
+On 2026-11-26 the same counting, headless, at Photoreal (Ultra, hole 2)
+found the desert courses' shadow pass was mostly plants, not trees: the
+cacti and palms cast their full scanned meshes (1 to 3 thousand
+triangles each) into every shadow split, 7.6M of 9.0M caster triangles
+on Ember Coast (all palms), 8.7M of 10.0M on Red Spire, 5.5M of 7.0M on
+Vermilion Ridge. A saguaro's shadow reaches about 20 m, so most plants
+stand too far off the line of play for their shadows ever to be seen
+from the tee or the flyover. The placed-tree rule
+(`DesignedTerrain.object_casts_sun_shadow`) now runs per 400 m plant
+area on every hole change (`DesignedTerrain.refresh_plant_shadows`, from
+`GolfRound.start_hole`): an area casts only when its nearest plant's
+shadow can reach the line of play. Caster triangles fell to 3.9M on
+Ember Coast, 2.6M on Red Spire and 1.7M on Vermilion Ridge, while the
+placeholder (930k) and Glacier Crown (944k), which have no desert
+plants, did not move. The ground chunks are now the biggest casters on
+those courses (1.0 to 1.3M), already trimmed by their slope. Not done:
+the Ultra shadow atlas stays 8192 (256 MB) on Forward+, as cutting it
+to 4096 would make Ultra's first-split shadows coarser than High's
+(about 5 mm a texel against 2.4 mm); and the rock formations still cast
+by default (about 0.1 to 0.2M triangles).
+
 On Forward+ (desktop) the free textures, imported as lossy WebP for a
 small download, are block-compressed (BC1/BC3) as they load
 (`FreeAssets.gpu_compress`), since WebP is stored uncompressed in video

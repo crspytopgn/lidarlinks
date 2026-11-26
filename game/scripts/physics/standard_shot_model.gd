@@ -55,3 +55,7 @@ func reach_scale(club: Club) -> float:
 
 func simulate(start: BallState, terrain: CourseTerrain, cup: Vector3, wind := Vector3.ZERO) -> ShotResult:
 	return BallPhysics.simulate_shot(start, terrain, true, cup, wind)
+
+
+func simulate_chunked(start: BallState, terrain: CourseTerrain, cup: Vector3, wind := Vector3.ZERO) -> ResumableShot:
+	return ResumableShot.new(start, terrain, true, cup, wind)

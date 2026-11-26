@@ -48,7 +48,9 @@ static func ensure_defaults() -> void:
 	# asked for it (--native-physics / LIDARLINKS_NATIVE_PHYSICS=1) and
 	# the extension is loaded. It wraps the model above for launch and
 	# lie power, and falls back to it whenever a shot is outside what
-	# the native path can run exactly. Never on web.
+	# the native path can run exactly. On web it is used whenever the
+	# wasm extension is present (no flag exists there); without the
+	# extension the GDScript port runs instead.
 	if OlcoreShotModel.use_native_enabled() and OlcoreShotModel.native_available():
 		shot_model = OlcoreShotModel.new(shot_model)
 

@@ -2374,6 +2374,30 @@ func _test_graphics_settings() -> void:
 	_check(GraphicsSettings.shadow_atlas_size_for(GraphicsSettings.Quality.ULTRA, false) == 4096, "shadow atlas: 4096 at Ultra on Compatibility")
 	_check(GraphicsSettings.shadow_atlas_size_for(GraphicsSettings.Quality.MEDIUM, true) == 2048, "shadow atlas: 2048 at Medium")
 	_check(GraphicsSettings.shadow_atlas_size_for(GraphicsSettings.Quality.HIGH, false) == 4096, "shadow atlas: 4096 at High on Compatibility")
+	# Desert plants cast sun shadows only near the line of play: a palm's
+	# shadow reaches about 20 m, so one far off the hole casts none, and
+	# the shadow pass skips most of a desert course's plants.
+	_check(is_equal_approx(DesertPlants.height_of("cactus_saguaro", 0), 6.0), "desert plants: saguaro height")
+	_check(is_equal_approx(DesertPlants.height_of("palm_coconut", 0), 8.5), "desert plants: palm height")
+	_check(is_equal_approx(DesertPlants.height_of("cactus_barrel", 0), 0.85), "desert plants: barrel height")
+	_check(is_equal_approx(DesertPlants.height_of("cactus_pear", 0), 1.2), "desert plants: pear height")
+	var plant_root := Node3D.new()
+	var plants_node := Node3D.new()
+	plants_node.name = "DesertPlants"
+	plant_root.add_child(plants_node)
+	var near_plants := _plant_area(Vector3.ZERO, 8.5)
+	var far_plants := _plant_area(Vector3(300.0, 0.0, 0.0), 8.5)
+	var plain_plants := _plant_area(Vector3(300.0, 0.0, 0.0), 8.5)
+	plain_plants.remove_meta("shadow_height")
+	plants_node.add_child(near_plants)
+	plants_node.add_child(far_plants)
+	plants_node.add_child(plain_plants)
+	# An afternoon sun (tan about 0.78) and the Ultra shadow distance.
+	DesignedTerrain.refresh_plant_shadows(plant_root, PackedVector2Array([Vector2.ZERO, Vector2(0.0, 400.0)]), 0.78, 600.0)
+	_check(near_plants.cast_shadow == GeometryInstance3D.SHADOW_CASTING_SETTING_ON, "desert plants: the area on the line of play casts")
+	_check(far_plants.cast_shadow == GeometryInstance3D.SHADOW_CASTING_SETTING_OFF, "desert plants: the area 300 m off it casts none")
+	_check(plain_plants.cast_shadow == GeometryInstance3D.SHADOW_CASTING_SETTING_ON, "desert plants: an area without a shadow height keeps casting")
+	plant_root.free()
 	# The learned grade: a 32-cubed lookup per time of day and renderer.
 	for t in [GraphicsSettings.TimeOfDay.AFTERNOON, GraphicsSettings.TimeOfDay.MORNING, GraphicsSettings.TimeOfDay.MIDDAY, GraphicsSettings.TimeOfDay.GOLDEN]:
 		for fwd in [false, true]:
@@ -2625,6 +2649,20 @@ func _test_graphics_settings() -> void:
 	var flat := func(_x: float, _z: float) -> float: return 0.0
 	_check_near(PhotoMode.focus_distance(Vector3(0, 10, 0), Vector3(0, -1, 1).normalized(), flat), 14.14, 0.6, "focus finds the ground")
 	_check(PhotoMode.focus_distance(Vector3(0, 10, 0), Vector3(0, 0.2, 1).normalized(), flat) == PhotoMode.FOCUS_RAY, "focus on the sky is far")
+
+
+## One desert-plant area for the shadow test: a single plant of
+## `height` metres at `at`, as one MultiMesh instance.
+func _plant_area(at: Vector3, height: float) -> MultiMeshInstance3D:
+	var mm := MultiMesh.new()
+	mm.transform_format = MultiMesh.TRANSFORM_3D
+	mm.mesh = QuadMesh.new()
+	mm.instance_count = 1
+	mm.buffer = PackedFloat32Array([1, 0, 0, at.x, 0, 1, 0, at.y, 0, 0, 1, at.z])
+	var node := MultiMeshInstance3D.new()
+	node.multimesh = mm
+	node.set_meta("shadow_height", height)
+	return node
 
 
 func _test_trees() -> void:
@@ -3080,9 +3118,23 @@ func _test_grass() -> void:
 	_check(not GrassField._is_far(10.0, 55.0) and GrassField._is_far(50.0, 55.0), "dense grass near the camera, sparser further out")
 	var field := GrassField.new()
 	field.setup(t, 1)
-	field.update_around(tee + Vector3(0, 2, 60))
-	_check(field.chunk_count() == GrassField.BUILDS_PER_FRAME, "builds a few chunks per frame")
+	# Chunks are built over frames at a budget a frame (GrassField), so
+	# the field is pumped until a couple land, GreenGrid-style.
+	var eye := tee + Vector3(0, 2, 60)
+	for _p in 200:
+		field.update_around(eye)
+		if field.chunk_count() >= 2:
+			break
+	_check(field.chunk_count() >= 2, "builds chunks over frames")
 	_check(field.mown_chunk_count() == 0, "no mown fur at the Low grass level")
+	# The chunk the over-frames build lands is the one build_chunk makes
+	# for the same cell: same draws, in the same order (keep them in step).
+	var landed_key: Vector2i = field._chunks.keys()[0]
+	var landed_node: MultiMeshInstance3D = field._chunks[landed_key]
+	var landed_far := GrassField._is_far(GrassField._chunk_centre(landed_key).distance_to(Vector2(eye.x, eye.z)), GrassField.RADIUS[1])
+	var sync := GrassField.build_chunk(t, landed_key, GrassField.DENSITY[1], GrassField.FAR_SHARE if landed_far else 1.0)
+	var same := (sync == null and landed_node == null) or (sync != null and landed_node != null and sync.instance_count == landed_node.multimesh.instance_count and (sync.get_meta("buffer") as PackedFloat32Array) == (landed_node.multimesh.get_meta("buffer") as PackedFloat32Array))
+	_check(same, "over-frames build lands the same chunk as build_chunk")
 	field.free()
 	# The mown fur: only on the tee, fairway and fringe, the same each time.
 	var mown := GrassField.build_mown_chunk(t, Vector2i(floori(tee.x / GrassField.MOWN_CHUNK), floori(tee.z / GrassField.MOWN_CHUNK)), 100.0)
@@ -3097,8 +3149,19 @@ func _test_grass() -> void:
 		_check(mb[16 * 0 + 5] < 0.03, "mown blades are cut short")
 	var near := GrassField.new()
 	near.setup(t, 3)
-	near.update_around(Vector3(tee.x, t.height_at(tee.x, tee.z) + 1.6, tee.z))
-	_check(near.mown_chunk_count() == GrassField.MOWN_BUILDS_PER_FRAME, "builds a few mown chunks per frame")
+	var near_eye := Vector3(tee.x, t.height_at(tee.x, tee.z) + 1.6, tee.z)
+	for _p in 400:
+		near.update_around(near_eye)
+		if near.mown_chunk_count() >= 2:
+			break
+	_check(near.mown_chunk_count() >= 2, "builds mown chunks over frames")
+	# The mown chunk the over-frames build lands is the one
+	# build_mown_chunk makes for the same cell.
+	var mown_key: Vector2i = near._mown.keys()[0]
+	var mown_node: MultiMeshInstance3D = near._mown[mown_key]
+	var mown_sync := GrassField.build_mown_chunk(t, mown_key, GrassField.MOWN_DENSITY[3])
+	var mown_same := (mown_sync == null and mown_node == null) or (mown_sync != null and mown_node != null and mown_sync.instance_count == mown_node.multimesh.instance_count and (mown_sync.get_meta("buffer") as PackedFloat32Array) == (mown_node.multimesh.get_meta("buffer") as PackedFloat32Array))
+	_check(mown_same, "over-frames build lands the same mown chunk as build_mown_chunk")
 	near.update_around(Vector3(tee.x, t.height_at(tee.x, tee.z) + 60.0, tee.z))
 	_check(near.mown_chunk_count() == 0, "no mown fur seen from high up")
 	near.free()

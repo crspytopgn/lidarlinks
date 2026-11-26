@@ -1,15 +1,27 @@
 class_name GrassField
 extends Node3D
 ## Real 3D grass in the rough, only near the camera: tufts of blades in
-## 12 m chunks, built a couple of chunks per frame as the camera moves and
-## dropped when it moves away. Tufts take the ground's colour under them
+## 12 m chunks, built as the camera moves and dropped when it moves away.
+## Tufts take the ground's colour under them
 ## (CourseTerrain.ground_color_at), bend in the wind and shrink away at the
 ## edge of the radius. Purely visual: the ball and the physics never see it.
 ## Density and radius come from the Grass setting (GraphicsSettings.grass).
+## A chunk is built over frames at BUILD_BUDGET_MS a frame, like
+## FescueField: one whole chunk took 180 to 470 ms on a slow machine, and
+## a camera move needs dozens, so building even one at once stalled
+## aiming. The built chunk is identical to build_chunk's (same draws, in
+## the same order); only when it lands differs.
 
 const SHADER := preload("res://shaders/grass.gdshader")
 const CHUNK := 12.0
-const BUILDS_PER_FRAME := 2
+## Milliseconds of chunk building per update_around call. The budget is
+## checked after every try, not every few: a try costs about a quarter of
+## a millisecond at High density on a fast machine, and far more on a slow
+## one, so a batch of tries could overrun the budget many times over
+## before the check fired (one grass frame took 188 ms this way in the
+## benchmark on a loaded machine). Reading the clock per try costs
+## nothing next to a try.
+const BUILD_BUDGET_MS := 4.0
 ## Per level (Off, Low, Medium, High): tufts per square metre of rough
 ## near the camera, and how far from the camera the grass reaches. Chunks
 ## further out than NEAR of the reach (where the tufts are sinking into
@@ -51,7 +63,6 @@ const MOWN_DENSITY := [0.0, 0.0, 130.0, 220.0]
 ## over the disc is the densest fur in the game).
 const MOWN_RADIUS := [0.0, 0.0, 3.5, 4.0]
 const MOWN_CHUNK := 3.0
-const MOWN_BUILDS_PER_FRAME := 2
 ## Blade heights (m) as cut: tees and fairways at about 12 to 15 mm, the
 ## fringe a little longer. Leaning blades stand a bit lower than that.
 const MOWN_HEIGHTS := {
@@ -67,6 +78,25 @@ var level := 0
 var _chunks := {}  ## Vector2i -> MultiMeshInstance3D (null for an empty chunk)
 var _far := {}  ## Vector2i -> true for a chunk built at the far density
 var _mown := {}  ## Vector2i (MOWN_CHUNK grid) -> MultiMeshInstance3D or null
+## The chunk being built over frames ("" when idle): its kind ("grass" or
+## "mown"), the cell it covers, the share of tufts a far chunk keeps, the
+## terrain and layout it was started from, and the tries done so far. A
+## build for the old hole is dropped when setup raises _generation.
+var _job_kind := ""
+var _job_key := Vector2i.ZERO
+var _job_gen := 0
+var _job_far := false
+var _job_share := 1.0
+var _job_biome := ""
+var _job_side := 0
+var _job_cell := 0.0
+var _job_origin := Vector2.ZERO
+var _job_tries := 0
+var _job_i := 0
+var _job_n := 0
+var _job_rng: RandomNumberGenerator = null
+var _job_buffer := PackedFloat32Array()
+var _generation := 0
 
 static var _tuft: ArrayMesh
 static var _mat: ShaderMaterial
@@ -80,6 +110,9 @@ func _init() -> void:
 
 ## Starts over on a new terrain or grass level.
 func setup(t: CourseTerrain, grass_level: int) -> void:
+	_generation += 1
+	_job_kind = ""
+	_job_buffer = PackedFloat32Array()
 	terrain = t
 	level = clampi(grass_level, 0, DENSITY.size() - 1)
 	for node in _chunks.values():
@@ -135,28 +168,10 @@ func update_around(eye: Vector3) -> void:
 				wanted.append(key)
 	wanted.sort_custom(func(a: Vector2i, b: Vector2i) -> bool:
 		return _chunk_centre(a).distance_squared_to(here) < _chunk_centre(b).distance_squared_to(here))
-	for i in mini(BUILDS_PER_FRAME, wanted.size()):
-		var key := wanted[i]
-		var far := _is_far(_chunk_centre(key).distance_to(here), r)
-		var mm := build_chunk(terrain, key, DENSITY[level], FAR_SHARE if far else 1.0)
-		var node: MultiMeshInstance3D = null
-		if mm != null:
-			node = MultiMeshInstance3D.new()
-			# Thin cards or moving things: left out of the global illumination's
-			# scene (SDFGI), which they would only blotch and slow; they still
-			# receive its light.
-			node.gi_mode = GeometryInstance3D.GI_MODE_DISABLED
-			node.multimesh = mm
-			node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-			add_child(node)
-		var old: Node = _chunks.get(key)
-		if old != null:
-			old.queue_free()
-		_chunks[key] = node
-		if far:
-			_far[key] = true
-		else:
-			_far.erase(key)
+	if _job_kind == "" and not wanted.is_empty():
+		var key := wanted[0]
+		_start_build("grass", key, _is_far(_chunk_centre(key).distance_to(here), r))
+	_step_build()
 
 
 ## The mown fur's chunks: the nearest missing ones in, far ones out.
@@ -185,16 +200,222 @@ func _update_mown(eye: Vector3) -> void:
 				wanted.append(key)
 	wanted.sort_custom(func(a: Vector2i, b: Vector2i) -> bool:
 		return _mown_centre(a).distance_squared_to(here) < _mown_centre(b).distance_squared_to(here))
-	for i in mini(MOWN_BUILDS_PER_FRAME, wanted.size()):
-		var mm := build_mown_chunk(terrain, wanted[i], MOWN_DENSITY[level])
-		var node: MultiMeshInstance3D = null
-		if mm != null:
-			node = MultiMeshInstance3D.new()
-			node.gi_mode = GeometryInstance3D.GI_MODE_DISABLED
-			node.multimesh = mm
-			node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-			add_child(node)
-		_mown[wanted[i]] = node
+	if _job_kind == "" and not wanted.is_empty():
+		_start_build("mown", wanted[0])
+
+
+## Starts a chunk building over frames: the nearest missing one, grass or
+## mown. Nothing is drawn yet; _step_build works the grid a budget at a
+## time and lands the chunk when the tries are done.
+func _start_build(kind: String, key: Vector2i, far := false) -> void:
+	_job_kind = kind
+	_job_key = key
+	_job_gen = _generation
+	_job_far = far
+	_job_share = FAR_SHARE if far else 1.0
+	_job_i = 0
+	_job_n = 0
+	_job_rng = RandomNumberGenerator.new()
+	if kind == "mown":
+		_job_rng.seed = hash(key) ^ 0x6d6f776e
+		_job_side = maxi(1, roundi(MOWN_CHUNK * sqrt(MOWN_DENSITY[level])))
+		_job_cell = MOWN_CHUNK / _job_side
+		_job_origin = Vector2(key) * MOWN_CHUNK
+	else:
+		_job_biome = Biome.of(terrain)
+		_job_rng.seed = hash(key)
+		_job_side = maxi(1, roundi(CHUNK * sqrt(DENSITY[level])))
+		_job_cell = CHUNK / _job_side
+		_job_origin = Vector2(key) * CHUNK
+	_job_tries = _job_side * _job_side
+	_job_buffer = PackedFloat32Array()
+	_job_buffer.resize(_job_tries * 16)
+
+
+## Works the chunk being built a budget at a time (BUILD_BUDGET_MS), and
+## lands it when the grid is done. A build for the old hole, or one whose
+## terrain is gone, is dropped: its tufts belong to a course that is no
+## longer there.
+func _step_build() -> void:
+	if _job_kind == "":
+		return
+	if _job_gen != _generation or terrain == null:
+		_job_kind = ""
+		_job_buffer = PackedFloat32Array()
+		return
+	var deadline := Time.get_ticks_usec() + int(BUILD_BUDGET_MS * 1000.0)
+	while _job_i < _job_tries:
+		if _job_kind == "mown":
+			_step_mown_try(_job_i)
+		else:
+			_step_grass_try(_job_i)
+		_job_i += 1
+		if Time.get_ticks_usec() >= deadline:
+			return
+	_finish_build()
+
+
+## One try of build_chunk's grid, written into the job's buffer: the same
+## draws, in the same order, so the chunk a build lands is the chunk
+## build_chunk would have made. Keep the two in step (tests compare them).
+func _step_grass_try(i: int) -> void:
+	var t := terrain
+	var rng := _job_rng
+	var side := _job_side
+	var cell := _job_cell
+	var origin := _job_origin
+	var x := origin.x + (i % side + rng.randf()) * cell
+	var z := origin.y + (floorf(float(i) / side) + rng.randf()) * cell
+	var yaw := rng.randf() * TAU
+	var size := rng.randf()
+	var phase := rng.randf()
+	if phase >= _job_share:
+		return
+	var surface := t.surface_at(x, z)
+	if not HEIGHTS.has(surface) or Biome.is_bare(_job_biome, surface) or (surface != Surface.Type.FAIRWAY and t.finish_at(x, z) != 0):
+		return
+	var hr: Vector2 = FIRST_CUT_HEIGHT if surface == Surface.Type.ROUGH and t.first_cut_at(x, z) else HEIGHTS[surface]
+	var h := lerpf(hr.x, hr.y, size)
+	var w := 0.3 + size * 0.2
+	var c := t.ground_color_at(x, z)
+	if surface == Surface.Type.DEEP_ROUGH:
+		# In a golden native drift the ground goes part straw
+		# (terrain.gdshader native_at, kept greener by the camera):
+		# blades of the plain green stood out as dark spikes on it.
+		var native := FescueField.native_at(x, z, t.normal_at(x, z).y)
+		if native > 0.0:
+			c = c.lerp(FescueField.native_colour(phase), native * NATIVE_BLEND)
+	var o := _job_n * 16
+	var cs := cos(yaw)
+	var sn := sin(yaw)
+	# Row-major 3x4: yaw about y, width w across, height h up.
+	_job_buffer[o] = cs * w
+	_job_buffer[o + 1] = 0.0
+	_job_buffer[o + 2] = sn * w
+	_job_buffer[o + 3] = x
+	_job_buffer[o + 4] = 0.0
+	_job_buffer[o + 5] = h
+	_job_buffer[o + 6] = 0.0
+	_job_buffer[o + 7] = t.height_at(x, z) - 0.01
+	_job_buffer[o + 8] = -sn * w
+	_job_buffer[o + 9] = 0.0
+	_job_buffer[o + 10] = cs * w
+	_job_buffer[o + 11] = z
+	_job_buffer[o + 12] = c.r
+	_job_buffer[o + 13] = c.g
+	_job_buffer[o + 14] = c.b
+	_job_buffer[o + 15] = phase
+	_job_n += 1
+
+
+## One try of build_mown_chunk's grid, written into the job's buffer: the
+## same draws, in the same order (keep the two in step, as above).
+func _step_mown_try(i: int) -> void:
+	var t := terrain
+	var rng := _job_rng
+	var side := _job_side
+	var cell := _job_cell
+	var origin := _job_origin
+	var x := origin.x + (i % side + rng.randf()) * cell
+	var z := origin.y + (floorf(float(i) / side) + rng.randf()) * cell
+	var yaw := rng.randf() * TAU
+	var size := rng.randf()
+	var phase := rng.randf()
+	var surface := t.surface_at(x, z)
+	if not MOWN_HEIGHTS.has(surface):
+		return
+	var hr: Vector2 = MOWN_HEIGHTS[surface]
+	var h := lerpf(hr.x, hr.y, size)
+	var w := MOWN_FOOTPRINT
+	var c := t.ground_color_at(x, z)
+	var o := _job_n * 16
+	var cs := cos(yaw)
+	var sn := sin(yaw)
+	_job_buffer[o] = cs * w
+	_job_buffer[o + 1] = 0.0
+	_job_buffer[o + 2] = sn * w
+	_job_buffer[o + 3] = x
+	_job_buffer[o + 4] = 0.0
+	_job_buffer[o + 5] = h
+	_job_buffer[o + 6] = 0.0
+	_job_buffer[o + 7] = t.height_at(x, z) - 0.003
+	_job_buffer[o + 8] = -sn * w
+	_job_buffer[o + 9] = 0.0
+	_job_buffer[o + 10] = cs * w
+	_job_buffer[o + 11] = z
+	_job_buffer[o + 12] = c.r
+	_job_buffer[o + 13] = c.g
+	_job_buffer[o + 14] = c.b
+	_job_buffer[o + 15] = phase
+	_job_n += 1
+
+
+## Lands the chunk the build worked out: a node in the field, or a null
+## entry for an empty chunk, so it is not retried every frame (build_chunk
+## returns null for one). A rebuilt chunk frees the old node.
+func _finish_build() -> void:
+	var kind := _job_kind
+	var key := _job_key
+	var far := _job_far
+	var n := _job_n
+	var buffer := _job_buffer
+	_job_kind = ""
+	_job_buffer = PackedFloat32Array()
+	if n == 0:
+		if kind == "mown":
+			_mown[key] = null
+		else:
+			_chunks[key] = null
+			if far:
+				_far[key] = true
+			else:
+				_far.erase(key)
+		return
+	var mesh: Mesh = null
+	if kind == "mown":
+		if _mown_tuft == null:
+			_mown_tuft = mown_tuft_mesh()
+			_mown_tuft.surface_set_material(0, mown_material())
+		mesh = _mown_tuft
+	else:
+		mesh = _shared_mesh()
+	var node := MultiMeshInstance3D.new()
+	# Thin cards or moving things: left out of the global illumination's
+	# scene (SDFGI), which they would only blotch and slow; they still
+	# receive its light.
+	node.gi_mode = GeometryInstance3D.GI_MODE_DISABLED
+	node.multimesh = _make_multimesh(mesh, buffer, n)
+	node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(node)
+	if kind == "mown":
+		var old: Node = _mown.get(key)
+		if old != null:
+			old.queue_free()
+		_mown[key] = node
+	else:
+		var old: Node = _chunks.get(key)
+		if old != null:
+			old.queue_free()
+		_chunks[key] = node
+		if far:
+			_far[key] = true
+		else:
+			_far.erase(key)
+
+
+## A MultiMesh of `n` instances from `buffer`, for the tuft mesh given.
+## build_chunk, build_mown_chunk and the over-frames build all land here.
+static func _make_multimesh(mesh: Mesh, buffer: PackedFloat32Array, n: int) -> MultiMesh:
+	buffer.resize(n * 16)
+	var mm := MultiMesh.new()
+	mm.transform_format = MultiMesh.TRANSFORM_3D
+	mm.use_custom_data = true
+	mm.mesh = mesh
+	mm.instance_count = n
+	mm.buffer = buffer
+	# The headless renderer keeps no MultiMesh data, so tests read this.
+	mm.set_meta("buffer", buffer)
+	return mm
 
 
 static func _mown_centre(key: Vector2i) -> Vector2:
@@ -252,18 +473,10 @@ static func build_mown_chunk(t: CourseTerrain, key: Vector2i, density: float) ->
 		n += 1
 	if n == 0:
 		return null
-	buffer.resize(n * 16)
-	var mm := MultiMesh.new()
-	mm.transform_format = MultiMesh.TRANSFORM_3D
-	mm.use_custom_data = true
 	if _mown_tuft == null:
 		_mown_tuft = mown_tuft_mesh()
 		_mown_tuft.surface_set_material(0, mown_material())
-	mm.mesh = _mown_tuft
-	mm.instance_count = n
-	mm.buffer = buffer
-	mm.set_meta("buffer", buffer)
-	return mm
+	return _make_multimesh(_mown_tuft, buffer, n)
 
 
 ## The mown fur's material: the rough's, with its own fade radius.
@@ -391,16 +604,7 @@ static func build_chunk(t: CourseTerrain, key: Vector2i, density: float, share :
 		n += 1
 	if n == 0:
 		return null
-	buffer.resize(n * 16)
-	var mm := MultiMesh.new()
-	mm.transform_format = MultiMesh.TRANSFORM_3D
-	mm.use_custom_data = true
-	mm.mesh = _shared_mesh()
-	mm.instance_count = n
-	mm.buffer = buffer
-	# The headless renderer keeps no MultiMesh data, so tests read this.
-	mm.set_meta("buffer", buffer)
-	return mm
+	return _make_multimesh(_shared_mesh(), buffer, n)
 
 
 ## The one grass material; its camera and fade uniforms are shared.

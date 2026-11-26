@@ -1,5 +1,6 @@
 #include "olcore/links_ground.hpp"
 #include "olcore/links_launch.hpp"
+#include "olcore/resumable_shot.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -413,27 +414,6 @@ Vec3 to_game(Vec3 v) { return Vec3{-v.x, v.z, v.y} * kFeetPerMetre; }
 Vec3 from_game(Vec3 v) { return Vec3{-v.x, v.z, v.y} * (1.0 / kFeetPerMetre); }
 Vec3 spin_to_game(Vec3 w) { return Vec3{-w.x, w.z, w.y} * (1.0 / kTwoPi); }
 Vec3 spin_from_game(Vec3 w) { return Vec3{-w.x, w.z, w.y} * kTwoPi; }
-
-class TerrainGround : public LinksGround {
- public:
-  explicit TerrainGround(const Terrain& t) : t_(t) {}
-  double height(double x, double y) const override {
-    return t_.height(-x / kFeetPerMetre, y / kFeetPerMetre) * kFeetPerMetre;
-  }
-  Vec3 normal(double x, double y) const override {
-    Vec3 n = t_.normal(-x / kFeetPerMetre, y / kFeetPerMetre);
-    return {-n.x, n.z, n.y};
-  }
-  LinksSurface surface(double x, double y) const override {
-    const LinksSurface* own = t_.links_surface_at(-x / kFeetPerMetre, y / kFeetPerMetre);
-    // The game's green options replace every green record on the course.
-    if (own != nullptr && own->ground_class != kLinksGreen) return *own;
-    return links_surface(links_ground_class(t_.surface(-x / kFeetPerMetre, y / kFeetPerMetre)));
-  }
-
- private:
-  const Terrain& t_;
-};
 
 double horizontal_distance(Vec3 a, Vec3 b) { return std::hypot(a.x - b.x, a.z - b.z); }
 
@@ -909,6 +889,25 @@ LinksStepInfo step(StepContext& c, LinksBall& b, double dt) {
 
 }  // namespace
 
+double TerrainLinksGround::height(double x, double y) const {
+  return t_.height(-x / LinksFlightConstants::kFeetPerMetre, y / LinksFlightConstants::kFeetPerMetre) *
+         LinksFlightConstants::kFeetPerMetre;
+}
+
+Vec3 TerrainLinksGround::normal(double x, double y) const {
+  Vec3 n = t_.normal(-x / LinksFlightConstants::kFeetPerMetre, y / LinksFlightConstants::kFeetPerMetre);
+  return {-n.x, n.z, n.y};
+}
+
+LinksSurface TerrainLinksGround::surface(double x, double y) const {
+  const LinksSurface* own =
+      t_.links_surface_at(-x / LinksFlightConstants::kFeetPerMetre, y / LinksFlightConstants::kFeetPerMetre);
+  // The game's green options replace every green record on the course.
+  if (own != nullptr && own->ground_class != kLinksGreen) return *own;
+  return links_surface(links_ground_class(
+      t_.surface(-x / LinksFlightConstants::kFeetPerMetre, y / LinksFlightConstants::kFeetPerMetre)));
+}
+
 LinksSurface links_surface(int ground_class) {
   //        class, restitution, impact friction, skid friction, impact drag, roll, stop, spin grip
   //        (and for rough and deep grass: lie spin, lie power)
@@ -1115,127 +1114,139 @@ LinksStepInfo links_step(LinksBall& b, const LinksGround& ground, const LinksAer
   return step(c, b, dt);
 }
 
-ShotResult simulate_links_shot(const BallState& start, const BallParams& p, const Terrain& terrain,
-                               const ShotOptions& opt) {
-  const double dt = C::kFrameDt;
-  const double radius_m = C::kRadius / kFeetPerMetre;
-  TerrainGround ground(terrain);
-  ShotResult r;
-  bool landed = false;
-  double t = 0;
-  int step = 0;
-
+void ResumableShot::init_links() {
   // The game starts a full shot in flight with its centre one radius up.
-  LinksBall b;
-  b.position = to_game(start.position) + Vec3{0, 0, C::kRadius};
-  b.velocity = to_game(start.velocity);
-  b.spin = spin_to_game(start.spin);
-  if (start.on_ground) {
+  ball_.position = to_game(start_.position) + Vec3{0, 0, C::kRadius};
+  ball_.velocity = to_game(start_.velocity);
+  ball_.spin = spin_to_game(start_.spin);
+  if (start_.on_ground) {
     // A putt starts skidding on the ground, its centre one radius above the
     // slope, with its velocity and spin tilted onto it.
-    Vec3 n = ground.normal(b.position.x, b.position.y);
-    b.velocity = links_putt_slope(b.velocity, n);
-    b.spin = links_putt_slope(b.spin, n);
-    b.position.z = ground.height(b.position.x, b.position.y) + C::kRadius / n.z;
-    b.mode = LinksMode::Skid;
-    landed = true;
-    r.first_landing = start.position;
+    Vec3 n = ground_.normal(ball_.position.x, ball_.position.y);
+    ball_.velocity = links_putt_slope(ball_.velocity, n);
+    ball_.spin = links_putt_slope(ball_.spin, n);
+    ball_.position.z = ground_.height(ball_.position.x, ball_.position.y) + C::kRadius / n.z;
+    ball_.mode = LinksMode::Skid;
+    landed_ = true;
+    result_.first_landing = start_.position;
   }
   // The game takes the flagstick out for a shot from the green.
-  b.flagstick_out = ground.surface(b.position.x, b.position.y).ground_class == kLinksGreen;
-  LinksRandom rng(LinksRandom::seed_for(b.position.x, b.position.y));
-  Vec3 wind = to_game(p.wind);
+  ball_.flagstick_out = ground_.surface(ball_.position.x, ball_.position.y).ground_class == kLinksGreen;
+  rng_ = LinksRandom(LinksRandom::seed_for(ball_.position.x, ball_.position.y));
+  wind_ = to_game(params_.wind);
   // Billboards face the camera behind the ball: back along the shot.
-  Vec3 facing = Vec3{-b.velocity.x, -b.velocity.y, 0};
-  facing = length(facing) > 0 ? facing * (1 / length(facing)) : Vec3{0, -1, 0};
-  LinksCup cup;
-  cup.pin = to_game(opt.cup);
-  cup.radius = opt.cup_radius * kFeetPerMetre;
+  facing_ = Vec3{-ball_.velocity.x, -ball_.velocity.y, 0};
+  facing_ = length(facing_) > 0 ? facing_ * (1 / length(facing_)) : Vec3{0, -1, 0};
+  cup_.pin = to_game(opt_.cup);
+  cup_.radius = opt_.cup_radius * kFeetPerMetre;
+}
+
+ShotResult ResumableShot::finish_links(ShotOutcome o, Vec3 pos) {
+  ShotResult r = result_;
+  // The game judges the hole's bounds where the ball stops.
+  if (o == ShotOutcome::Rest && !terrain_.in_bounds(pos.x, pos.z)) o = ShotOutcome::OutOfBounds;
+  r.outcome = o;
+  r.rest = pos;
+  r.time_s = t_;
+  r.rest_surface = terrain_.surface(pos.x, pos.z);
+  if (!landed_) {
+    r.first_landing = pos;
+  }
+  r.carry_m = horizontal_distance(start_.position, r.first_landing);
+  r.total_m = horizontal_distance(start_.position, pos);
+  if (r.path.empty() || r.path.back().t < t_) {
+    r.path.push_back({t_, pos});
+  }
+  return r;
+}
+
+// One iteration of the old simulate_links_shot loop: one 1/60 s frame
+// step. Returns true once the shot has finished; the obstacle branch's
+// `continue` is a return of false here (the step ran, the shot goes on).
+// A step never pauses mid-cup-sub-step: links_step() runs its frame,
+// including the cup's 1/1200 s sub-steps, before returning.
+bool ResumableShot::step_links() {
+  const double dt = C::kFrameDt;
+  const double radius_m = C::kRadius / kFeetPerMetre;
+  if (t_ >= opt_.max_time) {
+    result_ = finish_links(ShotOutcome::TimedOut, from_game(ball_.position) - Vec3{0, radius_m, 0});
+    return true;
+  }
   auto bottom = [&](const LinksBall& ball) { return from_game(ball.position) - Vec3{0, radius_m, 0}; };
-  r.path.push_back({0, start.position});
+  Vec3 before = bottom(ball_);
+  BallState before_si{before, from_game(ball_.velocity), spin_from_game(ball_.spin)};
+  bool was_flying = ball_.mode == LinksMode::Flight;
+  LinksStepInfo info =
+      links_step(ball_, ground_, *params_.links, wind_, rng_, dt, opt_.has_cup ? &cup_ : nullptr, opt_.links_objects, facing_);
+  t_ += dt;
+  ++step_;
+  Vec3 after = bottom(ball_);
+  result_.apex_m = std::max(result_.apex_m, after.y - start_.position.y);
 
-  auto finish = [&](ShotOutcome o, Vec3 pos) {
-    // The game judges the hole's bounds where the ball stops.
-    if (o == ShotOutcome::Rest && !terrain.in_bounds(pos.x, pos.z)) o = ShotOutcome::OutOfBounds;
-    r.outcome = o;
-    r.rest = pos;
-    r.time_s = t;
-    r.rest_surface = terrain.surface(pos.x, pos.z);
-    if (!landed) {
-      r.first_landing = pos;
-    }
-    r.carry_m = horizontal_distance(start.position, r.first_landing);
-    r.total_m = horizontal_distance(start.position, pos);
-    if (r.path.empty() || r.path.back().t < t) {
-      r.path.push_back({t, pos});
-    }
-    return r;
-  };
+  // Walls and the like (and trees, when no billboards are given for the
+  // game's own model): our own handling, as in simulate_shot.
+  ObstacleHit hit;
+  if (terrain_.links_obstacle_hit(before, after, hit) && (was_flying || hit.kind == ObstacleKind::Solid)) {
+    Vec3 pos = before + (after - before) * hit.fraction;
+    Vec3 vel = before_si.velocity;
+    Vec3 spin = before_si.spin;
+    hit_obstacle(vel, spin, hit);
+    pos = pos + hit.normal * (hit.kind == ObstacleKind::Solid ? 0.01 : -0.01);
+    ++result_.obstacle_hits;
+    result_.path.push_back({t_, pos});
+    ball_.position = to_game(pos) + Vec3{0, 0, C::kRadius};
+    ball_.velocity = to_game(vel);
+    ball_.spin = spin_to_game(spin);
+    ball_.mode = LinksMode::Flight;
+    return false;
+  }
 
-  while (t < opt.max_time) {
-    Vec3 before = bottom(b);
-    BallState before_si{before, from_game(b.velocity), spin_from_game(b.spin)};
-    bool was_flying = b.mode == LinksMode::Flight;
-    LinksStepInfo info =
-        links_step(b, ground, *p.links, wind, rng, dt, opt.has_cup ? &cup : nullptr, opt.links_objects, facing);
-    t += dt;
-    ++step;
-    Vec3 after = bottom(b);
-    r.apex_m = std::max(r.apex_m, after.y - start.position.y);
-
-    // Walls and the like (and trees, when no billboards are given for the
-    // game's own model): our own handling, as in simulate_shot.
-    ObstacleHit hit;
-    if (terrain.obstacle_hit(before, after, hit) && (was_flying || hit.kind == ObstacleKind::Solid)) {
-      Vec3 pos = before + (after - before) * hit.fraction;
-      Vec3 vel = before_si.velocity;
-      Vec3 spin = before_si.spin;
-      hit_obstacle(vel, spin, hit);
-      pos = pos + hit.normal * (hit.kind == ObstacleKind::Solid ? 0.01 : -0.01);
-      ++r.obstacle_hits;
-      r.path.push_back({t, pos});
-      b.position = to_game(pos) + Vec3{0, 0, C::kRadius};
-      b.velocity = to_game(vel);
-      b.spin = spin_to_game(spin);
-      b.mode = LinksMode::Flight;
-      continue;
+  if (info.landed) {
+    Vec3 contact = from_game(info.contact);
+    if (!landed_) {
+      landed_ = true;
+      result_.first_landing = contact;
     }
-
-    if (info.landed) {
-      Vec3 contact = from_game(info.contact);
-      if (!landed) {
-        landed = true;
-        r.first_landing = contact;
-      }
-      ++r.bounces;
-      r.path.push_back({t, contact});
-      Surface surf = terrain.surface(contact.x, contact.z);
-      if (surf == Surface::Water) {
-        return finish(ShotOutcome::Water, contact);
-      }
-      if (surf == Surface::OutOfBounds) {
-        return finish(ShotOutcome::OutOfBounds, contact);
-      }
-    } else if (!was_flying) {
-      Surface surf = terrain.surface(after.x, after.z);
-      if (surf == Surface::Water) {
-        return finish(ShotOutcome::Water, after);
-      }
-      if (surf == Surface::OutOfBounds) {
-        return finish(ShotOutcome::OutOfBounds, after);
-      }
+    ++result_.bounces;
+    result_.path.push_back({t_, contact});
+    Surface surf = terrain_.surface(contact.x, contact.z);
+    if (surf == Surface::Water) {
+      result_ = finish_links(ShotOutcome::Water, contact);
+      return true;
     }
-    if (b.mode == LinksMode::Holed) {
-      return finish(ShotOutcome::Holed, opt.cup);
+    if (surf == Surface::OutOfBounds) {
+      result_ = finish_links(ShotOutcome::OutOfBounds, contact);
+      return true;
     }
-    if (b.mode == LinksMode::Rest) {
-      return finish(ShotOutcome::Rest, after);
+  } else if (!was_flying) {
+    Surface surf = terrain_.surface(after.x, after.z);
+    if (surf == Surface::Water) {
+      result_ = finish_links(ShotOutcome::Water, after);
+      return true;
     }
-    if (opt.sample_every > 0 && step % opt.sample_every == 0) {
-      r.path.push_back({t, after});
+    if (surf == Surface::OutOfBounds) {
+      result_ = finish_links(ShotOutcome::OutOfBounds, after);
+      return true;
     }
   }
-  return finish(ShotOutcome::TimedOut, bottom(b));
+  if (ball_.mode == LinksMode::Holed) {
+    result_ = finish_links(ShotOutcome::Holed, opt_.cup);
+    return true;
+  }
+  if (ball_.mode == LinksMode::Rest) {
+    result_ = finish_links(ShotOutcome::Rest, after);
+    return true;
+  }
+  if (opt_.sample_every > 0 && step_ % opt_.sample_every == 0) {
+    result_.path.push_back({t_, after});
+  }
+  return false;
+}
+
+ShotResult simulate_links_shot(const BallState& start, const BallParams& p, const Terrain& terrain,
+                               const ShotOptions& opt) {
+  ResumableShot sim(start, p, terrain, opt);
+  return sim.run();
 }
 
 }  // namespace olcore

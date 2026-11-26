@@ -138,6 +138,22 @@ class LinksGround {
 // that comes off slowly enough starts to skid.
 void links_impact(LinksBall& b, Vec3 n, const LinksSurface& s);
 
+// A Terrain seen in the game's frame (feet, z up, x to the golfer's
+// right): the adapter simulate_links_shot and ResumableShot run over.
+// The game's green options replace every green record on the course, so
+// a green here reports the class defaults unless the terrain carries its
+// own non-green record for the spot.
+class TerrainLinksGround : public LinksGround {
+ public:
+  explicit TerrainLinksGround(const Terrain& t) : t_(t) {}
+  double height(double x, double y) const override;
+  Vec3 normal(double x, double y) const override;
+  LinksSurface surface(double x, double y) const override;
+
+ private:
+  const Terrain& t_;
+};
+
 // Fraction of a step at which the ball met the ground, given the velocities
 // at the start and end of the step and the fraction `s` of the path covered.
 double links_contact_time(Vec3 v0, Vec3 v1, double s);

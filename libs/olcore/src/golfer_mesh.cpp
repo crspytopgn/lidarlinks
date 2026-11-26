@@ -9,7 +9,7 @@ namespace olcore {
 namespace {
 
 // Carrera::Mesh fields.
-constexpr std::size_t kMeshName = 0x10;
+constexpr std::size_t kMeshName [[maybe_unused]] = 0x10;
 constexpr std::size_t kMeshTransform = 0x1c;
 constexpr std::size_t kMeshSkin = 0xd4;
 constexpr std::size_t kMeshShapeCount = 0xdc;
@@ -29,7 +29,7 @@ constexpr std::size_t kShapeLastVertex = 0x28;
 constexpr std::size_t kShapeShader = 0x2c;
 
 // Carrera::Shader and Carrera::Texture.
-constexpr std::size_t kShaderName = 0x10;
+constexpr std::size_t kShaderName [[maybe_unused]] = 0x10;
 constexpr std::size_t kShaderDiffuse = 0x14;
 constexpr std::size_t kShaderTexture = 0x58;
 constexpr std::size_t kTextureFile = 0x14;

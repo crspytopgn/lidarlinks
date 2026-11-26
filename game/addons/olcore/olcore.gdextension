@@ -2,8 +2,12 @@
 ; Phase 1: OlcorePhysics / OlcoreTerrain / OlcoreAero only. The binaries
 ; are built by the `gdextension` CI job (or locally with
 ; -DBUILD_GDEXTENSION=ON) and copied here; they are not committed
-; (*.so / *.dll / *.dylib are gitignored). No web entry on purpose: the
-; web build has extensions_support=false and runs the GDScript port.
+; (*.so / *.dll / *.dylib / *.wasm are gitignored). The web entry is a
+; wasm side module, built under Emscripten (see extensions/olcore/
+; CMakeLists.txt and docs/gdextension.md); the web export preset has
+; extensions_support=true, and the game uses the extension on web
+; whenever it loads — otherwise the GDScript port runs (see
+; OlcoreShotModel.native_available()).
 ; See docs/gdextension.md.
 
 [configuration]
@@ -15,3 +19,4 @@ linux.x86_64 = "res://addons/olcore/bin/libolcore.linux.x86_64.so"
 windows.x86_64 = "res://addons/olcore/bin/libolcore.windows.x86_64.dll"
 macos.arm64 = "res://addons/olcore/bin/libolcore.macos.arm64.dylib"
 macos.x86_64 = "res://addons/olcore/bin/libolcore.macos.x86_64.dylib"
+web.wasm32 = "res://addons/olcore/bin/libolcore.web.wasm32.wasm"

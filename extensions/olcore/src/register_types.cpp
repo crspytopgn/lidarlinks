@@ -1,8 +1,19 @@
 // register_types.cpp — GDExtension entry point.
 #include <gdextension_interface.h>
+
+// godot-cpp's headers name unused callback parameters, which -Wall
+// -Wextra reports when they are parsed; silence just that warning
+// for the third-party includes (see olcore_physics.hpp).
+#if defined(__clang__) || defined(__GNUC__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-parameter"
+#endif
 #include <godot_cpp/core/class_db.hpp>
 #include <godot_cpp/core/defs.hpp>
 #include <godot_cpp/godot.hpp>
+#if defined(__clang__) || defined(__GNUC__)
+#pragma GCC diagnostic pop
+#endif
 
 #include "olcore_physics.hpp"
 
