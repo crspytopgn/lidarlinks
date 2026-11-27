@@ -414,6 +414,52 @@ def fetch_scan_trees(out_dir):
     return credits
 
 
+# The browser build's own copies of the textures (FreeAssets loads them on
+# the web). Desktop exports leave them out and the web export leaves out the
+# originals (export_presets.cfg). The bump, roughness and height maps, which
+# the browser's renderer turns into soft shading, are kept to WEB_DETAIL_LIMIT
+# pixels there: a smaller download, and a quarter of the video memory per map
+# on iPads and phones (lossy WebP is unpacked to full size on the GPU).
+# The colour maps stay as on the desktop.
+WEB_DETAIL_LIMIT = 512
+WEB_DETAIL_MAPS = ("normal", "roughness", "height")
+
+
+def write_web_copies(src_dir, web_dir):
+    """Copies every imported texture in src_dir (not the pack's) to web_dir,
+    its import limited for the browser as described above."""
+    import re
+    import shutil
+    os.makedirs(web_dir, exist_ok=True)
+    count = 0
+    for name in sorted(os.listdir(src_dir)):
+        imp = os.path.join(src_dir, name + ".import")
+        if not os.path.isfile(os.path.join(src_dir, name)) or not os.path.exists(imp):
+            continue
+        with open(imp) as f:
+            text = f.read()
+        if 'importer="texture"' not in text:
+            continue
+        stem = os.path.splitext(name)[0]
+        if any(stem.endswith("_" + k) for k in WEB_DETAIL_MAPS):
+            m = re.search(r"process/size_limit=(\d+)", text)
+            limit = int(m.group(1)) if m else 0
+            limit = WEB_DETAIL_LIMIT if limit == 0 else min(limit, WEB_DETAIL_LIMIT)
+            text = re.sub(r"process/size_limit=\d+", f"process/size_limit={limit}", text)
+        dst = os.path.join(web_dir, name)
+        if not os.path.exists(dst) or os.path.getmtime(dst) < os.path.getmtime(os.path.join(src_dir, name)):
+            shutil.copy2(os.path.join(src_dir, name), dst)
+        old = None
+        if os.path.exists(dst + ".import"):
+            with open(dst + ".import") as f:
+                old = f.read()
+        if old != text:
+            with open(dst + ".import", "w") as f:
+                f.write(text)
+        count += 1
+    print(f"  web copies: {count} textures")
+
+
 def main():
     here = os.path.dirname(os.path.abspath(__file__))
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -475,6 +521,7 @@ def main():
         print(f"WARNING: couldn't fetch the fabrics: {e}")
         failed.append("fabrics")
     tune_detail_quality(args.out)
+    write_web_copies(args.out, os.path.join(os.path.dirname(os.path.abspath(args.out)), "free_assets_web"))
     with open(os.path.join(args.out, "CREDITS.md"), "w") as f:
         f.write("# Free assets\n\nDownloaded by tools/fetch_free_assets.py from Poly Haven and ambientCG (CC0).\n\n")
         f.write("\n".join(credits) + "\n")

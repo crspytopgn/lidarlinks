@@ -681,6 +681,33 @@ the top tier spends freely. The
 golfer's mesh is unchanged: the saving there is not rebuilding him
 every hole.
 
+2026-11-27 (thread "Cut stutter and boost speed on every device"):
+
+- Tried and dropped: drawing an unseen copy of every mesh and shader at
+  load to build pipelines early. In Godot 4.7 (Forward+ ubershaders) it
+  made draw-time pipeline compiles go up (109 against 66 in 90 s of play),
+  so the tee and green views behind the loading card stay the warm-up.
+- Gallery levels of detail: a 3D spectator past 80 m (through the default
+  40 degree lens; the TV long lens scales it) is drawn as a crowd card in
+  their own colours and height, and one out of view pauses: its clip and
+  its seven bone modifiers stop until it is seen again (it catches up then).
+- The TV graphics (BroadcastOverlay) redraw their panels only when one
+  changes or animates; the ticker and the LIVE dot move on a small layer of
+  their own. Cloth pushes its twelve shader parameters only when they move
+  by more than 0.1 mm.
+- Browser shadows: two splits below Ultra (the desktop keeps four at High
+  and Ultra). The browser's shadow distance is half the desktop's, so its
+  far split covers what the desktop's last three do, and the near split
+  (the golfer's) gets half the atlas instead of a quarter.
+- Grandstands hide behind hills (TerrainOcclusion) like the far trees.
+- Browser textures: the free textures are lossy WebP (any browser reads
+  them, but the GPU holds them at full size), so the web build has its own
+  copies (`free_assets_web/`, written by `tools/fetch_free_assets.py`)
+  with bump, roughness and height maps at 512 pixels: a smaller download
+  and less video memory on iPads. Colour maps are as on the desktop. The
+  textures that are VRAM-compressed are exported as ETC2/ASTC as well as
+  S3TC, for iPads.
+
 ## Download size
 
 `tools/size_report.py` runs after the CI export. It writes each build's
@@ -710,8 +737,8 @@ defaults).
 
 ## Still to do
 
-- Texture compression tiers per device (Basis/ASTC), and the HD pack in
-  the browser.
+- The HD pack in the browser. (Basis Universal was tried for the web
+  copies: no smaller than S3TC once gzipped.)
 
 ### Measuring on a real machine
 

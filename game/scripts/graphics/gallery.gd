@@ -57,6 +57,7 @@ static func build(hole: HoleData, toward: Vector3, crowd: int, seed_value: int, 
 	var people: Array = []
 	if crowd > 0:
 		people = g._build_crowd(hole, lines, crowd, seed_value)
+		g._build_people_cards()
 	var cards := CARDS_BY_QUALITY[clampi(quality, 0, CARDS_BY_QUALITY.size() - 1)]
 	if cards > 0:
 		g._build_cards(hole, lines, people, cards, seed_value)
@@ -400,11 +401,13 @@ func _build_crowd(hole: HoleData, lines: Array[PackedVector3Array], count: int, 
 		feet.append(at)
 		_people.append(person)
 		_people_home.append(at)
+		_track_person(person)
 		var player := person.find_child("AnimationPlayer", true, false) as AnimationPlayer
 		if player == null:
 			continue
 		player.callback_mode_process = AnimationMixer.ANIMATION_CALLBACK_MODE_PROCESS_MANUAL
 		_players.append(player)
+		_player_person.append(_people.size() - 1)
 		player.set_meta(&"stand", STAND_FRAMES[rng.randi() % STAND_FRAMES.size()])
 		var arm := arm_pose(rng.randf())
 		if player.has_meta(&"arms"):
@@ -676,6 +679,7 @@ var _anim_turn := 0
 func _process(delta: float) -> void:
 	if _players.is_empty():
 		return
+	_update_lod()
 	for g in ANIM_GROUPS:
 		_anim_wait[g] += delta
 	var turn := _anim_turn
@@ -684,8 +688,139 @@ func _process(delta: float) -> void:
 	_anim_wait[turn] = 0.0
 	for i in range(turn, _players.size(), ANIM_GROUPS):
 		var player := _players[i]
-		if is_instance_valid(player) and player.is_inside_tree():
-			player.advance(dt)
+		if not is_instance_valid(player) or not player.is_inside_tree():
+			continue
+		var k := _player_person[i]
+		if _person_idle[k]:
+			# Out of sight or drawn as a card: its clip waits, and catches
+			# up with the time it missed the moment it is seen again.
+			_person_wait[k] += dt
+			continue
+		player.advance(dt + _person_wait[k])
+		_person_wait[k] = 0.0
+
+
+# --- Distant spectators as cards ----------------------------------------------
+
+## The 3D spectators are full rigged people (up to 28 at Ultra), each with
+## seven bone modifiers that run every frame and a few thousand triangles.
+## Past PERSON_CARD_M from the camera (through the game's usual 40 degree
+## lens) one is drawn as a crowd card instead (CrowdImpostors, in their own
+## shirt and trouser colours and height), the same card the crowd behind
+## them already is: at that range a person is about 30 pixels tall on a
+## 1080p screen and the swap can't be told. One that is off
+## screen (and not near enough to cast into view) keeps its place but its
+## clip and bone modifiers pause. PERSON_NEAR_M is the way back, so a
+## camera at the edge doesn't flicker between the two.
+const PERSON_CARD_M := 80.0
+## The field of view (degrees, vertical) those distances are for.
+const LOD_FOV := 40.0
+const PERSON_NEAR_M := 72.0
+## Off screen by more than this (metres, round the person's middle) before
+## a spectator pauses.
+const PERSON_RADIUS := 1.4
+var _person_far := PackedByteArray()
+var _person_idle := PackedByteArray()
+var _person_out := PackedByteArray()  ## out of the line of play with nowhere to stand
+var _person_wait := PackedFloat32Array()
+var _skeletons: Array[Skeleton3D] = []
+var _player_person := PackedInt32Array()  ## _players index -> _people index
+
+
+func _track_person(person: FreeGolfer) -> void:
+	_person_far.append(0)
+	_person_idle.append(0)
+	_person_out.append(0)
+	_person_wait.append(0.0)
+	var sk := person.find_children("*", "Skeleton3D", true, false)
+	_skeletons.append(sk[0] as Skeleton3D if not sk.is_empty() else null)
+
+
+## Each spectator's level of detail for where the camera is now: near and on
+## screen, the full person; far, the card; off screen, paused.
+func _update_lod() -> void:
+	var cam := get_viewport().get_camera_3d() if is_inside_tree() else null
+	if cam == null:
+		return
+	var zoom := 1.0
+	if cam.projection == Camera3D.PROJECTION_PERSPECTIVE:
+		zoom = tan(deg_to_rad(cam.fov) * 0.5) / tan(deg_to_rad(LOD_FOV) * 0.5)
+	update_lod_from(cam.global_position, cam.get_frustum(), zoom)
+
+
+## _update_lod for a camera at `eye` whose view is inside `planes` (pointing
+## out, as Camera3D.get_frustum gives them), its lens `zoom` times as wide
+## as LOD_FOV: through the TV's long lens (a narrow field of view) a person
+## stays a full person much further off, as they fill as much of the screen
+## as a nearer one through the usual lens.
+func update_lod_from(eye: Vector3, planes: Array[Plane], zoom := 1.0) -> void:
+	var cards := _multimesh("PeopleCards")
+	for i in _people.size():
+		var person := _people[i]
+		if i >= _person_far.size() or not is_instance_valid(person):
+			continue
+		var at := (global_transform * person.position) if is_inside_tree() else person.position
+		var d := eye.distance_to(at) * zoom
+		var far := _person_far[i] == 1
+		if far and d < PERSON_NEAR_M:
+			far = false
+		elif not far and d > PERSON_CARD_M:
+			far = true
+		var mid := at + Vector3.UP * 0.9
+		var seen := true
+		for pl: Plane in planes:
+			if pl.distance_to(mid) > PERSON_RADIUS:
+				seen = false
+				break
+		var idle := far or not seen or _person_out[i] == 1
+		var shown := not far and _person_out[i] == 0
+		if person.visible != shown:
+			person.visible = shown
+		if far != (_person_far[i] == 1):
+			_person_far[i] = 1 if far else 0
+			_move_instance(cards, i, person.position, far and _person_out[i] == 0)
+		if idle != (_person_idle[i] == 1):
+			_person_idle[i] = 1 if idle else 0
+			var sk := _skeletons[i]
+			if sk != null and is_instance_valid(sk):
+				sk.modifier_callback_mode_process = Skeleton3D.MODIFIER_CALLBACK_MODE_PROCESS_MANUAL if idle \
+						else Skeleton3D.MODIFIER_CALLBACK_MODE_PROCESS_IDLE
+
+
+## One card per 3D spectator, folded away until that spectator is far
+## (_update_lod): their own shirt, trousers and height.
+func _build_people_cards() -> void:
+	if _people.is_empty():
+		return
+	var quad := QuadMesh.new()
+	quad.size = Vector2(CARD_WIDTH / 1.8, 1.0)
+	quad.center_offset = Vector3(0.0, 0.5, 0.0)
+	quad.material = CrowdImpostors.material()
+	var mm := MultiMesh.new()
+	mm.transform_format = MultiMesh.TRANSFORM_3D
+	mm.use_colors = true
+	mm.use_custom_data = true
+	mm.mesh = quad
+	mm.instance_count = _people.size()
+	for i in _people.size():
+		var person := _people[i]
+		var look := person.look
+		var h := clampf(look.height_cm / 100.0 if look != null else 1.75, 1.5, 1.98)
+		var at := _people_home[i]
+		mm.set_instance_transform(i, Transform3D(Basis(Vector3.UP, person.rotation.y) * Basis.from_scale(Vector3(h, h, h)), at))
+		mm.set_instance_color(i, look.top if look != null else Color(0.3, 0.3, 0.4))
+		var legs := look.bottom if look != null else Color(0.8, 0.75, 0.6)
+		mm.set_instance_custom_data(i, Color(legs.r, legs.g, legs.b, float(i % 7) / 7.0))
+	var node := MultiMeshInstance3D.new()
+	node.gi_mode = GeometryInstance3D.GI_MODE_DISABLED
+	node.name = "PeopleCards"
+	node.multimesh = mm
+	node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(node)
+	for i in _people.size():
+		_move_instance(mm, i, _people_home[i], false)
+
+
 ## Spectators kept from the last hole's gallery for the next one.
 static var _spare_people: Array[FreeGolfer] = []
 const SPARE_PEOPLE_MAX := 40
@@ -701,6 +836,9 @@ func release_people() -> void:
 			remove_child(person)
 		person.set_meta(&"serial", int(person.get_meta(&"serial", 0)) + 1)
 		person.watch(null, 0.0)
+		person.visible = true
+		for sk in person.find_children("*", "Skeleton3D", true, false):
+			(sk as Skeleton3D).modifier_callback_mode_process = Skeleton3D.MODIFIER_CALLBACK_MODE_PROCESS_IDLE
 		if _spare_people.size() < SPARE_PEOPLE_MAX:
 			_spare_people.append(person)
 		else:
@@ -708,6 +846,12 @@ func release_people() -> void:
 	_people.clear()
 	_people_home = PackedVector3Array()
 	_players.clear()
+	_person_far = PackedByteArray()
+	_person_idle = PackedByteArray()
+	_person_out = PackedByteArray()
+	_person_wait = PackedFloat32Array()
+	_skeletons.clear()
+	_player_person = PackedInt32Array()
 
 
 ## A spectator dressed in `look`, clubs hidden and casting no sun shadow;
@@ -785,17 +929,22 @@ func clear_line(ball: Vector3, dir: Vector3, ahead: float) -> void:
 	ahead = clampf(ahead, 0.0, CLEAR_AHEAD)
 	var shadow := _multimesh("ContactShadows")
 	var sun := _multimesh("ContactShadowsSun")
+	var people_cards := _multimesh("PeopleCards")
 	for i in _people.size():
 		var person := _people[i]
 		if not is_instance_valid(person):
 			continue
 		var at := _spot_out_of_lane(_people_home[i], ball, dir, ahead)
-		person.visible = at != Vector3.INF
+		var out := at == Vector3.INF
 		if at == Vector3.INF:
 			at = _people_home[i]
 		person.position = at
-		_move_instance(shadow, i, at + Vector3.UP * 0.02, person.visible)
-		_move_instance(sun, i, at, person.visible)
+		_move_instance(shadow, i, at + Vector3.UP * 0.02, not out)
+		_move_instance(sun, i, at, not out)
+		if i < _person_out.size():
+			_person_out[i] = 1 if out else 0
+			_move_instance(people_cards, i, at, not out and _person_far[i] == 1)
+		person.visible = not out and (i >= _person_far.size() or _person_far[i] == 0)
 	var cards := _multimesh("CrowdCards")
 	var card_shadow := _multimesh("CardShadows")
 	var card_sun := _multimesh("CardShadowsSun")
@@ -1144,6 +1293,11 @@ func _build_grandstand(terrain: CourseTerrain, front: Vector3, facing: Vector3, 
 	stand.name = node_name
 	add_child(stand)
 	stand.transform = Transform3D(Basis(side, Vector3.UP, -facing), Vector3(front.x, base, front.z))
+	# Hidden, seats, crowd and all, when a hill stands between it and the
+	# camera (GolfRound._update_occlusion): judged at its front's middle and
+	# ends, up to the top row's heads.
+	stand.set_meta("occlusion_reach", width * 0.5)
+	stand.set_meta("occlusion_height", STAND_ROWS * STAND_RISE + STAND_RAIL + 1.0)
 	_stands.append([front, facing, width * 0.5, depth])
 	if camera_blockers != null:
 		_stand_box(camera_blockers, terrain, front, facing, width)

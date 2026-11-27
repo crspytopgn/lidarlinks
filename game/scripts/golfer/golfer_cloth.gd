@@ -105,6 +105,7 @@ static func material(std: StandardMaterial3D) -> ShaderMaterial:
 ## laid out around them).
 func add_material(m: ShaderMaterial) -> void:
 	materials.append(m)
+	_pushed_count = -1
 	if _skeleton == null:
 		return
 	m.set_shader_parameter("joints_l", _joint_uniform("upperarm_l", "lowerarm_l"))
@@ -116,6 +117,7 @@ func add_material(m: ShaderMaterial) -> void:
 
 func clear_materials() -> void:
 	materials.clear()
+	_pushed_count = -1
 	occluded.clear()
 
 
@@ -265,19 +267,52 @@ func _update_cloth(delta: float) -> void:
 		bends = Vector4(
 			_bend("upperarm_l", "lowerarm_l", "hand_l"), _bend("upperarm_r", "lowerarm_r", "hand_r"),
 			_bend("thigh_l", "calf_l", "foot_l"), _bend("thigh_r", "calf_r", "foot_r"))
+	var values := [1.0 if on else 0.0, 1.0 if detail >= 3 else 0.0, torso_lag, lags.arm_l, lags.arm_r,
+			lags.leg_l, lags.leg_r, turn_lag, spine, axis, fold_twist, bends]
+	# Only when something moved enough to see: a golfer standing still (or
+	# breathing in their idle) gives the same lags frame after frame, and
+	# twelve shader parameters on every piece of clothing each frame were
+	# pure traffic. A change under PUSH_EPSILON (a tenth of a millimetre, or
+	# as many thousandths of a radian) can't be seen.
+	if materials.size() == _pushed_count and _close(values, _pushed):
+		return
+	_pushed = values
+	_pushed_count = materials.size()
 	for m in materials:
-		m.set_shader_parameter("motion", 1.0 if on else 0.0)
-		m.set_shader_parameter("fine", 1.0 if detail >= 3 else 0.0)
-		m.set_shader_parameter("lag_torso", torso_lag)
-		m.set_shader_parameter("lag_arm_l", lags.arm_l)
-		m.set_shader_parameter("lag_arm_r", lags.arm_r)
-		m.set_shader_parameter("lag_leg_l", lags.leg_l)
-		m.set_shader_parameter("lag_leg_r", lags.leg_r)
-		m.set_shader_parameter("turn_lag", turn_lag)
-		m.set_shader_parameter("spine", spine)
-		m.set_shader_parameter("spine_axis", axis)
-		m.set_shader_parameter("twist", fold_twist)
-		m.set_shader_parameter("bends", bends)
+		for k in CLOTH_PARAMS.size():
+			m.set_shader_parameter(CLOTH_PARAMS[k], values[k])
+
+
+const CLOTH_PARAMS: Array[StringName] = [&"motion", &"fine", &"lag_torso", &"lag_arm_l", &"lag_arm_r",
+		&"lag_leg_l", &"lag_leg_r", &"turn_lag", &"spine", &"spine_axis", &"twist", &"bends"]
+const PUSH_EPSILON := 1e-4
+var _pushed: Array = []
+var _pushed_count := -1
+
+
+## Whether every value in `a` is within PUSH_EPSILON of the same one in `b`.
+static func _close(a: Array, b: Array) -> bool:
+	if a.size() != b.size():
+		return false
+	for i in a.size():
+		var x: Variant = a[i]
+		var y: Variant = b[i]
+		match typeof(x):
+			TYPE_FLOAT:
+				if absf(float(x) - float(y)) > PUSH_EPSILON:
+					return false
+			TYPE_VECTOR3:
+				var dv := ((x as Vector3) - (y as Vector3)).abs()
+				if dv.x > PUSH_EPSILON or dv.y > PUSH_EPSILON or dv.z > PUSH_EPSILON:
+					return false
+			TYPE_VECTOR4:
+				var dw := ((x as Vector4) - (y as Vector4)).abs()
+				if dw.x > PUSH_EPSILON or dw.y > PUSH_EPSILON or dw.z > PUSH_EPSILON or dw.w > PUSH_EPSILON:
+					return false
+			_:
+				if x != y:
+					return false
+	return true
 
 
 ## How far past straight a joint is bent, as fold depth 0..1.

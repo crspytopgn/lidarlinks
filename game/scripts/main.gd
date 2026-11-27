@@ -1017,6 +1017,8 @@ func start_hole(index: int) -> void:
 		var stand := Gallery.green_stand(hole, hole_index == holes.size() - 1)
 		gallery = Gallery.build(hole, _first_leg(), crowd, hole.number * 7919, stand, graphics.quality if graphics != null else 0)
 		hole_root.add_child(gallery)
+		# Its grandstands hide behind a hill like the trees do.
+		_register_occludables()
 	else:
 		gallery = null
 	camera.blockers = gallery.camera_blockers if gallery != null else null
@@ -2886,7 +2888,7 @@ func _register_occludables() -> void:
 		if node == null:
 			continue
 		if node.has_meta("occlusion_reach"):
-			_occludables.append({"node": node, "height": OCCLUSION_TREE_HEIGHT_M, "reach": float(node.get_meta("occlusion_reach"))})
+			_occludables.append({"node": node, "height": float(node.get_meta("occlusion_height", OCCLUSION_TREE_HEIGHT_M)), "reach": float(node.get_meta("occlusion_reach"))})
 		elif node.has_meta("occlusion_height"):
 			_occludables.append({"node": node, "height": float(node.get_meta("occlusion_height")), "reach": 0.0})
 

@@ -22,6 +22,8 @@ const CASES := [
 	["SSAO off", {"ssao": false}],
 	["sun shadows off", {"shadows": false}],
 	["hard sun shadows", {"hard_shadows": true}],
+	["browser shadow reach, four splits (before)", {"web_shadows": 4}],
+	["browser shadow reach, two splits (now)", {"web_shadows": 2}],
 	["MSAA off", {"msaa": 0}],
 	["post effects off", {"sharpen": 0, "bloom": 0, "vignette": 0, "grain": 0}],
 	["grass off", {"grass": 0}],
@@ -117,6 +119,10 @@ func _run() -> void:
 				g.set(k, change[k])
 		_game._apply_graphics()
 		_game.scenery.sun.shadow_enabled = change.get("shadows", true)
+		if change.has("web_shadows"):
+			_game.scenery.sun.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_2_SPLITS if change["web_shadows"] == 2 else DirectionalLight3D.SHADOW_PARALLEL_4_SPLITS
+			_game.scenery.sun.directional_shadow_split_1 = Scenery.first_split(200.0)
+			_game.scenery.sun.directional_shadow_max_distance = 200.0
 		if change.get("hard_shadows", false):
 			_game.scenery.sun.light_angular_distance = 0.0
 			_game.scenery._sun_angle = 0.0
@@ -170,6 +176,12 @@ func _play(seconds: float) -> PackedStringArray:
 	var spikes: Array = []  ## [ms, state, process ms, draws, time]
 	var state := _game.state
 	var in_state := 0.0
+	# Hole changes: from leaving HOLE_DONE to aiming on the next tee, the
+	# wall time and the longest frame in it.
+	var compiles_before := _compiles()
+	var change_from := -1
+	var change_worst := 0.0
+	var changes: Array = []  ## [ms, worst frame ms]
 	var start := Time.get_ticks_usec()
 	var last := start
 	while (last - start) < seconds * 1.0e6:
@@ -180,7 +192,15 @@ func _play(seconds: float) -> PackedStringArray:
 		times.append(ms)
 		if ms > 20.0:
 			spikes.append([ms, GolfRound.State.keys()[_game.state], Performance.get_monitor(Performance.TIME_PROCESS) * 1000.0, Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME), (now - start) / 1.0e6])
+		if change_from >= 0:
+			change_worst = maxf(change_worst, ms)
 		if _game.state != state:
+			if state == GolfRound.State.HOLE_DONE:
+				change_from = now
+				change_worst = 0.0
+			elif _game.state == GolfRound.State.AIM and change_from >= 0:
+				changes.append([(now - change_from) / 1000.0, change_worst])
+				change_from = -1
 			state = _game.state
 			in_state = 0.0
 		in_state += ms / 1000.0
@@ -193,12 +213,25 @@ func _play(seconds: float) -> PackedStringArray:
 	var pct := func(p: float) -> float: return sorted[clampi(int(p * n), 0, n - 1)]
 	var over := func(limit: float) -> int: return times.filter(func(t: float) -> bool: return t > limit).size()
 	out.append("play %.0f s, v-sync on: %d frames, p50 %.1f ms, p95 %.1f, p99 %.1f, max %.1f; frames over 20 ms: %d, over 33 ms: %d, over 100 ms: %d" % [seconds, n, pct.call(0.5), pct.call(0.95), pct.call(0.99), sorted[n - 1], over.call(20.0), over.call(33.0), over.call(100.0)])
+	var compiles := _compiles() - compiles_before
+	out.append("pipeline compiles during play (Forward+; each at draw time is a hitch): draw %d, specialization %d, mesh %d, surface %d; texture memory %.0f MB" % [compiles.x, compiles.y, compiles.z, compiles.w, RenderingServer.get_rendering_info(RenderingServer.RENDERING_INFO_TEXTURE_MEM_USED) / 1048576.0])
+	for c: Array in changes:
+		out.append("hole change %.0f ms, longest frame %.1f ms" % [c[0], c[1]])
 	spikes.sort_custom(func(a: Array, b: Array) -> bool: return a[0] > b[0])
 	for sp: Array in spikes.slice(0, 15):
 		out.append("spike %.1f ms at %.1f s, state %s, script %.1f ms, draws %d" % [sp[0], sp[4], sp[1], sp[2], sp[3]])
 	for line in out:
 		print(line)
 	return out
+
+
+## Pipelines the renderer has built so far: at draw time (a stall in that
+## frame), specialisation, mesh and surface (Forward+ only; zero elsewhere).
+static func _compiles() -> Vector4:
+	return Vector4(RenderingServer.get_rendering_info(RenderingServer.RENDERING_INFO_PIPELINE_COMPILATIONS_DRAW),
+		RenderingServer.get_rendering_info(RenderingServer.RENDERING_INFO_PIPELINE_COMPILATIONS_SPECIALIZATION),
+		RenderingServer.get_rendering_info(RenderingServer.RENDERING_INFO_PIPELINE_COMPILATIONS_MESH),
+		RenderingServer.get_rendering_info(RenderingServer.RENDERING_INFO_PIPELINE_COMPILATIONS_SURFACE))
 
 
 ## What the scene is made of, grouped by the script that owns each piece
@@ -280,6 +313,17 @@ static func scene_breakdown(root: Node, cam: Camera3D = null) -> PackedStringArr
 func _views() -> bool:
 	var tree := get_tree()
 	var any := false
+	if OS.get_cmdline_user_args().has("--web-shadows"):
+		# The browser's sun shadows (GraphicsSettings.shadow_splits), to
+		# look at them on the desktop.
+		var sun := _game.scenery.sun
+		sun.directional_shadow_max_distance = minf(_game.graphics.shadow_distance(), 200.0)
+		sun.directional_shadow_split_1 = Scenery.first_split(sun.directional_shadow_max_distance)
+		sun.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_2_SPLITS if GraphicsSettings.shadow_splits_for(_game.graphics.quality, false, true) == 2 else DirectionalLight3D.SHADOW_PARALLEL_4_SPLITS
+	if OS.get_cmdline_user_args().has("--web-shadows-before"):
+		var sun := _game.scenery.sun
+		sun.directional_shadow_max_distance = minf(_game.graphics.shadow_distance(), 200.0)
+		sun.directional_shadow_split_1 = Scenery.first_split(sun.directional_shadow_max_distance)
 	for arg: String in OS.get_cmdline_user_args():
 		if not arg.begins_with("--view="):
 			continue
@@ -287,7 +331,23 @@ func _views() -> bool:
 		var parts := arg.trim_prefix("--view=").split(",")
 		var round_cam := get_viewport().get_camera_3d()
 		var cam: Camera3D = null
-		if parts.size() >= 7:
+		if parts[0] == "pin" and parts.size() >= 5 and _game.hole != null:
+			# `--view=pin,DIST,HEIGHT,FOV,PATH`: DIST metres back towards the
+			# tee from the pin, HEIGHT above the ground, a FOV degree lens.
+			var h := _game.hole
+			var back := Vector3(h.tee.x - h.pin.x, 0.0, h.tee.z - h.pin.z).normalized()
+			var p := h.pin + back * parts[1].to_float()
+			p.y = h.terrain.height_at(p.x, p.z) + parts[2].to_float()
+			cam = Camera3D.new()
+			cam.fov = parts[3].to_float()
+			cam.near = round_cam.near
+			cam.far = round_cam.far
+			cam.attributes = round_cam.attributes
+			_game.add_child(cam)
+			cam.global_position = p
+			cam.look_at(h.pin + Vector3.UP * 1.0)
+			cam.make_current()
+		elif parts.size() >= 7:
 			# A camera of its own: the round's camera moves itself each frame.
 			cam = Camera3D.new()
 			cam.fov = round_cam.fov

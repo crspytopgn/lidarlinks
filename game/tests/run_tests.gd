@@ -88,6 +88,7 @@ func _initialize() -> void:
 	_run("sound_over_distance", _test_sound_over_distance)
 	_run("course_life", _test_course_life)
 	_run("gallery", _test_gallery)
+	_run("performance helpers", _test_perf_helpers)
 	_run("trees", _test_trees)
 	_run("ground shade", _test_ground_shade)
 	_run("broadcast_pieces", _test_broadcast_pieces)
@@ -2371,6 +2372,8 @@ func _test_graphics_settings() -> void:
 	_check(GraphicsSettings.shadow_splits_for(GraphicsSettings.Quality.ULTRA, false) == 4, "shadow splits: four at Ultra on Compatibility")
 	_check(GraphicsSettings.shadow_splits_for(GraphicsSettings.Quality.HIGH, true) == 4, "shadow splits: four at High")
 	_check(GraphicsSettings.shadow_splits_for(GraphicsSettings.Quality.MEDIUM, true) == 2, "shadow splits: two at Medium")
+	_check(GraphicsSettings.shadow_splits_for(GraphicsSettings.Quality.HIGH, false, true) == 2, "shadow splits: two at High in the browser")
+	_check(GraphicsSettings.shadow_splits_for(GraphicsSettings.Quality.ULTRA, false, true) == 4, "shadow splits: four at Ultra in the browser")
 	_check(GraphicsSettings.shadow_atlas_size_for(GraphicsSettings.Quality.ULTRA, true) == 8192, "shadow atlas: 8192 at Ultra on Forward+")
 	_check(GraphicsSettings.shadow_atlas_size_for(GraphicsSettings.Quality.ULTRA, false) == 4096, "shadow atlas: 4096 at Ultra on Compatibility")
 	_check(GraphicsSettings.shadow_atlas_size_for(GraphicsSettings.Quality.MEDIUM, true) == 2048, "shadow atlas: 2048 at Medium")
@@ -2911,6 +2914,11 @@ func _test_course_marks() -> void:
 	_check_near(CourseMarks.stance_for(all_clubs[11]), CourseMarks.STANCE_IRON, 1e-6, "the sand wedge stands closer, 0.62 m")
 
 
+func _test_perf_helpers() -> void:
+	_check(GolferCloth._close([1.0, Vector3(0.1, 0, 0), Vector4.ONE], [1.0 + 5e-5, Vector3(0.1, 5e-5, 0), Vector4.ONE]), "cloth: a change under a tenth of a millimetre isn't pushed")
+	_check(not GolferCloth._close([Vector3(0.1, 0, 0)], [Vector3(0.1, 0.001, 0)]), "cloth: a millimetre's move is pushed")
+
+
 func _test_gallery() -> void:
 	_check_near(Gallery.rope_drop(0.0), 0.0, 1e-6, "the rope is at full height at a stake")
 	_check_near(Gallery.rope_drop(0.5), Gallery.ROPE_SAG, 1e-6, "the rope sags most mid-span")
@@ -2978,6 +2986,24 @@ func _test_gallery() -> void:
 			arm_mods += 1
 	var arms_ok := arm_mods == g.crowd_count()
 	_check(arms_ok, "each spectator holds their arms like a spectator, not round a club")
+	# Distant spectators are drawn as crowd cards, and pause off screen.
+	if g.crowd_count() > 0:
+		var person := g._people[0]
+		var at := person.position
+		var seen: Array[Plane] = []
+		g.update_lod_from(at + Vector3(0, 2, -Gallery.PERSON_CARD_M - 30.0), seen)
+		var cards := (g.get_node("PeopleCards") as MultiMeshInstance3D).multimesh
+		_check(not person.visible and g._person_far[0] == 1 and cards.instance_count == g._people.size(), "a far spectator is drawn as their card")
+		_check(g._skeletons[0] == null or g._skeletons[0].modifier_callback_mode_process == Skeleton3D.MODIFIER_CALLBACK_MODE_PROCESS_MANUAL, "a far spectator's bone modifiers pause")
+		g.update_lod_from(at + Vector3(0, 2, -(Gallery.PERSON_CARD_M + Gallery.PERSON_NEAR_M) * 0.5), seen)
+		_check(not person.visible, "between the two distances a card stays a card (no flicker)")
+		g.update_lod_from(at + Vector3(0, 2, -10.0), seen)
+		_check(person.visible and g._person_far[0] == 0, "a near spectator is the full person again, card folded away")
+		var behind: Array[Plane] = [Plane(Vector3(0, 0, 1), at.z - 5.0)]
+		g.update_lod_from(at + Vector3(0, 2, -10.0), behind)
+		_check(person.visible and g._person_idle[0] == 1, "a spectator out of view keeps their place but pauses")
+		g.update_lod_from(at + Vector3(0, 2, -10.0), seen)
+		_check(g._person_idle[0] == 0 and (g._skeletons[0] == null or g._skeletons[0].modifier_callback_mode_process == Skeleton3D.MODIFIER_CALLBACK_MODE_PROCESS_IDLE), "back in view, they move again")
 	# Grandstands behind par 3 and last greens, and about half the rest.
 	var h := HoleData.new()
 	var with_stand := 0
