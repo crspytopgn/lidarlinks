@@ -7,6 +7,7 @@ extends RefCounted
 ## shading.
 
 const DIR := "res://free_assets/"
+const WEB_DIR := "res://free_assets_web/"
 const GROUNDS: Array[String] = ["grass", "rough", "sand"]
 
 
@@ -352,6 +353,10 @@ static func _load(file: String) -> Texture2D:
 	if scan != null:
 		return scan
 	var path := DIR + file
+	# The browser's own copies (tools/fetch_free_assets.py write_web_copies):
+	# in both block formats, so an iPad reads them as they are.
+	if OS.has_feature("web") and ResourceLoader.exists(WEB_DIR + file):
+		path = WEB_DIR + file
 	if not ResourceLoader.exists(path):
 		return null
 	if _vram.has(path):

@@ -628,11 +628,21 @@ static func shadow_atlas_size_for(q: int, forward_plus: bool) -> int:
 ## the lower tiers; the first split still covers the golfer and the tee at
 ## full detail (Scenery.first_split), and the baked ground shade carries
 ## the far trees' shadows.
+##
+## The browser (desktop browsers and iPads alike) takes two below Ultra as
+## well: its shadow distance is half the desktop's (shadow_distance), so
+## the far split it draws covers what the desktop's last three do, and with
+## two splits the near one, the golfer's, gets half the atlas rather than a
+## quarter: the shadows where the player looks come out sharper, not
+## coarser, for a shadow pass with a third fewer draws. The desktop's High
+## and Ultra keep their four.
 func shadow_splits() -> int:
-	return shadow_splits_for(quality, is_forward_plus())
+	return shadow_splits_for(quality, is_forward_plus(), OS.has_feature("web"))
 
 
-static func shadow_splits_for(q: int, _forward_plus: bool) -> int:
+static func shadow_splits_for(q: int, _forward_plus: bool, web := false) -> int:
+	if web:
+		return 4 if q >= Quality.ULTRA else 2
 	return 4 if q >= Quality.HIGH else 2
 
 

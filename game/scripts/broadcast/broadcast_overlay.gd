@@ -94,6 +94,10 @@ func _ready() -> void:
 	add_child(glass)
 	_font = GlassTheme.display_font(600)
 	_body = GlassTheme.font(500)
+	_motion = Motion.new()
+	_motion.o = self
+	_motion.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_motion.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	pip = SubViewportContainer.new()
 	pip.stretch = true
 	pip.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -111,6 +115,7 @@ func _ready() -> void:
 	pip_camera.fov = 40.0
 	pip_camera.far = 3000.0
 	_pip_view.add_child(pip_camera)
+	add_child(_motion)
 
 
 ## Shows a second picture (the pin camera on approach shots). The picture
@@ -233,7 +238,34 @@ func _process(delta: float) -> void:
 	if _wipe_t > WIPE_S:
 		_wipe_t = -1.0
 	_ticker_x -= delta * TICKER_SPEED
-	queue_redraw()
+	# The panels are only redrawn when something on them moves or changes
+	# (_needs_redraw); the ticker's scrolling line and the LIVE dot, which
+	# move every frame, are their own small layer (_motion) on top. Drawing
+	# every panel's text and glass every frame was a steady cost for
+	# nothing between shots, on the browser's one thread most of all.
+	var sig := _redraw_signature()
+	if sig != _drawn_sig or _animating():
+		_drawn_sig = sig
+		queue_redraw()
+	if _motion != null:
+		_motion.queue_redraw()
+
+
+## What the panels show that can change without a call that redraws them:
+## the screen's size, the key hints' top (the HUD's), the detail fold.
+var _drawn_sig: Array = []
+func _redraw_signature() -> Array:
+	return [size, hints_top, tour, _aiming, detail_pinned, _replay, _cam_tag, _caption,
+		detail() if _detail_t < DETAIL_S + DETAIL_FADE + 0.1 else 0.0,
+		_lower_t >= 0.0, _card_t >= 0.0, _hole_t >= 0.0, _wipe_t >= 0.0, _caption_t >= 0.0]
+
+
+## Whether a timed piece is sliding, fading or wiping right now. A caption
+## held until the next one (seconds <= 0) is still once it has faded in.
+func _animating() -> bool:
+	if _lower_t >= 0.0 or _card_t >= 0.0 or _hole_t >= 0.0 or _wipe_t >= 0.0:
+		return true
+	return _caption_t >= 0.0 and (_caption_t < 0.5 or _caption_len - _caption_t < 0.75)
 
 
 func _draw() -> void:
@@ -241,6 +273,38 @@ func _draw() -> void:
 	glass.begin()
 	_draw_pieces()
 	glass.commit()
+
+
+## The ticker's moving line and the LIVE dot's pulse, redrawn every frame
+## over the panels; the wipe covers them by being drawn by the panels then.
+class Motion:
+	extends Control
+	var o: Node
+
+	func _draw() -> void:
+		o.call(&"_draw_motion", self)
+
+
+var _motion: Motion
+
+
+## Draws the moving pieces on `layer`, unless the wipe (drawn with the
+## panels, which then draw them themselves) is crossing.
+func _draw_motion(layer: Control) -> void:
+	if status.is_empty() or _wipe_t >= 0.0:
+		return
+	if not _replay:
+		var r := _live_rect()
+		layer.draw_circle(r.position + Vector2(12, 12), 4.0, Color(1, 1, 1, _pulse()))
+	if not tour and not _ticker.is_empty():
+		var y := size.y - TICKER_H
+		var tw := _font.get_string_size(_ticker, HORIZONTAL_ALIGNMENT_LEFT, -1, 14).x + 120.0
+		if _ticker_x < -tw:
+			_ticker_x += tw
+		var x := _ticker_x
+		while x < size.x:
+			layer.draw_string(_font, Vector2(x + 16, y + 19), _ticker, HORIZONTAL_ALIGNMENT_LEFT, -1, _size(14), TEXT)
+			x += tw
 
 
 func _draw_pieces() -> void:
@@ -290,11 +354,19 @@ func _draw_score_bug() -> void:
 
 
 func _draw_live_bug() -> void:
-	var r := Rect2(size.x - 186.0, 16.0, 62.0, 24.0)
+	var r := _live_rect()
 	_fill(r, RED, Vector4.ONE * 12.0)
-	var pulse := 0.6 + 0.4 * sin(_time * 4.0)
-	draw_circle(r.position + Vector2(12, 12), 4.0, Color(1, 1, 1, pulse))
+	if _wipe_t >= 0.0 or _motion == null:
+		draw_circle(r.position + Vector2(12, 12), 4.0, Color(1, 1, 1, _pulse()))
 	_text(r.position + Vector2(38, 17), "LIVE", 14, TEXT, true)
+
+
+func _live_rect() -> Rect2:
+	return Rect2(size.x - 186.0, 16.0, 62.0, 24.0)
+
+
+func _pulse() -> float:
+	return 0.6 + 0.4 * sin(_time * 4.0)
 
 
 func _draw_shot_panel() -> void:
@@ -632,6 +704,8 @@ func _draw_ticker() -> void:
 	var tw := _font.get_string_size(_ticker, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x + 120.0
 	if _ticker_x < -tw:
 		_ticker_x += tw
+	if _wipe_t < 0.0 and _motion != null:
+		return  # the moving line is the motion layer's
 	var x := _ticker_x
 	while x < size.x:
 		_text(Vector2(x + 16, y + 19), _ticker, fs, TEXT)

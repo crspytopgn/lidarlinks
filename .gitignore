@@ -48,6 +48,7 @@ Thumbs.db
 
 # Free CC0 assets, downloaded by tools/fetch_free_assets.py
 game/free_assets/
+game/free_assets_web/
 __pycache__/
 tools/audio/.cache/
 
