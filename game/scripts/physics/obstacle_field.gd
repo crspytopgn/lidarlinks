@@ -48,6 +48,42 @@ func add_box(centre: Vector3, axes: Basis, half: Vector3, kind: int) -> void:
 	_boxes.append_array(PackedFloat32Array([centre.x, centre.y, centre.z, axes.x.x, axes.x.y, axes.x.z, axes.y.x, axes.y.y, axes.y.z, axes.z.x, axes.z.y, axes.z.z, half.x, half.y, half.z, kind]))
 
 
+## Cylinders whose footprint meets the rect (x0, z0, x1, z1), 6 floats
+## each as add_cylinder() stores them, for baking into the native sim
+## (OlcoreTerrain.bake_obstacles). The native field is built from the
+## merged exports of the course's fields, so a shot meets the same trees
+## and walls there as in the GDScript port.
+func cylinders_in(x0: float, z0: float, x1: float, z1: float) -> PackedFloat32Array:
+	var out := PackedFloat32Array()
+	for o in range(0, _cylinders.size(), CYLINDER_FLOATS):
+		var r := _cylinders[o + 2]
+		if _cylinders[o] + r < x0 or _cylinders[o] - r > x1:
+			continue
+		if _cylinders[o + 1] + r < z0 or _cylinders[o + 1] - r > z1:
+			continue
+		out.append_array(_cylinders.slice(o, o + CYLINDER_FLOATS))
+	return out
+
+
+## Boxes whose footprint meets the rect, 16 floats each as add_box()
+## stores them, for baking into the native sim (see cylinders_in).
+func boxes_in(x0: float, z0: float, x1: float, z1: float) -> PackedFloat32Array:
+	var out := PackedFloat32Array()
+	for o in range(0, _boxes.size(), BOX_FLOATS):
+		var rx := 0.0
+		var rz := 0.0
+		for k in 3:
+			var h := _boxes[o + 12 + k]
+			rx += absf(_boxes[o + 3 + 3 * k]) * h
+			rz += absf(_boxes[o + 5 + 3 * k]) * h
+		if _boxes[o] + rx < x0 or _boxes[o] - rx > x1:
+			continue
+		if _boxes[o + 2] + rz < z0 or _boxes[o + 2] - rz > z1:
+			continue
+		out.append_array(_boxes.slice(o, o + BOX_FLOATS))
+	return out
+
+
 ## The tree crowns (CANOPY cylinders) as (x, z, radius), for scenery that
 ## grows under trees (FescueField's understory). Read only; GDScript only,
 ## as nothing in the physics needs it.
@@ -148,15 +184,37 @@ func _cell_range(x0: float, z0: float, x1: float, z1: float) -> Rect2i:
 	return Rect2i(c0, r0, maxi(0, c1 - c0 + 1), maxi(0, r1 - r0 + 1))
 
 
+## A segment_hit result without a Dictionary: the fraction along the
+## segment, the outward normal and the kind. Fill it with
+## segment_hit_into() and reuse one per shot: the hot loops ask every step,
+## and the Dictionary form allocated one per candidate hit. Mirrors
+## olcore::ObstacleHit, which segment_hit() there already fills by reference.
+class Hit:
+	var fraction := 0.0
+	var normal := Vector3.ZERO
+	var kind := 0
+
+
 ## The first obstacle the segment from -> to enters from outside:
 ## {fraction (0 to 1), normal (outward unit normal), kind}, or {} if none. A
 ## segment that starts inside an obstacle does not hit it.
 func segment_hit(from: Vector3, to: Vector3) -> Dictionary:
-	if _cols == 0:
+	var hit := Hit.new()
+	if not segment_hit_into(from, to, hit):
 		return {}
+	return {"fraction": hit.fraction, "normal": hit.normal, "kind": hit.kind}
+
+
+## segment_hit() without the Dictionary: writes the first obstacle into
+## `out` and returns true, or false for none. `out` keeps its old values
+## on false, so only read it when this returns true.
+func segment_hit_into(from: Vector3, to: Vector3, out: Hit) -> bool:
+	if _cols == 0:
+		return false
 	var d := to - from
 	var r := _cell_range(minf(from.x, to.x), minf(from.z, to.z), maxf(from.x, to.x), maxf(from.z, to.z))
-	var best := {}
+	var cand := Hit.new()
+	var found := false
 	var low := minf(from.y, to.y)
 	for row in range(r.position.y, r.end.y):
 		for col in range(r.position.x, r.end.x):
@@ -166,10 +224,13 @@ func segment_hit(from: Vector3, to: Vector3) -> Dictionary:
 				continue
 			for i in range(_cell_start[c], _cell_start[c + 1]):
 				var k := _cell_items[i]
-				var h := _hit_cylinder(k, from, d) if k >= 0 else _hit_box(-k - 1, from, d)
-				if not h.is_empty() and (best.is_empty() or float(h.fraction) < float(best.fraction)):
-					best = h
-	return best
+				var got := _hit_cylinder_into(k, from, d, cand) if k >= 0 else _hit_box_into(-k - 1, from, d, cand)
+				if got and (not found or cand.fraction < out.fraction):
+					out.fraction = cand.fraction
+					out.normal = cand.normal
+					out.kind = cand.kind
+					found = true
+	return found
 
 
 ## Where p + d t is between lo and hi, as Vector2(t0, t1); null if never.
@@ -181,11 +242,11 @@ static func _slab(p: float, d: float, lo: float, hi: float) -> Variant:
 	return Vector2(minf(a, b), maxf(a, b))
 
 
-func _hit_cylinder(i: int, from: Vector3, d: Vector3) -> Dictionary:
+func _hit_cylinder_into(i: int, from: Vector3, d: Vector3, out: Hit) -> bool:
 	var o := i * CYLINDER_FLOATS
 	var ty: Variant = _slab(from.y, d.y, _cylinders[o + 3], _cylinders[o + 4])
 	if ty == null:
-		return {}
+		return false
 	var radius := _cylinders[o + 2]
 	var fx := from.x - _cylinders[o]
 	var fz := from.z - _cylinders[o + 1]
@@ -195,12 +256,12 @@ func _hit_cylinder(i: int, from: Vector3, d: Vector3) -> Dictionary:
 	var tc1 := INF
 	if a < 1e-12:
 		if cc > 0.0:
-			return {}
+			return false
 	else:
 		var b := fx * d.x + fz * d.z
 		var disc := b * b - a * cc
 		if disc < 0.0:
-			return {}
+			return false
 		var sq := sqrt(disc)
 		tc0 = (-b - sq) / a
 		tc1 = (-b + sq) / a
@@ -208,14 +269,17 @@ func _hit_cylinder(i: int, from: Vector3, d: Vector3) -> Dictionary:
 	var t0 := maxf(y.x, tc0)
 	var t1 := minf(y.y, tc1)
 	if t0 > t1 or t0 < 0.0 or t0 > 1.0:
-		return {}
+		return false
 	var normal := Vector3(0.0, -1.0 if d.y > 0.0 else 1.0, 0.0)
 	if tc0 >= y.x:
 		normal = Vector3((fx + d.x * t0) / radius, 0.0, (fz + d.z * t0) / radius)
-	return {"fraction": t0, "normal": normal, "kind": int(_cylinders[o + 5])}
+	out.fraction = t0
+	out.normal = normal
+	out.kind = int(_cylinders[o + 5])
+	return true
 
 
-func _hit_box(i: int, from: Vector3, d: Vector3) -> Dictionary:
+func _hit_box_into(i: int, from: Vector3, d: Vector3, out: Hit) -> bool:
 	var o := i * BOX_FLOATS
 	var rel := from - Vector3(_boxes[o], _boxes[o + 1], _boxes[o + 2])
 	var t0 := -INF
@@ -227,12 +291,15 @@ func _hit_box(i: int, from: Vector3, d: Vector3) -> Dictionary:
 		var half := _boxes[o + 12 + k]
 		var s: Variant = _slab(rel.dot(axis), dk, -half, half)
 		if s == null:
-			return {}
+			return false
 		var span: Vector2 = s
 		if span.x > t0:
 			t0 = span.x
 			face = -axis if dk > 0.0 else axis
 		t1 = minf(t1, span.y)
 	if face == Vector3.ZERO or t0 > t1 or t0 < 0.0 or t0 > 1.0:
-		return {}
-	return {"fraction": t0, "normal": face, "kind": int(_boxes[o + 15])}
+		return false
+	out.fraction = t0
+	out.normal = face
+	out.kind = int(_boxes[o + 15])
+	return true

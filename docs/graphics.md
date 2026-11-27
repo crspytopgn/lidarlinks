@@ -655,6 +655,32 @@ cascade. The tee view of the round was already at 1.9 million and this took
 it just over 2.0. A hero golfer of that size is ordinary for a sports game,
 and the extra 0.2 million is about 5 to 6 golfers' worth.
 
+2026-11-25: hole changes stopped rebuilding what the hole does not
+change. The golfers are kept by look (creating one bakes its meshes)
+and re-parented to the new hole, and the terrain's ground — chunks,
+paths, water, rocks, plants — is kept too on a designed course, with
+only the distant trees re-sorted for the hole; the gallery already
+reused its people the same way, and grass, fescue and debris already
+skipped setup when the terrain was the same object. GroundShade
+re-bakes only when its key changes (hole, sun, casters, size) and
+bakes at 1024 pixels below High, and it starts a few frames past the
+hole change, so the change never waits on the synchronous readback
+(GDScript has no async readback). Shadow cuts: two splits and a
+2048 atlas at Low and Medium (High and Ultra keep four splits; the
+8192 atlas only at Ultra on Forward+, Compatibility capped at 4096),
+and trees, placed objects and course-placed models whose
+shadows cannot reach the line of play skip the sun's shadow pass —
+the baked ground shade carries them. Occlusion from the terrain
+itself (TerrainOcclusion, Settings > Terrain occlusion, on by
+default): far tree batches and placed objects behind a hill are
+hidden, judged by sight lines that must clear the ground by 2 m at
+4 m samples, re-checked at most twice a second once the camera has
+moved 8 m, never within 60 m of the camera. Grass, fescue, meadow
+and sward keep their full reach at the top Grass level (Ultra looks):
+the top tier spends freely. The
+golfer's mesh is unchanged: the saving there is not rebuilding him
+every hole.
+
 ## Download size
 
 `tools/size_report.py` runs after the CI export. It writes each build's
@@ -684,7 +710,6 @@ defaults).
 
 ## Still to do
 
-- Occlusion from the terrain itself (hollows, cliffs).
 - Texture compression tiers per device (Basis/ASTC), and the HD pack in
   the browser.
 
@@ -717,6 +742,27 @@ frame; the shadow pass's tree triangles 257k to 132k, ground 149k to 106k
 (132 to 65 chunks casting), stakes 86k to none. Each hole change there was
 also half a second faster: the ponds' water meshes are kept between holes.
 
+On 2026-11-26 the same counting, headless, at Photoreal (Ultra, hole 2)
+found the desert courses' shadow pass was mostly plants, not trees: the
+cacti and palms cast their full scanned meshes (1 to 3 thousand
+triangles each) into every shadow split, 7.6M of 9.0M caster triangles
+on Ember Coast (all palms), 8.7M of 10.0M on Red Spire, 5.5M of 7.0M on
+Vermilion Ridge. A saguaro's shadow reaches about 20 m, so most plants
+stand too far off the line of play for their shadows ever to be seen
+from the tee or the flyover. The placed-tree rule
+(`DesignedTerrain.object_casts_sun_shadow`) now runs per 400 m plant
+area on every hole change (`DesignedTerrain.refresh_plant_shadows`, from
+`GolfRound.start_hole`): an area casts only when its nearest plant's
+shadow can reach the line of play. Caster triangles fell to 3.9M on
+Ember Coast, 2.6M on Red Spire and 1.7M on Vermilion Ridge, while the
+placeholder (930k) and Glacier Crown (944k), which have no desert
+plants, did not move. The ground chunks are now the biggest casters on
+those courses (1.0 to 1.3M), already trimmed by their slope. Not done:
+the Ultra shadow atlas stays 8192 (256 MB) on Forward+, as cutting it
+to 4096 would make Ultra's first-split shadows coarser than High's
+(about 5 mm a texel against 2.4 mm); and the rock formations still cast
+by default (about 0.1 to 0.2M triangles).
+
 On Forward+ (desktop) the free textures, imported as lossy WebP for a
 small download, are block-compressed (BC1/BC3) as they load
 (`FreeAssets.gpu_compress`), since WebP is stored uncompressed in video
@@ -725,6 +771,19 @@ memory. At the Ultra tee view this cut Forward+ video memory from 1027 to
 it (players' builds still use the larger figure); importing the textures
 VRAM-compressed for desktop exports would be the real fix. Compatibility
 keeps them as they are, so its CI budget still stands for the browser.
+
+2026-11-25: the real fix landed. The free textures
+(`tools/fetch_free_assets.py`) and the scanned-tree textures
+(`game/assets/trees/textures/*.import`) are imported VRAM-compressed
+(normal maps in their normal form), so the exporter bakes the block
+format for each build instead of the game compressing at load; the
+alpha maps stay lossless, as lossy compression invents bright fringes
+round transparent pixels. `FreeAssets.gpu_compress` stays as the fallback
+for textures that arrive uncompressed at runtime (the Megascans pack,
+the golfer's look pack), and Compatibility still keeps its WebP, as
+phones in the browser can't read S3TC. The check is that the textures
+come out VRAM-compressed: the imported files are named `*.s3tc.ctex` on
+desktop, and `tools/size_report.py` shows the format after the CI export.
 
 The benchmark ends with 90 seconds of automatic play (shots, flights,
 camera moves, the next hole) with v-sync on, and reports frame-time

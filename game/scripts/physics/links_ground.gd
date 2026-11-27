@@ -191,12 +191,20 @@ class Ctx:
 	var objects: LinksObjects
 	var facing := Vector3(0, -1, 0)
 	var depth := 0
+	## Scratch for _f32c(): one per shot (a Ctx is never shared between
+	## shots), so no allocation per cup sub-step and no shared state.
+	var f32_scratch := PackedFloat32Array([0.0])
 
 
 ## The game's random numbers. Mirrors olcore::LinksRandom.
 class Rng:
 	const MASK := 0xffffffff
 	var state := 0x12345678
+	## Scratch for next_fraction(): a shot's Rng is its own, so reusing
+	## one float32 slot here is safe and avoids allocating a
+	## PackedFloat32Array on every draw. The value returned is still the
+	## float32-rounded fraction, exactly as before.
+	var _f32_scratch := PackedFloat32Array([0.0])
 
 	func _init(p_seed := 0x12345678) -> void:
 		state = p_seed & MASK
@@ -221,8 +229,10 @@ class Rng:
 		return (out << 1) & MASK
 
 	func next_fraction() -> float:
-		# The game keeps the fraction as a float.
-		return PackedFloat32Array([next_u32() / 4294967296.0])[0]
+		# The game keeps the fraction as a float; the scratch slot rounds
+		# it to float32 without allocating a new array per draw.
+		_f32_scratch[0] = next_u32() / 4294967296.0
+		return _f32_scratch[0]
 
 
 ## The ground in the game's frame. Mirrors olcore::LinksGround.
@@ -306,12 +316,12 @@ static func surface_for_class(ground_class: int) -> Params:
 	if ground_class == GREEN and greens != null:
 		return greens
 	# Made once per class: every step on the ground asks for one, and nothing
-	# changes a record once made.
-	# Shots are played on worker threads too (ShotWorker), so the cache is
-	# read and filled under a lock.
-	_class_lock.lock()
+	# changes a record once made. The hot path therefore reads the cache
+	# without the lock and only a miss takes it, re-checking under it: two
+	# threads racing a miss both build the same values and one wins the
+	# store, so the record a step gets is always the same. (Shots are
+	# played on worker threads too, ShotWorker.)
 	var made: Params = _class_records.get(ground_class)
-	_class_lock.unlock()
 	if made != null:
 		return made
 	var c := ground_class if LinksGround.SURFACES.has(ground_class) else FAIRWAY
@@ -329,6 +339,10 @@ static func surface_for_class(ground_class: int) -> Params:
 		p.lie_spin = v[7]
 		p.lie_power = v[8]
 	_class_lock.lock()
+	var raced: Params = _class_records.get(ground_class)
+	if raced != null:
+		_class_lock.unlock()
+		return raced
 	_class_records[ground_class] = p
 	_class_lock.unlock()
 	return p
@@ -538,106 +552,9 @@ static func _step(c: Ctx, b: Ball, dt: float) -> StepInfo:
 
 ## Mirrors olcore::simulate_links_shot: a whole shot with the Links 2003
 ## flight, bounce, roll, cup and flagstick, and our own trees, water and out
-## of bounds.
+## of bounds. Runs through ResumableShot, as BallPhysics.simulate_shot does.
 static func simulate_shot(start: BallState, terrain: CourseTerrain, has_cup: bool, cup: Vector3, wind_mps: Vector3, aero: LinksAero) -> ShotResult:
-	var dt := FRAME_DT
-	var radius_m := RADIUS / FEET_PER_METRE
-	var ground := TerrainGround.new(terrain)
-	var r := ShotResult.new()
-	var landed := false
-	var t := 0.0
-	var n_steps := 0
-
-	# The game starts a full shot in flight with its centre one radius up.
-	var b := Ball.new()
-	b.position = _to_game(start.position) + Vector3(0, 0, RADIUS)
-	b.velocity = _to_game(start.velocity)
-	b.spin = _spin_to_game(start.spin)
-	if start.on_ground:
-		# A putt starts skidding, one radius above the slope, tilted onto it.
-		var n := ground.normal(b.position.x, b.position.y)
-		b.velocity = LinksLaunch.putt_slope(b.velocity, n)
-		b.spin = LinksLaunch.putt_slope(b.spin, n)
-		b.position.z = ground.height(b.position.x, b.position.y) + RADIUS / n.z
-		b.mode = Mode.SKID
-		landed = true
-		r.first_landing = start.position
-	# The game takes the flagstick out for a shot from the green.
-	b.flagstick_out = ground.surface(b.position.x, b.position.y).ground_class == GREEN
-	var rng := Rng.new(Rng.seed_for(b.position.x, b.position.y))
-	var wind := _to_game(wind_mps)
-	# Billboards face the camera behind the ball: back along the shot.
-	var facing := Vector3(-b.velocity.x, -b.velocity.y, 0)
-	facing = facing.normalized() if facing.length() > 0.0 else Vector3(0, -1, 0)
-	var hole: Cup = null
-	if has_cup:
-		hole = Cup.new()
-		hole.pin = _to_game(cup)
-		hole.radius = BallPhysics.CUP_RADIUS * FEET_PER_METRE
-	r.add_sample(0.0, start.position)
-	# One context for the whole shot (step() makes one per step).
-	var c := Ctx.new()
-	c.objects = terrain.links_objects
-	c.facing = facing
-	c.g = ground
-	c.aero = aero
-	c.wind = wind
-	c.rng = rng
-	c.cup = hole
-
-	while t < BallPhysics.MAX_TIME:
-		var before := _from_game(b.position) - Vector3(0, radius_m, 0)
-		var before_velocity := _from_game(b.velocity)
-		var before_spin := _spin_from_game(b.spin)
-		var was_flying := b.mode == Mode.FLIGHT
-		var info := _step(c, b, dt)
-		t += dt
-		n_steps += 1
-		var after := _from_game(b.position) - Vector3(0, radius_m, 0)
-		r.apex_m = maxf(r.apex_m, after.y - start.position.y)
-
-		# Walls and the like (and trees, when the course has no billboards
-		# for the game's own model): our own handling, as in
-		# BallPhysics.simulate_shot.
-		var hit := terrain.links_obstacle_hit(before, after)
-		if not hit.is_empty() and (was_flying or int(hit.kind) == ObstacleField.Kind.SOLID):
-			var solid := int(hit.kind) == ObstacleField.Kind.SOLID
-			var hb := BallState.new(before.lerp(after, float(hit.fraction)), before_velocity, before_spin)
-			BallPhysics.hit_obstacle(hb, hit)
-			hb.position += (hit.normal as Vector3) * (BallPhysics.OBSTACLE_GAP if solid else -BallPhysics.OBSTACLE_GAP)
-			r.obstacle_hits += 1
-			r.add_sample(t, hb.position)
-			b.position = _to_game(hb.position) + Vector3(0, 0, RADIUS)
-			b.velocity = _to_game(hb.velocity)
-			b.spin = _spin_to_game(hb.spin)
-			b.mode = Mode.FLIGHT
-			continue
-
-		if info.landed:
-			var contact := _from_game(info.contact)
-			if not landed:
-				landed = true
-				r.first_landing = contact
-			r.bounces += 1
-			r.add_sample(t, contact)
-			var surf := terrain.surface_at(contact.x, contact.z)
-			if surf == Surface.Type.WATER:
-				return _finish(r, ShotResult.Outcome.WATER, contact, t, landed, start, terrain)
-			if surf == Surface.Type.OUT_OF_BOUNDS:
-				return _finish(r, ShotResult.Outcome.OUT_OF_BOUNDS, contact, t, landed, start, terrain)
-		elif not was_flying:
-			var here := terrain.surface_at(after.x, after.z)
-			if here == Surface.Type.WATER:
-				return _finish(r, ShotResult.Outcome.WATER, after, t, landed, start, terrain)
-			if here == Surface.Type.OUT_OF_BOUNDS:
-				return _finish(r, ShotResult.Outcome.OUT_OF_BOUNDS, after, t, landed, start, terrain)
-		if b.mode == Mode.HOLED:
-			return _finish(r, ShotResult.Outcome.HOLED, cup, t, landed, start, terrain)
-		if b.mode == Mode.REST:
-			return _finish(r, ShotResult.Outcome.REST, after, t, landed, start, terrain)
-		if n_steps % BallPhysics.SAMPLE_EVERY == 0:
-			r.add_sample(t, after)
-	return _finish(r, ShotResult.Outcome.TIMED_OUT, _from_game(b.position) - Vector3(0, radius_m, 0), t, landed, start, terrain)
+	return ResumableShot.new(start, terrain, has_cup, cup, wind_mps, aero).run()
 
 
 static func _finish(r: ShotResult, outcome: ShotResult.Outcome, pos: Vector3, t: float, landed: bool, start: BallState, terrain: CourseTerrain) -> ShotResult:
@@ -968,9 +885,11 @@ static func _in_cup_mode(m: int) -> bool:
 	return m == Mode.CUP_AIR or m == Mode.CUP_RIM or m == Mode.CUP_WALL or m == Mode.CUP_DROP
 
 
-static func _f32(x: float) -> float:
-	var a := PackedFloat32Array([x])
-	return a[0]
+## `x` rounded to float32, as the game stores it, without allocating:
+## the caller's Ctx owns the scratch slot. Mirrors the C++ static_cast<float>.
+static func _f32c(c: Ctx, x: float) -> float:
+	c.f32_scratch[0] = x
+	return c.f32_scratch[0]
 
 
 ## The game's state blend: position by the fraction s of the path, velocity
@@ -1256,11 +1175,11 @@ static func _cup_sub(c: Ctx, b: Ball, h: float) -> void:
 ## single precision as the game does.
 static func _cup_frame(c: Ctx, b: Ball, dt: float) -> void:
 	b.position -= c.cup.pin
-	var sub := _f32(CUP_SUB_STEP)
-	var remaining := _f32(dt)
+	var sub := _f32c(c, CUP_SUB_STEP)
+	var remaining := _f32c(c, dt)
 	while remaining >= sub and _in_cup_mode(b.mode):
 		_cup_sub(c, b, sub)
-		remaining = _f32(remaining - sub)
+		remaining = _f32c(c, remaining - sub)
 	if remaining > 0.0 and _in_cup_mode(b.mode):
 		_cup_sub(c, b, remaining)
 	b.position += c.cup.pin

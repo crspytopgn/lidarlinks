@@ -1,0 +1,116 @@
+name: GDExtension
+
+# Builds the Olcore GDExtension (extensions/olcore) on Linux, Windows
+# and macOS, and uploads the per-platform binaries the `export` job
+# needs. The `core` job never builds it (BUILD_GDEXTENSION defaults to
+# OFF there). macOS builds both architectures for the universal export.
+# The web build never ships it from CI yet: the wasm extension is
+# built locally with Emscripten 4.0.20 (see
+# extensions/olcore/CMakeLists.txt and docs/gdextension.md), and
+# there is no wasm job in this workflow yet — until one lands, a web
+# export from CI runs the GDScript port.
+#
+# This workflow is also called from ci.yml (the `gdextension` job, via
+# workflow_call) so the `export` job can download the libraries: a
+# called workflow runs inside the caller's run, so its artifacts are
+# downloadable there. The build lives in this file only — do not copy
+# the matrix into ci.yml. The standalone push/PR triggers below are
+# for fast feedback on extension changes without running the export.
+
+on:
+  push:
+    branches: [main, perf/**]
+    paths:
+      - "extensions/olcore/**"
+      - "extensions/godot-cpp"
+      - "libs/olcore/**"
+      - "game/addons/olcore/**"
+      - ".github/workflows/gdextension.yml"
+  pull_request:
+    paths:
+      - "extensions/olcore/**"
+      - "extensions/godot-cpp"
+      - "libs/olcore/**"
+      - "game/addons/olcore/**"
+      - ".github/workflows/gdextension.yml"
+  workflow_dispatch:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: GDExtension (${{ matrix.os }}${{ matrix.arch }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            arch: x86_64
+            cmake_arch: ""
+          - os: windows-latest
+            arch: x86_64
+            cmake_arch: ""
+          - os: macos-latest
+            arch: arm64
+            cmake_arch: "-DCMAKE_OSX_ARCHITECTURES=arm64"
+          - os: macos-latest
+            arch: x86_64
+            cmake_arch: "-DCMAKE_OSX_ARCHITECTURES=x86_64"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Configure
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_GDEXTENSION=ON ${{ matrix.cmake_arch }}
+      - name: Build extension
+        # The snapshot tests are a separate target from the library,
+        # so build them too: the ctest step below needs the executable
+        # to exist, and building only olcore_gdext leaves it "Not Run".
+        # --parallel 2, not unbounded: an unbounded build runs one job
+        # per vCPU (4 on the Linux/Windows runners), and godot-cpp has
+        # template-heavy translation units (variant_utility.cpp) whose
+        # compilers each peak at several GB — four at once OOM-killed
+        # cc1plus on the Ubuntu leg. Two at a time fits even the
+        # tightest leg (macOS arm64: 3 vCPU / 7 GB; a private-repo
+        # Linux/Windows runner is 2 vCPU / 8 GB) while still using two
+        # cores; the cost is a slower build, not a failed one. The
+        # `core` job in ci.yml keeps unbounded --parallel: it never
+        # builds godot-cpp (BUILD_GDEXTENSION is off there), its
+        # translation units are small, and all three of its legs pass.
+        run: cmake --build build --config Release --target olcore_gdext olcore_snapshot_tests --parallel 2
+      - name: Verify library location
+        # Fail here, in minutes, not in the export job 20 minutes
+        # later: the library must sit flat in game/addons/olcore/bin/,
+        # exactly where olcore.gdextension points and where the export
+        # job downloads it to. Multi-configuration generators
+        # (Visual Studio, Xcode) used to drop it in a Release/
+        # subdirectory instead, which the upload step then preserved —
+        # the build passed, the artifact existed, but the export could
+        # not find the DLL. extensions/olcore/CMakeLists.txt pins the
+        # per-configuration output directories to bin/; this step
+        # proves that pin held on every leg.
+        shell: bash
+        run: |
+          case "${{ matrix.os }}-${{ matrix.arch }}" in
+            ubuntu-latest-x86_64) lib=libolcore.linux.x86_64.so ;;
+            windows-latest-x86_64) lib=libolcore.windows.x86_64.dll ;;
+            macos-latest-arm64) lib=libolcore.macos.arm64.dylib ;;
+            macos-latest-x86_64) lib=libolcore.macos.x86_64.dylib ;;
+          esac
+          ls -R game/addons/olcore/bin
+          if [ ! -s "game/addons/olcore/bin/$lib" ]; then
+            echo "::error::Expected $lib flat in game/addons/olcore/bin/ — the library landed somewhere else (check for a Release/ subdirectory)"
+            exit 1
+          fi
+          echo "present: game/addons/olcore/bin/$lib"
+      - name: Test snapshot core
+        run: ctest --test-dir build -C Release -R olcore_snapshot_tests --output-on-failure
+      - name: Upload library
+        uses: actions/upload-artifact@v4
+        with:
+          name: olcore-gdext-${{ matrix.os }}-${{ matrix.arch }}
+          path: game/addons/olcore/bin/
+          if-no-files-found: error

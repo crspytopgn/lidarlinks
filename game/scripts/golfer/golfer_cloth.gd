@@ -178,23 +178,50 @@ func _pose(bone: String) -> Transform3D:
 
 ## The body's capsules as last drawn, in the skeleton's space.
 var _caps_local: Array = []
+## What the occluded materials were last given (and to which materials):
+## _push_occluders() only sets shader parameters when one of these changed,
+## so a still golfer costs no shader traffic at all.
+var _push_a := PackedVector4Array()
+var _push_b := PackedVector4Array()
+var _push_strength := -1.0
+var _push_occluded: Array = []
+## The skeleton's place in the world the last _process push was for.
+var _world_pushed := false
+var _last_world := Transform3D.IDENTITY
 ## Review tools step the springs themselves (_update_cloth) at a fixed rate.
 var manual := false
 
 
 ## The golfer can move without the bones changing (no skeleton update), so
-## the capsules follow the skeleton's place in the world every frame.
+## the capsules follow the skeleton's place in the world -- but only when
+## that place, the detail tier, or the occluded materials actually changed.
+## (A pose change is pushed from _on_skeleton_updated instead.)
 func _process(_delta: float) -> void:
-	if _skeleton != null and not _caps_local.is_empty():
-		_push_occluders(_to_world(_caps_local))
+	if _skeleton == null or _caps_local.is_empty():
+		return
+	var world := _skeleton.global_transform
+	var strength := 1.0 if detail >= 1 else 0.0
+	if _world_pushed and world == _last_world and strength == _push_strength and occluded.size() == _push_occluded.size():
+		return
+	_push_occluders(_to_world(_caps_local))
+	_last_world = world
+	_world_pushed = true
 
 
 func _push_occluders(caps: Array) -> void:
 	var strength := 1.0 if detail >= 1 else 0.0
+	var a: PackedVector4Array = caps[0]
+	var b: PackedVector4Array = caps[1]
+	if strength == _push_strength and a == _push_a and b == _push_b and occluded == _push_occluded:
+		return
 	for m in occluded:
-		m.set_shader_parameter("occ_a", caps[0])
-		m.set_shader_parameter("occ_b", caps[1])
+		m.set_shader_parameter("occ_a", a)
+		m.set_shader_parameter("occ_b", b)
 		m.set_shader_parameter("occ_strength", strength)
+	_push_a = a.duplicate()
+	_push_b = b.duplicate()
+	_push_strength = strength
+	_push_occluded = occluded.duplicate()
 
 
 ## Runs once the skeleton's final pose for this frame is known (after the

@@ -4,6 +4,7 @@
 #include <cmath>
 
 #include "olcore/links_ground.hpp"
+#include "olcore/resumable_shot.hpp"
 
 namespace olcore {
 
@@ -157,211 +158,226 @@ void hit_obstacle(Vec3& velocity, Vec3& spin, const ObstacleHit& hit) {
   }
 }
 
-ShotResult simulate_shot(const BallState& start, const BallParams& p, const Terrain& terrain,
-                         const ShotOptions& opt) {
-  if (p.links) {
-    return simulate_links_shot(start, p, terrain, opt);
-  }
-  ShotResult r;
-  BallState s = start;
-  double t = 0;
-  int step = 0;
-  bool landed = false;
-  r.path.push_back({0, s.position});
-
-  auto finish = [&](ShotOutcome o, Vec3 pos) {
-    // A course can limit each hole to an outline; it is judged where the ball
-    // stops.
-    if (o == ShotOutcome::Rest && !terrain.in_bounds(pos.x, pos.z)) o = ShotOutcome::OutOfBounds;
-    r.outcome = o;
-    r.rest = pos;
-    r.time_s = t;
-    r.rest_surface = terrain.surface(pos.x, pos.z);
-    if (!landed) {
-      r.first_landing = pos;
-    }
-    r.carry_m = horizontal_distance(start.position, r.first_landing);
-    r.total_m = horizontal_distance(start.position, pos);
-    if (r.path.empty() || r.path.back().t < t) {
-      r.path.push_back({t, pos});
-    }
-    return r;
-  };
-
-  Vec3 n0 = terrain.normal(s.position.x, s.position.z);
-  double vn0 = dot(s.velocity, n0);
-  double speed0 = length(s.velocity);
-  if (vn0 < 2 * opt.roll_threshold && s.velocity.y > kLoftedLaunch * speed0) {
+void ResumableShot::init_standard() {
+  state_ = start_;
+  Vec3 n0 = terrain_.normal(state_.position.x, state_.position.z);
+  double vn0 = dot(state_.velocity, n0);
+  double speed0 = length(state_.velocity);
+  if (vn0 < 2 * opt_.roll_threshold && state_.velocity.y > kLoftedLaunch * speed0) {
     // A lofted shot from a lie on a bank (a bunker face) leaves the slope:
     // the club follows the ground, so the launch is off the slope too.
-    Vec3 v = s.velocity + n0 * (std::max(std::fabs(vn0), 2 * opt.roll_threshold) - vn0);
-    s.velocity = v * (speed0 / length(v));
-    vn0 = dot(s.velocity, n0);
+    Vec3 v = state_.velocity + n0 * (std::max(std::fabs(vn0), 2 * opt_.roll_threshold) - vn0);
+    state_.velocity = v * (speed0 / length(v));
+    vn0 = dot(state_.velocity, n0);
   }
-  if (vn0 < -opt.roll_threshold) {
+  if (vn0 < -opt_.roll_threshold) {
     // Struck into a bank steeper than its launch (a bunker face): it meets
     // the ground at once, rather than rolling away at full speed.
-    bounce(s.velocity, s.spin, n0, terrain.surface(s.position.x, s.position.z), p);
-    ++r.bounces;
-    vn0 = dot(s.velocity, n0);
+    bounce(state_.velocity, state_.spin, n0, terrain_.surface(state_.position.x, state_.position.z), params_);
+    ++result_.bounces;
+    vn0 = dot(state_.velocity, n0);
   }
-  bool rolling = vn0 < opt.roll_threshold;
-  if (rolling) {
-    s.velocity = s.velocity - n0 * vn0;
-    landed = true;
-    r.first_landing = s.position;
+  rolling_ = vn0 < opt_.roll_threshold;
+  if (rolling_) {
+    state_.velocity = state_.velocity - n0 * vn0;
+    landed_ = true;
+    result_.first_landing = state_.position;
   }
+}
 
-  while (t < opt.max_time) {
-    if (!rolling) {
-      BallState next = step_flight(s, p, opt.dt);
-      double h0 = s.position.y - terrain.height(s.position.x, s.position.z);
-      double h1 = next.position.y - terrain.height(next.position.x, next.position.z);
-      t += opt.dt;
-      ++step;
-      r.apex_m = std::max(r.apex_m, next.position.y - start.position.y);
+ShotResult ResumableShot::finish_standard(ShotOutcome o, Vec3 pos) {
+  ShotResult r = result_;
+  // A course can limit each hole to an outline; it is judged where the ball
+  // stops.
+  if (o == ShotOutcome::Rest && !terrain_.in_bounds(pos.x, pos.z)) o = ShotOutcome::OutOfBounds;
+  r.outcome = o;
+  r.rest = pos;
+  r.time_s = t_;
+  r.rest_surface = terrain_.surface(pos.x, pos.z);
+  if (!landed_) {
+    r.first_landing = pos;
+  }
+  r.carry_m = horizontal_distance(start_.position, r.first_landing);
+  r.total_m = horizontal_distance(start_.position, pos);
+  if (r.path.empty() || r.path.back().t < t_) {
+    r.path.push_back({t_, pos});
+  }
+  return r;
+}
 
-      // An obstacle met before the ground. Time keeps the whole step, so a
-      // ball wedged between obstacles still runs out of time.
-      double ground = h1 <= 0 ? (h0 > 0 ? h0 / (h0 - h1) : 0.0) : 2.0;
-      ObstacleHit hit;
-      if (terrain.obstacle_hit(s.position, next.position, hit) && hit.fraction < ground) {
-        Vec3 pos = s.position + (next.position - s.position) * hit.fraction;
-        Vec3 vel = s.velocity + (next.velocity - s.velocity) * hit.fraction;
-        Vec3 spin = next.spin;
-        hit_obstacle(vel, spin, hit);
-        // Just outside a solid, or just inside a canopy, so the same face
-        // is not met again.
-        pos = pos + hit.normal * (hit.kind == ObstacleKind::Solid ? kObstacleGap : -kObstacleGap);
-        ++r.obstacle_hits;
-        r.path.push_back({t, pos});
-        // Settled on top of something flat enough (a wall, a bridge).
-        if (hit.kind == ObstacleKind::Solid && hit.normal.y > kFlatTop && dot(vel, hit.normal) < opt.roll_threshold) {
-          if (!landed) {
-            landed = true;
-            r.first_landing = pos;
-          }
-          return finish(ShotOutcome::Rest, pos);
+// One iteration of the old simulate_shot loop: one flight or ground step.
+// Returns true once the shot has finished. The `continue`s of the loop
+// are returns of false here (the step ran, the shot goes on); the
+// `return finish(...)`s set the result and return true. The sample at
+// the bottom of the loop is only appended on the paths that fell through
+// to it, as before.
+bool ResumableShot::step_standard() {
+  if (t_ >= opt_.max_time) {
+    result_ = finish_standard(ShotOutcome::TimedOut, state_.position);
+    return true;
+  }
+  if (!rolling_) {
+    BallState next = step_flight(state_, params_, opt_.dt);
+    double h0 = state_.position.y - terrain_.height(state_.position.x, state_.position.z);
+    double h1 = next.position.y - terrain_.height(next.position.x, next.position.z);
+    t_ += opt_.dt;
+    ++step_;
+    result_.apex_m = std::max(result_.apex_m, next.position.y - start_.position.y);
+
+    // An obstacle met before the ground. Time keeps the whole step, so a
+    // ball wedged between obstacles still runs out of time.
+    double ground = h1 <= 0 ? (h0 > 0 ? h0 / (h0 - h1) : 0.0) : 2.0;
+    ObstacleHit hit;
+    if (terrain_.obstacle_hit(state_.position, next.position, hit) && hit.fraction < ground) {
+      Vec3 pos = state_.position + (next.position - state_.position) * hit.fraction;
+      Vec3 vel = state_.velocity + (next.velocity - state_.velocity) * hit.fraction;
+      Vec3 spin = next.spin;
+      hit_obstacle(vel, spin, hit);
+      // Just outside a solid, or just inside a canopy, so the same face
+      // is not met again.
+      pos = pos + hit.normal * (hit.kind == ObstacleKind::Solid ? kObstacleGap : -kObstacleGap);
+      ++result_.obstacle_hits;
+      result_.path.push_back({t_, pos});
+      // Settled on top of something flat enough (a wall, a bridge).
+      if (hit.kind == ObstacleKind::Solid && hit.normal.y > kFlatTop && dot(vel, hit.normal) < opt_.roll_threshold) {
+        if (!landed_) {
+          landed_ = true;
+          result_.first_landing = pos;
         }
-        s = BallState{pos, vel, spin};
-        continue;
+        result_ = finish_standard(ShotOutcome::Rest, pos);
+        return true;
       }
-
-      if (h1 <= 0) {
-        // Back up to the moment of contact.
-        double frac = h0 > 0 ? h0 / (h0 - h1) : 0.0;
-        Vec3 pos = s.position + (next.position - s.position) * frac;
-        Vec3 vel = s.velocity + (next.velocity - s.velocity) * frac;
-        pos.y = terrain.height(pos.x, pos.z);
-        t = t - opt.dt + opt.dt * frac;
-        if (!landed) {
-          landed = true;
-          r.first_landing = pos;
-        }
-        r.path.push_back({t, pos});
-
-        Surface surf = terrain.surface(pos.x, pos.z);
-        if (surf == Surface::Water) {
-          return finish(ShotOutcome::Water, pos);
-        }
-        if (surf == Surface::OutOfBounds) {
-          return finish(ShotOutcome::OutOfBounds, pos);
-        }
-        if (opt.has_cup && horizontal_distance(pos, opt.cup) < opt.cup_radius) {
-          return finish(ShotOutcome::Holed, opt.cup);
-        }
-
-        Vec3 n = terrain.normal(pos.x, pos.z);
-        // Already moving off the ground's plane yet under the ground: the
-        // slope ahead is steeper than the normal (the foot of a bunker face).
-        // It rolls up it, rather than meeting it again at once for ever.
-        bool leaving = dot(vel, n) >= 0;
-        Vec3 spin = next.spin;
-        bounce(vel, spin, n, surf, p);
-        ++r.bounces;
-        s = BallState{pos, vel, spin};
-        double vn = dot(vel, n);
-        // A ball that meets the ground at the very start of a step (or a
-        // hair after it) was on it already (a bank ahead rising faster than
-        // it flies): it rolls from there. Bounced again it would land at
-        // almost the same instant, again and again, and never finish.
-        if (vn < opt.roll_threshold || frac < kLandAtStart || leaving) {
-          rolling = true;
-          s.velocity = vel - n * vn;
-        }
-        continue;
-      }
-      s = next;
-    } else {
-      Vec3 pos = s.position;
-      Vec3 v = s.velocity;
-      Vec3 n = terrain.normal(pos.x, pos.z);
-      SurfaceParams sp = surface_params(terrain.surface(pos.x, pos.z));
-
-      Vec3 g{0, -p.gravity, 0};
-      Vec3 slope = (g - n * dot(g, n)) * (5.0 / 7.0);
-      double resist = sp.rolling_resistance * p.gravity * n.y;
-      double speed = length(v);
-      bool holds = length(slope) <= resist;  // static friction holds the ball
-      if (speed < opt.stop_speed && holds) {
-        return finish(ShotOutcome::Rest, pos);
-      }
-      Vec3 a = slope;
-      if (speed > 1e-9) {
-        a = a - v * (resist / speed);
-      }
-      Vec3 nv = v + a * opt.dt;
-      if (speed > 1e-9 && dot(nv, v) < 0 && holds) {
-        return finish(ShotOutcome::Rest, pos);
-      }
-      Vec3 npos = pos + nv * opt.dt;
-      npos.y = terrain.height(npos.x, npos.z);
-      // Over a crest (a bunker's lip) faster than gravity can hold it to
-      // the ground: it takes off, without the spin it rolled with.
-      double free_y = pos.y + nv.y * opt.dt - 0.5 * p.gravity * opt.dt * opt.dt;
-      if (free_y - npos.y > kTakeOffGap) {
-        // The step is taken in the air, so time always moves on.
-        rolling = false;
-        s = BallState{Vec3{npos.x, free_y, npos.z}, nv + Vec3{0, -p.gravity * opt.dt, 0}, Vec3{}};
-        t += opt.dt;
-        ++step;
-        continue;
-      }
-      Vec3 nn = terrain.normal(npos.x, npos.z);
-      nv = nv - nn * dot(nv, nn);
-      t += opt.dt;
-      ++step;
-
-      // Rolling into a trunk or a wall; leaves do not stop a rolling ball.
-      ObstacleHit hit;
-      if (terrain.obstacle_hit(pos, npos, hit) && hit.kind == ObstacleKind::Solid) {
-        Vec3 hp = pos + (npos - pos) * hit.fraction + hit.normal * kObstacleGap;
-        hp.y = terrain.height(hp.x, hp.z);
-        hit_obstacle(nv, s.spin, hit);
-        Vec3 hn = terrain.normal(hp.x, hp.z);
-        s.position = hp;
-        s.velocity = nv - hn * dot(nv, hn);
-        ++r.obstacle_hits;
-        r.path.push_back({t, hp});
-        continue;
-      }
-
-      if (opt.has_cup && length(nv) < opt.max_holing_speed &&
-          segment_distance_xz(pos, npos, opt.cup) < opt.cup_radius) {
-        return finish(ShotOutcome::Holed, opt.cup);
-      }
-      Surface surf = terrain.surface(npos.x, npos.z);
-      if (is_hazard_stop(surf)) {
-        return finish(surf == Surface::Water ? ShotOutcome::Water : ShotOutcome::OutOfBounds, npos);
-      }
-      s.position = npos;
-      s.velocity = nv;
+      state_ = BallState{pos, vel, spin};
+      return false;
     }
-    if (opt.sample_every > 0 && step % opt.sample_every == 0) {
-      r.path.push_back({t, s.position});
+
+    if (h1 <= 0) {
+      // Back up to the moment of contact.
+      double frac = h0 > 0 ? h0 / (h0 - h1) : 0.0;
+      Vec3 pos = state_.position + (next.position - state_.position) * frac;
+      Vec3 vel = state_.velocity + (next.velocity - state_.velocity) * frac;
+      pos.y = terrain_.height(pos.x, pos.z);
+      t_ = t_ - opt_.dt + opt_.dt * frac;
+      if (!landed_) {
+        landed_ = true;
+        result_.first_landing = pos;
+      }
+      result_.path.push_back({t_, pos});
+
+      Surface surf = terrain_.surface(pos.x, pos.z);
+      if (surf == Surface::Water) {
+        result_ = finish_standard(ShotOutcome::Water, pos);
+        return true;
+      }
+      if (surf == Surface::OutOfBounds) {
+        result_ = finish_standard(ShotOutcome::OutOfBounds, pos);
+        return true;
+      }
+      if (opt_.has_cup && horizontal_distance(pos, opt_.cup) < opt_.cup_radius) {
+        result_ = finish_standard(ShotOutcome::Holed, opt_.cup);
+        return true;
+      }
+
+      Vec3 n = terrain_.normal(pos.x, pos.z);
+      // Already moving off the ground's plane yet under the ground: the
+      // slope ahead is steeper than the normal (the foot of a bunker face).
+      // It rolls up it, rather than meeting it again at once for ever.
+      bool leaving = dot(vel, n) >= 0;
+      Vec3 spin = next.spin;
+      bounce(vel, spin, n, surf, params_);
+      ++result_.bounces;
+      state_ = BallState{pos, vel, spin};
+      double vn = dot(vel, n);
+      // A ball that meets the ground at the very start of a step (or a
+      // hair after it) was on it already (a bank ahead rising faster than
+      // it flies): it rolls from there. Bounced again it would land at
+      // almost the same instant, again and again, and never finish.
+      if (vn < opt_.roll_threshold || frac < kLandAtStart || leaving) {
+        rolling_ = true;
+        state_.velocity = vel - n * vn;
+      }
+      return false;
     }
+    state_ = next;
+  } else {
+    Vec3 pos = state_.position;
+    Vec3 v = state_.velocity;
+    Vec3 n = terrain_.normal(pos.x, pos.z);
+    SurfaceParams sp = surface_params(terrain_.surface(pos.x, pos.z));
+
+    Vec3 g{0, -params_.gravity, 0};
+    Vec3 slope = (g - n * dot(g, n)) * (5.0 / 7.0);
+    double resist = sp.rolling_resistance * params_.gravity * n.y;
+    double speed = length(v);
+    bool holds = length(slope) <= resist;  // static friction holds the ball
+    if (speed < opt_.stop_speed && holds) {
+      result_ = finish_standard(ShotOutcome::Rest, pos);
+      return true;
+    }
+    Vec3 a = slope;
+    if (speed > 1e-9) {
+      a = a - v * (resist / speed);
+    }
+    Vec3 nv = v + a * opt_.dt;
+    if (speed > 1e-9 && dot(nv, v) < 0 && holds) {
+      result_ = finish_standard(ShotOutcome::Rest, pos);
+      return true;
+    }
+    Vec3 npos = pos + nv * opt_.dt;
+    npos.y = terrain_.height(npos.x, npos.z);
+    // Over a crest (a bunker's lip) faster than gravity can hold it to
+    // the ground: it takes off, without the spin it rolled with.
+    double free_y = pos.y + nv.y * opt_.dt - 0.5 * params_.gravity * opt_.dt * opt_.dt;
+    if (free_y - npos.y > kTakeOffGap) {
+      // The step is taken in the air, so time always moves on.
+      rolling_ = false;
+      state_ = BallState{Vec3{npos.x, free_y, npos.z}, nv + Vec3{0, -params_.gravity * opt_.dt, 0}, Vec3{}};
+      t_ += opt_.dt;
+      ++step_;
+      return false;
+    }
+    Vec3 nn = terrain_.normal(npos.x, npos.z);
+    nv = nv - nn * dot(nv, nn);
+    t_ += opt_.dt;
+    ++step_;
+
+    // Rolling into a trunk or a wall; leaves do not stop a rolling ball.
+    ObstacleHit hit;
+    if (terrain_.obstacle_hit(pos, npos, hit) && hit.kind == ObstacleKind::Solid) {
+      Vec3 hp = pos + (npos - pos) * hit.fraction + hit.normal * kObstacleGap;
+      hp.y = terrain_.height(hp.x, hp.z);
+      hit_obstacle(nv, state_.spin, hit);
+      Vec3 hn = terrain_.normal(hp.x, hp.z);
+      state_.position = hp;
+      state_.velocity = nv - hn * dot(nv, hn);
+      ++result_.obstacle_hits;
+      result_.path.push_back({t_, hp});
+      return false;
+    }
+
+    if (opt_.has_cup && length(nv) < opt_.max_holing_speed &&
+        segment_distance_xz(pos, npos, opt_.cup) < opt_.cup_radius) {
+      result_ = finish_standard(ShotOutcome::Holed, opt_.cup);
+      return true;
+    }
+    Surface surf = terrain_.surface(npos.x, npos.z);
+    if (is_hazard_stop(surf)) {
+      result_ = finish_standard(surf == Surface::Water ? ShotOutcome::Water : ShotOutcome::OutOfBounds, npos);
+      return true;
+    }
+    state_.position = npos;
+    state_.velocity = nv;
   }
-  return finish(ShotOutcome::TimedOut, s.position);
+  if (opt_.sample_every > 0 && step_ % opt_.sample_every == 0) {
+    result_.path.push_back({t_, state_.position});
+  }
+  return false;
+}
+
+ShotResult simulate_shot(const BallState& start, const BallParams& p, const Terrain& terrain,
+                         const ShotOptions& opt) {
+  ResumableShot sim(start, p, terrain, opt);
+  return sim.run();
 }
 
 }  // namespace olcore

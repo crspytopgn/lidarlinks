@@ -58,6 +58,7 @@ static func variant_of(o: PlacedObject) -> int:
 static func build(terrain: DesignedTerrain) -> Node3D:
 	var quality := clampi(Landscape.detail, 0, 3)
 	var groups := {}  ## [id, variant, area cell] -> PackedFloat32Array of transforms
+	var scales := {}  ## [id, variant, area cell] -> the tallest scale in it
 	for o in terrain.course.objects:
 		if not is_plant(o.id):
 			continue
@@ -71,6 +72,7 @@ static func build(terrain: DesignedTerrain) -> Node3D:
 		buf.append_array(PackedFloat32Array([t.basis.x.x, t.basis.y.x, t.basis.z.x, t.origin.x,
 			t.basis.x.y, t.basis.y.y, t.basis.z.y, t.origin.y, t.basis.x.z, t.basis.y.z, t.basis.z.z, t.origin.z]))
 		groups[key] = buf
+		scales[key] = maxf(float(scales.get(key, 0.0)), o.scale)
 	if groups.is_empty():
 		return null
 	var root := Node3D.new()
@@ -89,6 +91,10 @@ static func build(terrain: DesignedTerrain) -> Node3D:
 		node.visibility_range_end = SAGUARO_RANGE[quality] if _tall(key[0]) else SMALL_RANGE[quality]
 		node.visibility_range_end_margin = 30.0
 		node.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF
+		# The tallest plant in the area, for the shadow rule
+		# (DesignedTerrain.refresh_plant_shadows): how far its shadow can
+		# reach off the line of play.
+		node.set_meta("shadow_height", height_of(key[0], key[1]) * float(scales.get(key, 1.0)))
 		root.add_child(node)
 	return root
 
@@ -140,6 +146,23 @@ static func mesh(id: String, variant: int) -> Mesh:
 ## Height of a saguaro variant at scale 1 (for its obstacles).
 static func saguaro_height(variant: int) -> float:
 	return 6.0 + 1.6 * variant
+
+
+## Height in metres of `id` at variant `variant`, before any scale: the
+## tallest the plant stands, so the shadow rule can judge how far its
+## shadow reaches (DesignedTerrain.object_casts_sun_shadow). Barrels are
+## at most 0.85 m and a prickly pear clump about 1.2 m.
+static func height_of(id: String, variant: int) -> float:
+	match id:
+		"cactus_saguaro":
+			return saguaro_height(variant)
+		"palm_coconut":
+			return palm_height(variant)
+		"cactus_barrel":
+			return 0.85
+		"cactus_pear":
+			return 1.2
+	return 0.0
 
 
 static func _saguaro(part: Dictionary, rng: RandomNumberGenerator, v: int) -> void:

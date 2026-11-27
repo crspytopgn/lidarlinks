@@ -125,9 +125,26 @@ jobs:
           name: launcher-template-${{ matrix.platform }}
           path: template
 
+  # The GDExtension build (see .github/workflows/gdextension.yml): the
+  # export job downloads its libraries below. Called as a reusable
+  # workflow so the build lives in one place — do not copy the matrix
+  # into this file. A called workflow runs inside the caller's run, so
+  # the artifacts it uploads are downloadable from the export job.
+  # It also runs standalone (push/PR with paths) for fast feedback on
+  # extension changes without running the export.
+  gdextension:
+    name: GDExtension
+    uses: ./.github/workflows/gdextension.yml
+
   export:
     name: Godot export
-    needs: launcher-templates
+    needs: [launcher-templates, gdextension]
+    # A failed extension build must not block the exports: the game
+    # falls back to the GDScript physics port when a library is absent
+    # (checked by "Check GDExtension libraries" below). always() lets
+    # this job start when a need failed; the launcher templates are
+    # still required, so a failed launcher-templates job skips it.
+    if: ${{ always() && needs.launcher-templates.result == 'success' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -163,6 +180,53 @@ jobs:
           # numpy and Pillow prepare the free pack's textures.
           sudo apt-get update -q && sudo apt-get install -y -q python3-pil python3-numpy
           python3 tools/fetch_free_assets.py
+
+      # Desktop libraries built by the gdextension job (same run, via the
+      # reusable workflow call above). merge-multiple puts all four
+      # libraries straight into bin/, where olcore.gdextension expects
+      # them. No web library is wanted: the web preset has
+      # extensions_support=false and runs the GDScript port. If the
+      # build failed or produced nothing, this step still succeeds with
+      # zero downloads and the exports below run with the GDScript
+      # physics port. (download-artifact v4 has no if-no-files-found
+      # input — that is upload-artifact only, and the dead input used
+      # to sit here. A pattern matching nothing succeeds with
+      # "Total of 0 artifact(s) downloaded", per the v4 source.)
+      - name: Download GDExtension libraries
+        uses: actions/download-artifact@v4
+        with:
+          pattern: olcore-gdext-*
+          path: game/addons/olcore/bin/
+          merge-multiple: true
+
+      # Loud about what the exports will ship: which native libraries
+      # are present, and a warning (not a failure) when any desktop
+      # target falls back to GDScript physics.
+      - name: Check GDExtension libraries
+        run: |
+          mkdir -p game/addons/olcore/bin
+          missing=0
+          for lib in libolcore.linux.x86_64.so libolcore.windows.x86_64.dll libolcore.macos.arm64.dylib libolcore.macos.x86_64.dylib; do
+            if [ -s "game/addons/olcore/bin/$lib" ]; then
+              echo "present: $lib"
+            else
+              echo "MISSING: $lib — that desktop export falls back to GDScript physics"
+              missing=1
+            fi
+          done
+          {
+            echo "### GDExtension libraries"
+            echo ""
+            echo "Files under game/addons/olcore/bin/ (recursive — a library in a Release/ subdirectory is in the wrong place):"
+            find game/addons/olcore/bin -type f -exec ls -l {} +
+            if [ "$missing" = 1 ]; then
+              echo ""
+              echo ":warning: A desktop library is missing — the affected export ships GDScript physics instead of native physics."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ "$missing" = 1 ]; then
+            echo "::warning::A GDExtension library is missing; the affected desktop export falls back to GDScript physics"
+          fi
 
       - name: Import project
         run: ~/godot/godot --headless --path game --import

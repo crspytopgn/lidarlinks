@@ -223,3 +223,7 @@ func lie_power(lie: int, club: Club = null) -> float:
 
 func simulate(start: BallState, terrain: CourseTerrain, cup: Vector3, wind := Vector3.ZERO) -> ShotResult:
 	return BallPhysics.simulate_shot(start, terrain, true, cup, wind, aero)
+
+
+func simulate_chunked(start: BallState, terrain: CourseTerrain, cup: Vector3, wind := Vector3.ZERO) -> ResumableShot:
+	return ResumableShot.new(start, terrain, true, cup, wind, aero)

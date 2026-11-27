@@ -30,6 +30,7 @@
 #include "olcore/obstacles.hpp"
 #include "olcore/object_library.hpp"
 #include "olcore/opponent.hpp"
+#include "olcore/resumable_shot.hpp"
 #include "olcore/rules.hpp"
 #include "olcore/ssf.hpp"
 #include "olcore/wav.hpp"
@@ -2152,6 +2153,162 @@ void test_links_shot() {
   CHECK_NEAR(green_own.total_m, green_class.total_m, 1e-12);
 }
 
+// Chunked == unchunked, exactly: the same shot run through ResumableShot
+// in different step sizes must end in the same place, with the same path,
+// the same bounce count and (on the Links path) the same random state.
+void check_same_shot(const ShotResult& a, const ShotResult& b, const char* what) {
+  CHECK(a.outcome == b.outcome);
+  CHECK_NEAR(a.rest.x, b.rest.x, 0.0);
+  CHECK_NEAR(a.rest.y, b.rest.y, 0.0);
+  CHECK_NEAR(a.rest.z, b.rest.z, 0.0);
+  CHECK_NEAR(a.first_landing.x, b.first_landing.x, 0.0);
+  CHECK_NEAR(a.first_landing.z, b.first_landing.z, 0.0);
+  CHECK_NEAR(a.carry_m, b.carry_m, 0.0);
+  CHECK_NEAR(a.total_m, b.total_m, 0.0);
+  CHECK_NEAR(a.apex_m, b.apex_m, 0.0);
+  CHECK_NEAR(a.time_s, b.time_s, 0.0);
+  CHECK(a.bounces == b.bounces);
+  CHECK(a.obstacle_hits == b.obstacle_hits);
+  CHECK(a.path.size() == b.path.size());
+  if (a.path.size() == b.path.size()) {
+    for (std::size_t i = 0; i < a.path.size(); ++i) {
+      CHECK_NEAR(a.path[i].t, b.path[i].t, 0.0);
+      CHECK_NEAR(a.path[i].position.x, b.path[i].position.x, 0.0);
+      CHECK_NEAR(a.path[i].position.y, b.path[i].position.y, 0.0);
+      CHECK_NEAR(a.path[i].position.z, b.path[i].position.z, 0.0);
+    }
+  }
+  if (g_failures) {
+    std::printf("  FAIL in %s\n", what);
+  }
+}
+
+ShotResult run_chunked(const BallState& start, const BallParams& p, const Terrain& terrain,
+                       const ShotOptions& opt, const std::vector<int>& chunks, int* steps_out = nullptr) {
+  ResumableShot sim(start, p, terrain, opt);
+  std::size_t i = 0;
+  while (!sim.done()) {
+    int n = chunks[i % chunks.size()];
+    ++i;
+    CHECK(!sim.advance(n) || sim.done());
+    if (sim.done()) {
+      break;
+    }
+    CHECK(!sim.done());
+  }
+  if (steps_out != nullptr) {
+    *steps_out = sim.steps_done();
+  }
+  return sim.result();
+}
+
+// A course whose Links model meets a different obstacle field than the
+// stand-in model (the 3D models' boxes when the course has billboards):
+// the plain field stays empty, so only links_obstacle_hit() can see the
+// wall.
+class LinksObstacleTerrain : public FlatTerrain {
+ public:
+  LinksObstacleTerrain() : FlatTerrain(Surface::Green) {
+    wall.add_box({0, 0.5, 1.5}, {{{1, 0, 0}, {0, 1, 0}, {0, 0, 1}}}, {2, 0.5, 0.1},
+                 ObstacleKind::Solid);
+    wall.finalize();
+  }
+  bool links_obstacle_hit(Vec3 from, Vec3 to, ObstacleHit& hit) const override {
+    return wall.segment_hit(from, to, hit);
+  }
+
+ private:
+  ObstacleField wall;
+};
+
+void test_shot_chunking() {
+  BallParams p;
+  FlatTerrain fairway(Surface::Fairway);
+  BallState drive = launch_from_swing(club("Dr"), {}, Surface::Tee);
+  ShotResult whole = simulate_shot(drive, p, fairway);
+  // One step at a time, then in uneven handfuls, then in one go.
+  int steps1 = 0, steps7 = 0;
+  ShotResult by_one = run_chunked(drive, p, fairway, {}, {1}, &steps1);
+  ShotResult by_handful = run_chunked(drive, p, fairway, {}, {7, 1, 250, 3}, &steps7);
+  check_same_shot(whole, by_one, "flat driver, one step at a time");
+  check_same_shot(whole, by_handful, "flat driver, uneven chunks");
+  CHECK(steps1 == steps7);
+  std::printf("  flat driver: %d steps, carry %.2f m, total %.2f m, %d bounces\n", steps1, whole.carry_m,
+              whole.total_m, whole.bounces);
+  // A shot that times out: the chunked run must time out the same way.
+  ShotOptions short_opt;
+  short_opt.max_time = 0.5;
+  ShotResult whole_short = simulate_shot(drive, p, fairway, short_opt);
+  CHECK(whole_short.outcome == ShotOutcome::TimedOut);
+  check_same_shot(whole_short, run_chunked(drive, p, fairway, short_opt, {1}), "timed-out driver");
+  // Off a bank: the pre-loop bounce and the take-off over the crest.
+  BankTerrain bank;
+  BallState bank_shot = launch_from_swing(club("7i"), {0.6, 0.0, 0.0}, Surface::Sand);
+  bank_shot.position = Vec3{0, bank.height(0, 0.75), 0.75};
+  check_same_shot(simulate_shot(bank_shot, p, bank),
+                  run_chunked(bank_shot, p, bank, {}, {5, 2}), "7i off a bank");
+
+  // The Links path, with its random draws: a PW on flat fairway, a putt
+  // that drops, and a shot into the rough (whose ground hops draw).
+  std::optional<LinksAero> aero = find_links_aero(synthetic_aero_exe());
+  if (!aero) {
+    CHECK(false);
+    return;
+  }
+  p.links = &*aero;
+  BallState pw = launch_from_swing(club("PW"), {}, Surface::Fairway);
+  ShotResult links_whole = simulate_shot(pw, p, fairway);
+  int links_steps = 0;
+  ShotResult links_chunked = run_chunked(pw, p, fairway, {}, {1}, &links_steps);
+  check_same_shot(links_whole, links_chunked, "links PW, one step at a time");
+  // The RNG accumulator after the same number of steps must not depend
+  // on how the steps were grouped.
+  ResumableShot a(pw, p, fairway), b(pw, p, fairway);
+  for (int i = 0; i < 13; ++i) a.advance(1);
+  b.advance(13);
+  CHECK(a.rng_state() == b.rng_state());
+  CHECK(a.steps_done() == 13 && b.steps_done() == 13);
+  ResumableShot done(pw, p, fairway);
+  ShotResult done_result = done.run();
+  check_same_shot(links_whole, done_result, "links PW, run()");
+  CHECK(done.rng_state() != 0);
+  std::printf("  links PW: %d steps, carry %.2f m, total %.2f m, rng %08x\n", links_steps,
+              links_whole.carry_m, links_whole.total_m, done.rng_state());
+  FlatTerrain green(Surface::Green);
+  ShotOptions cup_opt;
+  cup_opt.has_cup = true;
+  cup_opt.cup = {0, 0, 3};
+  BallState putt_start{{0, 0, 0}, {0, 0, 3.55}, {}};
+  check_same_shot(simulate_shot(putt_start, p, green, cup_opt),
+                  run_chunked(putt_start, p, green, cup_opt, {3, 17}), "links putt that drops");
+  FlatTerrain rough(Surface::Rough);
+  BallState rough_shot = launch_from_swing(club("PW"), {}, Surface::Fairway);
+  ShotResult rough_whole = simulate_shot(rough_shot, p, rough);
+  ResumableShot rough_sim(rough_shot, p, rough);
+  ShotResult rough_chunked = run_chunked(rough_shot, p, rough, {}, {2, 9});
+  check_same_shot(rough_whole, rough_chunked, "links PW into rough");
+  while (!rough_sim.done()) rough_sim.advance(1000);
+  CHECK(rough_sim.rng_state() != 0);
+  std::printf("  links rough: carry %.2f m, total %.2f m, rng %08x\n", rough_whole.carry_m,
+              rough_whole.total_m, rough_sim.rng_state());
+
+  // The Links model meets its own obstacle field: a wall the plain field
+  // cannot see (obstacles is null) still stops a putt, chunked and
+  // unchunked alike. This is the Links side of CourseTerrain's
+  // links_obstacle_hit_into: on a course with billboards the Links model
+  // meets the 3D models' boxes, not the course's own obstacles.
+  LinksObstacleTerrain walled;
+  BallState wall_putt{{0, 0, 0}, {0, 0, 3.55}, {}};
+  ShotResult wall_whole = simulate_shot(wall_putt, p, walled, cup_opt);
+  ShotResult wall_chunked = run_chunked(wall_putt, p, walled, cup_opt, {2, 9});
+  check_same_shot(wall_whole, wall_chunked, "links putt into a links-only wall");
+  CHECK(wall_whole.obstacle_hits >= 1);
+  CHECK(wall_whole.outcome == ShotOutcome::Rest);
+  CHECK(wall_whole.rest.z < 1.5);
+  std::printf("  links wall: rest z %.2f m, %d hits\n", wall_whole.rest.z, wall_whole.obstacle_hits);
+}
+
+
 // A made-up club table in the layout the game uses: five rows of 19 values
 // and a spare zero, behind some unrelated bytes.
 std::vector<std::uint8_t> synthetic_club_exe() {
@@ -2884,6 +3041,7 @@ int main() {
       {"links_objects", test_links_objects},
       {"links_models", test_links_models},
       {"links_shot", test_links_shot},
+      {"shot_chunking", test_shot_chunking},
       {"links_launch", test_links_launch},
       {"links_lie", test_links_lie},
       {"links_swing", test_links_swing},

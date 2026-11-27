@@ -1,0 +1,21 @@
+; Olcore GDExtension — the C++ physics core (libs/olcore) for Godot.
+; Phase 1: OlcorePhysics / OlcoreTerrain / OlcoreAero only. The binaries
+; are built by the `gdextension` CI job (or locally with
+; -DBUILD_GDEXTENSION=ON) and copied here; they are not committed
+; (*.so / *.dll / *.dylib / *.wasm are gitignored). There is no web
+; entry: CI builds no wasm side module yet, so the Web preset keeps
+; extensions_support=false and the web build runs the GDScript port.
+; Add web.wasm32 back only together with a CI job that builds it, and
+; only once wasm gives bit-identical results to native (the cup rim-exit
+; test in libs/olcore/tests differed on 2026-11-26).
+; See docs/gdextension.md.
+
+[configuration]
+entry_symbol = "olcore_library_init"
+compatibility_minimum = "4.7"
+
+[libraries]
+linux.x86_64 = "res://addons/olcore/bin/libolcore.linux.x86_64.so"
+windows.x86_64 = "res://addons/olcore/bin/libolcore.windows.x86_64.dll"
+macos.arm64 = "res://addons/olcore/bin/libolcore.macos.arm64.dylib"
+macos.x86_64 = "res://addons/olcore/bin/libolcore.macos.x86_64.dylib"

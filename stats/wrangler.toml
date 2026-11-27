@@ -21,3 +21,31 @@ namespace_id = "3972"
   [ratelimits.simple]
   limit = 60
   period = 60
+
+# Previews: Workers Builds runs `npx wrangler preview` on every PR, and Wrangler
+# refuses without a `previews` block. The rate limiter uses a new namespace id
+# (3974, next after production's 3972) so Preview traffic never shares
+# production's limiter. (Verified against Wrangler 4.168.0: `wrangler preview`
+# only requires a `previews` block with no <REPLACE_ME> placeholders.)
+#
+# The D1 database is NOT in the previews block yet, on purpose: a Preview
+# needs its own real D1 database, and its id cannot be invented. To finish
+# this, run once (needs Cloudflare login):
+#   npx wrangler d1 create lidarlinks-stats-preview
+#   npx wrangler d1 execute lidarlinks-stats-preview --remote --file schema.sql
+# then paste the new database id into the block below and uncomment it. Until
+# then the Preview deploys without a DB binding: the build check passes, but
+# /count and the stats page on a Preview URL will error instead of writing.
+# Production's database is never pointed at from a Preview.
+[[previews.ratelimits]]
+name = "LIMITER"
+namespace_id = "3974"
+
+  [previews.ratelimits.simple]
+  limit = 60
+  period = 60
+
+# [[previews.d1_databases]]
+# binding = "DB"
+# database_name = "lidarlinks-stats-preview"
+# database_id = "<PASTE THE ID FROM `wrangler d1 create lidarlinks-stats-preview`>"

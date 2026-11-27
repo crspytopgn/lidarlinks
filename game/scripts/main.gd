@@ -218,6 +218,18 @@ const TOUCH_SWING_READY_MS := 700
 ## The aim may move this far (degrees) before the gallery steps out of the
 ## new line of play.
 const GALLERY_RECLEAR_DEG := 6.0
+## Terrain occlusion (TerrainOcclusion): how often the hidden check runs,
+## how far the camera must have moved to run it again, how close a thing
+## must be to never hide, and how tall a tree batch is judged. The check
+## itself is a few dozen height samples per batch, so it runs at most
+## twice a second and only once the camera has moved — and a sweep is
+## spread over frames at OCCLUSION_BUDGET_MS, so a hole's few hundred
+## batches never stall one frame the way they did (120 to 400 ms).
+const OCCLUSION_INTERVAL_S := 0.5
+const OCCLUSION_MOVE_M := 8.0
+const OCCLUSION_MIN_DIST_M := 60.0
+const OCCLUSION_TREE_HEIGHT_M := 20.0
+const OCCLUSION_BUDGET_MS := 4.0
 var _aim_ready_ms := 0
 var _gallery_aim := 1000.0
 ## A shot's flight can't be skipped this early, so the tap or click that
@@ -278,6 +290,21 @@ var _golfers: Array[GolferRig] = []
 ## Each player's look (PlayerLook), or null to use the game's own golfer.
 var _looks: Array = []
 var hole_root: Node3D
+## The ground built for the course's terrain (DesignedTerrain only): the
+## chunks, paths, water, rocks and plants are the same every hole, so a
+## hole change keeps this node and only the distant trees are re-sorted
+## (DesignedTerrain.refresh_distant_trees). Null when the terrain is not
+## a DesignedTerrain, or until the first hole builds it; the terrain it
+## was built for guards the reuse, so a new course or practice ground
+## rebuilds from scratch.
+var _terrain_visual: Node3D = null
+var _terrain_visual_for: CourseTerrain = null
+## The golfers, kept between holes by look (and the photo-golfer wrap):
+## creating one bakes its meshes, so a hole change re-parents them to
+## the new hole instead of dressing the same players again. The look's
+## key is the cache key; a look edited mid-round (player creator) misses
+## and is built fresh.
+var _golfer_rigs := {}
 var marks: CourseMarks  ## divots, pitch marks and sand craters on this hole
 var graphics: GraphicsSettings
 var scenery: Scenery
@@ -317,6 +344,18 @@ var broadcast := false
 ## Who Broadcast's name strip last showed (_begin_turn).
 var _lower_third_for := -1
 var gallery: Gallery  ## the ropes, crowd and grandstand (Broadcast only)
+## Things the terrain can hide from the camera this hole: {node, height,
+## reach} — tree batches tagged with their cell reach, placed objects
+## with their height (see _register_occludables). The camera the last
+## check ran from, and the time until the next one. A sweep in progress
+## keeps its place (_occlusion_index) and the eye it started from
+## (_occlusion_eye), so the batches are judged a budget at a time over
+## frames instead of all at once.
+var _occludables: Array = []
+var _occlusion_camera := Vector3.INF
+var _occlusion_timer := 0.0
+var _occlusion_index := 0
+var _occlusion_eye := Vector3.ZERO
 var tracer: BallTracer
 var green_grid: GreenGrid
 ## The Tour presentation (GraphicsSettings.Presentation.TOUR): the tour
@@ -343,6 +382,13 @@ var _putt_meter := PuttMeterScale.bare()
 var _yard_key := []
 var _yard_job := PackedFloat32Array()
 var _yard_done := PackedFloat32Array()
+## Carry scales already worked out, by _yard_cache_key(): switching back to
+## a club and lie used before restores the scale at once instead of
+## simulating the five samples again, one frame at a time.
+var _yard_cache := {}
+## The cache key of the job now running, so a model or green change
+## mid-job does not file its samples under the wrong key.
+var _yard_job_key := []
 var read_view := 0  ## GreenRead.View
 ## "View target": the camera out over where the shot is aimed (Y, pad Y, or
 ## the HUD button), stepped in place of the round camera while it is busy.
@@ -413,6 +459,11 @@ func _exit_tree() -> void:
 	# plans, shot reads) must end before the game can quit.
 	BackgroundWork.wait_all()
 	Gallery.free_spare_people()
+	# The hole-change caches hold nodes the scene tree owns; drop the
+	# references so a later round rebuilds rather than reusing a freed one.
+	_golfer_rigs.clear()
+	_terrain_visual = null
+	_terrain_visual_for = null
 
 
 func _ready() -> void:
@@ -705,7 +756,7 @@ func start_round() -> void:
 	_show_weather()
 	_fetch_live_weather()
 	_holes_started = 0
-	record = RoundRecord.begin(round_setup, round_seed, "links" if shot_model is LinksShotModel else "standard", wind_level)
+	record = RoundRecord.begin(round_setup, round_seed, "links" if OlcoreShotModel.links_of(shot_model) != null else "standard", wind_level)
 	# The greens: the round's own conditions, else the player's settings. A
 	# friend's round plays theirs. They hold for the whole round.
 	record.green_firmness = graphics.green_firmness if round_setup.green_firmness < 0 else round_setup.green_firmness
@@ -854,6 +905,22 @@ func start_hole(index: int) -> void:
 		hole.pin = practice.cup_position()
 	if gallery != null and is_instance_valid(gallery):
 		gallery.release_people()
+	# What the next hole keeps: the golfers (building one bakes its
+	# meshes again) and, for a designed course, the terrain's ground.
+	# Both are lifted out before the old hole is freed, and put back
+	# below; everything else is rebuilt for the hole.
+	for key in _golfer_rigs.keys():
+		var rig := _golfer_rigs[key] as GolferRig
+		if rig == null or not is_instance_valid(rig):
+			_golfer_rigs.erase(key)
+		elif rig.get_parent() == hole_root:
+			hole_root.remove_child(rig)
+	var keep_terrain := _terrain_visual != null and is_instance_valid(_terrain_visual) \
+			and _terrain_visual_for == hole.terrain and _terrain_visual.get_parent() == hole_root
+	if keep_terrain:
+		hole_root.remove_child(_terrain_visual)
+	elif _terrain_visual != null and is_instance_valid(_terrain_visual) and _terrain_visual.get_parent() == null:
+		_terrain_visual.free()
 	if hole_root:
 		hole_root.queue_free()
 	hole_root = Node3D.new()
@@ -861,9 +928,26 @@ func start_hole(index: int) -> void:
 	add_child(hole_root)
 	# Snow lies on the trees' crowns on a snow course (tree_leaves, tree_impostor).
 	RenderingServer.global_shader_parameter_set("tree_snow", 1.0 if Biome.of(hole.terrain) == Biome.SNOW else 0.0)
-	hole_root.add_child(hole.terrain.build_visual())
+	if keep_terrain:
+		hole_root.add_child(_terrain_visual)
+		(hole.terrain as DesignedTerrain).refresh_distant_trees(_terrain_visual)
+	else:
+		_terrain_visual = null
+		_terrain_visual_for = null
+		var visual := hole.terrain.build_visual()
+		if hole.terrain is DesignedTerrain:
+			_terrain_visual = visual
+			_terrain_visual_for = hole.terrain
+		hole_root.add_child(visual)
+	var sun_travel := -scenery.sun.global_transform.basis.z if scenery.sun != null else Vector3(0.0, -1.0, 0.0)
+	# No sun (or straight overhead): the conservative default, so nothing
+	# is culled on a sun that isn't there to cast with.
+	var sun_tan := DesignedTerrain.sun_tan(sun_travel) if scenery.sun != null else 0.35
 	if course.objects != null:
-		hole_root.add_child(course.objects.build_visual(hole))
+		hole_root.add_child(course.objects.build_visual(hole, sun_tan, graphics.shadow_distance() if graphics != null else 600.0))
+	var hole_path := PackedVector2Array([Vector2(hole.tee.x, hole.tee.z)])
+	hole_path.append_array(hole.route)
+	hole_path.append(Vector2(hole.pin.x, hole.pin.z))
 	for o in hole.objects:
 		var node := AssetProviders.object_library.instantiate(o.id)
 		if node == null:
@@ -871,8 +955,29 @@ func start_hole(index: int) -> void:
 		node.position = o.position
 		node.rotation_degrees.y = o.yaw_deg
 		node.scale = Vector3.ONE * o.scale
+		# A placed tree, bush or rock whose shadow cannot reach the line of
+		# play casts none: the baked ground shade carries it, and the
+		# shadow pass skips it (DesignedTerrain.object_casts_sun_shadow).
+		var placed_height := GroundShade.placed_height(o.id) * o.scale
+		if placed_height > 0.0:
+			node.set_meta("occlusion_height", placed_height)
+		if placed_height > 0.0 and not DesignedTerrain.object_casts_sun_shadow(
+				CourseObjects.distance_to_path(Vector2(o.position.x, o.position.z), hole_path),
+				placed_height, sun_tan,
+				graphics.shadow_distance() if graphics != null else 600.0):
+			for gi in node.find_children("*", "GeometryInstance3D", true, false):
+				(gi as GeometryInstance3D).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			if node is GeometryInstance3D:
+				(node as GeometryInstance3D).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		hole_root.add_child(node)
 	TreeFactory.batch_impostors(hole_root)
+	_register_occludables()
+	if hole.terrain is DesignedTerrain and _terrain_visual != null:
+		# The desert plants' shadows, like a placed tree's: only the
+		# areas near this hole's line of play cast (DesignedTerrain
+		# .refresh_plant_shadows). The terrain is kept between holes, so
+		# this runs on every hole change, not just when it is built.
+		DesignedTerrain.refresh_plant_shadows(_terrain_visual, hole_path, sun_tan, graphics.shadow_distance() if graphics != null else 600.0)
 	var on_range := _on_range()
 	if practice != null:
 		practice_cups = PracticeCups.new()
@@ -924,7 +1029,8 @@ func start_hole(index: int) -> void:
 	if scenery.sun != null:
 		# The sun moves on through the round with that time of day.
 		scenery.set_round_progress(float(index) / maxf(holes.size() - 1, 1))
-		GroundShade.bake(hole, course.objects, -scenery.sun.global_transform.basis.z)
+		GroundShade.bake(hole, course.objects, -scenery.sun.global_transform.basis.z,
+				GroundShade.max_pixels_for(graphics.quality if graphics != null else GraphicsSettings.Quality.HIGH))
 	_make_golfers()
 	camera.terrain = hole.terrain
 	if grass.terrain != hole.terrain:
@@ -1182,18 +1288,63 @@ func play_shot(power: float, accuracy: float, monitor: OpenConnect.Launch = null
 		_strike["task"] = BackgroundWork.start(work, "strike")
 		state = State.STRIKE
 		return
+	if _incoming == null and OS.has_feature("web"):
+		# Only the web build chunks the strike: there are no worker
+		# threads there, so the strike sim cannot start earlier, and
+		# chunking it across frames keeps the page from freezing on a
+		# shot (ResumableShot, Phase 3). The launch is cheap and runs
+		# now, on a model of its own as the worker path does; the flight
+		# and roll advance STRIKE_CHUNK_MS a frame in _process_strike,
+		# while the club comes down, and give the same result as the
+		# one-shot sim.
+		# Everywhere else the shot flies the moment it is played, as
+		# before: a desktop build with threads off (the headless tests
+		# switch BackgroundWork off, and a one-core machine has no
+		# threads either) used to fall through to the one-shot sim
+		# below, and play_shot callers — the pause test, the launch
+		# monitor, touch and stick swings, auto-play — all read the
+		# shot and the FLIGHT state straight after play_shot returns.
+		# Chunking there left them in STRIKE with no shot recorded,
+		# which failed 22 checks in run_tests.gd.
+		var chunk_model := shot_model.fresh()
+		var start := RoundReplay.launch_shot(chunk_model, rec, club, round_seed)
+		_strike = {"rec": rec, "club": club, "power": power, "accuracy": accuracy,
+				"sim": chunk_model.simulate_chunked(start, hole.terrain, hole.pin, rec.wind),
+				"start": start}
+		state = State.STRIKE
+		return
 	_struck(rec, club, power, accuracy, RoundReplay.run_shot(shot_model, rec, club, hole.terrain, hole.pin, rec.wind, round_seed))
 
 
 ## The strike on a worker thread (play_shot): {rec, club, power, accuracy,
-## out, task} while State.STRIKE.
+## out, task} while State.STRIKE. On the web build, where there are no
+## worker threads, it is a chunked sim instead: {rec, club, power,
+## accuracy, sim, start} (see play_shot).
 var _strike := {}
+
+
+## Milliseconds of strike sim per frame on the web build (ResumableShot):
+## a 15-60 ms sim then takes a few frames of the club coming down, and no
+## frame stalls on it.
+const STRIKE_CHUNK_MS := 8.0
 
 
 ## State.STRIKE: the flight starts once the worker thread has it, or at
 ## once with `wait`.
 func _process_strike(wait := false) -> void:
 	if _strike.is_empty():
+		return
+	if _strike.has("sim"):
+		var sim: ResumableShot = _strike["sim"]
+		if wait:
+			sim.run()
+		elif not sim.advance_ms(STRIKE_CHUNK_MS):
+			return
+		var s := _strike
+		_strike = {}
+		var out := sim.result()
+		out.launch = s["start"]
+		_struck(s["rec"], s["club"], s["power"], s["accuracy"], out)
 		return
 	var task: int = _strike["task"]
 	if wait:
@@ -1294,6 +1445,7 @@ func auto_play_step() -> void:
 
 func _process(delta: float) -> void:
 	_drift_clouds(delta)
+	_update_occlusion(delta)
 	if rain_fx != null:
 		rain_fx.follow(get_viewport().get_camera_3d())
 	_update_wind_shaders(delta)
@@ -1376,6 +1528,7 @@ func _process(delta: float) -> void:
 	_update_reticle(paused)
 	_step_advice()
 	_step_yard_scale()
+	_step_putt_scale()
 	grass.update_around(camera.global_position)
 	fescue.update_around(camera.global_position)
 	debris.update_around(camera.global_position)
@@ -2713,6 +2866,86 @@ func _turn_aim(deg: float) -> void:
 	_aim_camera(false)
 
 
+## The things the terrain can hide from the camera this hole: tree
+## batches tagged with their cell reach (CourseObjects._add_trees,
+## DesignedTerrain._add_distant_trees) and placed objects tagged with
+## their height. A batch's node sits at its cell's centre, a placed
+## object's at the object, and both stand on parents at the origin, so
+## the global position is the place to judge from. The camera the last
+## check ran from is forgotten, so the first update after a hole change
+## always runs.
+func _register_occludables() -> void:
+	_occludables.clear()
+	_occlusion_camera = Vector3.INF
+	_occlusion_timer = 0.0
+	_occlusion_index = 0
+	if hole_root == null:
+		return
+	for c in hole_root.find_children("*", "Node3D", true, false):
+		var node := c as Node3D
+		if node == null:
+			continue
+		if node.has_meta("occlusion_reach"):
+			_occludables.append({"node": node, "height": OCCLUSION_TREE_HEIGHT_M, "reach": float(node.get_meta("occlusion_reach"))})
+		elif node.has_meta("occlusion_height"):
+			_occludables.append({"node": node, "height": float(node.get_meta("occlusion_height")), "reach": 0.0})
+
+
+## Hides what the terrain hides from the camera, and shows it again when
+## the camera rounds the hill. Throttled (and only once the camera has
+## moved), so a hole's few hundred batches cost a few dozen height
+## samples each at most twice a second — and a sweep is spread over
+## frames at OCCLUSION_BUDGET_MS a frame, so it never stalls one frame
+## the way judging every batch at once did. Off in the settings, or
+## without a camera or a hole, nothing hides. Near things never hide: a
+## tree beside the player popping out would read as a bug, a wood 60 m
+## off reads as haze.
+func _update_occlusion(delta: float) -> void:
+	_occlusion_timer -= delta
+	if _occludables.is_empty():
+		return
+	if _occlusion_index == 0:
+		if _occlusion_timer > 0.0:
+			return
+		if graphics == null or not graphics.terrain_occlusion or hole == null or hole.terrain == null:
+			return
+		var camera := get_viewport().get_camera_3d()
+		if camera == null:
+			return
+		var eye := camera.global_position
+		if _occlusion_camera != Vector3.INF and eye.distance_to(_occlusion_camera) < OCCLUSION_MOVE_M:
+			_occlusion_timer = OCCLUSION_INTERVAL_S
+			return
+		_occlusion_camera = eye
+		_occlusion_eye = eye
+	if hole == null or hole.terrain == null:
+		_occlusion_index = 0
+		return
+	var terrain := hole.terrain
+	var deadline := Time.get_ticks_usec() + int(OCCLUSION_BUDGET_MS * 1000.0)
+	while _occlusion_index < _occludables.size():
+		var entry: Dictionary = _occludables[_occlusion_index]
+		var node := entry["node"] as Node3D
+		if node == null or not is_instance_valid(node):
+			_occludables.remove_at(_occlusion_index)
+			continue
+		var height := float(entry["height"])
+		var hidden := false
+		if _occlusion_eye.distance_to(node.global_position) >= OCCLUSION_MIN_DIST_M:
+			if float(entry["reach"]) > 0.0:
+				hidden = TerrainOcclusion.batch_hidden(terrain, _occlusion_eye, node.global_position, float(entry["reach"]), height)
+			else:
+				hidden = TerrainOcclusion.hidden_by_terrain(terrain, _occlusion_eye, node.global_position + Vector3.UP * height)
+		var want := not hidden
+		if node.visible != want:
+			node.visible = want
+		_occlusion_index += 1
+		if Time.get_ticks_usec() >= deadline:
+			return
+	_occlusion_index = 0
+	_occlusion_timer = OCCLUSION_INTERVAL_S
+
+
 ## Keeps the gallery out of the line of play (Gallery.clear_line): when
 ## the shot is set up, and again once the aim has settled on a new line.
 func _clear_gallery_line() -> void:
@@ -3852,7 +4085,7 @@ func _process_computer(delta: float) -> void:
 ## True when player `i` is a Classic computer golfer under Links 2003's
 ## physics, whose misses come from the game's own generators.
 func _classic_computer(i: int) -> bool:
-	return shot_model is LinksShotModel and i < opponents.size() and opponents[i] != null and opponents[i].classic
+	return OlcoreShotModel.links_of(shot_model) != null and i < opponents.size() and opponents[i] != null and opponents[i].classic
 
 
 ## How tense this shot is for player `i`, 0 to 1: nothing early on, building
@@ -4205,7 +4438,8 @@ func _relight() -> void:
 	post.apply(graphics)
 	if scenery.sun != null and hole != null:
 		scenery.set_round_progress(float(hole_index) / maxf(holes.size() - 1, 1))
-		GroundShade.bake(hole, course.objects, -scenery.sun.global_transform.basis.z)
+		GroundShade.bake(hole, course.objects, -scenery.sun.global_transform.basis.z,
+				GroundShade.max_pixels_for(graphics.quality if graphics != null else GraphicsSettings.Quality.HIGH))
 
 
 func _on_pause_restart() -> void:
@@ -4704,6 +4938,11 @@ func _choose_looks() -> void:
 
 
 ## This hole's golfers, one per look, hidden until their turn.
+## The golfers for this hole: the same players as last hole keep their
+## rigs (FreeGolfer.create bakes the meshes, several ms each), re-parented
+## to the new hole; only a look the cache has never seen, or one edited
+## since, is built fresh. A rig left visible, mid-pose or mid-walk from
+## the last hole is reset where it is next used (_place_golfer).
 func _make_golfers() -> void:
 	_golfers.clear()
 	golfer = null
@@ -4711,16 +4950,22 @@ func _make_golfers() -> void:
 	for i in scoring.player_count():
 		var look: PlayerLook = _looks[i] if i < _looks.size() else null
 		var key := look.key() if look != null else ""
+		if graphics != null and graphics.photo_golfer:
+			key += "|photo"
 		if not made.has(key):
-			var g: GolferRig = null
-			if look != null:
-				g = FreeGolfer.create(look)
-			if g == null:
-				g = AssetProviders.golfer_assets.create_golfer_for(look)
-			if graphics != null and graphics.photo_golfer:
-				g = PhotoGolfer.wrap(g, look)
+			var g := _golfer_rigs.get(key) as GolferRig
+			if g == null or not is_instance_valid(g):
+				g = null
+				if look != null:
+					g = FreeGolfer.create(look)
+				if g == null:
+					g = AssetProviders.golfer_assets.create_golfer_for(look)
+				if graphics != null and graphics.photo_golfer:
+					g = PhotoGolfer.wrap(g, look)
+				_golfer_rigs[key] = g
 			g.visible = false
-			hole_root.add_child(g)
+			if g.get_parent() != hole_root:
+				hole_root.add_child(g)
 			made[key] = g
 		_golfers.append(made[key])
 	if not _golfers.is_empty():
@@ -5395,7 +5640,8 @@ func _grid_allowed() -> bool:
 
 ## The greens roll by Links 2003's own model (the game's executable found).
 func _links_greens() -> bool:
-	return shot_model is LinksShotModel and (shot_model as LinksShotModel).aero != null
+	var links := OlcoreShotModel.links_of(shot_model)
+	return links != null and links.aero != null
 
 
 ## Ctrl+G: the next look for the grid, as the game's Ctrl+G swaps its yellow
@@ -5432,11 +5678,25 @@ func _update_putt_scale() -> void:
 		return
 	var hole_ft := Vector2(hole.pin.x - ball_at.x, hole.pin.z - ball_at.z).length() * LinksLaunch.FEET_PER_METRE
 	# 21 putts on a level green: the same wherever the ball is, so worked
-	# out once per putter, lie and green speed (it stalled every arrival on
-	# the green).
-	var key := "%d|%s|%d" % [shot_model.get_instance_id(), clubs[club_index].short_name, lie]
+	# out once per putter, lie and green speed. Worked out a sample a frame
+	# (_step_putt_scale), like the yard scale: all 21 at once stalled every
+	# arrival on the green (about 400 ms on a slow machine).
+	var key := _putt_scale_key()
 	if not _putt_scales.has(key):
-		_putt_scales[key] = putt_roll_feet(shot_model, clubs[club_index], lie)
+		if _putt_job_key != key:
+			# A new key starts over (the putter or the lie changed under
+			# a job still running); the meter reads the bare meter until
+			# the samples land, as the yard scale does.
+			_putt_job_key = key
+			_putt_job = putt_meter_values()
+			_putt_done = PackedFloat32Array()
+			_putt_meter = PuttMeterScale.bare()
+			hud.meter.set_putt_scale(PackedFloat32Array(), -1.0)
+			hud.mouse_swing.set_putt_scale(PackedFloat32Array(), -1.0)
+		return
+	_putt_job_key = ""
+	_putt_job = PackedFloat32Array()
+	_putt_done = PackedFloat32Array()
 	var full: PackedFloat32Array = _putt_scales[key]
 	if graphics.quick_pace and graphics.swing_method != 1:
 		_putt_meter = PuttMeterScale.for_hole(full, hole_ft)
@@ -5456,6 +5716,25 @@ func _caddie_putt_meter() -> PuttMeterScale:
 
 
 var _putt_scales := {}  ## see _update_putt_scale()
+## A putt scale being worked out a sample a frame (_step_putt_scale): the
+## key it is for, the meter values still to run and the samples so far.
+var _putt_job_key := ""
+var _putt_job := PackedFloat32Array()
+var _putt_done := PackedFloat32Array()
+
+
+## What a putt scale depends on: the shot model, the putter and the lie.
+func _putt_scale_key() -> String:
+	return "%d|%s|%d" % [shot_model.get_instance_id(), clubs[club_index].short_name, lie]
+
+
+## The meter values the putt scale samples: 0, 1/20 ... 1 of a meter whose
+## top is `share` of the full meter's power.
+static func putt_meter_values(share := 1.0) -> PackedFloat32Array:
+	var out := PackedFloat32Array()
+	for i in 21:
+		out.append(maxf(float(i) / 20.0 * share, 0.02))
+	return out
 
 
 ## Feet a putt rolls on a level green for meter values 0, 1/20 ... 1 of a
@@ -5465,20 +5744,58 @@ var _putt_scales := {}  ## see _update_putt_scale()
 static func putt_roll_feet(model: ShotModel, putter: Club, from_lie: int, share := 1.0) -> PackedFloat32Array:
 	var out := PackedFloat32Array()
 	var flat := FlatTerrain.new(Surface.Type.GREEN)
-	var links := model as LinksShotModel
+	var links := OlcoreShotModel.links_of(model)
 	var rng_state := links.rng.state if links != null else 0
 	var mouse: LinksMouse.Outcome = links.mouse_swing if links != null else null
 	if links != null:
 		links.mouse_swing = null
-	for i in 21:
-		var v := maxf(float(i) / 20.0 * share, 0.02)
-		var start := model.launch(putter, v, 0.0, 0.0, from_lie, Vector3.ZERO)
-		var r := model.simulate(start, flat, Vector3(0, 0, 1.0e5))
-		out.append(Vector2(r.rest.x, r.rest.z).length() * LinksLaunch.FEET_PER_METRE)
+	for v in putt_meter_values(share):
+		out.append(putt_roll_one(model, putter, from_lie, flat, v))
 	if links != null:
 		links.rng.state = rng_state
 		links.mouse_swing = mouse
 	return out
+
+
+## One sample of putt_roll_feet: feet a putt at meter value `v` rolls on
+## the level green `flat`, by `model`'s own physics.
+static func putt_roll_one(model: ShotModel, putter: Club, from_lie: int, flat: CourseTerrain, v: float) -> float:
+	var start := model.launch(putter, v, 0.0, 0.0, from_lie, Vector3.ZERO)
+	var r := model.simulate(start, flat, Vector3(0, 0, 1.0e5))
+	return Vector2(r.rest.x, r.rest.z).length() * LinksLaunch.FEET_PER_METRE
+
+
+## Works out a putt scale a sample a frame, like _step_yard_scale: one
+## putt on a flat green per frame, with the model's random numbers and
+## mouse swing held as putt_roll_feet (and carry_yards) hold them, so the
+## samples land exactly as the all-at-once scale's and the round's own
+## random numbers are left where they were.
+func _step_putt_scale() -> void:
+	if _putt_job.size() == 0 or _putt_done.size() >= _putt_job.size():
+		return
+	# A job for another putter or lie is dropped: _update_putt_scale
+	# starts the right one when it is next asked.
+	if _putt_job_key != _putt_scale_key():
+		_putt_job_key = ""
+		_putt_job = PackedFloat32Array()
+		_putt_done = PackedFloat32Array()
+		return
+	var v := _putt_job[_putt_done.size()]
+	var links := OlcoreShotModel.links_of(shot_model)
+	var rng_state := links.rng.state if links != null else 0
+	var mouse: LinksMouse.Outcome = links.mouse_swing if links != null else null
+	if links != null:
+		links.mouse_swing = null
+	_putt_done.append(putt_roll_one(shot_model, clubs[club_index], lie, FlatTerrain.new(Surface.Type.GREEN), v))
+	if links != null:
+		links.rng.state = rng_state
+		links.mouse_swing = mouse
+	if _putt_done.size() == _putt_job.size():
+		_putt_scales[_putt_job_key] = _putt_done.duplicate()
+		_putt_job_key = ""
+		_putt_job = PackedFloat32Array()
+		_putt_done = PackedFloat32Array()
+		_update_putt_scale()
 
 
 ## The Broadcast and Tour full-swing and chip meter's carry scale: what
@@ -5497,9 +5814,27 @@ func _update_yard_scale() -> void:
 	if key == _yard_key:
 		return
 	_yard_key = key
+	# A scale already worked out for this club, lie and chip shot comes back
+	# at once: the samples are run on the flat with no wind, so the ball's
+	# own spot and the wind do not enter them.
+	var cache_key := _yard_cache_key()
+	var cached: Array = _yard_cache.get(cache_key, [])
+	if not cached.is_empty():
+		_yard_job = PackedFloat32Array()
+		_yard_done = PackedFloat32Array()
+		hud.meter.set_yard_scale(cached[0], cached[1])
+		return
+	_yard_job_key = cache_key
 	_yard_job = yard_values(_chip)
 	_yard_done = PackedFloat32Array()
 	hud.meter.set_yard_scale(PackedFloat32Array(), PackedFloat32Array())
+
+
+## What a yard scale depends on: the club, the lie and the chip shot. The
+## shot model and the green record are in there so a model or green
+## settings change re-works the scale instead of reusing a stale one.
+func _yard_cache_key() -> Array:
+	return [club_index, lie, _chip, shot_model, LinksGround.greens]
 
 
 func _step_yard_scale() -> void:
@@ -5508,6 +5843,8 @@ func _step_yard_scale() -> void:
 	var v := _yard_job[_yard_done.size()]
 	_yard_done.append(carry_yards(shot_model, clubs[club_index], lie, _chip, v))
 	if _yard_done.size() == _yard_job.size():
+		if not _yard_job_key.is_empty():
+			_yard_cache[_yard_job_key] = [_yard_job.duplicate(), _yard_done.duplicate()]
 		hud.meter.set_yard_scale(_yard_job, _yard_done)
 		_yard_job = PackedFloat32Array()
 
@@ -5533,7 +5870,7 @@ static func carry_yards(model: ShotModel, club: Club, from_lie: int, chip: bool,
 		power = LinksPowerStroke.chip_power(LinksPowerStroke.SNAP + roundi(v * span)) / 100.0
 	elif v > 1.0:
 		power = LinksPowerStroke.full_power(LinksPowerStroke.SNAP + roundi(v * span))
-	var links := model as LinksShotModel
+	var links := OlcoreShotModel.links_of(model)
 	var rng_state := links.rng.state if links != null else 0
 	var mouse: LinksMouse.Outcome = links.mouse_swing if links != null else null
 	var was_chip := links.chip if links != null else false

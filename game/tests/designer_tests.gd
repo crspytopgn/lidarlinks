@@ -484,6 +484,16 @@ func _test_ground_lods() -> void:
 	var steep: float = t.steepness.get(t.chunk_count() / 2, 0.0)
 	check(steep > 0.05, "the hill has slopes: %f" % steep)
 	check(DesignedTerrain.casts_sun_shadow(steep, steep * 0.5) and not DesignedTerrain.casts_sun_shadow(steep, steep * 2.0), "a hill casts sun shadows only when the sun is lower than its slopes")
+	# Objects: a 20 m tree beside the fairway casts, one a hundred metres
+	# into the woods does not (its shadow is in the baked ground shade),
+	# and a low sun carries it further; past the shadow camera nothing casts.
+	var afternoon := tan(deg_to_rad(38.0))
+	check(DesignedTerrain.object_casts_sun_shadow(10.0, 20.0, afternoon, 250.0), "a tree by the fairway casts a sun shadow")
+	check(not DesignedTerrain.object_casts_sun_shadow(100.0, 20.0, afternoon, 250.0), "a tree deep in the woods casts none")
+	check(DesignedTerrain.object_casts_sun_shadow(70.0, 20.0, tan(deg_to_rad(10.0)), 250.0), "a low sun carries a tree's shadow further")
+	check(not DesignedTerrain.object_casts_sun_shadow(85.0, 20.0, tan(deg_to_rad(10.0)), 20.0), "past the shadow camera nothing casts")
+	check(not DesignedTerrain.object_casts_sun_shadow(10.0, 0.0, afternoon, 250.0), "nothing tall casts no shadow")
+	check(absf(DesignedTerrain.sun_tan(Vector3(0, -0.616, 0.788)) - afternoon) < 0.01, "sun_tan is the sun's rise over run")
 	# Only ground falling away from the sun shades anything: a slope that
 	# rises along +x (toward the light's run) faces the sun and casts none.
 	var nx := 5
@@ -555,6 +565,30 @@ func _test_trees() -> void:
 	check(not hit.is_empty(), "a ball hits a tree trunk")
 	var data := c.to_course_data()
 	check(not data.holes[0].objects.is_empty(), "the hole lists the trees near it")
+	# The ground is kept between holes: only the distant trees are
+	# re-sorted, and refreshing twice does not stack them up. (3D trees
+	# are off in headless runs, so the level is raised for this test and
+	# put back: build_visual only plants distant trees when they are on.)
+	t.hole_number = 1
+	TreeFactory.set_level(2)
+	var visual := t.build_visual()
+	var chunks: Array[Node] = []
+	for child in visual.get_children():
+		if child is MeshInstance3D and child.has_meta("chunk"):
+			chunks.append(child)
+	var distant := visual.find_children("DistantTrees", "Node3D", false, false)
+	check(not chunks.is_empty() and not distant.is_empty(), "the visual has ground chunks and distant trees (%d, %d)" % [chunks.size(), distant.size()])
+	t.refresh_distant_trees(visual)
+	var distant2 := visual.find_children("DistantTrees", "Node3D", false, false)
+	check(distant2.size() == distant.size(), "refreshing rebuilds the same distant trees")
+	var kept := true
+	for child in chunks:
+		if child.get_parent() != visual:
+			kept = false
+	t.refresh_distant_trees(visual)
+	check(kept and visual.find_children("DistantTrees", "Node3D", false, false).size() == distant.size(), "refreshing again keeps the ground and stacks no trees")
+	TreeFactory.set_level(0)
+	visual.free()
 
 
 func _test_loader() -> void:

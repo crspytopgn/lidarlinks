@@ -44,6 +44,15 @@ static func ensure_defaults() -> void:
 		shot_model = LinksShotModel.from_game_folder()
 	if shot_model == null:
 		shot_model = StandardShotModel.new()
+	# Phase 1 GDExtension: the native shot sim, only when the player
+	# asked for it (--native-physics / LIDARLINKS_NATIVE_PHYSICS=1) and
+	# the extension is loaded. It wraps the model above for launch and
+	# lie power, and falls back to it whenever a shot is outside what
+	# the native path can run exactly. On web it is used whenever the
+	# wasm extension is present (no flag exists there); without the
+	# extension the GDScript port runs instead.
+	if OlcoreShotModel.use_native_enabled() and OlcoreShotModel.native_available():
+		shot_model = OlcoreShotModel.new(shot_model)
 
 
 ## Loads a course with the first loader that accepts the path; an empty path

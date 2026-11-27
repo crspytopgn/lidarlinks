@@ -422,7 +422,11 @@ static func _build(t: CourseTerrain, key: Vector2i, density: float, crowns: Pack
 	var tree := Engine.get_main_loop() as SceneTree
 	var budget_us := int(budget_ms * 1000.0)
 	var start := Time.get_ticks_usec()
-	var tick := 0
+	# The budget is checked after every try, not every few: on a slow
+	# machine one try costs far more than on a fast one, so a batch of
+	# tries could overrun the budget many times over before the check
+	# fired (GrassField had the same fault; one of its frames took
+	# 188 ms in the benchmark on a loaded machine).
 	# Sparse bunch grass and scrub in the desert, none through snow (Biome).
 	var biome := Biome.of(t)
 	var wild := Biome.wild_grass(biome)
@@ -446,8 +450,7 @@ static func _build(t: CourseTerrain, key: Vector2i, density: float, crowns: Pack
 	# land where native_at is high).
 	var tries := roundi(CHUNK * CHUNK * density * NATIVE_DENSITY) if found.has(Surface.Type.DEEP_ROUGH) else 0
 	for i in tries:
-		tick += 1
-		if budget_us > 0 and tick % 32 == 0 and Time.get_ticks_usec() - start > budget_us:
+		if budget_us > 0 and Time.get_ticks_usec() - start > budget_us:
 			await tree.process_frame
 			start = Time.get_ticks_usec()
 		var x := origin.x + rng.randf() * CHUNK
@@ -484,8 +487,7 @@ static func _build(t: CourseTerrain, key: Vector2i, density: float, crowns: Pack
 	# Reeds: tall tufts on the bank, the ground just short of the water.
 	rng.seed = hash(key) + 78
 	for i in roundi(CHUNK * CHUNK * density * REED_DENSITY) if found.has(Surface.Type.WATER) else 0:
-		tick += 1
-		if budget_us > 0 and tick % 32 == 0 and Time.get_ticks_usec() - start > budget_us:
+		if budget_us > 0 and Time.get_ticks_usec() - start > budget_us:
 			await tree.process_frame
 			start = Time.get_ticks_usec()
 		var x := origin.x + rng.randf() * CHUNK
@@ -514,8 +516,7 @@ static func _build(t: CourseTerrain, key: Vector2i, density: float, crowns: Pack
 		var reach := crown.z * UNDER_REACH_DEEP
 		var count := roundi(PI * reach * reach * under_density)
 		for i in count:
-			tick += 1
-			if budget_us > 0 and tick % 32 == 0 and Time.get_ticks_usec() - start > budget_us:
+			if budget_us > 0 and Time.get_ticks_usec() - start > budget_us:
 				await tree.process_frame
 				start = Time.get_ticks_usec()
 			# Uniform over the disc out to `reach`.

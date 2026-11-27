@@ -35,6 +35,35 @@ static var _atlas_of: Array = []  ## the shapes _atlas was built from
 static var _atlas_of_objects: Array = []  ## and the footprints
 
 static var _generation := 0
+## What the shade on the ground now is (see _key_for): a bake that matches
+## it is skipped, so a hole re-started or a relight with the sun unmoved
+## costs nothing.
+static var _last_key := ""
+
+
+## The bake's longest side in pixels, by quality: the full 1536 at High
+## and Ultra, 1024 below — a third fewer texels to read back, and the
+## shade is soft blobs, so a 0.9 m texel instead of a 0.6 m one.
+static func max_pixels_for(quality: int) -> int:
+	return MAX_PIXELS if quality >= GraphicsSettings.Quality.HIGH else 1024
+
+
+## A checksum of `values` (the stamps' inputs): the size and a mix of
+## every value, so any caster or footprint that moves changes the key.
+static func _checksum(values: PackedFloat32Array) -> int:
+	var h := values.size()
+	for v in values:
+		h = (h * 31 + int(v * 100.0)) & 0x7fffffff
+	return h
+
+
+## What a bake of `hole` (number `hole_number`, objects `objects_id`) over
+## `rect` under `sun_travel` at `max_pixels` would put on the ground: two
+## bakes with the same key are the same shade.
+static func _key_for(hole_number: int, objects_id: int, rect: Rect2, sun_travel: Vector3, max_pixels: int, casters: PackedFloat32Array, footprints: PackedFloat32Array) -> String:
+	return "%d|%d|%.1f,%.1f,%.1f,%.1f|%.2f,%.2f,%.2f|%d|%d|%d" % [hole_number, objects_id,
+			rect.position.x, rect.position.y, rect.size.x, rect.size.y,
+			sun_travel.x, sun_travel.y, sun_travel.z, max_pixels, _checksum(casters), _checksum(footprints)]
 
 
 ## The part of the course to bake for `hole`: its tee, route and pin with
@@ -118,11 +147,18 @@ static func footprint_stamps(footprints: PackedFloat32Array, sun_travel: Vector3
 
 
 ## Bakes the map for `hole` and points the shaders at it. Call after the
-## hole's objects are built; a newer call wins over one still baking.
-static func bake(hole: HoleData, objects: CourseObjects, sun_travel: Vector3) -> void:
+## hole's objects are built; a newer call wins over one still baking. A
+## bake that matches the shade already on the ground (same hole, sun,
+## objects and size) is skipped: a hole re-started, or a relight with the
+## sun unmoved, costs nothing. The bake starts a few frames past the hole
+## change, so the hole change never waits on it; the GPU readback itself
+## is still synchronous (GDScript has no async readback), it just lands
+## after the flyover has started, and the key is only recorded once the
+## new texture is actually showing, so a bake cut short by a newer one
+## is retried rather than skipped as done.
+static func bake(hole: HoleData, objects: CourseObjects, sun_travel: Vector3, max_pixels := MAX_PIXELS) -> void:
 	_generation += 1
 	var generation := _generation
-	clear()
 	if DisplayServer.get_name() == "headless":
 		return
 	var tree := Engine.get_main_loop() as SceneTree
@@ -131,9 +167,15 @@ static func bake(hole: HoleData, objects: CourseObjects, sun_travel: Vector3) ->
 	var rect := hole_rect(hole)
 	var casters := objects.shade_casters(rect) if objects != null else PackedFloat32Array()
 	casters.append_array(placed_casters(hole))
-	if casters.is_empty() and (objects == null or objects.shade_footprints(rect).is_empty()):
+	var footprints := objects.shade_footprints(rect) if objects != null else PackedFloat32Array()
+	if casters.is_empty() and footprints.is_empty():
+		clear()
 		return
-	var texel := maxf(MIN_TEXEL, maxf(rect.size.x, rect.size.y) / MAX_PIXELS)
+	var key := _key_for(hole.number, objects.get_instance_id() if objects != null else 0, rect, sun_travel, max_pixels, casters, footprints)
+	if key == _last_key:
+		return  # already baked and still showing
+	clear()
+	var texel := maxf(MIN_TEXEL, maxf(rect.size.x, rect.size.y) / max_pixels)
 	var size := Vector2i(ceili(rect.size.x / texel), ceili(rect.size.y / texel))
 	var vp := SubViewport.new()
 	vp.name = "GroundShadeBake"
@@ -158,7 +200,6 @@ static func bake(hole: HoleData, objects: CourseObjects, sun_travel: Vector3) ->
 	var mi := MultiMeshInstance3D.new()
 	var st := stamps(casters, sun_travel)
 	if objects != null:
-		var footprints := objects.shade_footprints(rect)
 		var first := CourseObjects.shadow_shapes.size()
 		for k in range(6, footprints.size(), FOOTPRINT_SIZE):
 			footprints[k] += first
@@ -177,10 +218,12 @@ static func bake(hole: HoleData, objects: CourseObjects, sun_travel: Vector3) ->
 	img.generate_mipmaps()
 	RenderingServer.global_shader_parameter_set("ground_shade", ImageTexture.create_from_image(img))
 	RenderingServer.global_shader_parameter_set("ground_shade_rect", Vector4(rect.position.x, rect.position.y, rect.size.x, rect.size.y))
+	_last_key = key  # only now is this shade the one on the ground
 
 
 ## No shading until the next bake.
 static func clear() -> void:
+	_last_key = ""
 	RenderingServer.global_shader_parameter_set("ground_shade_rect", Vector4.ZERO)
 
 
@@ -188,6 +231,21 @@ static func clear() -> void:
 ## 3D trees cast real-time shadows), in metres.
 static func set_near(distance: float) -> void:
 	RenderingServer.global_shader_parameter_set("ground_shade_near", distance)
+
+
+## How tall a placed object's shadow is, by kind: the crown tops of
+## placed_casters (before the object's own scale). Zero for kinds with no
+## shadow of their own, so callers leave those alone.
+static func placed_height(id: String) -> float:
+	if id.begins_with("tree_pine"):
+		return 17.0
+	if id.begins_with("tree"):
+		return 12.0
+	if id.begins_with("bush"):
+		return 1.5
+	if id.begins_with("rock"):
+		return 1.0
+	return 0.0
 
 
 ## Casters for the objects placed on the hole (the placeholder course's

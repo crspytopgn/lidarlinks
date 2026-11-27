@@ -43,6 +43,15 @@ func simulate(_start: BallState, _terrain: CourseTerrain, _cup: Vector3, _wind :
 	return ShotResult.new()
 
 
+## The same shot as simulate(), as a ResumableShot the caller advances a
+## few milliseconds a frame instead of blocking on (see ResumableShot):
+## the strike on the web build, where there are no worker threads and the
+## sim cannot start earlier. The result is the same as simulate()'s.
+func simulate_chunked(_start: BallState, _terrain: CourseTerrain, _cup: Vector3, _wind := Vector3.ZERO) -> ResumableShot:
+	push_error("ShotModel.simulate_chunked() is not implemented")
+	return null
+
+
 ## How much farther than its distance at power 100 (Club.total_m) a full
 ## swing sends `club` in this model.
 func reach_scale(_club: Club) -> float:

@@ -110,11 +110,32 @@ func ground_color_at(x: float, z: float) -> Color:
 	return Color(0.30, 0.58, 0.20)
 
 
+## Whether obstacle_hit() can ever hit: the per-step shot loops skip the
+## lookup entirely when nothing is there.
+func has_obstacles() -> bool:
+	return obstacles != null or hole_obstacles != null
+
+
+## Whether links_obstacle_hit() can ever hit (the billboards replace the
+## plain obstacles when links_objects has them).
+func has_links_obstacles() -> bool:
+	if hole_obstacles != null:
+		return true
+	return model_obstacles != null if links_objects != null else obstacles != null
+
+
 ## The first obstacle the ball meets moving from -> to, as
 ## ObstacleField.segment_hit() returns it ({} for none). Mirrors
 ## olcore::Terrain::obstacle_hit.
 func obstacle_hit(from: Vector3, to: Vector3) -> Dictionary:
 	return _with_hole(obstacles.segment_hit(from, to) if obstacles != null else {}, from, to)
+
+
+## obstacle_hit() without the Dictionary: writes the first obstacle into
+## `out` and returns true, or false for none. `out` keeps its old values
+## on false, so only read it when this returns true.
+func obstacle_hit_into(from: Vector3, to: Vector3, out: ObstacleField.Hit) -> bool:
+	return _with_hole_into(obstacles.segment_hit_into(from, to, out) if obstacles != null else false, out, from, to)
 
 
 ## Like obstacle_hit(), for the Links 2003 model: without the billboards
@@ -125,6 +146,13 @@ func links_obstacle_hit(from: Vector3, to: Vector3) -> Dictionary:
 	return _with_hole(model_obstacles.segment_hit(from, to) if model_obstacles != null else {}, from, to)
 
 
+## links_obstacle_hit() without the Dictionary: see obstacle_hit_into().
+func links_obstacle_hit_into(from: Vector3, to: Vector3, out: ObstacleField.Hit) -> bool:
+	if links_objects == null:
+		return obstacle_hit_into(from, to, out)
+	return _with_hole_into(model_obstacles.segment_hit_into(from, to, out) if model_obstacles != null else false, out, from, to)
+
+
 ## `hit`, or the hole's own obstacles' hit if that comes first.
 func _with_hole(hit: Dictionary, from: Vector3, to: Vector3) -> Dictionary:
 	if hole_obstacles == null:
@@ -133,6 +161,21 @@ func _with_hole(hit: Dictionary, from: Vector3, to: Vector3) -> Dictionary:
 	if other.is_empty() or (not hit.is_empty() and float(hit.fraction) <= float(other.fraction)):
 		return hit
 	return other
+
+
+## _with_hole() for the _into form: `found`/`out` hold the field's hit.
+func _with_hole_into(found: bool, out: ObstacleField.Hit, from: Vector3, to: Vector3) -> bool:
+	if hole_obstacles == null:
+		return found
+	var other := ObstacleField.Hit.new()
+	if not hole_obstacles.segment_hit_into(from, to, other):
+		return found
+	if found and out.fraction <= other.fraction:
+		return true
+	out.fraction = other.fraction
+	out.normal = other.normal
+	out.kind = other.kind
+	return true
 
 
 ## Builds the visible ground (and water) for this terrain. Called once each

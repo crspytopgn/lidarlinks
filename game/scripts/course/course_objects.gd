@@ -1199,7 +1199,17 @@ static func _index(s: Sprites) -> void:
 
 
 ## The visible objects near one hole. The caller owns the returned node.
-func build_visual(hole: HoleData) -> Node3D:
+## `sun_tan` is the sun's height as rise over run (DesignedTerrain.sun_tan)
+## and `shadow_distance` how far its shadows reach: trees whose shadows
+## cannot reach the line of play skip the shadow pass (their shadows are
+## in the baked ground shade). The defaults are conservative — a low sun
+## and the longest shadow distance — so callers that don't know the sun
+## still cull only what cannot cast.
+## Tallest 3D tree, for the shadow test (tree variants stand up to 19 m).
+const TREE_SHADOW_HEIGHT := 20.0
+
+
+func build_visual(hole: HoleData, sun_tan := 0.35, shadow_distance := 600.0) -> Node3D:
 	var root := Node3D.new()
 	root.name = "CourseObjects"
 	var path := PackedVector2Array([Vector2(hole.tee.x, hole.tee.z)])
@@ -1207,7 +1217,7 @@ func build_visual(hole: HoleData) -> Node3D:
 	path.append(Vector2(hole.pin.x, hole.pin.z))
 	for s in [plants, crowds]:
 		if s != null:
-			_add_billboards(root, s, path)
+			_add_billboards(root, s, path, sun_tan, shadow_distance)
 	for p in _placements:
 		var m: int = p.model
 		if m >= _meshes.size():
@@ -1215,11 +1225,23 @@ func build_visual(hole: HoleData) -> Node3D:
 		var node := MeshInstance3D.new()
 		node.mesh = _meshes[m]
 		node.transform = p.transform
+		# As the placed objects in main: a model whose shadow cannot
+		# reach the line of play casts none (its shadow is in the baked
+		# ground shade). The height is an upper bound — longest edge times
+		# largest scale — so the test only ever keeps a caster it is
+		# unsure of, never drops one that could reach.
+		var scale: Vector3 = p.transform.basis.get_scale()
+		var size: Vector3 = _meshes[m].get_aabb().size
+		var height := maxf(maxf(size.x, size.y), size.z) * maxf(maxf(scale.x, scale.y), scale.z)
+		if height > 0.0 and not DesignedTerrain.object_casts_sun_shadow(
+				distance_to_path(Vector2(p.transform.origin.x, p.transform.origin.z), path),
+				height, sun_tan, shadow_distance):
+			node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		root.add_child(node)
 	return root
 
 
-func _add_billboards(root: Node3D, s: Sprites, path: PackedVector2Array) -> void:
+func _add_billboards(root: Node3D, s: Sprites, path: PackedVector2Array, sun_tan := 0.35, shadow_distance := 600.0) -> void:
 	var quad: QuadMesh = null
 	var trees := not s.species.is_empty() and TreeFactory.enabled()
 	# The cache holds both ways of drawing a bucket, the 3D-trees one after
@@ -1231,7 +1253,7 @@ func _add_billboards(root: Node3D, s: Sprites, path: PackedVector2Array) -> void
 			var away := distance_to_path(centre, path) - CHUNK * 0.71
 			var chunk := row * s.cols + col
 			if trees and away <= FAR_REACH:
-				_add_trees(root, s, chunk)
+				_add_trees(root, s, chunk, away, sun_tan, shadow_distance)
 			for c in CLASSES:
 				var b := chunk * CLASSES + c
 				if s.start[b] == s.start[b + 1]:
@@ -1257,8 +1279,11 @@ func _add_billboards(root: Node3D, s: Sprites, path: PackedVector2Array) -> void
 
 
 ## The 3D trees of one chunk: the full trees of each cell, hidden beyond
-## the impostor distance, and the impostors of the whole chunk.
-func _add_trees(root: Node3D, s: Sprites, chunk: int) -> void:
+## the impostor distance, and the impostors of the whole chunk. `away` is
+## how far the chunk stands from the hole's line of play: trees past where
+## their shadows can reach it cast none (DesignedTerrain
+## .object_casts_sun_shadow), so the shadow pass skips them.
+func _add_trees(root: Node3D, s: Sprites, chunk: int, away := 0.0, sun_tan := 0.35, shadow_distance := 600.0) -> void:
 	var key := "trees %d" % chunk
 	if not s.cache.has(key):
 		var trees := PackedFloat32Array()
@@ -1269,8 +1294,14 @@ func _add_trees(root: Node3D, s: Sprites, chunk: int) -> void:
 				if is_3d_tree(s, i):
 					trees.append_array(PackedFloat32Array([xyzh[4 * i], xyzh[4 * i + 1], xyzh[4 * i + 2], xyzh[4 * i + 3], s.species[s.sprite[i]]]))
 		s.cache[key] = TreeFactory.batches(trees, TREE_CELL)
+	var shadows := DesignedTerrain.object_casts_sun_shadow(away, TREE_SHADOW_HEIGHT, sun_tan, shadow_distance)
 	for batch: Dictionary in s.cache[key]:
-		var node := TreeFactory.batch_node(batch)
+		var node := TreeFactory.batch_node(batch, shadows)
+		# One cell's full trees, and nothing else, can hide behind a hill
+		# (TerrainOcclusion): the impostor batch spans the whole course
+		# and a near set's node sits at the origin, so neither is tagged.
+		if batch.get("full", false) and not batch.get("near", false):
+			node.set_meta("occlusion_reach", float(batch.get("reach", 0.0)))
 		root.add_child(node)
 
 

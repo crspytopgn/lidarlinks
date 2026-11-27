@@ -323,7 +323,10 @@ func kind() -> int:
 func swing() -> PackedFloat64Array:
 	var k := kind()
 	var scale := error_scale()
-	if _model is LinksShotModel:
+	# Unwrap OlcoreShotModel: the Links-only error scale is about the
+	# physics in use, not the wrapper, and `is LinksShotModel` fails
+	# through it (the native model wraps the Links one).
+	if OlcoreShotModel.links_of(_model) != null:
 		scale *= OpponentSkill.LINKS_ERROR_SCALE[k]
 	last_error_scale = scale
 	return skill.execute(power, accuracy, aim_deg, k, scale, rng)
@@ -547,7 +550,7 @@ func _shape(i: int) -> float:
 
 ## The most power it swings with, for the physics in use.
 func _strength() -> float:
-	return skill.links_strength if _model is LinksShotModel else skill.strength
+	return skill.links_strength if OlcoreShotModel.links_of(_model) != null else skill.strength
 
 
 ## About how far a chip at chip_top goes with club `i`, carry and roll on
@@ -565,7 +568,7 @@ func _top() -> float:
 ## The club's full swing in the game's power units (100 without Links
 ## 2003's physics, where every power is a share of the club).
 func _rating(i: int) -> float:
-	return LinksShotModel.club_rating(_clubs[i]) if _model is LinksShotModel else 100.0
+	return LinksShotModel.club_rating(_clubs[i]) if OlcoreShotModel.links_of(_model) != null else 100.0
 
 
 ## Whether a shot from `from` on `lie` is a Chip: the game's own rule, a
@@ -604,14 +607,15 @@ func _simulate(club: int, p: float, aim: float, accuracy := 0.0) -> ShotResult:
 		_suspended = true
 		await _resume
 		_suspended = false
-	if _model is LinksShotModel:
-		(_model as LinksShotModel).computer = true  # plan without the human miss model
-		(_model as LinksShotModel).computer_ratings = null  # nor the computer's own
+	var links := OlcoreShotModel.links_of(_model)
+	if links != null:
+		links.computer = true  # plan without the human miss model
+		links.computer_ratings = null  # nor the computer's own
 		# A chip as the real shot will be played: its power in the chip's
 		# units. The flag was whatever the last shot left (a plan for a chip
 		# after a full approach read its power as a share of the wedge's 80,
 		# so the real chip, at 100, flew a quarter further than planned).
-		(_model as LinksShotModel).chip = _chip and not _clubs[club].is_putter
+		links.chip = _chip and not _clubs[club].is_putter
 	var start := _model.launch(_clubs[club], p, accuracy, aim, _lie, _from)
 	return _model.simulate(start, _hole.terrain, _hole.pin, _wind)
 

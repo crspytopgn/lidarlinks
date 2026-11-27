@@ -61,6 +61,17 @@ class Terrain {
   virtual bool obstacle_hit(Vec3 from, Vec3 to, ObstacleHit& hit) const {
     return obstacles != nullptr && obstacles->segment_hit(from, to, hit);
   }
+  // The first obstacle the Links 2003 model meets moving from -> to: the
+  // 3D models' boxes when the course has billboards for it, else the
+  // course's own obstacles (the game checks the models, not the plain
+  // field, once billboards exist). The default is the plain obstacle_hit():
+  // loaders whose Links model differs override this, as the game's
+  // CourseTerrain.links_obstacle_hit_into does on the GDScript side. The
+  // baked terrain the extension hands the native sim already holds the
+  // field the Links model should meet, so it needs no override.
+  virtual bool links_obstacle_hit(Vec3 from, Vec3 to, ObstacleHit& hit) const {
+    return obstacle_hit(from, to, hit);
+  }
 
   const ObstacleField* obstacles = nullptr;
 };

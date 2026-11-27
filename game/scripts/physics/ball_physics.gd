@@ -135,14 +135,14 @@ static func bounce(s: BallState, ground_normal: Vector3, surface: int) -> void:
 
 ## Mirrors olcore::hit_obstacle: a solid sends the ball back with some of its
 ## speed; a canopy soaks up most of it, so the ball drops. `hit` comes from
-## CourseTerrain.obstacle_hit().
-static func hit_obstacle(s: BallState, hit: Dictionary) -> void:
+## CourseTerrain.obstacle_hit_into().
+static func hit_obstacle(s: BallState, hit: ObstacleField.Hit) -> void:
 	var n: Vector3 = hit.normal
 	var vn := s.velocity.dot(n)
 	if vn >= 0.0:
 		return
 	var vt := s.velocity - n * vn
-	if int(hit.kind) == ObstacleField.Kind.SOLID:
+	if hit.kind == ObstacleField.Kind.SOLID:
 		s.velocity = vt * SOLID_FRICTION - n * (vn * SOLID_RESTITUTION)
 		s.spin *= 0.5
 	else:
@@ -154,188 +154,12 @@ static func hit_obstacle(s: BallState, hit: Dictionary) -> void:
 ## until the ball stops, drops, or finds water or out of bounds. `wind` acts
 ## on the flight only, as in olcore. With `aero` the whole shot uses the Links
 ## 2003 model (olcore::BallParams::links and LinksGround.simulate_shot).
+## Runs through ResumableShot, so the one-shot and chunked sims are the
+## same code; see ResumableShot for splitting a shot across frames.
 static func simulate_shot(start: BallState, terrain: CourseTerrain, has_cup := false, cup := Vector3.ZERO, wind := Vector3.ZERO, aero: LinksAero = null) -> ShotResult:
 	if aero != null:
 		return LinksGround.simulate_shot(start, terrain, has_cup, cup, wind, aero)
-	var r := ShotResult.new()
-	var s := start.copy()
-	var t := 0.0
-	var step := 0
-	var landed := false
-	# The ground under the end of the last rolling step, reused by the next.
-	var ahead_at := Vector3(INF, INF, INF)
-	var ahead_normal := Vector3.UP
-	var ahead_surface := -1
-	r.add_sample(0.0, s.position)
-
-	var n0 := terrain.normal_at(s.position.x, s.position.z)
-	var vn0 := s.velocity.dot(n0)
-	var speed0 := s.velocity.length()
-	if vn0 < 2.0 * ROLL_THRESHOLD and s.velocity.y > LOFTED_LAUNCH * speed0:
-		# A lofted shot from a lie on a bank (a bunker face) leaves the slope:
-		# the club follows the ground, so the launch is off the slope too.
-		var lifted := s.velocity + n0 * (maxf(absf(vn0), 2.0 * ROLL_THRESHOLD) - vn0)
-		s.velocity = lifted * (speed0 / lifted.length())
-	if s.velocity.dot(n0) < -ROLL_THRESHOLD:
-		# Struck into a bank steeper than its launch (a bunker face): it meets
-		# the ground at once, rather than rolling away at full speed.
-		bounce(s, n0, terrain.surface_at(s.position.x, s.position.z))
-		r.bounces += 1
-	var rolling := s.velocity.dot(n0) < ROLL_THRESHOLD
-	if rolling:
-		s.velocity -= n0 * s.velocity.dot(n0)
-		landed = true
-		r.first_landing = s.position
-
-	# The ground height last looked up, and where: the next flight step
-	# usually starts where the last one ended, so it is reused (same value).
-	var flight_xz := Vector2(INF, INF)
-	var flight_y := 0.0
-	while t < MAX_TIME:
-		if not rolling:
-			var nxt := step_flight(s, DT, wind, aero)
-			var g0 := flight_y if s.position.x == flight_xz.x and s.position.z == flight_xz.y else terrain.height_at(s.position.x, s.position.z)
-			var g1 := terrain.height_at(nxt.position.x, nxt.position.z)
-			flight_xz = Vector2(nxt.position.x, nxt.position.z)
-			flight_y = g1
-			var h0 := s.position.y - g0
-			var h1 := nxt.position.y - g1
-			t += DT
-			step += 1
-			r.apex_m = maxf(r.apex_m, nxt.position.y - start.position.y)
-
-			# An obstacle met before the ground. Time keeps the whole step,
-			# so a ball wedged between obstacles still runs out of time.
-			var ground := (h0 / (h0 - h1) if h0 > 0.0 else 0.0) if h1 <= 0.0 else 2.0
-			var hit := terrain.obstacle_hit(s.position, nxt.position)
-			if not hit.is_empty() and float(hit.fraction) < ground:
-				var f: float = hit.fraction
-				var b := BallState.new(s.position.lerp(nxt.position, f), s.velocity.lerp(nxt.velocity, f), nxt.spin)
-				hit_obstacle(b, hit)
-				# Just outside a solid, or just inside a canopy, so the same
-				# face is not met again.
-				var gap := OBSTACLE_GAP if int(hit.kind) == ObstacleField.Kind.SOLID else -OBSTACLE_GAP
-				b.position += (hit.normal as Vector3) * gap
-				r.obstacle_hits += 1
-				r.add_sample(t, b.position)
-				# Settled on top of something flat enough (a wall, a bridge).
-				var n: Vector3 = hit.normal
-				if int(hit.kind) == ObstacleField.Kind.SOLID and n.y > FLAT_TOP and b.velocity.dot(n) < ROLL_THRESHOLD:
-					if not landed:
-						landed = true
-						r.first_landing = b.position
-					return _finish(r, ShotResult.Outcome.REST, b.position, t, landed, start, terrain)
-				s = b
-				continue
-
-			if h1 <= 0.0:
-				var frac := h0 / (h0 - h1) if h0 > 0.0 else 0.0
-				var pos := s.position.lerp(nxt.position, frac)
-				var vel := s.velocity.lerp(nxt.velocity, frac)
-				pos.y = terrain.height_at(pos.x, pos.z)
-				t = t - DT + DT * frac
-				if not landed:
-					landed = true
-					r.first_landing = pos
-				r.add_sample(t, pos)
-
-				var surf := terrain.surface_at(pos.x, pos.z)
-				if surf == Surface.Type.WATER:
-					return _finish(r, ShotResult.Outcome.WATER, pos, t, landed, start, terrain)
-				if surf == Surface.Type.OUT_OF_BOUNDS:
-					return _finish(r, ShotResult.Outcome.OUT_OF_BOUNDS, pos, t, landed, start, terrain)
-				if has_cup and _distance_xz(pos, cup) < CUP_RADIUS:
-					return _finish(r, ShotResult.Outcome.HOLED, cup, t, landed, start, terrain)
-
-				var n := terrain.normal_at(pos.x, pos.z)
-				# Already moving off the ground's plane yet under the ground: the
-				# slope ahead is steeper than the normal (the foot of a bunker
-				# face). It rolls up it, rather than meeting it again at once
-				# for ever.
-				var leaving := vel.dot(n) >= 0.0
-				var b := BallState.new(pos, vel, nxt.spin)
-				bounce(b, n, surf)
-				r.bounces += 1
-				s = b
-				var vn := b.velocity.dot(n)
-				# A ball that meets the ground at the very start of a step (or
-				# a hair after it) was on it already (a bank ahead rising
-				# faster than it flies): it rolls from there. Bounced again it
-				# would land at almost the same instant, again and again, and
-				# never finish.
-				if vn < ROLL_THRESHOLD or frac < LAND_AT_START or leaving:
-					rolling = true
-					s.velocity = b.velocity - n * vn
-				continue
-			s = nxt
-		else:
-			var pos := s.position
-			var v := s.velocity
-			# Where the last step ended, its normal and surface are known.
-			var known := pos == ahead_at
-			var n := ahead_normal if known else terrain.normal_at(pos.x, pos.z)
-			var here := ahead_surface if known and ahead_surface >= 0 else terrain.surface_at(pos.x, pos.z)
-			var g := Vector3(0.0, -GRAVITY, 0.0)
-			var slope := (g - n * g.dot(n)) * (5.0 / 7.0)
-			var resist := Surface.rolling_resistance(here) * GRAVITY * n.y
-			var speed := v.length()
-			var holds := slope.length() <= resist
-			if speed < STOP_SPEED and holds:
-				return _finish(r, ShotResult.Outcome.REST, pos, t, landed, start, terrain)
-			var a := slope
-			if speed > 1e-9:
-				a -= v * (resist / speed)
-			var nv := v + a * DT
-			if speed > 1e-9 and nv.dot(v) < 0.0 and holds:
-				return _finish(r, ShotResult.Outcome.REST, pos, t, landed, start, terrain)
-			var npos := pos + nv * DT
-			npos.y = terrain.height_at(npos.x, npos.z)
-			# Over a crest (a bunker's lip) faster than gravity can hold it to
-			# the ground: it takes off, without the spin it rolled with.
-			var free_y := pos.y + nv.y * DT - 0.5 * GRAVITY * DT * DT
-			if free_y - npos.y > TAKE_OFF_GAP:
-				# The step is taken in the air, so time always moves on.
-				rolling = false
-				s = BallState.new(Vector3(npos.x, free_y, npos.z), nv + Vector3(0.0, -GRAVITY * DT, 0.0), Vector3.ZERO)
-				t += DT
-				step += 1
-				continue
-			var nn := terrain.normal_at(npos.x, npos.z)
-			ahead_at = npos
-			ahead_normal = nn
-			ahead_surface = -1
-			nv -= nn * nv.dot(nn)
-			t += DT
-			step += 1
-
-			# Rolling into a trunk or a wall; leaves do not stop a rolling ball.
-			var hit := terrain.obstacle_hit(pos, npos)
-			if not hit.is_empty() and int(hit.kind) == ObstacleField.Kind.SOLID:
-				var hp := pos.lerp(npos, float(hit.fraction)) + (hit.normal as Vector3) * OBSTACLE_GAP
-				hp.y = terrain.height_at(hp.x, hp.z)
-				var b := BallState.new(hp, nv, s.spin)
-				hit_obstacle(b, hit)
-				var hn := terrain.normal_at(hp.x, hp.z)
-				s.position = hp
-				s.velocity = b.velocity - hn * b.velocity.dot(hn)
-				s.spin = b.spin
-				r.obstacle_hits += 1
-				r.add_sample(t, hp)
-				continue
-
-			if has_cup and nv.length() < MAX_HOLING_SPEED and _segment_distance_xz(pos, npos, cup) < CUP_RADIUS:
-				return _finish(r, ShotResult.Outcome.HOLED, cup, t, landed, start, terrain)
-			var surf := terrain.surface_at(npos.x, npos.z)
-			ahead_surface = surf
-			if surf == Surface.Type.WATER:
-				return _finish(r, ShotResult.Outcome.WATER, npos, t, landed, start, terrain)
-			if surf == Surface.Type.OUT_OF_BOUNDS:
-				return _finish(r, ShotResult.Outcome.OUT_OF_BOUNDS, npos, t, landed, start, terrain)
-			s.position = npos
-			s.velocity = nv
-		if step % SAMPLE_EVERY == 0:
-			r.add_sample(t, s.position)
-	return _finish(r, ShotResult.Outcome.TIMED_OUT, s.position, t, landed, start, terrain)
+	return ResumableShot.new(start, terrain, has_cup, cup, wind).run()
 
 
 static func _finish(r: ShotResult, outcome: ShotResult.Outcome, pos: Vector3, t: float, landed: bool, start: BallState, terrain: CourseTerrain) -> ShotResult:
