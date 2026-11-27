@@ -700,12 +700,13 @@ every hole.
   far split covers what the desktop's last three do, and the near split
   (the golfer's) gets half the atlas instead of a quarter.
 - Grandstands hide behind hills (TerrainOcclusion) like the far trees.
-- Browser textures: the web export bakes ETC2/ASTC as well as S3TC, so an
-  iPad reads the ground textures as they are instead of unpacking them to
-  full size in memory. To keep the download flat, the web build has its
-  own copies (`free_assets_web/`, written by `tools/fetch_free_assets.py`)
-  with bump, roughness and height maps at 512 pixels; colour maps are as
-  on the desktop.
+- Browser textures: the free textures are lossy WebP (any browser reads
+  them, but the GPU holds them at full size), so the web build has its own
+  copies (`free_assets_web/`, written by `tools/fetch_free_assets.py`)
+  with bump, roughness and height maps at 512 pixels: a smaller download
+  and less video memory on iPads. Colour maps are as on the desktop. The
+  textures that are VRAM-compressed are exported as ETC2/ASTC as well as
+  S3TC, for iPads.
 
 ## Download size
 
@@ -737,7 +738,7 @@ defaults).
 ## Still to do
 
 - The HD pack in the browser. (Basis Universal was tried for the web
-  copies: no smaller than S3TC once gzipped, so ETC2 + S3TC it is.)
+  copies: no smaller than S3TC once gzipped.)
 
 ### Measuring on a real machine
 
