@@ -683,13 +683,10 @@ every hole.
 
 2026-11-27 (thread "Cut stutter and boost speed on every device"):
 
-- Shader warm-up (ShaderWarm): behind the loading card, after the tee and
-  green views, a copy of every mesh and multimesh in the scene (one per
-  shader and vertex layout, not per mesh) and every spatial shader in
-  `res://shaders` (plain and instanced) is drawn once in front of the
-  camera, shrunk to nothing and casting shadows, so the driver builds the
-  shaders and pipelines (shadow pass too) then and not the first time each
-  comes into view. Each new hole draws only what no hole before it had.
+- Tried and dropped: drawing an unseen copy of every mesh and shader at
+  load to build pipelines early. In Godot 4.7 (Forward+ ubershaders) it
+  made draw-time pipeline compiles go up (109 against 66 in 90 s of play),
+  so the tee and green views behind the loading card stay the warm-up.
 - Gallery levels of detail: a 3D spectator past 80 m (through the default
   40 degree lens; the TV long lens scales it) is drawn as a crowd card in
   their own colours and height, and one out of view pauses: its clip and

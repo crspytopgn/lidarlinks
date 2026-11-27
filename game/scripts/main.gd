@@ -617,10 +617,6 @@ func _warm_shaders(tree: SceneTree) -> void:
 		SceneFade.status(tree, "Preparing the graphics for this device...", float(i + 1) / views.size())
 		eye.look_at_from_position(views[i][0], views[i][1])
 		await tree.process_frame
-	# Then everything else the course and the game's effects draw, wherever
-	# it stands (ShaderWarm): a pond behind the tee, divots, the green grid.
-	eye.look_at_from_position(views[0][0], views[0][1])
-	await ShaderWarm.warm(self, eye, tree)
 	if is_instance_valid(live):
 		live.make_current()
 	eye.queue_free()
@@ -1101,10 +1097,6 @@ func start_hole(index: int) -> void:
 		text += ("\n" if not text.is_empty() else "") + "%s has the honour" % _side_name(current)
 	hud.show_message(text, 3.0)
 	_take_course_picture()
-	# Whatever this hole brings that no hole before it had (a pond, a new
-	# prop, a grandstand) is drawn once now, unseen, rather than stalling
-	# the frame it first comes into view (ShaderWarm).
-	ShaderWarm.warm(self, get_viewport().get_camera_3d(), get_tree())
 
 
 ## The course's picture for the course pickers (CoursePictures), taken

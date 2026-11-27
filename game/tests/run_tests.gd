@@ -2917,28 +2917,6 @@ func _test_course_marks() -> void:
 func _test_perf_helpers() -> void:
 	_check(GolferCloth._close([1.0, Vector3(0.1, 0, 0), Vector4.ONE], [1.0 + 5e-5, Vector3(0.1, 5e-5, 0), Vector4.ONE]), "cloth: a change under a tenth of a millimetre isn't pushed")
 	_check(not GolferCloth._close([Vector3(0.1, 0, 0)], [Vector3(0.1, 0.001, 0)]), "cloth: a millimetre's move is pushed")
-	# The shader warm-up draws one copy per shader and vertex layout, not per mesh.
-	ShaderWarm.reset()
-	var holder := Node3D.new()
-	var mat := StandardMaterial3D.new()
-	for i in 5:
-		var mi := MeshInstance3D.new()
-		var box := BoxMesh.new()
-		box.size = Vector3.ONE * (i + 1)
-		mi.mesh = box
-		mi.material_override = mat
-		holder.add_child(mi)
-	var warm := ShaderWarm.build(holder)
-	var plain := 0
-	for c in warm.get_children():
-		if c is MeshInstance3D and (c as MeshInstance3D).material_override == mat:
-			plain += 1
-	_check(plain == 1, "shader warm-up: five boxes on one material are drawn once (%d)" % plain)
-	_check(warm.get_child_count() > 1, "shader warm-up: the game's own shaders are drawn too")
-	warm.free()
-	_check(ShaderWarm.build(holder) == null, "shader warm-up: nothing is drawn twice")
-	holder.free()
-	ShaderWarm.reset()
 
 
 func _test_gallery() -> void:
